@@ -262,3 +262,17 @@ def ledger_namespace(cfg):
     endpoint = str(Path(q["path"]).resolve()) if q["mode"] == "embedded" else q["url"].rstrip("/")
     backend = hashlib.sha256(json.dumps([q["mode"], endpoint]).encode()).hexdigest()
     return q["collection"] + ":" + backend
+
+
+def backend_destination(q):
+    """Compare physical destinations independently of server/Cloud mode labels."""
+    if q["mode"] == "embedded":
+        return ("embedded", str(Path(q["path"]).resolve()))
+    endpoint = urlsplit(q["url"])
+    return (
+        "remote",
+        endpoint.scheme.lower(),
+        endpoint.hostname.lower(),
+        endpoint.port or (443 if endpoint.scheme == "https" else 80),
+        endpoint.path.rstrip("/"),
+    )

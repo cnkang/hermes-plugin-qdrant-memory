@@ -7,13 +7,13 @@ name = "hermes-plugin-qdrant-memory"
 version = "0.1.0"
 description = "Standalone durable Qdrant memory provider for Hermes Agent"
 requires-python = ">=3.11"
-dependencies = ["qdrant-client>=1.15,<2", "httpx>=0.28,<1"]
+dependencies = ["qdrant-client>=1.15,<2", "httpx>=0.28,<1", "portalocker>=3.2,<4"]
 
 [project.entry-points."hermes_agent.memory_providers"]
 qdrant-memory = "qdrant_memory:register"
 
 [dependency-groups]
-test = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruamel.yaml==0.18.16"]
+test = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruamel.yaml>=0.18.16,<0.19"]
 
 [tool.setuptools.packages.find]
 include = ["qdrant_memory*"]

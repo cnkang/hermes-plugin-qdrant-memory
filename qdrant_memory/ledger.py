@@ -41,6 +41,8 @@ class Ledger:
             CREATE TABLE IF NOT EXISTS manifests (
                 migration_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, collection TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS metrics (name TEXT, value REAL, collection TEXT);
+            CREATE TABLE IF NOT EXISTS counters (
+                name TEXT, value INTEGER, collection TEXT, PRIMARY KEY(name,collection));
         """)
 
     def enqueue_event(self, value):
@@ -196,7 +198,20 @@ class Ledger:
                 "SELECT COALESCE(SUM(attempts),0) FROM operations WHERE collection=?",
                 (self.collection,),
             ).fetchone()[0]
+            result["dedupe"] = dict(
+                self.db.execute(
+                    "SELECT name,value FROM counters WHERE collection=?", (self.collection,)
+                )
+            )
             return result
+
+    def increment(self, name):
+        """Increment a durable destination-specific decision counter."""
+        with self.lock, self.db:
+            self.db.execute(
+                "INSERT INTO counters VALUES(?,1,?) ON CONFLICT(name,collection) DO UPDATE SET value=value+1",
+                (name, self.collection),
+            )
 
     def save_manifest(self, value):
         """Durably store one destination-specific migration manifest."""

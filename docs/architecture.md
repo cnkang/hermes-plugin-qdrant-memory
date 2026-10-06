@@ -37,7 +37,10 @@ of the ledger itself.
 
 Provider and CLI mutations share `Runtime.lock`. The worker owns connections after
 successful initialization; shutdown stops new admission and briefly waits for the
-drain. If it exceeds the timeout, remaining durable work survives process death.
+drain. If it exceeds the timeout, shutdown raises and pending durable work remains
+replayable. A local OS writer lease prevents another provider/CLI from overlapping
+the retiring worker on the same profile destination. Cleanup holds the runtime lock
+so foreground tool calls cannot race connection closure.
 During failed initialization, created resources are closed immediately.
 
 ## Scope, cache and prompt invariants
@@ -76,5 +79,6 @@ failure, not a completed migration. Collection counts supplement exact verificat
 
 v0.1 supports dense retrieval only. Sparse/hybrid retrieval, reranking and recency
 weighting are future work. Host embedding inheritance is feature-detected and requires
-an explicit fallback. Tagged Hermes release compatibility and authenticated remote
-Qdrant end-to-end validation remain separate from local/contract test evidence.
+an explicit fallback. The minimum complete Hermes contract is v2026.9.24; earlier
+tags lack required authoritative builtin replacement metadata. Live Server REST/gRPC
+tests and optional authenticated Cloud tests remain separate validation lanes.

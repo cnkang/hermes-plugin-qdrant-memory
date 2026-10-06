@@ -105,7 +105,7 @@ def test_initialization_releases_resources_after_setup_failure(
 
     monkeypatch.setattr("qdrant_memory.provider.Ledger", tracked_ledger)
 
-    def fail(*args):
+    def fail(*args, **kwargs):
         """Inject a deterministic failure at the exercised boundary."""
         raise RuntimeError("setup failed")
 

@@ -9,15 +9,25 @@ from .models import Scope, content_hash, enforce_limits, now, payload, point_id
 from .retry import run_with_retry
 
 
+class WorkDeferred(RuntimeError):
+    """Signal that durable pending work must be replayed by the next owner."""
+
+
 class Runtime:
     """Serialize durable mutations shared by lifecycle hooks, tools and migration."""
 
-    def __init__(self, cfg, store, ledger, extractor=None):
+    def __init__(self, cfg, store, ledger, extractor=None, stop_requested=None):
         """Bind dependencies and one reentrant mutation lock."""
         self.cfg, self.store, self.ledger, self.extractor = cfg, store, ledger, extractor
         self.lock = RLock()
         self.decisions = {"ADD": 0, "UPDATE": 0, "SKIP": 0}
         self.store.metrics = ledger
+        self.stop_requested = stop_requested or (lambda: False)
+
+    def check_active(self):
+        """Defer another service phase after the owner's drain deadline."""
+        if self.stop_requested():
+            raise WorkDeferred("Durable work deferred for restart recovery")
 
     def operation(self, identifier, action, value, source_id="", source_version="", generation=""):
         """Prepare a size-checked mutation before any service write."""
@@ -37,6 +47,7 @@ class Runtime:
             size = int(self.cfg["write"]["batch_size"])
             # Preserve operation order, including delete followed by re-add.
             for start in range(0, len(rows), size):
+                self.check_active()
                 group = rows[start : start + size]
                 self._commit_group(group)
 
@@ -58,6 +69,7 @@ class Runtime:
 
         def apply():
             """Apply a batch and record throughput after successful upsert."""
+            self.check_active()
             started = time.monotonic()
             if action == "DELETE":
                 self.store.delete([r["point_id"] for r in group])
@@ -69,11 +81,15 @@ class Runtime:
 
         def failed(exc):
             """Record one sanitized failure per affected operation and attempt."""
+            if isinstance(exc, WorkDeferred):
+                return
             for row in group:
                 self.ledger.failure("operations", row["idempotency_key"], exc)
 
         try:
             run_with_retry(apply, self.cfg["write"], failed)
+        except WorkDeferred:
+            raise
         except Exception as exc:
             for row in group:
                 self.ledger.failure(
@@ -88,11 +104,15 @@ class Runtime:
         """Replay work independently so one failure does not block the backlog."""
         failures = 0
         for operation in self.ledger.rows("operations"):
+            if self.stop_requested():
+                return failures
             try:
                 self.commit([operation["idempotency_key"]])
             except Exception:
                 failures += 1
         for event in self.ledger.rows("events"):
+            if self.stop_requested():
+                return failures
             try:
                 self.process_event(event["event_id"])
             except Exception:
@@ -106,6 +126,7 @@ class Runtime:
                 text, scope, self.store, self.extractor, self.cfg["dedupe"]
             )
             self.decisions[action] += 1
+            self.ledger.increment(action)
             if action == "SKIP":
                 return {"action": action, "id": identifier}
             identifier = identifier or point_id(scope, source, content_hash(text))
@@ -145,15 +166,20 @@ class Runtime:
                 if any(s not in {"COMMITTED", "SUPERSEDED"} for s in statuses):
                     raise RuntimeError("Event has uncommitted operations")
                 self.ledger.finish("events", key)
+            except WorkDeferred:
+                raise
             except Exception as exc:
                 self.ledger.failure("events", key, exc, terminal=True)
                 raise
 
     def _prepare(self, event):
         """Persist extraction candidates and prepare scoped event operations."""
+        self.check_active()
         scope = Scope(**event["scope"])
         if event["kind"] == "builtin":
             return self._prepare_builtin(event, scope)
+        if event["kind"] == "checkpoint" and not event["extract"]:
+            return []
         if "candidates" not in event:
             started = time.monotonic()
             event["candidates"] = run_with_retry(
@@ -164,10 +190,12 @@ class Runtime:
             self.ledger.prepare_event(event["event_id"], event)
         keys = []
         for candidate in event["candidates"]:
+            self.check_active()
             action, identifier, relation = decide(
                 candidate["text"], scope, self.store, self.extractor, self.cfg["dedupe"]
             )
             self.decisions[action] += 1
+            self.ledger.increment(action)
             if action == "SKIP":
                 continue
             identifier = identifier or point_id(

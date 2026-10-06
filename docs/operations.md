@@ -21,15 +21,24 @@ fail immediately. FAILED rows remain visible and require an explicit `retry`.
 Newer committed mutations mark older pending/failed writes to the same point
 SUPERSEDED, preventing a later retry from reverting the new state.
 
-Shutdown stops admission and waits up to the configured timeout. Remaining ledger
-work survives process death. A live daemon finishing its drain owns and closes its
-connections, avoiding teardown races. Never delete `state.db` to recover an error;
+Shutdown stops admission and waits up to the configured timeout. At the deadline,
+queued jobs are discarded and durable work remains available for recovery. An
+in-flight network call cannot be forcibly cancelled: timeout raises an explicit
+error and the worker retains its writer lease and connections until it exits.
+A replacement provider or mutating maintenance CLI for that profile destination is refused
+while the old worker owns the lease. Leases coordinate local processes, not writers
+on other machines. Never delete `state.db` to recover an error;
 inspect stats and correct configuration before retrying.
 
 Builtin replace/remove mirror the exact `metadata.previous_content`, scoped by
 target and author. Older hosts without that authoritative value skip destructive
 mirroring. Session end/compression provides supplementary extraction; every turn
-already follows the durable write path. System prompt text and tool schemas remain
+already follows the durable write path. Checkpoint API v2 synchronously commits
+filtered user/assistant evidence before compression; disk failures propagate and
+prevent acknowledged checkpoints. Mixed-author evidence is archived without
+automatic extraction. Reset clears the target session's author history and turn
+counter; rewind preserves conservative attribution history and long-term memory.
+System prompt text and tool schemas remain
 static through the conversation.
 
 ## Backup and restore
@@ -65,9 +74,11 @@ an unchanged target with stale open work using a new operation generation.
 
 Stats reports destination-scoped ledger states and retry totals, plus bounded
 samples of embedding/query/search/extraction latency, upsert throughput and cache
-hit rate when recorded. Each metric retains at most 512 samples; reported p50/p95
+hit rate when recorded, and persistent ADD/SKIP/UPDATE decision counters. These count
+decisions, including replay attempts, rather than unique logical memories.
+Each metric retains at most 512 samples; reported p50/p95
 are empirical sample percentiles, not a service-level guarantee. Cache-hit rate is
-flushed on worker exit, so it may not appear while the current provider is active.
+recorded during active prefetch calls and remains visible before shutdown.
 
 See [troubleshooting](troubleshooting.md) for mismatch, lock, missing-row and
 credential failures, and [architecture](architecture.md) for persistence boundaries.

@@ -21,6 +21,12 @@ treat backups as sensitive. API keys and response bodies are never logged or
 persisted as errors: only exception type and retryability are reported. Endpoint
 URLs containing inline credentials, query strings or fragments are refused.
 
+Checkpoint v2 archives host-filtered direct user/assistant evidence in that same
+private ledger; mixed-author evidence is retained without attributing extraction
+to the latest speaker. A local OS lease excludes simultaneous writers for one
+profile destination, including a retiring worker. It does not coordinate writers
+on separate machines or make explicitly shared absolute storage paths safe.
+
 Every recall and exact-ID tool operation enforces user/agent scope. A gateway
 author takes precedence for their turn; bot turns and non-primary agent contexts
 do not automatically write memories. Migration preserves source scopes, including
