@@ -12,7 +12,7 @@ dependencies = ["qdrant-client>=1.15,<2", "httpx>=0.28,<1"]
 [project.entry-points."hermes_agent.memory_providers"]
 qdrant-memory = "qdrant_memory:register"
 
-[project.optional-dependencies]
+[dependency-groups]
 test = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruamel.yaml==0.18.16"]
 
 [tool.setuptools.packages.find]

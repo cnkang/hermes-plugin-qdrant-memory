@@ -71,10 +71,9 @@ jobs:
           HERMES_RUNTIME_DIR: ${{ runner.temp }}/hermes-test-runtime
         run: |
           python -m pm.build_env --source . --group test --export-requirements "$RUNNER_TEMP/host-test-requirements.txt"
+          python -c 'import tomllib; from pathlib import Path; p = tomllib.loads(Path("../pyproject.toml").read_text()); print("\n".join(p["project"]["dependencies"] + p["dependency-groups"]["test"]))' >> "$RUNNER_TEMP/host-test-requirements.txt"
           python -m pm.build_env --out "$GITHUB_WORKSPACE/.test-env" \
-            --requirements "$RUNNER_TEMP/host-test-requirements.txt" \
-            --requirement 'qdrant-client>=1.15,<2' --requirement 'httpx>=0.28,<1' \
-            --requirement 'pytest-cov>=6,<8'
+            --requirements "$RUNNER_TEMP/host-test-requirements.txt"
       - name: Run canonical host test runner
         working-directory: .host
         env:
