@@ -41,3 +41,45 @@ def test_ledger_destination_namespace_changes_with_endpoint():
     a = config(qdrant={"mode": "server", "url": "http://one.example"})
     b = config(qdrant={"mode": "server", "url": "http://two.example"})
     assert ledger_namespace(a) != ledger_namespace(b)
+
+
+def test_server_cloud_url_alias_resolves_to_same_ledger_namespace():
+    """Server and Cloud mode pointing at the same host share one ledger namespace."""
+    from qdrant_memory.config import ledger_namespace
+
+    server_cfg = config(qdrant={"mode": "server", "url": "https://example.com"})
+    cloud_cfg = config(qdrant={"mode": "cloud", "url": "https://Example.com:443/"})
+    assert ledger_namespace(server_cfg) == ledger_namespace(cloud_cfg)
+
+
+def test_ledger_replay_across_server_cloud_alias(tmp_path):
+    """Pending operations survive a server-to-cloud mode switch with the same host."""
+    from qdrant_memory.config import ledger_namespace
+
+    from .helpers import runtime
+
+    server_cfg = config(qdrant={"mode": "server", "url": "https://host.example"})
+    rt = runtime(tmp_path, cfg=server_cfg)
+    try:
+        from qdrant_memory.models import Scope, payload, point_id
+
+        scope = Scope(**rt.cfg["scope"])
+        text = "cat fact"
+        identifier = point_id(scope, "test", text)
+        value = payload(text, scope, "test", "s1")
+        key = rt.operation(identifier, "UPSERT", value)
+        assert rt.ledger.row("operations", key)["status"] == "PENDING"
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+
+    cloud_cfg = config(qdrant={"mode": "cloud", "url": "https://Host.example:443/"})
+    assert ledger_namespace(server_cfg) == ledger_namespace(cloud_cfg)
+    rt2 = runtime(tmp_path, cfg=cloud_cfg)
+    try:
+        assert rt2.recover() == 0
+        assert rt2.ledger.row("operations", key)["status"] == "COMMITTED"
+        assert rt2.store.count() == 1
+    finally:
+        rt2.store.close()
+        rt2.ledger.close()

@@ -58,9 +58,28 @@ def test_switch_initializes_scope_before_first_turn(tmp_path, user_id):
         p.on_session_switch("second", user_id=user_id)
         result = json.loads(p.handle_tool_call("qdrant_memory_search", {"query": "cats"}))
         assert result["memories"] == []
+        # A brand-new session still defaults when no user_id is supplied.
         expected = user_id or p.default_scope.user_id
         assert p._scope("second").user_id == expected
         p.on_session_switch("first", user_id="bob")
         assert p._scope("first").user_id == "bob"
+    finally:
+        p.shutdown()
+
+
+def test_switch_back_without_user_id_preserves_recorded_scope(tmp_path):
+    """Returning to a known session without user_id keeps its recorded author scope."""
+    p = provider(tmp_path)
+    try:
+        p.on_turn_start(1, "", author_id="alice")
+        p.sync_turn("cats preferred", "ack", session_id="first", turn_author={"id": "alice"})
+        assert p.wait_idle()
+        p.on_session_switch("second")
+        p.on_session_switch("first", reset=False)
+        assert p._scope("first").user_id == "alice"
+        result = json.loads(
+            p.handle_tool_call("qdrant_memory_search", {"query": "cats"}, session_id="first")
+        )
+        assert [m["text"] for m in result["memories"]] == ["cats preferred"]
     finally:
         p.shutdown()

@@ -151,8 +151,7 @@ class QdrantMemoryProvider(MemoryProvider):
     def _run_job(self, kind, value):
         """Run recovery, event preparation or generation-checked background recall."""
         if kind == "recover":
-            failures = self.runtime.recover()
-            if failures:
+            if failures := self.runtime.recover():
                 logger.warning("qdrant-memory recovery retained %d failed work items", failures)
         elif kind == "event":
             self.runtime.process_event(value)
@@ -258,13 +257,22 @@ class QdrantMemoryProvider(MemoryProvider):
         return ""
 
     def on_session_switch(self, new_session_id, **kwargs):
-        """Switch sessions and invalidate all in-flight recall generations."""
+        """Switch sessions and invalidate all in-flight recall generations.
+
+        An explicit user_id or a reset re-attributes the target session; otherwise any
+        scope recorded for an existing session is preserved and only a brand-new session
+        falls back to the default profile scope.
+        """
         with self._condition:
             self.session_id = new_session_id
-            self._scopes[new_session_id] = Scope(
-                str(kwargs.get("user_id") or self.default_scope.user_id),
-                self.default_scope.agent_id,
-            )
+            user_id = kwargs.get("user_id")
+            if user_id or kwargs.get("reset"):
+                self._scopes[new_session_id] = Scope(
+                    str(user_id or self.default_scope.user_id),
+                    self.default_scope.agent_id,
+                )
+            else:
+                self._scopes.setdefault(new_session_id, self.default_scope)
             if kwargs.get("reset"):
                 self._authors.pop(new_session_id, None)
                 self._turns.pop(new_session_id, None)
@@ -290,15 +298,25 @@ class QdrantMemoryProvider(MemoryProvider):
             )
 
     def on_pre_compress(self, messages, *, require_checkpoint=False):
-        """Commit host-normalized direct evidence before permitting lossy compression."""
+        """Commit host-normalized direct evidence before permitting lossy compression.
+
+        Mixed-author checkpoints use a neutral scope marker so the archived evidence
+        is never attributed to a single participant.
+        """
+        multi_author = len(self._authors.get(self.session_id, set())) > 1
+        scope = (
+            Scope(user_id="__mixed__", agent_id=None)
+            if multi_author
+            else self._scope(self.session_id)
+        )
         self._event(
             {
                 "kind": "checkpoint",
                 "source": "pre_compress",
                 "session_id": self.session_id,
-                "scope": self._scope(self.session_id).as_dict(),
+                "scope": scope.as_dict(),
                 "evidence": messages,
-                "extract": self._primary and len(self._authors.get(self.session_id, set())) <= 1,
+                "extract": self._primary and not multi_author,
                 "user": "\n".join(
                     str(m.get("content", "")) for m in messages if m.get("role") == "user"
                 ),

@@ -91,7 +91,7 @@ def map_record(record, default_scope):
         created_at=record.get("created_at") or EPOCH,
         updated_at=record.get("updated_at") or EPOCH,
     )
-    return point_id(scope, "mem0_migration", "mem0:" + str(identifier)), value
+    return point_id(scope, "mem0_migration", f"mem0:{str(identifier)}"), value
 
 
 def source_client(cfg, home, source_config=None):
@@ -103,9 +103,9 @@ def source_settings(cfg, home, source_config=None):
     """Resolve the source destination before checking source/target isolation."""
     path = Path(source_config) if source_config else Path(home) / "mem0.json"
     legacy = json.loads(path.read_text()) if path.exists() else {}
-    block = legacy.get("vector_store", {}).get("config", {})
-    if not block:
-        block = legacy.get("config", {}).get("vector_store", {}).get("config", {})
+    block = legacy.get("vector_store", {}).get("config", {}) or legacy.get("config", {}).get(
+        "vector_store", {}
+    ).get("config", {})
     q = deepcopy(cfg["qdrant"])
     if block:
         q["api_key"] = block.get("api_key") or secret("QDRANT_API_KEY")
@@ -206,18 +206,32 @@ def migrate(
 
 
 def stale_skips(runtime, manifest):
-    """Check skipped records still match settled target data before resuming."""
+    """Check skipped and committed records still match settled target data before resuming.
+
+    SKIP records are verified against live target data; COMMITTED records with
+    non-SKIP actions (ADD/UPDATE) are also checked so that externally deleted or
+    modified points trigger a fresh migration plan.
+    """
     with runtime.lock:
         for identifier, record in manifest["records"].items():
-            if record["action"] != "SKIP":
-                continue
-            point = runtime.store.get(identifier, Scope(**record["scope"]))
-            if (
-                runtime.ledger.has_open_operations(identifier)
-                or point is None
-                or digest(point.payload) != record["payload_hash"]
-            ):
-                return True
+            if record["action"] == "SKIP":
+                point = runtime.store.get(identifier, Scope(**record["scope"]))
+                if (
+                    runtime.ledger.has_open_operations(identifier)
+                    or point is None
+                    or digest(point.payload) != record["payload_hash"]
+                ):
+                    return True
+            elif record["operation_key"]:
+                row = runtime.ledger.row("operations", record["operation_key"])
+                if row and row["status"] == "COMMITTED":
+                    point = runtime.store.get(identifier, Scope(**record["scope"]))
+                    if (
+                        runtime.ledger.has_open_operations(identifier)
+                        or point is None
+                        or digest(point.payload) != record["payload_hash"]
+                    ):
+                        return True
     return False
 
 
@@ -374,7 +388,7 @@ def verify_collection(store):
                 "schema_version",
                 "cloud_origin",
             )
-            if not all(k in value for k in required) or value["schema_version"] != 1:
+            if any(k not in value for k in required) or value["schema_version"] != 1:
                 raise ValueError("Payload contract mismatch")
             if not isinstance(value["text"], str) or not normalize(value["text"]):
                 raise ValueError("Memory text must be nonempty")
