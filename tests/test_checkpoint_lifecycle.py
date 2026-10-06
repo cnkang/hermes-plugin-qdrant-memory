@@ -67,6 +67,34 @@ def test_mixed_author_checkpoint_archives_without_attributing_facts(tmp_path):
         p.shutdown()
 
 
+def test_mixed_author_checkpoint_stores_neutral_scope(tmp_path):
+    """Multi-author checkpoint events store a non-attributed '__mixed__' scope."""
+    p = provider(tmp_path)
+    try:
+        _assert_neutral_scope_in_mixed_author_checkpoint(p, tmp_path)
+    finally:
+        p.shutdown()
+
+
+def _assert_neutral_scope_in_mixed_author_checkpoint(p, tmp_path):
+    """Assert a multi-author checkpoint persists a '__mixed__' neutral scope.
+
+    Args:
+        p: Provider instance with an in-memory Qdrant backend.
+        tmp_path: Temporary directory hosting the ledger database.
+    """
+    p.on_turn_start(1, "", author_id="alice")
+    p.on_turn_start(2, "", author_id="bob")
+    p.on_pre_compress([{"role": "user", "content": "cats preferred"}], require_checkpoint=True)
+    assert p.wait_idle()
+    with sqlite3.connect(tmp_path / "qdrant-memory/state.db") as db:
+        event = json.loads(db.execute("SELECT payload_json FROM events").fetchone()[0])
+    assert event["scope"]["user_id"] == "__mixed__"
+    assert event["scope"]["agent_id"] is None
+    assert p.store.count() == 0
+    assert p.ledger.stats()["events"]["COMMITTED"] == 1
+
+
 @pytest.mark.parametrize("mode", ["new", "reset", "branch", "rewind"])
 def test_host_switch_clears_transients_and_preserves_durable_memory(tmp_path, mode):
     """New/reset/branch/rewind invalidate recall without deleting durable facts."""

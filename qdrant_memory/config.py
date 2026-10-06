@@ -257,10 +257,14 @@ def fingerprint(emb):
 
 
 def ledger_namespace(cfg):
-    """Bind ledger work to a collection and canonical backend destination."""
+    """Bind ledger work to a collection and canonical backend destination.
+
+    The destination hash derives from backend_destination so server/Cloud URL
+    aliases and mode labels pointing at the same physical endpoint resolve to one
+    namespace.
+    """
     q = cfg["qdrant"]
-    endpoint = str(Path(q["path"]).resolve()) if q["mode"] == "embedded" else q["url"].rstrip("/")
-    backend = hashlib.sha256(json.dumps([q["mode"], endpoint]).encode()).hexdigest()
+    backend = hashlib.sha256(json.dumps(backend_destination(q)).encode()).hexdigest()
     return q["collection"] + ":" + backend
 
 
