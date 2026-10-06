@@ -43,7 +43,8 @@ source snapshot produces a fresh plan, permitting supplemental imports.
 alone cannot certify a migration. `verify` separately checks payload hashes and
 vector dimensions across the collection using exact counts.
 
-Re-embedding is the default. `--reuse-vectors` is refused in 0.1 because supported
+Re-embedding is the default. `--reuse-vectors` is reserved, not implemented in 0.1,
+and refused because supported
 Mem0 inputs do not expose a trusted pipeline fingerprint and metric contract.
 Text oversize defaults to rejection; `--oversize truncate` explicitly opts into
 UTF-8-safe truncation with a payload marker. Metadata and total payload oversize
@@ -54,6 +55,11 @@ replays the prepared UUID upsert. It cannot create another logical point. If a
 later update supersedes an older failed operation, retries preserve the later
 state. Return to Mem0 by setting `memory.provider` to `mem0` and restarting; the
 source collection remains intact.
+
+Source and target isolation compares physical endpoint/path and collection together.
+Matching collection names on different destinations are permitted; the same
+canonical endpoint/path and collection are refused. Resumed SKIPs are rechecked for
+open operations and current payload digest; stale SKIPs trigger a fresh manifest.
 
 Legacy host/port-only source configuration defaults to HTTPS for remote hosts
 and HTTP for loopback. An explicit source URL preserves the operator's configured
