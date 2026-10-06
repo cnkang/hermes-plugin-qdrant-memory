@@ -241,9 +241,11 @@ class QdrantMemoryProvider(MemoryProvider):
     def on_session_switch(self, new_session_id, **kwargs):
         """Switch sessions and invalidate all in-flight recall generations."""
         with self._condition:
-            old_scope = self._scopes.get(self.session_id, self.default_scope)
             self.session_id = new_session_id
-            self._scopes.setdefault(new_session_id, old_scope)
+            self._scopes[new_session_id] = Scope(
+                str(kwargs.get("user_id") or self.default_scope.user_id),
+                self.default_scope.agent_id,
+            )
             self._cache.clear()
             for session in self._generations:
                 self._generations[session] += 1

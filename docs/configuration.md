@@ -32,7 +32,9 @@ for forward compatibility.
 ```
 
 Embedded mode uses `$HERMES_HOME/qdrant-memory/qdrant`, unless `qdrant.path` is
-explicit. Server mode defaults to `http://127.0.0.1:6333`. Cloud requires HTTPS
+explicit. Relative paths resolve against the active profile home, and canonical
+storage paths determine the ledger namespace independently of the working directory.
+Server mode defaults to `http://127.0.0.1:6333`. Cloud requires HTTPS
 and a Database API key. Explicit `qdrant.url/api_key` wins over scoped environment
 values; secrets in JSON are a compatibility option and are removed by setup saves.
 
