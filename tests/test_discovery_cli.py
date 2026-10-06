@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 from pathlib import Path
 from plugins.memory import load_memory_provider, discover_plugin_cli_commands
 from qdrant_memory.cli import register_cli, run
@@ -7,15 +8,16 @@ from qdrant_memory.extraction import Extractor
 from .helpers import LLM
 
 
-def test_real_directory_discovery_and_cli(tmp_path, monkeypatch):
+def test_real_directory_discovery_and_cli(tmp_path, monkeypatch, caplog):
     home = tmp_path / "home"
     (home / "plugins").mkdir(parents=True)
     root = Path(__file__).resolve().parents[1]
     (home / "plugins" / "qdrant-memory").symlink_to(root, target_is_directory=True)
     (home / "config.yaml").write_text("memory:\n  provider: qdrant-memory\nplugins:\n  isolation: in_process\n")
     monkeypatch.setenv("HERMES_HOME", str(home))
-    provider = load_memory_provider("qdrant-memory")
-    assert provider is not None and provider.name == "qdrant-memory"
+    with caplog.at_level(logging.DEBUG):
+        provider = load_memory_provider("qdrant-memory")
+    assert provider is not None and provider.name == "qdrant-memory", caplog.text
     assert provider.context.llm is not None
     assert {s["name"] for s in provider.get_tool_schemas()} == {
         "qdrant_memory_search", "qdrant_memory_add", "qdrant_memory_update", "qdrant_memory_delete"}
