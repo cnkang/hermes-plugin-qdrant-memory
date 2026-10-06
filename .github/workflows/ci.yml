@@ -50,7 +50,8 @@ jobs:
         run: |
           scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 1 --file-retries 0 \
             --tb=short --cov=qdrant_memory --cov-report= --cov-append
-          "$HERMES_PYTHON" -m coverage xml -o "$GITHUB_WORKSPACE/coverage.xml"
+          cd "$GITHUB_WORKSPACE"
+          "$HERMES_PYTHON" -m coverage xml --data-file=.host/.coverage -o coverage.xml
       - name: Save coverage for SonarCloud
         if: matrix.python == '3.14'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
