@@ -1,8 +1,11 @@
 name: Optional Qdrant Cloud smoke
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: cloud-smoke-${{ github.ref }}
 
 permissions:
   contents: read

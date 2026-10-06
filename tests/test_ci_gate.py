@@ -36,3 +36,15 @@ def test_required_gate_executes_actual_workflow_step(lint, tests, sonar, snyk, s
         timeout=5,
     )
     assert result.returncode == expected
+
+
+def test_cloud_smoke_push_trigger_excludes_codex_branches():
+    """Assert cloud-smoke.yml push trigger is restricted to main only."""
+    workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/cloud-smoke.yml"
+    workflow = YAML(typ="safe").load(workflow_path.read_text(encoding="utf-8"))
+    push_branches = workflow["on"]["push"]["branches"]
+    assert push_branches == ["main"], (
+        f"cloud-smoke push branches must be ['main'], got {push_branches}"
+    )
+    for branch in push_branches:
+        assert "codex" not in branch, f"codex pattern must not appear in push branches: {branch}"
