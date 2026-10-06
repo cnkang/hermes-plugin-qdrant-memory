@@ -67,5 +67,6 @@ def test_verifier_detects_missing_point_even_when_count_matches(tmp_path):
     replacement = {"id": "other", "memory": "cats"}
     migrate(rt, [replacement], "mem0-json", "other")
     result = verify_manifest(rt.store, manifest)
-    assert result["target_exact_count"] == 1 and not result["ok"]
+    assert result["target_exact_count"] == 1
+    assert not result["ok"]
     rt.store.close(); rt.ledger.close()

@@ -3,8 +3,14 @@ import subprocess
 import sys
 from qdrant_client import QdrantClient, models as m
 from qdrant_memory.models import Scope, payload, point_id
-from qdrant_memory.migration import read_qdrant_records, migrate
+from qdrant_memory.migration import read_qdrant_records, migrate, legacy_endpoint
 from .helpers import runtime
+
+
+def test_legacy_remote_source_defaults_to_tls():
+    assert legacy_endpoint({"host": "memory.example", "port": 6333}) == "https://memory.example:6333"
+    assert legacy_endpoint({}) == "http://127.0.0.1:6333"
+    assert legacy_endpoint({"host": "::1"}) == "http://[::1]:6333"
 
 
 def test_process_death_after_remote_upsert_before_ack(tmp_path):

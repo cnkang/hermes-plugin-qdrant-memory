@@ -8,10 +8,11 @@ import unicodedata
 import uuid
 
 NAMESPACE = uuid.UUID("0e039c91-9509-57b6-877a-e878e1d61d93")
+UTC_OFFSET = "+00:00"
 
 
 def now():
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).isoformat().replace(UTC_OFFSET, "Z")
 
 
 def digest(value):
@@ -42,10 +43,10 @@ def point_id(scope, source, source_id):
 def timestamp(value):
     if value is None:
         return now()
-    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(str(value).replace("Z", UTC_OFFSET))
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return parsed.astimezone(timezone.utc).isoformat().replace(UTC_OFFSET, "Z")
 
 
 def payload(text, scope, source, session_id="", category=None, importance=0.5,

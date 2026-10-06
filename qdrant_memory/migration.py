@@ -3,6 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 import json
 import uuid
+from urllib.parse import urlunsplit
 from .version import VERSION
 from .config import secret, validate_url
 from .models import Scope, content_hash, digest, enforce_limits, now, payload, point_id
@@ -67,9 +68,17 @@ def source_client(cfg, home, source_config=None):
             q.update(mode="embedded", path=str(Path(block["path"]).expanduser()))
         else:
             q["mode"] = "server"
-            q["url"] = q["url"] or f"http://{block.get('host', '127.0.0.1')}:{block.get('port', 6333)}"
+            q["url"] = q["url"] or legacy_endpoint(block)
             validate_url(q["url"])
     return build_client({"qdrant": q})
+
+
+def legacy_endpoint(block):
+    host = block.get("host", "127.0.0.1")
+    # Legacy remote host-only settings default to TLS; local Qdrant uses HTTP.
+    scheme = "http" if host in {"127.0.0.1", "localhost", "::1"} else "https"
+    authority = f"[{host}]" if ":" in host else host
+    return urlunsplit((scheme, f"{authority}:{block.get('port', 6333)}", "", "", ""))
 
 
 def read_qdrant_records(client, collection):
@@ -99,51 +108,10 @@ def plan(records, cfg):
 
 def migrate(runtime, records, source_type, source_identifier, source_sha256=None,
             resume=False, retry_failed=False, verify=False):
-    try:
-        planned = plan(records, runtime.cfg)
-    except Exception as exc:
-        runtime.ledger.save_manifest({"migration_id": str(uuid.uuid4()), "plugin_version": VERSION,
-            "source_type": source_type, "source_path_or_collection": source_identifier,
-            "source_sha256": source_sha256, "target_collection": runtime.store.collection,
-            "embedding_fingerprint": runtime.store.embedder.fingerprint, "planning_error": safe_error(exc),
-            "failed": len(records), "processed": 0, "started_at": now(), "completed_at": None, "records": {}})
-        raise
-    manifests = runtime.ledger.manifests()
-    matches = [m for m in manifests if "planning_error" not in m and m["source_type"] == source_type and
-               m["source_path_or_collection"] == source_identifier and m["source_sha256"] == source_sha256 and
-               m["target_collection"] == runtime.store.collection and
-               m["embedding_fingerprint"] == runtime.store.embedder.fingerprint]
-    if resume and matches:
-        manifest = matches[-1]
-        # A source collection has no file checksum. A changed snapshot needs a
-        # fresh plan; completed old manifests never certify supplemental data.
-        if manifest["source_plan_hash"] != digest(planned):
-            manifest = None
-    else:
-        manifest = None
+    planned = durable_plan(runtime, records, source_type, source_identifier, source_sha256)
+    manifest = resume_manifest(runtime, planned, source_type, source_identifier, source_sha256) if resume else None
     if manifest is None:
-        manifest = {"migration_id": str(uuid.uuid4()), "plugin_version": VERSION, "schema_version": 1,
-                    "source_type": source_type, "source_path_or_collection": source_identifier,
-                    "source_sha256": source_sha256, "source_plan_hash": digest(planned),
-                    "source_unique_count": len(planned), "target_collection": runtime.store.collection,
-                    "embedding_fingerprint": runtime.store.embedder.fingerprint,
-                    "embedding_provider": runtime.cfg["embedding"]["provider"],
-                    "embedding_model": runtime.cfg["embedding"]["model"],
-                    "embedding_dimensions": runtime.store.embedder.dimensions,
-                    "started_at": now(), "completed_at": None, "records": {}}
-        with runtime.lock:
-            for identifier, value in planned.items():
-                scope = Scope(value["user_id"], value["agent_id"])
-                old = runtime.store.get(identifier, scope)
-                if old and digest(old.payload) == digest(value):
-                    action, key = "SKIP", None
-                else:
-                    action = "UPDATE" if old else "ADD"
-                    key = runtime.operation(identifier, "UPSERT", value,
-                                            "mem0:" + value["cloud_origin"]["id"], value["updated_at"])
-                manifest["records"][identifier] = {"action": action, "operation_key": key,
-                                                     "payload_hash": digest(value), "scope": scope.as_dict()}
-        runtime.ledger.save_manifest(manifest)
+        manifest = create_manifest(runtime, planned, source_type, source_identifier, source_sha256)
     if retry_failed:
         # Only retry this migration's operations, never unrelated provider writes.
         for record in manifest["records"].values():
@@ -153,24 +121,77 @@ def migrate(runtime, records, source_type, source_identifier, source_sha256=None
     try:
         runtime.commit([r["operation_key"] for r in manifest["records"].values() if r["operation_key"]])
     finally:
-        counts = {"processed": 0, "added": 0, "updated": 0, "skipped": 0, "failed": 0}
-        for record in manifest["records"].values():
-            key = record["operation_key"]
-            status = runtime.ledger.row("operations", key)["status"] if key else "COMMITTED"
-            if status == "COMMITTED":
-                counts["processed"] += 1
-                counts[{"ADD": "added", "UPDATE": "updated", "SKIP": "skipped"}[record["action"]]] += 1
-            elif status == "FAILED":
-                counts["failed"] += 1
-        manifest.update(counts)
-        if counts["processed"] == len(planned):
-            manifest["completed_at"] = now()
-        runtime.ledger.save_manifest(manifest)
-    if verify:
-        result = verify_manifest(runtime.store, manifest)
-        if not result["ok"]:
-            raise ValueError("Migration verification failed")
+        update_manifest_counts(runtime, manifest, len(planned))
+    if verify and not verify_manifest(runtime.store, manifest)["ok"]:
+        raise ValueError("Migration verification failed")
     return manifest
+
+
+def durable_plan(runtime, records, source_type, source_identifier, source_sha256):
+    try:
+        planned = plan(records, runtime.cfg)
+    except Exception as exc:
+        runtime.ledger.save_manifest({"migration_id": str(uuid.uuid4()), "plugin_version": VERSION,
+            "source_type": source_type, "source_path_or_collection": source_identifier,
+            "source_sha256": source_sha256, "target_collection": runtime.store.collection,
+            "embedding_fingerprint": runtime.store.embedder.fingerprint, "planning_error": safe_error(exc),
+            "failed": len(records), "processed": 0, "started_at": now(), "completed_at": None, "records": {}})
+        raise
+    return planned
+
+
+def resume_manifest(runtime, planned, source_type, source_identifier, source_sha256):
+    manifests = runtime.ledger.manifests()
+    matches = [m for m in manifests if "planning_error" not in m and m["source_type"] == source_type and
+               m["source_path_or_collection"] == source_identifier and m["source_sha256"] == source_sha256 and
+               m["target_collection"] == runtime.store.collection and
+               m["embedding_fingerprint"] == runtime.store.embedder.fingerprint]
+    # A source collection has no file checksum; changed snapshots need a fresh plan.
+    if matches and matches[-1]["source_plan_hash"] == digest(planned):
+        return matches[-1]
+    return None
+
+
+def create_manifest(runtime, planned, source_type, source_identifier, source_sha256):
+    manifest = {"migration_id": str(uuid.uuid4()), "plugin_version": VERSION, "schema_version": 1,
+                    "source_type": source_type, "source_path_or_collection": source_identifier,
+                    "source_sha256": source_sha256, "source_plan_hash": digest(planned),
+                    "source_unique_count": len(planned), "target_collection": runtime.store.collection,
+                    "embedding_fingerprint": runtime.store.embedder.fingerprint,
+                    "embedding_provider": runtime.cfg["embedding"]["provider"],
+                    "embedding_model": runtime.cfg["embedding"]["model"],
+                    "embedding_dimensions": runtime.store.embedder.dimensions,
+                    "started_at": now(), "completed_at": None, "records": {}}
+    with runtime.lock:
+        for identifier, value in planned.items():
+            scope = Scope(value["user_id"], value["agent_id"])
+            old = runtime.store.get(identifier, scope)
+            if old and digest(old.payload) == digest(value):
+                action, key = "SKIP", None
+            else:
+                action = "UPDATE" if old else "ADD"
+                key = runtime.operation(identifier, "UPSERT", value,
+                                        "mem0:" + value["cloud_origin"]["id"], value["updated_at"])
+            manifest["records"][identifier] = {"action": action, "operation_key": key,
+                                              "payload_hash": digest(value), "scope": scope.as_dict()}
+    runtime.ledger.save_manifest(manifest)
+    return manifest
+
+
+def update_manifest_counts(runtime, manifest, expected):
+    counts = {"processed": 0, "added": 0, "updated": 0, "skipped": 0, "failed": 0}
+    for record in manifest["records"].values():
+        key = record["operation_key"]
+        status = runtime.ledger.row("operations", key)["status"] if key else "COMMITTED"
+        if status == "COMMITTED":
+            counts["processed"] += 1
+            counts[{"ADD": "added", "UPDATE": "updated", "SKIP": "skipped"}[record["action"]]] += 1
+        elif status == "FAILED":
+            counts["failed"] += 1
+    manifest.update(counts)
+    if counts["processed"] == expected:
+        manifest["completed_at"] = now()
+    runtime.ledger.save_manifest(manifest)
 
 
 def verify_manifest(store, manifest):

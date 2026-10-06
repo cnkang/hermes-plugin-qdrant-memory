@@ -41,13 +41,15 @@ def test_dimension_and_fingerprint_mismatch_refuse(tmp_path):
     client = QdrantClient(":memory:")
     cfg = config()
     client.create_collection(cfg["qdrant"]["collection"], vectors_config={"dense": m.VectorParams(size=2, distance=m.Distance.COSINE)})
+    store = QdrantStore(client, cfg, Embedder())
     with pytest.raises(ValueError, match="dimension"):
-        QdrantStore(client, cfg, Embedder()).initialize()
+        store.initialize()
     client.close()
     rt = runtime(tmp_path)
     changed = Embedder(); changed.fingerprint = "different-model-same-dims"
+    store = QdrantStore(rt.store.client, rt.cfg, changed)
     with pytest.raises(ValueError, match="fingerprint"):
-        QdrantStore(rt.store.client, rt.cfg, changed).initialize()
+        store.initialize()
     rt.store.close(); rt.ledger.close()
 
 
@@ -64,3 +66,19 @@ def test_pending_operation_resume_and_collection_partition(tmp_path):
     rt.recover()
     assert rt.store.count() == 1
     other.close(); rt.store.close(); rt.ledger.close()
+
+
+def test_terminal_write_records_one_failure_attempt(tmp_path, monkeypatch):
+    rt = runtime(tmp_path)
+    scope = Scope("alice", "hermes")
+    key = rt.operation(point_id(scope, "manual_tool", "one"), "UPSERT", payload("cats", scope, "manual_tool"))
+    def fail(records):
+        raise ValueError("invalid remote payload")
+    monkeypatch.setattr(rt.store, "upsert", fail)
+    with pytest.raises(ValueError):
+        rt.commit([key])
+    row = rt.ledger.row("operations", key)
+    assert row["status"] == "FAILED"
+    assert row["attempts"] == 1
+    rt.store.close()
+    rt.ledger.close()

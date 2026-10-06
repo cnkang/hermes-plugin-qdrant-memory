@@ -54,3 +54,7 @@ replays the prepared UUID upsert. It cannot create another logical point. If a
 later update supersedes an older failed operation, retries preserve the later
 state. Return to Mem0 by setting `memory.provider` to `mem0` and restarting; the
 source collection remains intact.
+
+Legacy host/port-only source configuration defaults to HTTPS for remote hosts
+and HTTP for loopback. An explicit source URL preserves the operator's configured
+transport; use TLS for remote deployments.

@@ -29,6 +29,7 @@ def test_invalid_migration_retains_sanitized_error_manifest(tmp_path):
         migrate(rt, [{"id": "one", "memory": "oversized"}], "mem0-json", "fixture")
     error = rt.ledger.manifests()[-1]
     assert error["planning_error"]["type"] == "ValueError"
-    assert error["failed"] == 1 and rt.store.count() == 0
+    assert error["failed"] == 1
+    assert rt.store.count() == 0
     rt.store.close()
     rt.ledger.close()

@@ -37,6 +37,65 @@ def summary(manifest):
     return {key: value for key, value in manifest.items() if key != "records"}
 
 
+def local_status(cfg, home):
+    return {"provider": "qdrant-memory", "mode": cfg["qdrant"]["mode"],
+            "collection": cfg["qdrant"]["collection"], "llm_mode": cfg["llm"]["mode"],
+            "embedding": {k: embedding_config(cfg)[k] for k in ("provider", "model", "dimensions")},
+            "ledger_exists": (home / "qdrant-memory" / "state.db").exists()}
+
+
+def migration_source(args, cfg, home):
+    if args.reuse_vectors:
+        raise ValueError("Vector reuse is refused: Mem0 sources lack a trusted pipeline fingerprint; re-embed")
+    if args.source_json:
+        return (read_json_records(args.source_json), "mem0-json", str(args.source_json.resolve()),
+                hashlib.sha256(args.source_json.read_bytes()).hexdigest())
+    if args.source_qdrant_collection == cfg["qdrant"]["collection"]:
+        raise ValueError("Source and target collections must be isolated")
+    client = source_client(cfg, home, args.source_config)
+    try:
+        records = list(read_qdrant_records(client, args.source_qdrant_collection))
+        return records, "mem0-qdrant", args.source_qdrant_collection, None
+    finally:
+        client.close()
+
+
+def verify_target(store, ledger):
+    result = verify_collection(store)
+    manifests = [m for m in ledger.manifests() if m["target_collection"] == store.collection]
+    if manifests:
+        result["migration"] = verify_manifest(store, manifests[-1])
+        result["ok"] = result["ok"] and result["migration"]["ok"]
+    return result
+
+
+def diagnostic_status(store, ledger, cfg, command):
+    result = {"points_count": store.count(), "vector_dim": store.embedder.dimensions,
+              "ledger": ledger.stats(), "metrics": ledger.metrics(), "embedding_fingerprint": store.embedder.fingerprint}
+    if command == "doctor":
+        info = store.client.get_collection(store.collection)
+        index_ok = cfg["qdrant"]["mode"] == "embedded" or set(INDEXES) <= set(info.payload_schema)
+        result.update(hermes_contract="MemoryProvider + scoped threads + ctx.llm", embedding_probe="OK",
+                      payload_indexes="not applicable to embedded" if cfg["qdrant"]["mode"] == "embedded" else index_ok,
+                      llm_mode=cfg["llm"]["mode"], ok=index_ok)
+    return result
+
+
+def execute_command(args, runtime, source):
+    command = args.qdrant_command
+    if command == "migrate":
+        records, source_type, source_identifier, checksum = source
+        return summary(migrate(runtime, records, source_type, source_identifier, checksum,
+                               args.resume, args.retry_failed, args.verify))
+    if command == "verify":
+        return verify_target(runtime.store, runtime.ledger)
+    if command == "retry":
+        # Raw events require trusted host LLM calls on the next provider startup.
+        runtime.ledger.retry_failed()
+        runtime.commit([r["idempotency_key"] for r in runtime.ledger.rows("operations")])
+    return diagnostic_status(runtime.store, runtime.ledger, runtime.cfg, command)
+
+
 def run(args, home=None):
     home = Path(home or active_home())
     overrides = {}
@@ -49,28 +108,11 @@ def run(args, home=None):
     command = args.qdrant_command
     if command == "status":
         # Availability/status is local-only and does not probe external services.
-        return {"provider": "qdrant-memory", "mode": cfg["qdrant"]["mode"],
-                "collection": cfg["qdrant"]["collection"], "llm_mode": cfg["llm"]["mode"],
-                "embedding": {k: embedding_config(cfg)[k] for k in ("provider", "model", "dimensions")},
-                "ledger_exists": (home / "qdrant-memory" / "state.db").exists()}
+        return local_status(cfg, home)
     records = None
     source_type = source_identifier = checksum = None
     if command == "migrate":
-        if args.reuse_vectors:
-            raise ValueError("Vector reuse is refused: Mem0 sources lack a trusted pipeline fingerprint; re-embed")
-        if args.source_json:
-            source_type, source_identifier = "mem0-json", str(args.source_json.resolve())
-            records = read_json_records(args.source_json)
-            checksum = hashlib.sha256(args.source_json.read_bytes()).hexdigest()
-        else:
-            if args.source_qdrant_collection == cfg["qdrant"]["collection"]:
-                raise ValueError("Source and target collections must be isolated")
-            source_type, source_identifier = "mem0-qdrant", args.source_qdrant_collection
-            client = source_client(cfg, home, args.source_config)
-            try:
-                records = list(read_qdrant_records(client, source_identifier))
-            finally:
-                client.close()
+        records, source_type, source_identifier, checksum = migration_source(args, cfg, home)
         if args.dry_run:
             planned = plan(records, cfg)
             return {"dry_run": True, "source_unique_count": len(planned),
@@ -82,31 +124,7 @@ def run(args, home=None):
         store.initialize(create=command == "migrate")
         ledger = Ledger(home, ledger_namespace(cfg))
         runtime = Runtime(cfg, store, ledger)
-        if command == "migrate":
-            result = migrate(runtime, records, source_type, source_identifier, checksum,
-                             args.resume, args.retry_failed, args.verify)
-            return summary(result)
-        if command == "verify":
-            result = verify_collection(store)
-            manifests = [m for m in ledger.manifests() if m["target_collection"] == store.collection]
-            if manifests:
-                result["migration"] = verify_manifest(store, manifests[-1])
-                result["ok"] = result["ok"] and result["migration"]["ok"]
-            return result
-        if command == "retry":
-            # Raw conversation events require the trusted host LLM and are
-            # replayed on the next provider initialization, not in this CLI.
-            ledger.retry_failed()
-            runtime.commit([r["idempotency_key"] for r in ledger.rows("operations")])
-        result = {"points_count": store.count(), "vector_dim": embedder.dimensions,
-                  "ledger": ledger.stats(), "metrics": ledger.metrics(), "embedding_fingerprint": embedder.fingerprint}
-        if command == "doctor":
-            info = store.client.get_collection(store.collection)
-            index_ok = cfg["qdrant"]["mode"] == "embedded" or set(INDEXES) <= set(info.payload_schema)
-            result.update(hermes_contract="MemoryProvider + scoped threads + ctx.llm", embedding_probe="OK",
-                          payload_indexes="not applicable to embedded" if cfg["qdrant"]["mode"] == "embedded" else index_ok,
-                          llm_mode=cfg["llm"]["mode"], ok=index_ok)
-        return result
+        return execute_command(args, runtime, (records, source_type, source_identifier, checksum))
     finally:
         store.close()
         if ledger:
