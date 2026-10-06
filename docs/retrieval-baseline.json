@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-06",
+  "dataset": "tests/fixtures/retrieval.json",
+  "memories": 12,
+  "queries": 12,
+  "recall_at_10": 1.0,
+  "precision_at_5": 0.2,
+  "precision_at_1": 1.0,
+  "mrr": 1.0,
+  "search_latency_ms_p50": 77.59,
+  "search_latency_ms_p95": 119.23,
+  "embedding": {"provider": "ollama", "model": "qwen3-embedding:4b", "dimensions": 2560},
+  "embedding_fingerprint": "8b5dffffa9f5477f8d0727a7b6b50e4b755e665a3ccb6ef0b500af46614a6b91",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "python": "3.14.7",
+  "notes": [
+    "Live local Ollama and isolated embedded Qdrant; synthetic pilot, not a production recall guarantee.",
+    "Each query has one labeled relevant memory, so maximum Precision@5 on this fixture is 0.2.",
+    "Model was warmed by the initialization probe and batch import before query timing."
+  ]
+}

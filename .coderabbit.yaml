@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: zh-CN
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  review_status: true
+  review_progress: true
+  fail_commit_status: true
+  auto_review:
+    enabled: true
+    drafts: true
+  path_instructions:
+    - path: qdrant_memory/**
+      instructions: >-
+        Review scope isolation, durable ledger ordering and crash replay, prompt
+        caching, API key redaction, exact-ID mutation and read-only source
+        migration. Similarity alone must never authorize SKIP or UPDATE.
+    - path: .github/workflows/**
+      instructions: >-
+        Check immutable action pins, least-privilege permissions, fork PR secret
+        handling and failing quality gates. A missing token must not be reported
+        as a successful scan. Do not use pull_request_target to run PR code.
