@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from qdrant_memory.config import DEFAULTS, fingerprint, load_config, merge
+from qdrant_memory.config import DEFAULTS, fingerprint, load_config, merge, validate_url
 from qdrant_memory.config_schema import save_config
 from qdrant_memory.embedding import HTTPEmbeddingProvider, build_embedder
 from qdrant_memory.models import Scope, content_hash, enforce_limits, payload, point_id
@@ -57,6 +57,53 @@ def test_hash_identity_and_payload_limits():
     truncated = enforce_limits(value, {**limits, "oversize_policy": "truncate"})
     assert truncated["text"] == "éé"
     assert truncated["content_hash"] == content_hash("éé")
+
+
+@pytest.mark.parametrize("url", ["http://example.test", "http://192.168.1.20:6333"])
+def test_api_key_requires_https_for_remote_endpoints(url):
+    """API-key HTTP transport is rejected for non-loopback endpoints."""
+    with pytest.raises(ValueError, match="API-key endpoints require HTTPS"):
+        validate_url(url, api_key="sentinel")
+
+
+@pytest.mark.parametrize(
+    "url", ["http://localhost:6333", "http://127.0.0.2:6333", "http://[::1]:6333"]
+)
+def test_api_key_allows_http_for_local_endpoints(url):
+    """Loopback endpoints remain usable with local development API keys."""
+    validate_url(url, api_key="sentinel")
+
+
+def test_resolved_qdrant_api_key_requires_https(tmp_path, monkeypatch):
+    """The configured endpoint validator sees API keys resolved from secret scope."""
+    monkeypatch.setattr(
+        "qdrant_memory.config.secret",
+        lambda name: "remote-key" if name == "QDRANT_API_KEY" else None,
+    )
+    (tmp_path / "qdrant-memory.json").write_text(
+        json.dumps({"qdrant": {"mode": "server", "url": "http://qdrant.example"}})
+    )
+    with pytest.raises(ValueError, match="API-key endpoints require HTTPS"):
+        load_config(tmp_path)
+
+
+def test_fingerprint_normalizes_trailing_base_url_slashes():
+    """Equivalent request base URLs share one pipeline fingerprint."""
+    cfg = merge(DEFAULTS["embedding"], {"base_url": "https://embed.example/v1"})
+    assert fingerprint(cfg) == fingerprint({**cfg, "base_url": "https://embed.example/v1///"})
+
+
+def test_embedding_secret_requires_https_before_http_client_creation(monkeypatch):
+    """Environment-resolved embedding keys cannot reach remote HTTP endpoints."""
+    monkeypatch.setattr("qdrant_memory.embedding.secret", lambda name: "resolved-key")
+    created = []
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: created.append(kwargs))
+    cfg = merge(DEFAULTS["embedding"], {"base_url": "http://embed.example"})
+
+    with pytest.raises(ValueError, match="API-key endpoints require HTTPS"):
+        HTTPEmbeddingProvider(cfg)
+
+    assert created == []
 
 
 @pytest.mark.parametrize("provider", ["ollama", "openai-compatible"])

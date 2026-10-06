@@ -1,6 +1,7 @@
 """Profile-scoped configuration. Environment reads use Hermes's secret scope."""
 
 import hashlib
+import ipaddress
 import json
 import math
 from copy import deepcopy
@@ -88,8 +89,8 @@ def active_home():
     return Path(get_hermes_home())
 
 
-def validate_url(value, cloud=False):
-    """Reject invalid endpoints, embedded credentials and non-HTTPS Cloud URLs."""
+def validate_url(value, cloud=False, api_key=None):
+    """Reject invalid endpoints, unsafe API-key transport and non-HTTPS Cloud URLs."""
     parsed = urlsplit(value or "")
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("Endpoint must be an HTTP(S) URL")
@@ -97,6 +98,14 @@ def validate_url(value, cloud=False):
         raise ValueError("Credentials and query parameters are forbidden in endpoint URLs")
     if cloud and parsed.scheme != "https":
         raise ValueError("Cloud requires HTTPS")
+    if api_key and parsed.scheme == "http":
+        hostname = parsed.hostname.rstrip(".").lower()
+        try:
+            loopback = ipaddress.ip_address(hostname).is_loopback
+        except ValueError:
+            loopback = False
+        if hostname != "localhost" and not loopback:
+            raise ValueError("API-key endpoints require HTTPS")
 
 
 def validate(cfg):
@@ -132,7 +141,7 @@ def validate_embedding(cfg):
     emb = embedding_config(cfg)
     if emb["provider"] not in {"ollama", "openai-compatible"}:
         raise ValueError("Unsupported embedding provider")
-    validate_url(emb["base_url"])
+    validate_url(emb["base_url"], api_key=emb.get("api_key"))
     if emb["distance"] not in {"Cosine", "Dot", "Euclid"}:
         raise ValueError("Unsupported distance metric")
     return emb
@@ -223,7 +232,7 @@ def resolve_qdrant_secrets(q):
     q["api_key"] = q.get("api_key") or secret(q["api_key_env"])
     if q["mode"] != "embedded":
         q["url"] = q["url"] or ("http://127.0.0.1:6333" if q["mode"] == "server" else None)
-        validate_url(q["url"], cloud=q["mode"] == "cloud")
+        validate_url(q["url"], cloud=q["mode"] == "cloud", api_key=q["api_key"])
         if q["mode"] == "cloud" and not q["api_key"]:
             raise ValueError("Cloud requires a scoped QDRANT_API_KEY")
 
@@ -251,9 +260,10 @@ def fingerprint(emb):
         "base_url",
         "send_dimensions",
     )
-    return hashlib.sha256(
-        json.dumps({k: emb.get(k) for k in keys}, sort_keys=True).encode()
-    ).hexdigest()
+    values = {k: emb.get(k) for k in keys}
+    if isinstance(values["base_url"], str):
+        values["base_url"] = values["base_url"].rstrip("/")
+    return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
 
 
 def ledger_namespace(cfg):
