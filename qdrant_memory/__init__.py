@@ -6,6 +6,10 @@ __all__ = ["register", "__version__"]
 
 
 def register(ctx):
+    ctx.register_memory_provider(create_provider(ctx))
+
+
+def create_provider(ctx):
     from .provider import QdrantMemoryProvider
 
     # Some Hermes memory discovery collectors expose registration only. Build
@@ -21,4 +25,4 @@ def register(ctx):
         display_name="Qdrant Memory Extraction",
         description="Extract and reconcile durable memories.",
     )
-    ctx.register_memory_provider(QdrantMemoryProvider(plugin_context=runtime_ctx))
+    return QdrantMemoryProvider(plugin_context=runtime_ctx)

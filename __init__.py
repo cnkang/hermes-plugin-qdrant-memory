@@ -1,6 +1,8 @@
 """Directory-provider entry point; package providers use qdrant_memory directly."""
-if __package__:
-    from .qdrant_memory import register as register
-else:
-    # pytest imports a hyphenated repository root as a standalone module.
-    from qdrant_memory import register as register
+def register(ctx):
+    if __package__:
+        from .qdrant_memory import create_provider
+    else:
+        from qdrant_memory import create_provider
+    # Directory discovery checks this registration call without importing code.
+    ctx.register_memory_provider(create_provider(ctx))
