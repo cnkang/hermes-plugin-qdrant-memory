@@ -206,7 +206,7 @@ jobs:
     name: Snyk code security
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
@@ -220,7 +220,36 @@ jobs:
       - name: Scan source
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: snyk code test qdrant_memory --severity-threshold=high
+        run: |
+          attempts=3
+          for attempt in 1 2 3; do
+            echo "Snyk Code scan attempt ${attempt}/${attempts} (8-minute limit)"
+            if timeout --kill-after=30s 8m \
+              snyk code test qdrant_memory --severity-threshold=high; then
+              exit 0
+            else
+              status=$?
+            fi
+
+            case "$status" in
+              1|3)
+                exit "$status"
+                ;;
+              2|124|137)
+                if [ "$attempt" -eq "$attempts" ]; then
+                  echo "::error::Snyk Code scan failed after ${attempts} attempts (exit code ${status})."
+                  exit "$status"
+                fi
+                delay=$((attempt * 15))
+                echo "::warning::Snyk Code scan failed transiently (exit code ${status}); retrying in ${delay}s."
+                sleep "$delay"
+                ;;
+              *)
+                echo "::error::Snyk Code scan failed with non-retryable exit code ${status}."
+                exit "$status"
+                ;;
+            esac
+          done
 
   scan-gate:
     name: Required security scan gate
