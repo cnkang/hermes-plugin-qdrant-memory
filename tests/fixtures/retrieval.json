@@ -1,0 +1,30 @@
+{
+  "memories": [
+    {"id": "embedding", "text": "The user prefers local Ollama models for generating text embeddings."},
+    {"id": "secrets", "text": "The user stores service API keys in Bitwarden Secrets Manager."},
+    {"id": "database", "text": "The user's vector database is a self-hosted Qdrant server."},
+    {"id": "language", "text": "The user prefers concise Chinese replies."},
+    {"id": "testing", "text": "The user runs Python behavior tests with the repository's canonical test runner."},
+    {"id": "git", "text": "The user develops changes on separate feature branches before opening pull requests."},
+    {"id": "cache", "text": "The user wants system prompts to remain stable throughout a conversation for prompt caching."},
+    {"id": "backups", "text": "The user keeps encrypted backups of persistent agent memory."},
+    {"id": "migration", "text": "The user requires memory imports to resume safely after an interrupted process."},
+    {"id": "food", "text": "The user avoids dairy products when choosing meals."},
+    {"id": "travel", "text": "The user likes travelling by train rather than taking short domestic flights."},
+    {"id": "editor", "text": "The user edits Python source files in Visual Studio Code."}
+  ],
+  "queries": [
+    {"query": "Which embedding service should I use?", "relevant_ids": ["embedding"]},
+    {"query": "Where are my API credentials managed?", "relevant_ids": ["secrets"]},
+    {"query": "What vector storage backend do I prefer?", "relevant_ids": ["database"]},
+    {"query": "What language and style should you answer in?", "relevant_ids": ["language"]},
+    {"query": "How should you execute my Python test suite?", "relevant_ids": ["testing"]},
+    {"query": "What is my branch workflow for new changes?", "relevant_ids": ["git"]},
+    {"query": "Why should the system prompt stay fixed?", "relevant_ids": ["cache"]},
+    {"query": "How do I protect stored memory backups?", "relevant_ids": ["backups"]},
+    {"query": "What should happen when an import crashes halfway?", "relevant_ids": ["migration"]},
+    {"query": "What ingredients should a meal avoid?", "relevant_ids": ["food"]},
+    {"query": "What transportation do I prefer on short trips?", "relevant_ids": ["travel"]},
+    {"query": "Which editor do I use to write Python?", "relevant_ids": ["editor"]}
+  ]
+}

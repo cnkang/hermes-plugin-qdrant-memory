@@ -1,0 +1,4 @@
+name: qdrant-memory
+version: 0.1.0
+description: Durable native memory with Qdrant and Hermes LLM extraction
+hooks: [on_session_end, on_memory_write, on_pre_compress]
