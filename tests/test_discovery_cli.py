@@ -2,7 +2,7 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from plugins.memory import load_memory_provider, discover_plugin_cli_commands
+from plugins.memory import load_memory_provider, discover_plugin_cli_commands, find_provider_dir
 from qdrant_memory.cli import register_cli, run
 from qdrant_memory.extraction import Extractor
 from .helpers import LLM
@@ -15,6 +15,7 @@ def test_real_directory_discovery_and_cli(tmp_path, monkeypatch, caplog):
     (home / "plugins" / "qdrant-memory").symlink_to(root, target_is_directory=True)
     (home / "config.yaml").write_text("memory:\n  provider: qdrant-memory\nplugins:\n  isolation: in_process\n")
     monkeypatch.setenv("HERMES_HOME", str(home))
+    assert find_provider_dir("qdrant-memory") == home / "plugins" / "qdrant-memory"
     with caplog.at_level(logging.DEBUG):
         provider = load_memory_provider("qdrant-memory")
     assert provider is not None and provider.name == "qdrant-memory", caplog.text
