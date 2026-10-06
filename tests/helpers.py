@@ -68,10 +68,15 @@ def config(**overrides):
     )
 
 
-def runtime(home, client=None, cfg=None, llm=None):
+def runtime(home, client=None, cfg=None, llm=None, ledger_namespace=None):
     """Build a real Qdrant store and ledger with deterministic injected services."""
     cfg = cfg or config()
     client = client or QdrantClient(":memory:")
     store = QdrantStore(client, cfg, Embedder())
     store.initialize()
-    return Runtime(cfg, store, Ledger(home, store.collection), Extractor(llm or LLM(), cfg["llm"]))
+    return Runtime(
+        cfg,
+        store,
+        Ledger(home, ledger_namespace or store.collection),
+        Extractor(llm or LLM(), cfg["llm"]),
+    )

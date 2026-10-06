@@ -59,7 +59,7 @@ def test_ledger_replay_across_server_cloud_alias(tmp_path):
     from .helpers import runtime
 
     server_cfg = config(qdrant={"mode": "server", "url": "https://host.example"})
-    rt = runtime(tmp_path, cfg=server_cfg)
+    rt = runtime(tmp_path, cfg=server_cfg, ledger_namespace=ledger_namespace(server_cfg))
     try:
         from qdrant_memory.models import Scope, payload, point_id
 
@@ -75,7 +75,7 @@ def test_ledger_replay_across_server_cloud_alias(tmp_path):
 
     cloud_cfg = config(qdrant={"mode": "cloud", "url": "https://Host.example:443/"})
     assert ledger_namespace(server_cfg) == ledger_namespace(cloud_cfg)
-    rt2 = runtime(tmp_path, cfg=cloud_cfg)
+    rt2 = runtime(tmp_path, cfg=cloud_cfg, ledger_namespace=ledger_namespace(cloud_cfg))
     try:
         assert rt2.recover() == 0
         assert rt2.ledger.row("operations", key)["status"] == "COMMITTED"
