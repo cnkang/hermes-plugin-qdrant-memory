@@ -45,16 +45,24 @@ class Ledger:
                             (key, value["session_id"], json.dumps(value, ensure_ascii=False), now(), self.collection))
         return key
 
-    def enqueue_operation(self, identifier, action, value, source_id="", source_version=""):
+    def enqueue_operation(self, identifier, action, value, source_id="", source_version="", generation=""):
         # Timestamps are part of migration metadata updates; runtime replay uses
         # the same prepared operation persisted before the remote mutation.
-        key = digest([self.collection, identifier, action, value, source_id, source_version])
+        identity = [self.collection, identifier, action, value, source_id, source_version]
+        if generation:
+            identity.append(generation)
+        key = digest(identity)
         with self.lock, self.db:
             self.db.execute("""INSERT OR IGNORE INTO operations
                 (idempotency_key,point_id,action,payload_json,source_id,source_version,content_hash,created_at,collection)
                 VALUES(?,?,?,?,?,?,?,?,?)""", (key, identifier, action, json.dumps(value, ensure_ascii=False),
                                              source_id, source_version, value.get("content_hash", ""), now(), self.collection))
         return key
+
+    def has_open_operations(self, identifier):
+        with self.lock:
+            return self.db.execute("""SELECT 1 FROM operations WHERE point_id=? AND collection=?
+                AND status IN ('PENDING','FAILED') LIMIT 1""", (identifier, self.collection)).fetchone() is not None
 
     def rows(self, table, status="PENDING"):
         if table not in {"events", "operations"}:

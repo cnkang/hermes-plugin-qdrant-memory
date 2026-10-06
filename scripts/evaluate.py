@@ -28,7 +28,7 @@ def evaluate(dataset, store, scope):
         relevant = set(query["relevant_ids"])
         recalls.append(len(relevant & set(retrieved[:10])) / len(relevant))
         precisions.append(len(relevant & set(retrieved[:5])) / min(5, len(rows)))
-        top1.append(int(retrieved[0] in relevant))
+        top1.append(int(bool(retrieved) and retrieved[0] in relevant))
         reciprocal.append(next((1 / (i + 1) for i, identifier in enumerate(retrieved) if identifier in relevant), 0))
     latencies.sort()
     avg = lambda values: sum(values) / len(values)
@@ -48,7 +48,7 @@ def main():
         store = QdrantStore(build_client(cfg), cfg, embedder)
         try:
             store.initialize()
-            result = evaluate(json.loads(args.dataset.read_text()), store, Scope("evaluation", "hermes"))
+            result = evaluate(json.loads(args.dataset.read_text(encoding="utf-8")), store, Scope("evaluation", "hermes"))
             result.update(embedding={k: embedding_config(cfg)[k] for k in ("provider", "model", "dimensions")},
                           embedding_fingerprint=embedder.fingerprint, platform=platform.platform(),
                           python=platform.python_version(), dataset=str(args.dataset.name),

@@ -14,12 +14,12 @@ class Runtime:
         self.decisions = {"ADD": 0, "UPDATE": 0, "SKIP": 0}
         self.store.metrics = ledger
 
-    def operation(self, identifier, action, value, source_id="", source_version=""):
+    def operation(self, identifier, action, value, source_id="", source_version="", generation=""):
         if action == "DELETE" and not source_version:
             source_version = now()
         if action != "DELETE":
             value = enforce_limits(value, self.cfg["limits"])
-        return self.ledger.enqueue_operation(identifier, action, value, source_id, source_version)
+        return self.ledger.enqueue_operation(identifier, action, value, source_id, source_version, generation)
 
     def commit(self, keys):
         with self.lock:

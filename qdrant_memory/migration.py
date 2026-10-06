@@ -112,13 +112,15 @@ def migrate(runtime, records, source_type, source_identifier, source_sha256=None
     manifest = resume_manifest(runtime, planned, source_type, source_identifier, source_sha256) if resume else None
     if manifest is None:
         manifest = create_manifest(runtime, planned, source_type, source_identifier, source_sha256)
-    if retry_failed:
-        # Only retry this migration's operations, never unrelated provider writes.
+    try:
         for record in manifest["records"].values():
             key = record["operation_key"]
-            if key and runtime.ledger.row("operations", key)["status"] == "FAILED":
+            row = runtime.ledger.row("operations", key) if key else None
+            if key and row is None:
+                raise ValueError("Missing migration operation")
+            # Only retry this migration's operations, never unrelated provider writes.
+            if retry_failed and row and row["status"] == "FAILED":
                 runtime.ledger.reset_operation(key)
-    try:
         runtime.commit([r["operation_key"] for r in manifest["records"].values() if r["operation_key"]])
     finally:
         update_manifest_counts(runtime, manifest, len(planned))
@@ -166,12 +168,14 @@ def create_manifest(runtime, planned, source_type, source_identifier, source_sha
         for identifier, value in planned.items():
             scope = Scope(value["user_id"], value["agent_id"])
             old = runtime.store.get(identifier, scope)
-            if old and digest(old.payload) == digest(value):
+            open_write = runtime.ledger.has_open_operations(identifier)
+            if old and digest(old.payload) == digest(value) and not open_write:
                 action, key = "SKIP", None
             else:
                 action = "UPDATE" if old else "ADD"
                 key = runtime.operation(identifier, "UPSERT", value,
-                                        "mem0:" + value["cloud_origin"]["id"], value["updated_at"])
+                                        "mem0:" + value["cloud_origin"]["id"], value["updated_at"],
+                                        generation=manifest["migration_id"] if open_write else "")
             manifest["records"][identifier] = {"action": action, "operation_key": key,
                                               "payload_hash": digest(value), "scope": scope.as_dict()}
     runtime.ledger.save_manifest(manifest)
@@ -182,15 +186,15 @@ def update_manifest_counts(runtime, manifest, expected):
     counts = {"processed": 0, "added": 0, "updated": 0, "skipped": 0, "failed": 0}
     for record in manifest["records"].values():
         key = record["operation_key"]
-        status = runtime.ledger.row("operations", key)["status"] if key else "COMMITTED"
+        row = runtime.ledger.row("operations", key) if key else None
+        status = row["status"] if row else ("MISSING" if key else "COMMITTED")
         if status == "COMMITTED":
             counts["processed"] += 1
             counts[{"ADD": "added", "UPDATE": "updated", "SKIP": "skipped"}[record["action"]]] += 1
-        elif status == "FAILED":
+        elif status in {"FAILED", "MISSING"}:
             counts["failed"] += 1
     manifest.update(counts)
-    if counts["processed"] == expected:
-        manifest["completed_at"] = now()
+    manifest["completed_at"] = now() if counts["processed"] == expected else None
     runtime.ledger.save_manifest(manifest)
 
 

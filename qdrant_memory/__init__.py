@@ -20,7 +20,7 @@ def create_provider(ctx):
     else:
         runtime_ctx = ctx
 
-    ctx.register_auxiliary_task(
+    runtime_ctx.register_auxiliary_task(
         "qdrant_memory_extraction",
         display_name="Qdrant Memory Extraction",
         description="Extract and reconcile durable memories.",

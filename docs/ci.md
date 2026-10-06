@@ -3,8 +3,14 @@
 The CI workflow runs behavior contracts against an immutable Hermes host commit
 on Python 3.11 and 3.14, then passes coverage to SonarCloud. Sonar analysis waits
 for its quality gate. Snyk runs dependency and code scans and monitors main.
-Actions use immutable SHA pins. Fork PRs run tests without scanner credentials;
-trusted same-repository PRs and pushes run the authenticated scans.
+Actions use immutable SHA pins. Authenticated scans run on same-repository PRs,
+pushes only to `main` and `codex/**`, and manual workflow dispatches. Fork PRs run
+tests without scanner credentials; their scanner jobs are skipped by conditions.
+A missing required token fails a scanner job only when that job is scheduled.
+The `Required security scan gate` runs with `always()` and fails for any failed,
+cancelled or skipped prerequisite, including safely skipped fork scans. Make this
+aggregate gate a required branch check; a skipped scanner job alone is not proof
+of a successful scan. The gate needs no secrets and executes no PR code.
 
 SonarCloud project configuration:
 

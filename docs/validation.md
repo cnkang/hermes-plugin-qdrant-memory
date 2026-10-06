@@ -5,7 +5,7 @@ Validated on 2026-10-06 against Hermes commit
 
 - Canonical Hermes `scripts/run_tests.sh`: 40 tests passed across 8 files.
 - Tests use real Hermes imports and isolated temporary profile directories.
-- Persistent embedded Qdrant survived process termination after remote upsert
+- Persistent embedded Qdrant survived process termination after embedded upsert
   but before ledger acknowledgment; replay retained one deterministic point.
 - Migration tests preserve 1,000 source IDs and detect incorrect same-count
   target records. No user memories were migrated during development.

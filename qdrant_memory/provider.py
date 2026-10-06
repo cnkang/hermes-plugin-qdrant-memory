@@ -60,15 +60,18 @@ class QdrantMemoryProvider(MemoryProvider):
         self.embedder = self.embedder or build_embedder(self.context, self.cfg)
         self.client = self.client or build_client(self.cfg)
         self.store = QdrantStore(self.client, self.cfg, self.embedder)
+        self.ledger = None
         try:
             self.store.initialize()
+            self.ledger = Ledger(self.home, ledger_namespace(self.cfg))
+            self.runtime = Runtime(self.cfg, self.store, self.ledger, Extractor(self.context.llm, self.cfg["llm"]))
         except Exception:
+            if self.ledger is not None:
+                self.ledger.close()
             self.store.close()
             if hasattr(self.embedder, "close"):
                 self.embedder.close()
             raise
-        self.ledger = Ledger(self.home, ledger_namespace(self.cfg))
-        self.runtime = Runtime(self.cfg, self.store, self.ledger, Extractor(self.context.llm, self.cfg["llm"]))
         self._accepting = True
         self._worker = spawn_context_thread(self._work, name="qdrant-memory-writer")
         self._worker.start()
