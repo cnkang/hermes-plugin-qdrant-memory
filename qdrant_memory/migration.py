@@ -388,7 +388,11 @@ def verify_collection(store):
                 "schema_version",
                 "cloud_origin",
             )
-            if any(k not in value for k in required) or value["schema_version"] != 1:
+            if (
+                any(k not in value for k in required)
+                or type(value["schema_version"]) is not int
+                or value["schema_version"] != 1
+            ):
                 raise ValueError("Payload contract mismatch")
             if not isinstance(value["text"], str) or not normalize(value["text"]):
                 raise ValueError("Memory text must be nonempty")
