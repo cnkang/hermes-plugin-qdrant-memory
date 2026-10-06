@@ -200,7 +200,8 @@ def load_config(home, overrides=None, resolve_secrets=True):
     local inspection; remote endpoint validation runs when resolution is enabled.
     Invalid supported settings raise ValueError before service initialization.
     """
-    path = Path(home) / "qdrant-memory.json"
+    home = Path(home).expanduser().resolve()
+    path = home / "qdrant-memory.json"
     from utils import read_json_or_empty
 
     values = read_json_or_empty(path) if path.exists() else {}
@@ -209,7 +210,8 @@ def load_config(home, overrides=None, resolve_secrets=True):
     cfg = merge(merge(DEFAULTS, values), overrides or {})
     validate(cfg)
     q = cfg["qdrant"]
-    q["path"] = str(Path(q.get("path") or Path(home) / "qdrant-memory" / "qdrant").expanduser())
+    storage = Path(q.get("path") or "qdrant-memory/qdrant").expanduser()
+    q["path"] = str((storage if storage.is_absolute() else home / storage).resolve())
     if resolve_secrets:
         resolve_qdrant_secrets(q)
     return cfg

@@ -163,8 +163,8 @@ def run(args, home=None):
         overrides["qdrant"] = {"collection": collection}
     if getattr(args, "oversize", None):
         overrides["limits"] = {"oversize_policy": args.oversize}
-    cfg = load_config(home, overrides)
     command = args.qdrant_command
+    cfg = load_config(home, overrides, resolve_secrets=command != "status")
     if command == "status":
         # Availability/status is local-only and does not probe external services.
         return local_status(cfg, home)
