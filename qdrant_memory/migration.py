@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import urlunsplit
 
 from .config import secret, validate_url
-from .models import Scope, content_hash, digest, enforce_limits, now, payload, point_id
+from .models import Scope, content_hash, digest, enforce_limits, normalize, now, payload, point_id
 from .qdrant_store import build_client
 from .retry import safe_error
 from .version import VERSION
@@ -96,6 +96,11 @@ def map_record(record, default_scope):
 
 def source_client(cfg, home, source_config=None):
     """Legacy config is consulted exclusively during migration source reads."""
+    return build_client({"qdrant": source_settings(cfg, home, source_config)})
+
+
+def source_settings(cfg, home, source_config=None):
+    """Resolve the source destination before checking source/target isolation."""
     path = Path(source_config) if source_config else Path(home) / "mem0.json"
     legacy = json.loads(path.read_text()) if path.exists() else {}
     block = legacy.get("vector_store", {}).get("config", {})
@@ -106,12 +111,16 @@ def source_client(cfg, home, source_config=None):
         q["api_key"] = block.get("api_key") or secret("QDRANT_API_KEY")
         q["url"] = block.get("url") or secret("QDRANT_URL")
         if block.get("path") and not q["url"]:
-            q.update(mode="embedded", path=str(Path(block["path"]).expanduser()))
+            storage = Path(block["path"]).expanduser()
+            q.update(
+                mode="embedded",
+                path=str((storage if storage.is_absolute() else Path(home) / storage).resolve()),
+            )
         else:
             q["mode"] = "server"
             q["url"] = q["url"] or legacy_endpoint(block)
             validate_url(q["url"])
-    return build_client({"qdrant": q})
+    return q
 
 
 def legacy_endpoint(block):
@@ -367,6 +376,8 @@ def verify_collection(store):
             )
             if not all(k in value for k in required) or value["schema_version"] != 1:
                 raise ValueError("Payload contract mismatch")
+            if not isinstance(value["text"], str) or not normalize(value["text"]):
+                raise ValueError("Memory text must be nonempty")
             if value["content_hash"] != content_hash(value["text"]):
                 raise ValueError("Hash mismatch")
             from .embedding import validate_vectors

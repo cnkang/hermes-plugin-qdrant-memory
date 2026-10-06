@@ -12,14 +12,37 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from qdrant_memory.config import embedding_config, load_config
 from qdrant_memory.embedding import build_embedder
-from qdrant_memory.models import Scope, payload, point_id
+from qdrant_memory.models import Scope, normalize, payload, point_id
 from qdrant_memory.qdrant_store import QdrantStore, build_client
+
+
+def validate_dataset(dataset):
+    """Reject unusable labels and empty samples before any store mutation."""
+    if not isinstance(dataset.get("queries"), list) or not dataset["queries"]:
+        raise ValueError("Dataset queries must be nonempty")
+    if not isinstance(dataset.get("memories"), list) or not dataset["memories"]:
+        raise ValueError("Dataset memories must be nonempty")
+    identifiers = []
+    for memory in dataset["memories"]:
+        if not isinstance(memory.get("id"), str) or not memory["id"]:
+            raise ValueError("Dataset memory IDs must be nonempty strings")
+        identifiers.append(memory["id"])
+    known = set(identifiers)
+    if len(known) != len(identifiers):
+        raise ValueError("Dataset memory IDs must be unique")
+    for query in dataset["queries"]:
+        if not isinstance(query.get("query"), str) or not normalize(query["query"]):
+            raise ValueError("Dataset query text must be nonempty")
+        relevant = query.get("relevant_ids")
+        if not isinstance(relevant, list) or not relevant:
+            raise ValueError("Dataset relevant_ids must be nonempty")
+        if not all(isinstance(identifier, str) and identifier in known for identifier in relevant):
+            raise ValueError("Dataset relevant_ids contains an unknown memory ID")
 
 
 def evaluate(dataset, store, scope):
     """Measure dense retrieval quality and latency against labeled memory/query pairs."""
-    if not dataset["queries"]:
-        raise ValueError("Dataset queries must be nonempty")
+    validate_dataset(dataset)
     rows = [
         (point_id(scope, "manual_tool", m["id"]), payload(m["text"], scope, "manual_tool"))
         for m in dataset["memories"]

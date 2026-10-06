@@ -2,9 +2,16 @@
 
 import hashlib
 import json
+from contextlib import ExitStack
 from pathlib import Path
 
-from .config import active_home, embedding_config, ledger_namespace, load_config
+from .config import (
+    active_home,
+    backend_destination,
+    embedding_config,
+    ledger_namespace,
+    load_config,
+)
 from .embedding import build_embedder
 from .ledger import Ledger
 from .migration import (
@@ -13,9 +20,11 @@ from .migration import (
     read_json_records,
     read_qdrant_records,
     source_client,
+    source_settings,
     verify_collection,
     verify_manifest,
 )
+from .ownership import WriterLease
 from .qdrant_store import INDEXES, QdrantStore, build_client
 from .retry import safe_error
 from .runtime import Runtime
@@ -41,7 +50,7 @@ def register_cli(subparser):
     parser.add_argument(
         "--reuse-vectors",
         action="store_true",
-        help="Reserved; refused without trusted source pipeline metadata",
+        help="Reserved: not implemented in 0.1; re-embedding is required",
     )
     for flag in ("resume", "retry-failed", "dry-run", "verify"):
         parser.add_argument("--" + flag, action="store_true")
@@ -79,12 +88,16 @@ def migration_source(args, cfg, home):
             str(args.source_json.resolve()),
             hashlib.sha256(args.source_json.read_bytes()).hexdigest(),
         )
-    if args.source_qdrant_collection == cfg["qdrant"]["collection"]:
+    source_q = source_settings(cfg, home, args.source_config)
+    source_q["collection"] = args.source_qdrant_collection
+    if source_q["collection"] == cfg["qdrant"]["collection"] and backend_destination(
+        source_q
+    ) == backend_destination(cfg["qdrant"]):
         raise ValueError("Source and target collections must be isolated")
     client = source_client(cfg, home, args.source_config)
     try:
         records = list(read_qdrant_records(client, args.source_qdrant_collection))
-        return records, "mem0-qdrant", args.source_qdrant_collection, None
+        return records, "mem0-qdrant", ledger_namespace({"qdrant": source_q}), None
     finally:
         client.close()
 
@@ -180,20 +193,20 @@ def run(args, home=None):
                 "target_collection": cfg["qdrant"]["collection"],
                 "target_ids": list(planned),
             }
-    embedder = build_embedder(None, cfg)
-    store = QdrantStore(build_client(cfg), cfg, embedder)
-    ledger = None
-    try:
+    with ExitStack() as resources:
+        if command in {"migrate", "retry"}:
+            lease = WriterLease.for_config(home, cfg)
+            resources.callback(lease.close)
+        embedder = build_embedder(None, cfg)
+        if hasattr(embedder, "close"):
+            resources.callback(embedder.close)
+        store = QdrantStore(build_client(cfg), cfg, embedder)
+        resources.callback(store.close)
         store.initialize(create=command == "migrate")
         ledger = Ledger(home, ledger_namespace(cfg))
+        resources.callback(ledger.close)
         runtime = Runtime(cfg, store, ledger)
         return execute_command(args, runtime, (records, source_type, source_identifier, checksum))
-    finally:
-        store.close()
-        if ledger:
-            ledger.close()
-        if hasattr(embedder, "close"):
-            embedder.close()
 
 
 def main(args):
