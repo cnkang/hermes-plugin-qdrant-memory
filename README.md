@@ -9,9 +9,10 @@ payloads. No Mem0 SDK, separate LLM SDK, telemetry, or core modifications.
 ## Install
 
 Requirements: Python 3.11+, a compatible Hermes installation, and a reachable
-embedding service. The tested Hermes commit is
-`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`; compatibility with older tagged releases
-has not been established. The default model needs Ollama and enough local resources
+embedding service. The minimum complete Hermes contract is v2026.9.24
+(`f97608f178d1ffeca59860195ab7da295f7c8e5f`); CI also tests pinned
+`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078` and reviewed upstream main.
+The default model needs Ollama and enough local resources
 to serve `qwen3-embedding:4b`.
 
 Choose the **active profile's** home explicitly; do not reuse another profile's data.
@@ -129,9 +130,9 @@ Embedding `inherit` is feature-detected and requires an explicit
 `fingerprint`, `embed_documents()` and `embed_query()`. Current Hermes has no
 documented global embedding facade.
 
-Compatibility targets the current Hermes `MemoryProvider`, `PluginContext`,
-scoped secret and context-thread contracts. No minimum release tag is claimed
-until the interfaces have been checked against tagged releases. See
+Compatibility requires Hermes `MemoryProvider`, checkpoint v2, trusted turn authors,
+authoritative builtin `previous_content`, scoped secrets and context threads.
+Earlier tags have incomplete contracts; v2026.9.24 is the minimum supported release. See
 [validation](docs/validation.md) for tested environments and remaining live-service
 checks. Read [configuration](docs/configuration.md), [migration](docs/migration-from-mem0.md),
 [security](docs/security.md) and [operations](docs/operations.md) before deployment.

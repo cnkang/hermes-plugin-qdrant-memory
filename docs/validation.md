@@ -1,5 +1,45 @@
 # Validation evidence
 
+## Current rereview (2026-10-06)
+
+Minimum complete host contract: v2026.9.24
+(`f97608f178d1ffeca59860195ab7da295f7c8e5f`). v2026.9.21 lacks authoritative
+builtin `previous_content`; earlier tags also lack author/context-thread features.
+Local full suites use the minimum tag's native runner on Python 3.11 and pinned
+`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078` on Python 3.14: 19 files,
+104 passed, one optional Cloud skip. CI additionally tests reviewed upstream main
+`3dadeb9246f4eabeee893b128ab41aa917ce28f7` on both Python versions.
+
+Real native setup, checkpoint v2 normalization/compression and session-manager
+paths are exercised. Setup's dependency installer is stubbed; dependency install
+is validated separately through PM. Tests use temporary homes and deterministic
+embedding/LLM fixtures. Slow LLM, Qdrant and foreground tools cover bounded drain,
+retained ownership, cleanup and restart recovery. In-flight I/O is not forcibly
+cancelled. The test ruamel.yaml range accommodates both host declarations.
+
+Live Docker Qdrant v1.15.5 passes REST/gRPC collection/identity/index creation,
+scope and null-agent filtering, exact-ID authorization, add/search/update/delete,
+process restart/reconnect, migration and vector/payload verification. Actual remote
+legacy collections remain unchanged by source reads. The image digest is
+`sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863`.
+Pass `--qdrant-test-url` and `--qdrant-test-container` after the runner's explicit
+`--`; arbitrary environment variables are cleared. Run serially during restarts.
+
+A built wheel installed into an independent PM environment passes site-packages
+imports, entry point, package resources, schema persistence and real CLI discovery
+outside the checkout. Directory discovery is also tested. Ruff lint/format,
+actionlint, PM lock checks and staged-snapshot hooks are required for delivery.
+Check authenticated SonarCloud/Snyk and external review results on the delivered
+SHA; configuration alone is not evidence.
+
+Cloud was not available locally. The separate manual **Optional Qdrant Cloud
+smoke** uses Actions URL/key/prefix secrets and a disposable collection. Missing
+credentials explicitly skip; a skip does not establish Cloud compatibility. See
+[CI setup](ci.md). The earlier Ollama synthetic pilot below was not rerun in this
+review and is not a production retrieval claim.
+
+## Historical initial implementation evidence
+
 Validated on 2026-10-06 against Hermes commit
 `4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`.
 

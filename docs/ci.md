@@ -2,11 +2,15 @@
 
 Ruff lint/format, the Python 3.11 and 3.14 behavior-contract jobs, and the separate
 Snyk dependency and code jobs run
-independently in parallel. Python 3.11 runs test files with two workers. Python
-3.14 collects coverage serially to avoid concurrent database writers; SonarCloud
+independently in parallel. Both Python versions run files serially because remote
+tests restart their disposable server. Python 3.14 collects coverage; SonarCloud
 waits for the test matrix and consumes that artifact, then waits for its quality
 gate. Snyk runs dependency and code scans and monitors main. Tests use an
-immutable Hermes host commit. Ruff is pinned to 0.15.1 in CI and the local
+three immutable Hermes hosts: minimum v2026.9.24 (`f97608f`), pinned `4787e4d`,
+and reviewed upstream main `3dadeb9`. A separately pinned PM prepares dependency
+environments because the minimum release predates `pm.build_env`. Each lane runs
+a digest-pinned Qdrant v1.15.5 service and requires REST/gRPC integration, including
+restart persistence. Ruff is pinned to 0.15.1 in CI and the local
 [pre-commit setup](development.md); lint includes docstrings and import ordering.
 Actions use immutable SHA pins. Authenticated scans run on same-repository PRs,
 pushes only to `main` and `codex/**`, and manual workflow dispatches. Fork PRs run
@@ -17,6 +21,20 @@ cancelled or skipped prerequisite (lint, tests, SonarCloud and both Snyk jobs), 
 safely skipped fork scans. Make this
 aggregate gate a required branch check; a skipped scanner job alone is not proof
 of a successful scan. The gate needs no secrets and executes no PR code.
+
+## Optional authenticated Cloud smoke
+
+Run **Optional Qdrant Cloud smoke** manually on the reviewed branch after adding
+Actions secrets `QDRANT_CLOUD_URL` (HTTPS) and `QDRANT_CLOUD_API_KEY` (Database API
+key with collection creation/deletion access). Optional
+`QDRANT_CLOUD_COLLECTION_PREFIX` defaults to `hermes_smoke_`; a random UUID suffix
+always isolates the test from existing collections. It creates and deletes only
+that disposable collection. Credentials are written to a private temporary file,
+never passed in process arguments or printed, and removed at job completion.
+Absent URL/key yields an explicit SKIPPED message. This manual lane is outside the
+required scan gate; a skip does not establish Cloud compatibility. Its integration
+test covers indexes, scope, mutation, migration and reconnection; deployment restart
+remains a Server lane check because Cloud infrastructure is service-owned.
 
 SonarCloud project configuration:
 

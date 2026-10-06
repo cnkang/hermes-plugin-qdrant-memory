@@ -9,7 +9,8 @@
 ## 安装与启用
 
 需要 Python 3.11+、兼容的 Hermes 和可访问的 embedding 服务。已验证的 Hermes
-提交为 `4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`，尚未声明最低兼容 release tag。
+最低完整兼容版本为 v2026.9.24 (`f97608f178d1ffeca59860195ab7da295f7c8e5f`)；
+CI 同时测试固定提交 `4787e4d56fc8d9265d4c7d3c0fe5accee86b4078` 和已复核的 upstream main。
 默认 embedding 为 Ollama `qwen3-embedding:4b`，维度 2560；请准备足够的本机资源。
 
 明确选择当前 profile 的 home，不要复用其他 profile 的数据：
@@ -107,8 +108,10 @@ embedding 模型、维度或 fingerprint 改变时需要新 collection 和显式
 v0.1 实现 dense retrieval。Hybrid、RRF/DBSF、rerank、recency weighting 属于后续
 范围；不支持的检索模式会被拒绝。embedding `inherit` 需要显式 `inherit_fallback`；
 宿主 facade 还必须暴露 dimensions、fingerprint 和两个 embedding 方法。当前未声明
-Hermes 已提供全局 embedding facade。远程 Server/Cloud 有 client 合约测试，尚无
-认证端点实测；其他验证边界见[验证记录](docs/validation.md)。
+Hermes 已提供全局 embedding facade。Server 的 REST/gRPC 已通过真实 Docker 服务
+实测；Cloud smoke 需要显式凭据，未提供凭据时跳过。最低宿主版本要求 checkpoint v2、
+可信 turn author、权威 previous_content、scoped secrets 和 context thread；
+其他验证边界见[验证记录](docs/validation.md)。
 
 ## 开发验证
 
