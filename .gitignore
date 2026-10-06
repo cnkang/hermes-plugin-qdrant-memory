@@ -17,3 +17,5 @@ dist/
 *.db*
 manifests/
 qdrant-memory.json
+.agents/
+.vscode/
