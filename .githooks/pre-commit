@@ -1,0 +1,15 @@
+#!/bin/sh
+# Check the staged Python snapshot; unrelated working-tree edits cannot mask it.
+set -eu
+root=$(git rev-parse --show-toplevel)
+ruff_bin="$root/.lint-env/bin/ruff"
+if [ ! -x "$ruff_bin" ]; then
+  echo 'Ruff environment missing. Follow docs/development.md to build .lint-env.' >&2
+  exit 1
+fi
+snapshot=$(mktemp -d "${TMPDIR:-/tmp}/qdrant-pre-commit.XXXXXX")
+trap 'rm -rf "$snapshot"' EXIT HUP INT TERM
+git -C "$root" checkout-index --all --prefix="$snapshot/"
+cd "$snapshot"
+"$ruff_bin" check .
+"$ruff_bin" format --check .

@@ -1,15 +1,21 @@
+"""Scoped mutations, relation decisions and durable operation replay contracts."""
+
 import pytest
-from qdrant_client import QdrantClient, models as m
-from qdrant_memory.models import Scope, payload, point_id
+from qdrant_client import QdrantClient
+from qdrant_client import models as m
+
 from qdrant_memory.dedupe import decide
-from qdrant_memory.qdrant_store import QdrantStore
-from qdrant_memory.tools import dispatch
 from qdrant_memory.ledger import Ledger
+from qdrant_memory.models import Scope, payload, point_id
+from qdrant_memory.qdrant_store import QdrantStore
 from qdrant_memory.runtime import Runtime
-from .helpers import Embedder, LLM, config, runtime
+from qdrant_memory.tools import dispatch
+
+from .helpers import LLM, Embedder, config, runtime
 
 
 def test_scope_isolation_and_wrong_scope_tool_delete(tmp_path):
+    """Verify scope isolation and wrong scope tool delete."""
     rt = runtime(tmp_path)
     alice, bob = Scope("alice", "hermes"), Scope("bob", "hermes")
     identifier = point_id(alice, "manual_tool", "one")
@@ -21,11 +27,16 @@ def test_scope_isolation_and_wrong_scope_tool_delete(tmp_path):
     assert rt.store.count() == 1
     dispatch(rt, "qdrant_memory_update", {"id": identifier, "text": "dogs preferred"}, alice, "s")
     assert rt.store.get(identifier, alice).payload["text"] == "dogs preferred"
-    rt.store.close(); rt.ledger.close()
+    rt.store.close()
+    rt.ledger.close()
 
 
-@pytest.mark.parametrize("relation,action", [("SAME", "SKIP"), ("SUPERSEDES", "UPDATE"), ("CONFLICT", "ADD"), ("UNRELATED", "ADD")])
+@pytest.mark.parametrize(
+    "relation,action",
+    [("SAME", "SKIP"), ("SUPERSEDES", "UPDATE"), ("CONFLICT", "ADD"), ("UNRELATED", "ADD")],
+)
 def test_dedupe_never_assumes_similarity_is_identity(tmp_path, relation, action):
+    """Verify dedupe never assumes similarity is identity."""
     llm = LLM(relation)
     rt = runtime(tmp_path, llm=llm)
     scope = Scope("alice", "hermes")
@@ -34,29 +45,39 @@ def test_dedupe_never_assumes_similarity_is_identity(tmp_path, relation, action)
     result = decide("cats avoided", scope, rt.store, rt.extractor, rt.cfg["dedupe"])
     assert result[0] == action
     assert llm.calls[-1]["purpose"] == "qdrant-memory.relation"
-    rt.store.close(); rt.ledger.close()
+    rt.store.close()
+    rt.ledger.close()
 
 
 def test_dimension_and_fingerprint_mismatch_refuse(tmp_path):
+    """Verify dimension and fingerprint mismatch refuse."""
     client = QdrantClient(":memory:")
     cfg = config()
-    client.create_collection(cfg["qdrant"]["collection"], vectors_config={"dense": m.VectorParams(size=2, distance=m.Distance.COSINE)})
+    client.create_collection(
+        cfg["qdrant"]["collection"],
+        vectors_config={"dense": m.VectorParams(size=2, distance=m.Distance.COSINE)},
+    )
     store = QdrantStore(client, cfg, Embedder())
     with pytest.raises(ValueError, match="dimension"):
         store.initialize()
     client.close()
     rt = runtime(tmp_path)
-    changed = Embedder(); changed.fingerprint = "different-model-same-dims"
+    changed = Embedder()
+    changed.fingerprint = "different-model-same-dims"
     store = QdrantStore(rt.store.client, rt.cfg, changed)
     with pytest.raises(ValueError, match="fingerprint"):
         store.initialize()
-    rt.store.close(); rt.ledger.close()
+    rt.store.close()
+    rt.ledger.close()
 
 
 def test_pending_operation_resume_and_collection_partition(tmp_path):
+    """Verify pending operation resume and collection partition."""
     rt = runtime(tmp_path)
     scope = Scope("alice", "hermes")
-    key = rt.operation(point_id(scope, "manual_tool", "one"), "UPSERT", payload("cats", scope, "manual_tool"))
+    key = rt.operation(
+        point_id(scope, "manual_tool", "one"), "UPSERT", payload("cats", scope, "manual_tool")
+    )
     other = Ledger(tmp_path, "other-collection")
     assert other.rows("operations") == []
     rt.ledger.close()
@@ -65,15 +86,23 @@ def test_pending_operation_resume_and_collection_partition(tmp_path):
     assert rt.ledger.row("operations", key)["status"] == "COMMITTED"
     rt.recover()
     assert rt.store.count() == 1
-    other.close(); rt.store.close(); rt.ledger.close()
+    other.close()
+    rt.store.close()
+    rt.ledger.close()
 
 
 def test_terminal_write_records_one_failure_attempt(tmp_path, monkeypatch):
+    """Verify terminal write records one failure attempt."""
     rt = runtime(tmp_path)
     scope = Scope("alice", "hermes")
-    key = rt.operation(point_id(scope, "manual_tool", "one"), "UPSERT", payload("cats", scope, "manual_tool"))
+    key = rt.operation(
+        point_id(scope, "manual_tool", "one"), "UPSERT", payload("cats", scope, "manual_tool")
+    )
+
     def fail(records):
+        """Inject a deterministic failure at the exercised boundary."""
         raise ValueError("invalid remote payload")
+
     monkeypatch.setattr(rt.store, "upsert", fail)
     with pytest.raises(ValueError):
         rt.commit([key])

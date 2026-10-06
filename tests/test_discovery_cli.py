@@ -1,19 +1,27 @@
+"""Real Hermes discovery, CLI dry-run and LLM routing contracts."""
+
 import argparse
 import json
 import logging
 from pathlib import Path
-from plugins.memory import load_memory_provider, discover_plugin_cli_commands, find_provider_dir
+
+from plugins.memory import discover_plugin_cli_commands, find_provider_dir, load_memory_provider
+
 from qdrant_memory.cli import register_cli, run
 from qdrant_memory.extraction import Extractor
+
 from .helpers import LLM
 
 
 def test_real_directory_discovery_and_cli(tmp_path, monkeypatch, caplog):
+    """Verify real directory discovery and cli."""
     home = tmp_path / "home"
     (home / "plugins").mkdir(parents=True)
     root = Path(__file__).resolve().parents[1]
     (home / "plugins" / "qdrant-memory").symlink_to(root, target_is_directory=True)
-    (home / "config.yaml").write_text("memory:\n  provider: qdrant-memory\nplugins:\n  isolation: in_process\n")
+    (home / "config.yaml").write_text(
+        "memory:\n  provider: qdrant-memory\nplugins:\n  isolation: in_process\n"
+    )
     monkeypatch.setenv("HERMES_HOME", str(home))
     assert find_provider_dir("qdrant-memory") == home / "plugins" / "qdrant-memory"
     with caplog.at_level(logging.DEBUG):
@@ -22,7 +30,11 @@ def test_real_directory_discovery_and_cli(tmp_path, monkeypatch, caplog):
     assert provider.name == "qdrant-memory"
     assert provider.context.llm is not None
     assert {s["name"] for s in provider.get_tool_schemas()} == {
-        "qdrant_memory_search", "qdrant_memory_add", "qdrant_memory_update", "qdrant_memory_delete"}
+        "qdrant_memory_search",
+        "qdrant_memory_add",
+        "qdrant_memory_update",
+        "qdrant_memory_delete",
+    }
     commands = discover_plugin_cli_commands()
     assert any(c["name"] == "qdrant-memory" for c in commands)
     command = next(c for c in commands if c["name"] == "qdrant-memory")
@@ -32,6 +44,7 @@ def test_real_directory_discovery_and_cli(tmp_path, monkeypatch, caplog):
 
 
 def test_dry_run_has_no_target_or_ledger_writes(tmp_path):
+    """Verify dry run has no target or ledger writes."""
     source = tmp_path / "export.json"
     source.write_text(json.dumps([{"id": "one", "memory": "cats preferred"}]))
     parser = argparse.ArgumentParser()
@@ -43,6 +56,7 @@ def test_dry_run_has_no_target_or_ledger_writes(tmp_path):
 
 
 def test_llm_inherit_and_task_routing():
+    """Verify llm inherit and task routing."""
     llm = LLM()
     event = {"user": "cats", "assistant": "ack"}
     Extractor(llm, {"mode": "inherit"}).extract(event)

@@ -1,34 +1,70 @@
 """Profile-scoped configuration. Environment reads use Hermes's secret scope."""
-from copy import deepcopy
-from pathlib import Path
-from urllib.parse import urlsplit
+
 import hashlib
 import json
 import math
+from copy import deepcopy
+from pathlib import Path
+from urllib.parse import urlsplit
 
 DEFAULTS = {
     "schema_version": 1,
     "scope": {"user_id": "hermes-user", "agent_id": "hermes"},
-    "qdrant": {"mode": "embedded", "collection": "hermes_qdrant_memory", "url": None,
-               "api_key": None, "url_env": "QDRANT_URL", "api_key_env": "QDRANT_API_KEY",
-               "timeout_seconds": 5, "prefer_grpc": False},
+    "qdrant": {
+        "mode": "embedded",
+        "collection": "hermes_qdrant_memory",
+        "url": None,
+        "api_key": None,
+        "url_env": "QDRANT_URL",
+        "api_key_env": "QDRANT_API_KEY",
+        "timeout_seconds": 5,
+        "prefer_grpc": False,
+    },
     "llm": {"mode": "inherit", "task": "qdrant_memory_extraction"},
-    "embedding": {"mode": "plugin", "provider": "ollama", "model": "qwen3-embedding:4b",
-                  "base_url": "http://127.0.0.1:11434", "dimensions": 2560,
-                  "distance": "Cosine", "batch_size": 32, "send_dimensions": False,
-                  "api_key_env": "EMBEDDING_API_KEY", "timeout_seconds": 30},
-    "search": {"mode": "dense", "top_k": 8, "candidate_k": 24, "min_score": None,
-               "hnsw_ef": 128, "exact": False, "rerank": False},
-    "dedupe": {"similarity_review_threshold": 0.92, "high_similarity_threshold": 0.97,
-               "time_decay_half_life_days": 365},
-    "write": {"batch_size": 64, "max_attempts": 5, "backoff_base_seconds": 0.5,
-              "backoff_max_seconds": 30, "shutdown_timeout_seconds": 5},
-    "limits": {"max_text_bytes": 65536, "max_metadata_bytes": 32768,
-               "max_payload_bytes": 131072, "oversize_policy": "reject"},
+    "embedding": {
+        "mode": "plugin",
+        "provider": "ollama",
+        "model": "qwen3-embedding:4b",
+        "base_url": "http://127.0.0.1:11434",
+        "dimensions": 2560,
+        "distance": "Cosine",
+        "batch_size": 32,
+        "send_dimensions": False,
+        "api_key_env": "EMBEDDING_API_KEY",
+        "timeout_seconds": 30,
+    },
+    "search": {
+        "mode": "dense",
+        "top_k": 8,
+        "candidate_k": 24,
+        "min_score": None,
+        "hnsw_ef": 128,
+        "exact": False,
+        "rerank": False,
+    },
+    "dedupe": {
+        "similarity_review_threshold": 0.92,
+        "high_similarity_threshold": 0.97,
+        "time_decay_half_life_days": 365,
+    },
+    "write": {
+        "batch_size": 64,
+        "max_attempts": 5,
+        "backoff_base_seconds": 0.5,
+        "backoff_max_seconds": 30,
+        "shutdown_timeout_seconds": 5,
+    },
+    "limits": {
+        "max_text_bytes": 65536,
+        "max_metadata_bytes": 32768,
+        "max_payload_bytes": 131072,
+        "oversize_policy": "reject",
+    },
 }
 
 
 def merge(base, values):
+    """Deep-merge settings without modifying either input."""
     result = deepcopy(base)
     for key, value in values.items():
         if isinstance(value, dict) and isinstance(result.get(key), dict):
@@ -39,16 +75,21 @@ def merge(base, values):
 
 
 def secret(name):
+    """Read a secret from the active Hermes profile's secret scope."""
     from agent.secret_scope import get_secret
+
     return get_secret(name)
 
 
 def active_home():
+    """Resolve the current profile's home at call time."""
     from hermes_constants import get_hermes_home
+
     return Path(get_hermes_home())
 
 
 def validate_url(value, cloud=False):
+    """Reject invalid endpoints, embedded credentials and non-HTTPS Cloud URLs."""
     parsed = urlsplit(value or "")
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("Endpoint must be an HTTP(S) URL")
@@ -59,6 +100,7 @@ def validate_url(value, cloud=False):
 
 
 def validate(cfg):
+    """Validate supported modes, numeric bounds and caller scope."""
     if cfg["schema_version"] != 1:
         raise ValueError("Unsupported configuration schema")
     if cfg["qdrant"]["mode"] not in {"embedded", "server", "cloud"}:
@@ -72,6 +114,7 @@ def validate(cfg):
 
 
 def validate_llm(llm):
+    """Validate inherited, auxiliary-task and explicitly overridden LLM routing."""
     if llm["mode"] not in {"inherit", "task", "override"}:
         raise ValueError("Invalid LLM mode")
     if llm["mode"] == "task" and llm["task"] != "qdrant_memory_extraction":
@@ -81,6 +124,7 @@ def validate_llm(llm):
 
 
 def validate_embedding(cfg):
+    """Validate embedding selection and return the effective pipeline settings."""
     if cfg["embedding"]["mode"] not in {"plugin", "inherit"}:
         raise ValueError("Invalid embedding mode")
     if cfg["embedding"]["mode"] == "inherit" and not cfg["embedding"].get("inherit_fallback"):
@@ -95,19 +139,35 @@ def validate_embedding(cfg):
 
 
 def positive_number(group, key):
+    """Require finite positive numbers and integer types for count fields."""
     value = group[key]
-    if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value <= 0
+    ):
         raise ValueError(f"{key} must be positive")
     if key != "timeout_seconds" and not isinstance(value, int):
         raise ValueError(f"{key} must be an integer")
 
 
 def validate_numbers(cfg, emb):
-    positive = [(emb, "dimensions"), (emb, "batch_size"), (emb, "timeout_seconds"),
-                (cfg["search"], "top_k"), (cfg["search"], "candidate_k"),
-                (cfg["search"], "hnsw_ef"), (cfg["write"], "batch_size"),
-                (cfg["write"], "max_attempts"), (cfg["qdrant"], "timeout_seconds")]
-    positive += [(cfg["limits"], k) for k in ("max_text_bytes", "max_metadata_bytes", "max_payload_bytes")]
+    """Validate batching, timeouts, retry delays, payload limits and thresholds."""
+    positive = [
+        (emb, "dimensions"),
+        (emb, "batch_size"),
+        (emb, "timeout_seconds"),
+        (cfg["search"], "top_k"),
+        (cfg["search"], "candidate_k"),
+        (cfg["search"], "hnsw_ef"),
+        (cfg["write"], "batch_size"),
+        (cfg["write"], "max_attempts"),
+        (cfg["qdrant"], "timeout_seconds"),
+    ]
+    positive += [
+        (cfg["limits"], k) for k in ("max_text_bytes", "max_metadata_bytes", "max_payload_bytes")
+    ]
     for group, key in positive:
         positive_number(group, key)
     for key in ("backoff_base_seconds", "backoff_max_seconds", "shutdown_timeout_seconds"):
@@ -120,6 +180,7 @@ def validate_numbers(cfg, emb):
 
 
 def validate_search_scope(cfg):
+    """Validate dense retrieval options, size policy and identity fields."""
     if cfg["search"]["mode"] != "dense" or cfg["search"]["rerank"]:
         raise ValueError("Hybrid retrieval and reranking are future capabilities")
     if cfg["search"]["candidate_k"] < cfg["search"]["top_k"]:
@@ -133,8 +194,15 @@ def validate_search_scope(cfg):
 
 
 def load_config(home, overrides=None, resolve_secrets=True):
+    """Load profile settings, merge defaults/overrides and resolve scoped secrets.
+
+    Behavior comes from qdrant-memory.json. Secret resolution can be disabled for
+    local inspection; remote endpoint validation runs when resolution is enabled.
+    Invalid supported settings raise ValueError before service initialization.
+    """
     path = Path(home) / "qdrant-memory.json"
     from utils import read_json_or_empty
+
     values = read_json_or_empty(path) if path.exists() else {}
     if not isinstance(values, dict):
         raise ValueError("Plugin configuration must be an object")
@@ -148,6 +216,7 @@ def load_config(home, overrides=None, resolve_secrets=True):
 
 
 def resolve_qdrant_secrets(q):
+    """Resolve Qdrant endpoint and API key precedence in the active profile scope."""
     q["url"] = q.get("url") or secret(q["url_env"])
     q["api_key"] = q.get("api_key") or secret(q["api_key_env"])
     if q["mode"] != "embedded":
@@ -158,17 +227,35 @@ def resolve_qdrant_secrets(q):
 
 
 def embedding_config(cfg):
+    """Return the explicit plugin pipeline or configured inheritance fallback."""
     emb = cfg["embedding"]
-    return merge(DEFAULTS["embedding"], emb.get("inherit_fallback", {})) if emb["mode"] == "inherit" else emb
+    return (
+        merge(DEFAULTS["embedding"], emb.get("inherit_fallback", {}))
+        if emb["mode"] == "inherit"
+        else emb
+    )
 
 
 def fingerprint(emb):
-    keys = ("provider", "model", "dimensions", "distance", "document_instruction",
-            "query_instruction", "normalization_version", "base_url", "send_dimensions")
-    return hashlib.sha256(json.dumps({k: emb.get(k) for k in keys}, sort_keys=True).encode()).hexdigest()
+    """Hash pipeline settings so incompatible embeddings cannot share a collection."""
+    keys = (
+        "provider",
+        "model",
+        "dimensions",
+        "distance",
+        "document_instruction",
+        "query_instruction",
+        "normalization_version",
+        "base_url",
+        "send_dimensions",
+    )
+    return hashlib.sha256(
+        json.dumps({k: emb.get(k) for k in keys}, sort_keys=True).encode()
+    ).hexdigest()
 
 
 def ledger_namespace(cfg):
+    """Bind ledger work to a collection and canonical backend destination."""
     q = cfg["qdrant"]
     endpoint = str(Path(q["path"]).resolve()) if q["mode"] == "embedded" else q["url"].rstrip("/")
     backend = hashlib.sha256(json.dumps([q["mode"], endpoint]).encode()).hexdigest()

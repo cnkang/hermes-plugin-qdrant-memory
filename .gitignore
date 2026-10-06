@@ -4,6 +4,8 @@
 .test-env/
 .coverage-env/
 .scan-env/
+.lint-env/
+.ruff_cache/
 .host/
 .coverage*
 coverage.xml

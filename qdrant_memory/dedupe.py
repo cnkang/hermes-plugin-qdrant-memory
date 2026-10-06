@@ -1,8 +1,14 @@
 """Similarity selects candidates; factual relations decide mutation."""
+
 from .models import content_hash
 
 
 def decide(text, scope, store, extractor, cfg):
+    """Return ADD, UPDATE or SKIP after scoped hash and factual relation checks.
+
+    Similarity only selects a review candidate. A high score alone never authorizes
+    replacement; unresolved contradictions produce a separate linked memory.
+    """
     exact = store.lookup_hash(scope, content_hash(text))
     if exact:
         return "SKIP", str(exact.id), {}

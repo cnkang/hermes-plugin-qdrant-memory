@@ -1,0 +1,9 @@
+target-version = "py311"
+line-length = 100
+extend-exclude = [".host", ".venv", ".test-env", ".coverage-env", ".scan-env", ".lint-env", ".hermes-test-env"]
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "D"]
+
+[lint.pydocstyle]
+convention = "google"
