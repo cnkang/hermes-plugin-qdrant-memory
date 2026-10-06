@@ -5,7 +5,7 @@ Snyk dependency and code jobs run
 independently in parallel. Both Python versions run files serially because remote
 tests restart their disposable server. Python 3.14 collects coverage; SonarCloud
 waits for the test matrix and consumes that artifact, then waits for its quality
-gate. Snyk runs dependency and code scans and monitors main. Tests use an
+gate. Snyk runs dependency and code scans and monitors main. Tests use
 three immutable Hermes hosts: minimum v2026.9.24 (`f97608f`), pinned `4787e4d`,
 and reviewed upstream main `3dadeb9`. A separately pinned PM prepares dependency
 environments because the minimum release predates `pm.build_env`. Each lane runs
@@ -13,7 +13,10 @@ a digest-pinned Qdrant v1.15.5 service and requires REST/gRPC integration, inclu
 restart persistence. Ruff is pinned to 0.15.1 in CI and the local
 [pre-commit setup](development.md); lint includes docstrings and import ordering.
 Actions use immutable SHA pins. Authenticated scans run on same-repository PRs,
-pushes only to `main` and `codex/**`, and manual workflow dispatches. Fork PRs run
+pushes to `main` and `codex/**`, and manual workflow dispatches. The credentialed
+Cloud smoke lane is narrower: it runs only on `main` pushes (plus manual dispatch)
+because branch pushes receive repository secrets, so `codex/**` branches are
+excluded from it. Fork PRs run
 tests without scanner credentials; their scanner jobs are skipped by conditions.
 A missing required token fails a scanner job only when that job is scheduled.
 The `Required security scan gate` runs with `always()` and fails for any failed,
@@ -24,8 +27,11 @@ of a successful scan. The gate needs no secrets and executes no PR code.
 
 ## Optional authenticated Cloud smoke
 
-**Optional Qdrant Cloud smoke** runs on repository pushes to main/codex branches
-and supports manual dispatch after the workflow reaches the default branch. Add
+**Optional Qdrant Cloud smoke** runs on pushes to `main` only and supports
+manual dispatch after the workflow reaches the default branch. Branch pushes
+(including `codex/**`) are excluded because the workflow uses repository secrets;
+restricting the trigger to `main` prevents exposing Cloud credentials to arbitrary
+branch code. A concurrency group avoids shared collection-prefix races. Add
 Actions secrets `QDRANT_CLOUD_URL` (HTTPS) and `QDRANT_CLOUD_API_KEY` (Database API
 key with collection creation/deletion access). Optional
 `QDRANT_CLOUD_COLLECTION_PREFIX` defaults to `hermes_smoke_`; a random UUID suffix

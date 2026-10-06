@@ -65,8 +65,10 @@ dimension-sending policy; credentials are excluded.
 
 Point UUIDs include user/agent scope and source identity. Operation keys additionally
 include destination namespace and prepared payload. The destination namespace binds
-the collection to its backend/path, preventing replay into another endpoint with
-the same collection name. New committed work supersedes earlier open writes to the
+the collection to the canonical `backend_destination` identity — a hash of the
+normalized endpoint address (or embedded path), so mode labels and URL aliases
+(e.g. server `https://x` vs. cloud `https://x:443/`) resolve to the same namespace.
+This prevents replay into another endpoint with the same collection name. New committed work supersedes earlier open writes to the
 same point. Migration repair uses a new generation when stale open work exists,
 even if the target already contains the incoming payload.
 
