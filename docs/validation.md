@@ -32,8 +32,9 @@ actionlint, PM lock checks and staged-snapshot hooks are required for delivery.
 Check authenticated SonarCloud/Snyk and external review results on the delivered
 SHA; configuration alone is not evidence.
 
-Cloud was not available locally. The separate manual **Optional Qdrant Cloud
-smoke** uses Actions URL/key/prefix secrets and a disposable collection. Missing
+Cloud was not available locally. The separate **Optional Qdrant Cloud
+smoke** uses Actions URL/key/prefix secrets on repository pushes or manual dispatch
+and a disposable collection. Missing
 credentials explicitly skip; a skip does not establish Cloud compatibility. See
 [CI setup](ci.md). The earlier Ollama synthetic pilot below was not rerun in this
 review and is not a production retrieval claim.

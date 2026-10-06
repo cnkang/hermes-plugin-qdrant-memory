@@ -1,5 +1,7 @@
 name: Optional Qdrant Cloud smoke
 on:
+  push:
+    branches: [main, 'codex/**']
   workflow_dispatch:
 
 permissions:

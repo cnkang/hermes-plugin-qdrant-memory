@@ -24,7 +24,8 @@ of a successful scan. The gate needs no secrets and executes no PR code.
 
 ## Optional authenticated Cloud smoke
 
-Run **Optional Qdrant Cloud smoke** manually on the reviewed branch after adding
+**Optional Qdrant Cloud smoke** runs on repository pushes to main/codex branches
+and supports manual dispatch after the workflow reaches the default branch. Add
 Actions secrets `QDRANT_CLOUD_URL` (HTTPS) and `QDRANT_CLOUD_API_KEY` (Database API
 key with collection creation/deletion access). Optional
 `QDRANT_CLOUD_COLLECTION_PREFIX` defaults to `hermes_smoke_`; a random UUID suffix
