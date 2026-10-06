@@ -151,13 +151,17 @@ host and use a temporary `HERMES_HOME`.
 cd /path/to/hermes-agent
 python -m pm.build_env --source /path/to/hermes-agent --group test \
   --export-requirements /tmp/hermes-qdrant-test-requirements.txt
+python -c 'import sys, tomllib; from pathlib import Path; p = tomllib.loads(Path(sys.argv[1]).read_text()); print("\n".join(p["project"]["dependencies"] + p["dependency-groups"]["test"]))' \
+  /path/to/hermes-plugin-qdrant-memory/pyproject.toml >> /tmp/hermes-qdrant-test-requirements.txt
 python -m pm.build_env --out /path/to/hermes-plugin-qdrant-memory/.test-env \
-  --requirements /tmp/hermes-qdrant-test-requirements.txt \
-  --requirement 'qdrant-client>=1.15,<2' --requirement 'httpx>=0.28,<1' \
-  --requirement 'pytest-cov>=6,<8'
+  --requirements /tmp/hermes-qdrant-test-requirements.txt
 HERMES_PYTHON=/path/to/hermes-plugin-qdrant-memory/.test-env/bin/python \
   scripts/run_tests.sh /path/to/hermes-plugin-qdrant-memory/tests -j 1 --file-retries 0
 ```
+
+The plugin's `test` development dependency group is read from `pyproject.toml`.
+The tested host PM exports runtime requirements only, so append the plugin runtime
+dependencies and test group before building the combined environment.
 
 Run the real embedding pilot from the plugin checkout with the host import path:
 
