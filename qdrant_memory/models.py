@@ -117,6 +117,8 @@ def enforce_limits(value, limits):
         value["text"] = (
             value["text"].encode()[: limits["max_text_bytes"]].decode("utf-8", errors="ignore")
         )
+        if not normalize(value["text"]):
+            raise ValueError("Memory text must be nonempty after truncation")
         value["content_hash"] = content_hash(value["text"])
         value["metadata"] = {**value["metadata"], "truncated": True}
     for key, bound in (("metadata", "max_metadata_bytes"), (None, "max_payload_bytes")):
