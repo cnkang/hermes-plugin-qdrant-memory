@@ -2,10 +2,10 @@
 
 import os
 import subprocess
-import textwrap
 from pathlib import Path
 
 import pytest
+from ruamel.yaml import YAML
 
 CASES = [("success", "success", "success", "success", "success", 0)] + [
     tuple(result if position == failed else "success" for position in range(5)) + (1,)
@@ -20,8 +20,7 @@ def test_required_gate_executes_actual_workflow_step(lint, tests, sonar, snyk, s
     workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text(
         encoding="utf-8"
     )
-    gate = workflow.split("\n  scan-gate:\n", 1)[1]
-    command = textwrap.dedent(gate.split("        run: |\n", 1)[1])
+    command = YAML(typ="safe").load(workflow)["jobs"]["scan-gate"]["steps"][0]["run"]
     result = subprocess.run(
         ["bash", "-e", "-c", command],
         env={
