@@ -3,7 +3,7 @@
 import math
 from typing import Protocol
 
-from .config import embedding_config, fingerprint, secret
+from .config import embedding_config, fingerprint, secret, validate_url
 
 
 class EmbeddingProvider(Protocol):
@@ -42,10 +42,11 @@ class HTTPEmbeddingProvider:
         """Bind the pipeline identity and create or accept an owned HTTP client."""
         import httpx
 
+        key = cfg.get("api_key") or secret(cfg.get("api_key_env", "EMBEDDING_API_KEY"))
+        validate_url(cfg["base_url"], api_key=key)
         self.cfg = cfg
         self.dimensions = int(cfg["dimensions"])
         self.fingerprint = fingerprint(cfg)
-        key = cfg.get("api_key") or secret(cfg.get("api_key_env", "EMBEDDING_API_KEY"))
         self.client = client or httpx.Client(
             timeout=cfg["timeout_seconds"],
             headers={"Authorization": f"Bearer {key}"} if key else {},
