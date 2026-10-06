@@ -5,8 +5,8 @@ from .embedding import validate_vectors
 import time
 
 IDENTITY_ID = point_id(Scope("__schema__", None), "schema", "embedding")
-INDEXES = {**{k: "keyword" for k in ("user_id", "agent_id", "session_id", "category", "source",
-                                     "content_hash", "cloud_origin.id")},
+INDEXES = {**dict.fromkeys(("user_id", "agent_id", "session_id", "category", "source",
+                           "content_hash", "cloud_origin.id"), "keyword"),
            "created_at": "datetime", "updated_at": "datetime", "schema_version": "integer"}
 
 
@@ -54,6 +54,13 @@ class QdrantStore:
             raise ValueError("Collection must have a named dense vector")
         if schema["dense"].size != self.embedder.dimensions or schema["dense"].distance != distance:
             raise ValueError("Collection dimension or distance mismatch")
+        self._validate_identity(vectors[0], create)
+        if create and self.cfg["qdrant"]["mode"] != "embedded":
+            for key, kind in INDEXES.items():
+                self.client.create_payload_index(self.collection, field_name=key, field_schema=kind, wait=True)
+
+    def _validate_identity(self, vector, create):
+        from qdrant_client import models as m
         identity = self.client.retrieve(self.collection, ids=[IDENTITY_ID], with_payload=True)
         if identity:
             if identity[0].payload.get("embedding_fingerprint") != self.embedder.fingerprint:
@@ -64,11 +71,8 @@ class QdrantStore:
             if self.client.count(self.collection, exact=True).count:
                 raise ValueError("Nonempty collection has no trusted embedding fingerprint")
             self.client.upsert(self.collection, points=[m.PointStruct(
-                id=IDENTITY_ID, vector={"dense": vectors[0]},
+                id=IDENTITY_ID, vector={"dense": vector},
                 payload={"_qdrant_memory_schema": 1, "embedding_fingerprint": self.embedder.fingerprint})], wait=True)
-        if create and self.cfg["qdrant"]["mode"] != "embedded":
-            for key, kind in INDEXES.items():
-                self.client.create_payload_index(self.collection, field_name=key, field_schema=kind, wait=True)
 
     def search(self, query, scope, filters=None, top_k=None):
         from qdrant_client import models as m

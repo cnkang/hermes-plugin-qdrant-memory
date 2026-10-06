@@ -18,7 +18,8 @@ def test_real_directory_discovery_and_cli(tmp_path, monkeypatch, caplog):
     assert find_provider_dir("qdrant-memory") == home / "plugins" / "qdrant-memory"
     with caplog.at_level(logging.DEBUG):
         provider = load_memory_provider("qdrant-memory")
-    assert provider is not None and provider.name == "qdrant-memory", caplog.text
+    assert provider is not None, caplog.text
+    assert provider.name == "qdrant-memory"
     assert provider.context.llm is not None
     assert {s["name"] for s in provider.get_tool_schemas()} == {
         "qdrant_memory_search", "qdrant_memory_add", "qdrant_memory_update", "qdrant_memory_delete"}

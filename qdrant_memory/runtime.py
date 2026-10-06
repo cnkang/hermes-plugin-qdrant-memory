@@ -40,25 +40,28 @@ class Runtime:
             while end < len(rows) and rows[end]["action"] == action:
                 end += 1
             group = rows[start:end]
-            def apply():
-                started = time.monotonic()
-                if action == "DELETE":
-                    self.store.delete([r["point_id"] for r in group])
-                else:
-                    self.store.upsert([(r["point_id"], json.loads(r["payload_json"])) for r in group])
-                    self.ledger.measure("upsert_points_per_second", len(group) / max(time.monotonic() - started, 1e-9))
-            def failed(exc):
-                for row in group:
-                    self.ledger.failure("operations", row["idempotency_key"], exc)
-            try:
-                run_with_retry(apply, self.cfg["write"], failed)
-            except Exception as exc:
-                for row in group:
-                    self.ledger.failure("operations", row["idempotency_key"], exc, terminal=True)
-                raise
-            for row in group:
-                self.ledger.finish("operations", row["idempotency_key"])
+            self._commit_action(action, group)
             start = end
+
+    def _commit_action(self, action, group):
+        def apply():
+            started = time.monotonic()
+            if action == "DELETE":
+                self.store.delete([r["point_id"] for r in group])
+            else:
+                self.store.upsert([(r["point_id"], json.loads(r["payload_json"])) for r in group])
+                self.ledger.measure("upsert_points_per_second", len(group) / max(time.monotonic() - started, 1e-9))
+        def failed(exc):
+            for row in group:
+                self.ledger.failure("operations", row["idempotency_key"], exc)
+        try:
+            run_with_retry(apply, self.cfg["write"], failed)
+        except Exception as exc:
+            for row in group:
+                self.ledger.failure("operations", row["idempotency_key"], exc, terminal=True, count_attempt=False)
+            raise
+        for row in group:
+            self.ledger.finish("operations", row["idempotency_key"])
 
     def recover(self):
         failures = 0

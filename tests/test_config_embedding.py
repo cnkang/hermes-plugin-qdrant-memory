@@ -17,7 +17,8 @@ def test_scoped_config_and_secret_safe_save(tmp_path, monkeypatch):
     assert cfg["qdrant"]["api_key"] == "explicit-key"
     save_config({"api_key": "never-save-me", "embedding_api_key": "nor-this"}, tmp_path)
     saved = json.loads(path.read_text())
-    assert "api_key" not in saved["qdrant"] and "api_key" not in saved["embedding"]
+    assert "api_key" not in saved["qdrant"]
+    assert "api_key" not in saved["embedding"]
     assert path.stat().st_mode & 0o777 == 0o600
     assert load_config(tmp_path)["qdrant"]["api_key"] == "sentinel-key"
 
@@ -25,7 +26,8 @@ def test_scoped_config_and_secret_safe_save(tmp_path, monkeypatch):
 def test_hash_identity_and_payload_limits():
     a, b = Scope("alice", "hermes"), Scope("bob", "hermes")
     assert content_hash(" hello\nworld ") == content_hash("hello world")
-    assert point_id(a, "mem0", "id") == point_id(a, "mem0", "id")
+    reconstructed = Scope(**json.loads(json.dumps(a.as_dict())))
+    assert point_id(a, "mem0", "id") == point_id(reconstructed, "mem0", "id")
     assert point_id(a, "mem0", "id") != point_id(b, "mem0", "id")
     value = payload("é" * 10, a, "manual_tool")
     limits = merge(DEFAULTS["limits"], {"max_text_bytes": 5})

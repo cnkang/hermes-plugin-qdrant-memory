@@ -65,12 +65,22 @@ def validate(cfg):
         raise ValueError("Invalid Qdrant mode")
     if not isinstance(cfg["qdrant"]["collection"], str) or not cfg["qdrant"]["collection"]:
         raise ValueError("Collection is required")
-    if cfg["llm"]["mode"] not in {"inherit", "task", "override"}:
+    validate_llm(cfg["llm"])
+    emb = validate_embedding(cfg)
+    validate_numbers(cfg, emb)
+    validate_search_scope(cfg)
+
+
+def validate_llm(llm):
+    if llm["mode"] not in {"inherit", "task", "override"}:
         raise ValueError("Invalid LLM mode")
-    if cfg["llm"]["mode"] == "task" and cfg["llm"]["task"] != "qdrant_memory_extraction":
+    if llm["mode"] == "task" and llm["task"] != "qdrant_memory_extraction":
         raise ValueError("Use the plugin's registered auxiliary task")
-    if cfg["llm"]["mode"] == "override" and not all(cfg["llm"].get(k) for k in ("provider", "model")):
+    if llm["mode"] == "override" and not all(llm.get(k) for k in ("provider", "model")):
         raise ValueError("LLM override requires provider and model")
+
+
+def validate_embedding(cfg):
     if cfg["embedding"]["mode"] not in {"plugin", "inherit"}:
         raise ValueError("Invalid embedding mode")
     if cfg["embedding"]["mode"] == "inherit" and not cfg["embedding"].get("inherit_fallback"):
@@ -81,16 +91,25 @@ def validate(cfg):
     validate_url(emb["base_url"])
     if emb["distance"] not in {"Cosine", "Dot", "Euclid"}:
         raise ValueError("Unsupported distance metric")
+    return emb
+
+
+def positive_number(group, key):
+    value = group[key]
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{key} must be positive")
+    if key != "timeout_seconds" and not isinstance(value, int):
+        raise ValueError(f"{key} must be an integer")
+
+
+def validate_numbers(cfg, emb):
     positive = [(emb, "dimensions"), (emb, "batch_size"), (emb, "timeout_seconds"),
                 (cfg["search"], "top_k"), (cfg["search"], "candidate_k"),
                 (cfg["search"], "hnsw_ef"), (cfg["write"], "batch_size"),
                 (cfg["write"], "max_attempts"), (cfg["qdrant"], "timeout_seconds")]
     positive += [(cfg["limits"], k) for k in ("max_text_bytes", "max_metadata_bytes", "max_payload_bytes")]
     for group, key in positive:
-        if not isinstance(group[key], (int, float)) or isinstance(group[key], bool) or not math.isfinite(group[key]) or group[key] <= 0:
-            raise ValueError(f"{key} must be positive")
-        if key not in {"timeout_seconds"} and not isinstance(group[key], int):
-            raise ValueError(f"{key} must be an integer")
+        positive_number(group, key)
     for key in ("backoff_base_seconds", "backoff_max_seconds", "shutdown_timeout_seconds"):
         value = cfg["write"][key]
         if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
@@ -98,6 +117,9 @@ def validate(cfg):
     for key in ("similarity_review_threshold", "high_similarity_threshold"):
         if not 0 <= cfg["dedupe"][key] <= 1:
             raise ValueError("Similarity threshold must be between zero and one")
+
+
+def validate_search_scope(cfg):
     if cfg["search"]["mode"] != "dense" or cfg["search"]["rerank"]:
         raise ValueError("Hybrid retrieval and reranking are future capabilities")
     if cfg["search"]["candidate_k"] < cfg["search"]["top_k"]:
@@ -121,14 +143,18 @@ def load_config(home, overrides=None, resolve_secrets=True):
     q = cfg["qdrant"]
     q["path"] = str(Path(q.get("path") or Path(home) / "qdrant-memory" / "qdrant").expanduser())
     if resolve_secrets:
-        q["url"] = q.get("url") or secret(q["url_env"])
-        q["api_key"] = q.get("api_key") or secret(q["api_key_env"])
-        if q["mode"] != "embedded":
-            q["url"] = q["url"] or ("http://127.0.0.1:6333" if q["mode"] == "server" else None)
-            validate_url(q["url"], cloud=q["mode"] == "cloud")
-            if q["mode"] == "cloud" and not q["api_key"]:
-                raise ValueError("Cloud requires a scoped QDRANT_API_KEY")
+        resolve_qdrant_secrets(q)
     return cfg
+
+
+def resolve_qdrant_secrets(q):
+    q["url"] = q.get("url") or secret(q["url_env"])
+    q["api_key"] = q.get("api_key") or secret(q["api_key_env"])
+    if q["mode"] != "embedded":
+        q["url"] = q["url"] or ("http://127.0.0.1:6333" if q["mode"] == "server" else None)
+        validate_url(q["url"], cloud=q["mode"] == "cloud")
+        if q["mode"] == "cloud" and not q["api_key"]:
+            raise ValueError("Cloud requires a scoped QDRANT_API_KEY")
 
 
 def embedding_config(cfg):

@@ -84,11 +84,11 @@ class Ledger:
                     (SELECT point_id FROM operations WHERE idempotency_key=?) AND rowid <
                     (SELECT rowid FROM operations WHERE idempotency_key=?) AND collection=? AND status IN ('PENDING','FAILED')""", (key, key, self.collection))
 
-    def failure(self, table, key, exc, terminal=False):
+    def failure(self, table, key, exc, terminal=False, count_attempt=True):
         column = {"events": "event_id", "operations": "idempotency_key"}[table]
         with self.lock, self.db:
-            self.db.execute(f"UPDATE {table} SET attempts=attempts+1,last_error=?,status=? WHERE {column}=?",
-                            (json.dumps(safe_error(exc)), "FAILED" if terminal else "PENDING", key))
+            self.db.execute(f"UPDATE {table} SET attempts=attempts+?,last_error=?,status=? WHERE {column}=?",
+                            (int(count_attempt), json.dumps(safe_error(exc)), "FAILED" if terminal else "PENDING", key))
 
     def retry_failed(self):
         with self.lock, self.db:

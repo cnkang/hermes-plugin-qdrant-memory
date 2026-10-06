@@ -25,6 +25,10 @@ automatic reviews, including drafts, and review progress checks. It is not a
 GitHub Actions executable and does not need a made-up CI token.
 [Configuration reference](https://docs.coderabbit.ai/reference/configuration).
 
+At onboarding, CodeRabbit reported that repositories with fewer than 10 stars
+require a manual review trigger despite `auto_review.enabled`. A skipped review
+check is not evidence of a completed code review.
+
 Configure secrets through GitHub Settings → Secrets and variables → Actions or
 `gh secret set`; never paste their values into issues, PRs or logs. Missing tokens
 produce explicit CI failures rather than a misleading green scan. External App
