@@ -124,11 +124,11 @@ These plugin settings do not bypass Hermes trust grants or contain LLM credentia
 | Setting | Default | Contract |
 | --- | --- | --- |
 | qdrant.collection | hermes_qdrant_memory | A separate plugin-managed collection with named dense vectors |
-| qdrant.path | Active home/qdrant-memory/qdrant | Embedded persistence path; keep distinct across profiles |
+| qdrant.path | Active home/qdrant-memory/qdrant | Relative paths resolve against active home; keep distinct across profiles |
 | scope.user_id / agent_id | hermes-user / hermes | Explicit gateway authors take precedence for their turns; agent may be null |
 | search.top_k / candidate_k | 8 / 24 | Candidate count must be at least result count |
 | write.max_attempts | 5 | Total attempt budget, not five retries after the first attempt |
-| write.shutdown_timeout_seconds | 5 | Wait budget; durable pending work remains after exit |
+| write.shutdown_timeout_seconds | 5 | Drain deadline; timeout raises and retains writer ownership until in-flight I/O exits |
 | limits.max_text_bytes | 65536 | UTF-8 text size; optional explicit text truncation |
 | limits.max_metadata_bytes | 32768 | Metadata oversize is always rejected |
 | limits.max_payload_bytes | 131072 | Full payload oversize is always rejected |

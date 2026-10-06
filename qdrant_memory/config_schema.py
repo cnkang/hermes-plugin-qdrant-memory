@@ -70,7 +70,8 @@ def save_config(values, hermes_home):
             cfg["qdrant"][key] = values[key] or None
     for key in ("provider", "model", "base_url", "dimensions"):
         if "embedding_" + key in values:
-            cfg["embedding"][key] = values["embedding_" + key]
+            value = values["embedding_" + key]
+            cfg["embedding"][key] = int(value) if key == "dimensions" else value
     # Secrets belong to Hermes's .env wizard, including keys in legacy config.
     cfg["qdrant"].pop("api_key", None)
     cfg["embedding"].pop("api_key", None)

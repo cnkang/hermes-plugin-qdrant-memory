@@ -6,6 +6,7 @@ import logging
 import time
 import uuid
 from collections import deque
+from contextlib import ExitStack
 from contextvars import copy_context
 from threading import Condition, RLock
 
@@ -17,6 +18,7 @@ from .embedding import build_embedder
 from .extraction import Extractor
 from .ledger import Ledger
 from .models import Scope
+from .ownership import WriterLease
 from .qdrant_store import QdrantStore, build_client
 from .retry import safe_error
 from .runtime import Runtime
@@ -27,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 class QdrantMemoryProvider(MemoryProvider):
     """Adapt Hermes lifecycle hooks to a durable, scoped serial memory worker."""
+
+    pre_compress_checkpoint_api_version = 2
 
     def __init__(self, plugin_context=None, *, embedder=None, client=None, overrides=None):
         """Initialize synchronization state and optional injected service clients."""
@@ -41,6 +45,7 @@ class QdrantMemoryProvider(MemoryProvider):
         self._busy = False
         self._cache_hits = self._cache_calls = 0
         self._latencies = []
+        self._stop_at = None
 
     @property
     def name(self):
@@ -75,22 +80,28 @@ class QdrantMemoryProvider(MemoryProvider):
         self._scopes[session_id] = Scope(
             str(kwargs.get("user_id") or self.default_scope.user_id), self.default_scope.agent_id
         )
-        self.embedder = self.embedder or build_embedder(self.context, self.cfg)
-        self.client = self.client or build_client(self.cfg)
-        self.store = QdrantStore(self.client, self.cfg, self.embedder)
-        self.ledger = None
+        self._resources = ExitStack()
         try:
+            lease = WriterLease.for_config(self.home, self.cfg)
+            self._resources.callback(lease.close)
+            self.embedder = self.embedder or build_embedder(self.context, self.cfg)
+            if hasattr(self.embedder, "close"):
+                self._resources.callback(self.embedder.close)
+            self.client = self.client or build_client(self.cfg)
+            self.store = QdrantStore(self.client, self.cfg, self.embedder)
+            self._resources.callback(self.store.close)
             self.store.initialize()
             self.ledger = Ledger(self.home, ledger_namespace(self.cfg))
+            self._resources.callback(self.ledger.close)
             self.runtime = Runtime(
-                self.cfg, self.store, self.ledger, Extractor(self.context.llm, self.cfg["llm"])
+                self.cfg,
+                self.store,
+                self.ledger,
+                Extractor(self.context.llm, self.cfg["llm"]),
+                stop_requested=self._stop_requested,
             )
         except Exception:
-            if self.ledger is not None:
-                self.ledger.close()
-            self.store.close()
-            if hasattr(self.embedder, "close"):
-                self.embedder.close()
+            self._resources.close()
             raise
         self._accepting = True
         self._worker = spawn_context_thread(self._work, name="qdrant-memory-writer")
@@ -113,6 +124,8 @@ class QdrantMemoryProvider(MemoryProvider):
                 with self._condition:
                     while not self._jobs and self._accepting:
                         self._condition.wait()
+                    if self._stop_requested():
+                        self._jobs.clear()
                     if not self._jobs:
                         return
                     context, kind, value = self._jobs.popleft()
@@ -128,12 +141,12 @@ class QdrantMemoryProvider(MemoryProvider):
                         self._busy = False
                         self._condition.notify_all()
         finally:
-            if self._cache_calls:
-                self.ledger.measure("prefetch_cache_hit_rate", self._cache_hits / self._cache_calls)
-            self.store.close()
-            self.ledger.close()
-            if hasattr(self.embedder, "close"):
-                self.embedder.close()
+            with self.runtime.lock:
+                self._resources.close()
+
+    def _stop_requested(self):
+        """Check the drain deadline between durable work phases."""
+        return self._stop_at is not None and time.monotonic() >= self._stop_at
 
     def _run_job(self, kind, value):
         """Run recovery, event preparation or generation-checked background recall."""
@@ -235,7 +248,13 @@ class QdrantMemoryProvider(MemoryProvider):
             cached = self._cache.get(session)
             if cached and cached[0] == self._scopes.get(session, self.default_scope):
                 self._cache_hits += 1
+                if self._accepting:
+                    self.ledger.measure(
+                        "prefetch_cache_hit_rate", self._cache_hits / self._cache_calls
+                    )
                 return cached[1]
+            if self._accepting:
+                self.ledger.measure("prefetch_cache_hit_rate", self._cache_hits / self._cache_calls)
         return ""
 
     def on_session_switch(self, new_session_id, **kwargs):
@@ -246,6 +265,9 @@ class QdrantMemoryProvider(MemoryProvider):
                 str(kwargs.get("user_id") or self.default_scope.user_id),
                 self.default_scope.agent_id,
             )
+            if kwargs.get("reset"):
+                self._authors.pop(new_session_id, None)
+                self._turns.pop(new_session_id, None)
             self._cache.clear()
             for session in self._generations:
                 self._generations[session] += 1
@@ -267,9 +289,24 @@ class QdrantMemoryProvider(MemoryProvider):
                 }
             )
 
-    def on_pre_compress(self, messages):
-        """Queue the session-end extraction backstop without changing compression content."""
-        self.on_session_end(messages)
+    def on_pre_compress(self, messages, *, require_checkpoint=False):
+        """Commit host-normalized direct evidence before permitting lossy compression."""
+        self._event(
+            {
+                "kind": "checkpoint",
+                "source": "pre_compress",
+                "session_id": self.session_id,
+                "scope": self._scope(self.session_id).as_dict(),
+                "evidence": messages,
+                "extract": self._primary and len(self._authors.get(self.session_id, set())) <= 1,
+                "user": "\n".join(
+                    str(m.get("content", "")) for m in messages if m.get("role") == "user"
+                ),
+                "assistant": "\n".join(
+                    str(m.get("content", "")) for m in messages if m.get("role") == "assistant"
+                ),
+            }
+        )
         return ""
 
     def on_memory_write(self, action, target, content, metadata=None):
@@ -308,7 +345,11 @@ class QdrantMemoryProvider(MemoryProvider):
         """Dispatch a scoped tool and serialize its result or sanitized failure."""
         session = kwargs.get("session_id") or self.session_id
         try:
-            result = dispatch(self.runtime, tool_name, args, self._scope(session), session)
+            with self.runtime.lock:
+                with self._condition:
+                    if not self._accepting:
+                        raise RuntimeError("Provider is shut down")
+                result = dispatch(self.runtime, tool_name, args, self._scope(session), session)
             return json.dumps(result, ensure_ascii=False)
         except Exception as exc:
             return json.dumps({"error": safe_error(exc)})
@@ -320,10 +361,6 @@ class QdrantMemoryProvider(MemoryProvider):
     def save_config(self, values, hermes_home):
         """Persist non-secret setup values for the specified profile home."""
         save_config(values, hermes_home)
-
-    def post_setup(self, hermes_home):
-        """Validate saved settings without probing services or changing collections."""
-        load_config(hermes_home)
 
     def wait_idle(self, timeout=30):
         """Wait for queued and active work, returning False on timeout."""
@@ -337,9 +374,16 @@ class QdrantMemoryProvider(MemoryProvider):
             return True
 
     def shutdown(self):
-        """Stop work admission and wait briefly while the worker owns final cleanup."""
+        """Bound queued drain and retain ownership until an active request finishes."""
         with self._condition:
             self._accepting = False
+            timeout = self.cfg["write"]["shutdown_timeout_seconds"]
+            self._stop_at = time.monotonic() + timeout
+            self._jobs = deque(job for job in self._jobs if job[1] != "prefetch")
             self._condition.notify_all()
         if self._worker:
-            self._worker.join(timeout=self.cfg["write"]["shutdown_timeout_seconds"])
+            self._worker.join(timeout=timeout)
+            if self._worker.is_alive():
+                with self._condition:
+                    self._jobs.clear()
+                raise TimeoutError("Shutdown deadline exceeded; worker retains writer ownership")
