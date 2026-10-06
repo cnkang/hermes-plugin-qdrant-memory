@@ -173,6 +173,8 @@ def migrate(
         if resume
         else None
     )
+    if manifest is not None and stale_skips(runtime, manifest):
+        manifest = None
     if manifest is None:
         manifest = create_manifest(runtime, planned, source_type, source_identifier, source_sha256)
     try:
@@ -192,6 +194,22 @@ def migrate(
     if verify and not verify_manifest(runtime.store, manifest)["ok"]:
         raise ValueError("Migration verification failed")
     return manifest
+
+
+def stale_skips(runtime, manifest):
+    """Check skipped records still match settled target data before resuming."""
+    with runtime.lock:
+        for identifier, record in manifest["records"].items():
+            if record["action"] != "SKIP":
+                continue
+            point = runtime.store.get(identifier, Scope(**record["scope"]))
+            if (
+                runtime.ledger.has_open_operations(identifier)
+                or point is None
+                or digest(point.payload) != record["payload_hash"]
+            ):
+                return True
+    return False
 
 
 def durable_plan(runtime, records, source_type, source_identifier, source_sha256):
@@ -269,14 +287,14 @@ def create_manifest(runtime, planned, source_type, source_identifier, source_sha
                 action, key = "SKIP", None
             else:
                 action = "UPDATE" if old else "ADD"
-                # A repair generation bypasses an identical, already-committed key.
+                # Fresh plans must repair drift even if an identical write committed before.
                 key = runtime.operation(
                     identifier,
                     "UPSERT",
                     value,
                     "mem0:" + value["cloud_origin"]["id"],
                     value["updated_at"],
-                    generation=manifest["migration_id"] if open_write else "",
+                    generation=manifest["migration_id"],
                 )
             manifest["records"][identifier] = {
                 "action": action,
