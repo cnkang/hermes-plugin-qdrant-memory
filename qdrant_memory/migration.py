@@ -6,7 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 from urllib.parse import urlunsplit
 
-from .config import secret, validate_url
+from .config import backend_destination, validate_url
 from .models import Scope, content_hash, digest, enforce_limits, normalize, now, payload, point_id
 from .qdrant_store import build_client
 from .retry import safe_error
@@ -94,9 +94,9 @@ def map_record(record, default_scope):
     return point_id(scope, "mem0_migration", f"mem0:{str(identifier)}"), value
 
 
-def source_client(cfg, home, source_config=None):
-    """Legacy config is consulted exclusively during migration source reads."""
-    return build_client({"qdrant": source_settings(cfg, home, source_config)})
+def source_client(source_q):
+    """Build a source client from the already resolved migration settings."""
+    return build_client({"qdrant": source_q})
 
 
 def source_settings(cfg, home, source_config=None):
@@ -108,18 +108,31 @@ def source_settings(cfg, home, source_config=None):
     ).get("config", {})
     q = deepcopy(cfg["qdrant"])
     if block:
-        q["api_key"] = block.get("api_key") or secret("QDRANT_API_KEY")
-        q["url"] = block.get("url") or secret("QDRANT_URL")
-        if block.get("path") and not q["url"]:
+        source_url = block.get("url")
+        has_remote_endpoint = any(block.get(key) for key in ("url", "host", "port"))
+        if block.get("path") and not has_remote_endpoint:
             storage = Path(block["path"]).expanduser()
             q.update(
                 mode="embedded",
                 path=str((storage if storage.is_absolute() else Path(home) / storage).resolve()),
+                url=None,
+                api_key=None,
             )
-        else:
-            q["mode"] = "server"
-            q["url"] = q["url"] or legacy_endpoint(block)
-            validate_url(q["url"])
+            return q
+        source_url = source_url or legacy_endpoint(block)
+        validate_url(source_url, api_key=block.get("api_key"))
+        source_q = deepcopy(q)
+        source_q.update(mode="server", url=source_url, api_key=block.get("api_key"))
+        target_q = cfg["qdrant"]
+        if (
+            target_q["mode"] != "embedded"
+            and target_q.get("url")
+            and backend_destination(source_q) == backend_destination(target_q)
+        ):
+            source_q["url"] = target_q["url"]
+            source_q["api_key"] = source_q["api_key"] or target_q.get("api_key")
+        validate_url(source_q["url"], api_key=source_q["api_key"])
+        return source_q
     return q
 
 

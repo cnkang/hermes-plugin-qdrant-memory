@@ -94,7 +94,7 @@ def migration_source(args, cfg, home):
         source_q
     ) == backend_destination(cfg["qdrant"]):
         raise ValueError("Source and target collections must be isolated")
-    client = source_client(cfg, home, args.source_config)
+    client = source_client(source_q)
     try:
         records = list(read_qdrant_records(client, args.source_qdrant_collection))
         return records, "mem0-qdrant", ledger_namespace({"qdrant": source_q}), None
