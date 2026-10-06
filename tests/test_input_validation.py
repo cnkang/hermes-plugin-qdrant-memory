@@ -49,6 +49,26 @@ def test_verification_rejects_empty_payload_with_matching_hash(tmp_path):
         rt.ledger.close()
 
 
+@pytest.mark.parametrize("schema_version", [True, 1.0])
+def test_verification_rejects_non_integer_schema_version(tmp_path, schema_version):
+    """Reject booleans and floats that compare equal to schema version 1."""
+    rt = runtime(tmp_path)
+    try:
+        record = rt.add("cats", Scope("u", None))
+        rt.store.client.set_payload(
+            rt.store.collection,
+            {"schema_version": schema_version},
+            points=[record["id"]],
+            wait=True,
+        )
+        result = verify_collection(rt.store)
+        assert not result["ok"]
+        assert result["invalid_ids"] == [record["id"]]
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+
+
 def test_complete_truncated_character_and_reject_policy():
     """Preserve complete UTF-8 prefixes and retain oversize rejection."""
     value = payload("猫é", Scope("user", None), "manual_tool")
