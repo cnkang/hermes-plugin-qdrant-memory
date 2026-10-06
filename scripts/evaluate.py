@@ -18,6 +18,8 @@ from qdrant_memory.qdrant_store import QdrantStore, build_client
 
 def evaluate(dataset, store, scope):
     """Measure dense retrieval quality and latency against labeled memory/query pairs."""
+    if not dataset["queries"]:
+        raise ValueError("Dataset queries must be nonempty")
     rows = [
         (point_id(scope, "manual_tool", m["id"]), payload(m["text"], scope, "manual_tool"))
         for m in dataset["memories"]
