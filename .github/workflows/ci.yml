@@ -43,13 +43,24 @@ jobs:
         run: .lint-env/bin/ruff format --check .
 
   tests:
-    name: Behavior contracts (Python ${{ matrix.python }})
+    name: Behavior contracts (${{ matrix.host.name }}, Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         python: ['3.11', '3.14']
+        host:
+          - name: minimum
+            ref: f97608f178d1ffeca59860195ab7da295f7c8e5f
+          - name: pinned
+            ref: 4787e4d56fc8d9265d4c7d3c0fe5accee86b4078
+          - name: current-main
+            ref: 3dadeb9246f4eabeee893b128ab41aa917ce28f7
+    services:
+      qdrant:
+        image: qdrant/qdrant@sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863
+        ports: ['6333:6333', '6334:6334']
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
@@ -62,15 +73,22 @@ jobs:
         with:
           persist-credentials: false
           repository: NousResearch/hermes-agent
-          ref: 4787e4d56fc8d9265d4c7d3c0fe5accee86b4078
+          ref: ${{ matrix.host.ref }}
           path: .host
+      - name: Check out fixed dependency manager
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+          repository: NousResearch/hermes-agent
+          ref: 4787e4d56fc8d9265d4c7d3c0fe5accee86b4078
+          path: .pm-host
       - name: Build disposable test environment with Hermes PM
-        working-directory: .host
+        working-directory: .pm-host
         env:
           HERMES_HOME: ${{ runner.temp }}/hermes-test-home
           HERMES_RUNTIME_DIR: ${{ runner.temp }}/hermes-test-runtime
         run: |
-          python -m pm.build_env --source . --group test --export-requirements "$RUNNER_TEMP/host-test-requirements.txt"
+          python -m pm.build_env --source "$GITHUB_WORKSPACE/.host" --export-requirements "$RUNNER_TEMP/host-test-requirements.txt"
           python -c 'import tomllib; from pathlib import Path; p = tomllib.loads(Path("../pyproject.toml").read_text()); print("\n".join(p["project"]["dependencies"] + p["dependency-groups"]["test"]))' >> "$RUNNER_TEMP/host-test-requirements.txt"
           python -m pm.build_env --out "$GITHUB_WORKSPACE/.test-env" \
             --requirements "$RUNNER_TEMP/host-test-requirements.txt"
@@ -79,18 +97,36 @@ jobs:
         env:
           HERMES_PYTHON: ${{ github.workspace }}/.test-env/bin/python
           TEST_PYTHON_VERSION: ${{ matrix.python }}
+          QDRANT_CONTAINER: ${{ job.services.qdrant.id }}
         run: |
           if [ "$TEST_PYTHON_VERSION" = '3.14' ]; then
             # Serial append avoids concurrent writers to the same coverage database.
-            scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 1 --file-retries 0 \
-              --tb=short --cov=qdrant_memory --cov-report= --cov-append
+            scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 1 --file-retries 0 -- \
+              --tb=short --cov=qdrant_memory --cov-report= --cov-append \
+              --qdrant-test-url=http://127.0.0.1:6333 --qdrant-test-container="$QDRANT_CONTAINER"
             cd "$GITHUB_WORKSPACE"
             "$HERMES_PYTHON" -m coverage xml --data-file=.host/.coverage -o coverage.xml
           else
-            scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 2 --file-retries 0 --tb=short
+            scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 1 --file-retries 0 -- --tb=short \
+              --qdrant-test-url=http://127.0.0.1:6333 --qdrant-test-container="$QDRANT_CONTAINER"
           fi
+      - name: Build and install wheel through PM
+        if: matrix.host.name != 'current-main'
+        working-directory: .pm-host
+        env:
+          HERMES_HOME: ${{ runner.temp }}/wheel-home
+          HERMES_RUNTIME_DIR: ${{ runner.temp }}/wheel-runtime
+        run: |
+          python -m pm.build_env --out "$RUNNER_TEMP/wheel-build-env" --requirement 'setuptools>=75,<83' --requirement 'wheel>=0.45,<1'
+          cd "$GITHUB_WORKSPACE"
+          "$RUNNER_TEMP/wheel-build-env/bin/python" -c 'import os, setuptools.build_meta as b; b.build_wheel(os.environ["RUNNER_TEMP"] + "/plugin-wheel")'
+          cd .pm-host
+          python -m pm.build_env --out "$RUNNER_TEMP/wheel-env" --requirements "$RUNNER_TEMP/host-test-requirements.txt" \
+            --requirement "hermes-plugin-qdrant-memory @ file://$RUNNER_TEMP/plugin-wheel/hermes_plugin_qdrant_memory-0.1.0-py3-none-any.whl"
+          cd "$RUNNER_TEMP"
+          PYTHONPATH="$GITHUB_WORKSPACE/.host" "$RUNNER_TEMP/wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/verify_packaged.py"
       - name: Save coverage for SonarCloud
-        if: matrix.python == '3.14'
+        if: matrix.python == '3.14' && matrix.host.name == 'pinned'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: python-coverage
