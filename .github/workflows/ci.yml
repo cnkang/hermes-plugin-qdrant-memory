@@ -225,7 +225,7 @@ jobs:
           for attempt in 1 2 3; do
             echo "Snyk Code scan attempt ${attempt}/${attempts} (8-minute limit)"
             if timeout --kill-after=30s 8m \
-              snyk code test qdrant_memory --severity-threshold=high; then
+              snyk code test . --severity-threshold=high; then
               exit 0
             else
               status=$?
