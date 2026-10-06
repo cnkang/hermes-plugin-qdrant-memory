@@ -15,6 +15,7 @@ jobs:
     name: Authenticated Cloud integration
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: qdrant-cloud
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:

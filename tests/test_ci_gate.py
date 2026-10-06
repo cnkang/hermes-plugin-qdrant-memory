@@ -48,3 +48,10 @@ def test_cloud_smoke_push_trigger_excludes_codex_branches():
     )
     for branch in push_branches:
         assert "codex" not in branch, f"codex pattern must not appear in push branches: {branch}"
+
+
+def test_cloud_smoke_uses_qdrant_cloud_environment():
+    """Bind Cloud credentials to the dedicated GitHub Environment."""
+    workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/cloud-smoke.yml"
+    workflow = YAML(typ="safe").load(workflow_path.read_text(encoding="utf-8"))
+    assert workflow["jobs"]["cloud"]["environment"] == "qdrant-cloud"
