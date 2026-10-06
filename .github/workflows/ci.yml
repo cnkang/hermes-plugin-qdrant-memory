@@ -118,7 +118,10 @@ jobs:
         env:
           HERMES_HOME: ${{ runner.temp }}/hermes-security-home
           HERMES_RUNTIME_DIR: ${{ runner.temp }}/hermes-security-runtime
-        run: python -m pm.build_env --out "$GITHUB_WORKSPACE/.scan-env" --requirements "$GITHUB_WORKSPACE/requirements.txt"
+        run: |
+          python -m pm.build_env --out "$GITHUB_WORKSPACE/.scan-env" \
+            --requirements "$GITHUB_WORKSPACE/requirements.txt" --requirement 'pip>=25,<27'
+          "$GITHUB_WORKSPACE/.scan-env/bin/python" -m pip --version
       - name: Scan dependencies
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
