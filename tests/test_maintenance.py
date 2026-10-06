@@ -1,18 +1,25 @@
+"""Maintenance commands and sanitized migration planning failure contracts."""
+
 from types import SimpleNamespace
+
 import pytest
+
 from qdrant_memory.cli import run
 from qdrant_memory.migration import migrate
+
 from .helpers import Embedder, config, runtime
 from .test_provider import provider
 
 
 def test_maintenance_commands_against_real_embedded_store(tmp_path, monkeypatch):
+    """Verify maintenance commands against real embedded store."""
     p = provider(tmp_path)
     p.sync_turn("cats preferred", "ack")
     assert p.wait_idle()
     p.shutdown()
     # CLI must see the same explicit configuration and private profile path.
     from utils import atomic_json_write
+
     atomic_json_write(tmp_path / "qdrant-memory.json", config(), mode=0o600)
     monkeypatch.setattr("qdrant_memory.cli.build_embedder", lambda ctx, cfg: Embedder())
     for command in ("status", "stats", "doctor", "verify", "retry"):
@@ -24,6 +31,7 @@ def test_maintenance_commands_against_real_embedded_store(tmp_path, monkeypatch)
 
 
 def test_invalid_migration_retains_sanitized_error_manifest(tmp_path):
+    """Verify invalid migration retains sanitized error manifest."""
     rt = runtime(tmp_path, cfg=config(limits={"max_text_bytes": 4}))
     with pytest.raises(ValueError):
         migrate(rt, [{"id": "one", "memory": "oversized"}], "mem0-json", "fixture")

@@ -31,3 +31,43 @@ target and author. Older hosts without that authoritative value skip destructive
 mirroring. Session end/compression provides supplementary extraction; every turn
 already follows the durable write path. System prompt text and tool schemas remain
 static through the conversation.
+
+## Backup and restore
+
+Stop the agent and every embedded maintenance client before copying state. Back up
+`qdrant-memory.json`, the `qdrant-memory` state directory (including SQLite sidecar
+files if present), and the embedded Qdrant path if it is configured elsewhere.
+Keep credentials in a secret manager rather than a portable plaintext backup.
+
+Restore the store and ledger from the same stopped snapshot into the intended
+profile. Restore the matching embedding configuration, confirm directory/file
+permissions, then run doctor, stats and verify before enabling the provider. A
+ledger restored against unrelated target state may replay prepared changes; do
+not mix arbitrary snapshots. Back up remote Qdrant through its deployment's own
+snapshot procedure, coordinated with the stopped plugin ledger.
+
+## Retry and maintenance ownership
+
+```bash
+hermes qdrant-memory stats
+hermes qdrant-memory retry
+hermes qdrant-memory verify
+```
+
+Failed raw events need the provider's trusted LLM context; retry only requeues them
+for the next provider startup. Prepared operations can be committed by the CLI.
+Pending operations are recovered automatically on startup; FAILED items require
+operator correction and explicit retry. A missing migration operation invalidates
+its manifest rather than counting it as completed. A fresh migration plan can repair
+an unchanged target with stale open work using a new operation generation.
+
+## Metrics
+
+Stats reports destination-scoped ledger states and retry totals, plus bounded
+samples of embedding/query/search/extraction latency, upsert throughput and cache
+hit rate when recorded. Each metric retains at most 512 samples; reported p50/p95
+are empirical sample percentiles, not a service-level guarantee. Cache-hit rate is
+flushed on worker exit, so it may not appear while the current provider is active.
+
+See [troubleshooting](troubleshooting.md) for mismatch, lock, missing-row and
+credential failures, and [architecture](architecture.md) for persistence boundaries.

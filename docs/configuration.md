@@ -56,3 +56,82 @@ gate. LLM keys and fallback routing remain entirely host-owned.
 policy; they do not skip relation adjudication or delete old facts. Similarity at
 or above the review threshold triggers factual relation classification even at
 very high similarity. `min_score` is unset until calibrated against real data.
+
+## Minimal deployment examples
+
+Defaults are merged recursively, so embedded mode needs only the settings you change:
+
+```json
+{
+  "qdrant": {"mode": "embedded"},
+  "scope": {"user_id": "your-user-id", "agent_id": "hermes"}
+}
+```
+
+For an existing self-hosted server:
+
+```json
+{
+  "qdrant": {
+    "mode": "server",
+    "url": "https://qdrant.example.com",
+    "collection": "hermes_qdrant_memory"
+  }
+}
+```
+
+For OpenAI-compatible embeddings, replace the endpoint/model/dimension placeholders
+with the service's actual pipeline contract. The example dimension is illustrative:
+
+```json
+{
+  "embedding": {
+    "mode": "plugin",
+    "provider": "openai-compatible",
+    "model": "your-embedding-model",
+    "base_url": "https://embedding.example.com/v1",
+    "dimensions": 1024,
+    "api_key_env": "EMBEDDING_API_KEY",
+    "send_dimensions": false
+  }
+}
+```
+
+Supply EMBEDDING_API_KEY through Hermes's profile secret handling. Enable
+`send_dimensions` only when that API/model supports the parameter. Startup checks
+the returned dimension and fingerprint; a changed model with the same dimensions
+still requires a compatible new collection.
+
+LLM routing is independent of embedding:
+
+```json
+{"llm": {"mode": "task", "task": "qdrant_memory_extraction"}}
+```
+
+Configure the registered task using Hermes auxiliary-model setup. For an explicit
+operator-authorized provider/model selection:
+
+```json
+{"llm": {"mode": "override", "provider": "your-provider", "model": "your-model"}}
+```
+
+These plugin settings do not bypass Hermes trust grants or contain LLM credentials.
+
+## Storage, limits and scope
+
+| Setting | Default | Contract |
+| --- | --- | --- |
+| qdrant.collection | hermes_qdrant_memory | A separate plugin-managed collection with named dense vectors |
+| qdrant.path | Active home/qdrant-memory/qdrant | Embedded persistence path; keep distinct across profiles |
+| scope.user_id / agent_id | hermes-user / hermes | Explicit gateway authors take precedence for their turns; agent may be null |
+| search.top_k / candidate_k | 8 / 24 | Candidate count must be at least result count |
+| write.max_attempts | 5 | Total attempt budget, not five retries after the first attempt |
+| write.shutdown_timeout_seconds | 5 | Wait budget; durable pending work remains after exit |
+| limits.max_text_bytes | 65536 | UTF-8 text size; optional explicit text truncation |
+| limits.max_metadata_bytes | 32768 | Metadata oversize is always rejected |
+| limits.max_payload_bytes | 131072 | Full payload oversize is always rejected |
+
+Explicit JSON Qdrant credentials are accepted for compatibility, but setup saves
+remove them. Prefer the profile's secret scope for all keys. Do not point two profiles
+at the same embedded path unless shared ownership is deliberate and access is serialized.
+Changing scope does not automatically migrate or grant access to another scope's records.

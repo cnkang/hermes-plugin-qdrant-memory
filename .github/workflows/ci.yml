@@ -13,6 +13,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Ruff lint and format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Check out Hermes dependency manager
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+          repository: NousResearch/hermes-agent
+          ref: 4787e4d56fc8d9265d4c7d3c0fe5accee86b4078
+          path: .host
+      - name: Build isolated Ruff environment
+        working-directory: .host
+        env:
+          HERMES_HOME: ${{ runner.temp }}/hermes-lint-home
+          HERMES_RUNTIME_DIR: ${{ runner.temp }}/hermes-lint-runtime
+        run: python -m pm.build_env --out "$GITHUB_WORKSPACE/.lint-env" --requirement 'ruff==0.15.1'
+      - name: Lint source, docstrings and imports
+        run: .lint-env/bin/ruff check .
+      - name: Check formatting
+        run: .lint-env/bin/ruff format --check .
+
   tests:
     name: Behavior contracts (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
@@ -50,11 +79,17 @@ jobs:
         working-directory: .host
         env:
           HERMES_PYTHON: ${{ github.workspace }}/.test-env/bin/python
+          TEST_PYTHON_VERSION: ${{ matrix.python }}
         run: |
-          scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 1 --file-retries 0 \
-            --tb=short --cov=qdrant_memory --cov-report= --cov-append
-          cd "$GITHUB_WORKSPACE"
-          "$HERMES_PYTHON" -m coverage xml --data-file=.host/.coverage -o coverage.xml
+          if [ "$TEST_PYTHON_VERSION" = '3.14' ]; then
+            # Serial append avoids concurrent writers to the same coverage database.
+            scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 1 --file-retries 0 \
+              --tb=short --cov=qdrant_memory --cov-report= --cov-append
+            cd "$GITHUB_WORKSPACE"
+            "$HERMES_PYTHON" -m coverage xml --data-file=.host/.coverage -o coverage.xml
+          else
+            scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 2 --file-retries 0 --tb=short
+          fi
       - name: Save coverage for SonarCloud
         if: matrix.python == '3.14'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -89,7 +124,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   snyk:
-    name: Snyk dependency and code security
+    name: Snyk dependency security
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -126,30 +161,48 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: snyk test --file=requirements.txt --package-manager=pip --command=.scan-env/bin/python --severity-threshold=high
-      - name: Scan source
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: snyk code test qdrant_memory --severity-threshold=high
       - name: Monitor main dependency snapshot
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: snyk monitor --file=requirements.txt --package-manager=pip --command=.scan-env/bin/python
 
+  snyk-code:
+    name: Snyk code security
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+      - name: Require Snyk credentials
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          test -n "$SNYK_TOKEN" || { echo '::error::Configure SNYK_TOKEN for the Snyk organization.'; exit 1; }
+      - uses: snyk/actions/setup@b075801f26076be9bb50521154cafab73f44da0c
+      - name: Scan source
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: snyk code test qdrant_memory --severity-threshold=high
+
   scan-gate:
     name: Required security scan gate
-    needs: [tests, sonarcloud, snyk]
+    needs: [lint, tests, sonarcloud, snyk, snyk-code]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Require successful tests and authenticated scans
         env:
+          LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.tests.result }}
           SONAR_RESULT: ${{ needs.sonarcloud.result }}
           SNYK_RESULT: ${{ needs.snyk.result }}
+          SNYK_CODE_RESULT: ${{ needs.snyk-code.result }}
         run: |
-          if [ "$TEST_RESULT" != success ] || [ "$SONAR_RESULT" != success ] || [ "$SNYK_RESULT" != success ]; then
-            echo "::error::Required tests or scans did not succeed: tests=$TEST_RESULT sonarcloud=$SONAR_RESULT snyk=$SNYK_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
+          if [ "$LINT_RESULT" != success ] || [ "$TEST_RESULT" != success ] || [ "$SONAR_RESULT" != success ] || [ "$SNYK_RESULT" != success ] || [ "$SNYK_CODE_RESULT" != success ]; then
+            echo "::error::Required checks did not succeed: lint=$LINT_RESULT tests=$TEST_RESULT sonarcloud=$SONAR_RESULT snyk=$SNYK_RESULT snyk-code=$SNYK_CODE_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
             exit 1
           fi

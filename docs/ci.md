@@ -1,14 +1,20 @@
 # CI services
 
-The CI workflow runs behavior contracts against an immutable Hermes host commit
-on Python 3.11 and 3.14, then passes coverage to SonarCloud. Sonar analysis waits
-for its quality gate. Snyk runs dependency and code scans and monitors main.
+Ruff lint/format, the Python 3.11 and 3.14 behavior-contract jobs, and the separate
+Snyk dependency and code jobs run
+independently in parallel. Python 3.11 runs test files with two workers. Python
+3.14 collects coverage serially to avoid concurrent database writers; SonarCloud
+waits for the test matrix and consumes that artifact, then waits for its quality
+gate. Snyk runs dependency and code scans and monitors main. Tests use an
+immutable Hermes host commit. Ruff is pinned to 0.15.1 in CI and the local
+[pre-commit setup](development.md); lint includes docstrings and import ordering.
 Actions use immutable SHA pins. Authenticated scans run on same-repository PRs,
 pushes only to `main` and `codex/**`, and manual workflow dispatches. Fork PRs run
 tests without scanner credentials; their scanner jobs are skipped by conditions.
 A missing required token fails a scanner job only when that job is scheduled.
 The `Required security scan gate` runs with `always()` and fails for any failed,
-cancelled or skipped prerequisite, including safely skipped fork scans. Make this
+cancelled or skipped prerequisite (lint, tests, SonarCloud and both Snyk jobs), including
+safely skipped fork scans. Make this
 aggregate gate a required branch check; a skipped scanner job alone is not proof
 of a successful scan. The gate needs no secrets and executes no PR code.
 
