@@ -227,25 +227,26 @@ def stale_skips(runtime, manifest):
     """
     with runtime.lock:
         for identifier, record in manifest["records"].items():
-            if record["action"] == "SKIP":
-                point = runtime.store.get(identifier, Scope(**record["scope"]))
-                if (
-                    runtime.ledger.has_open_operations(identifier)
-                    or point is None
-                    or digest(point.payload) != record["payload_hash"]
-                ):
-                    return True
-            elif record["operation_key"]:
-                row = runtime.ledger.row("operations", record["operation_key"])
-                if row and row["status"] == "COMMITTED":
-                    point = runtime.store.get(identifier, Scope(**record["scope"]))
-                    if (
-                        runtime.ledger.has_open_operations(identifier)
-                        or point is None
-                        or digest(point.payload) != record["payload_hash"]
-                    ):
-                        return True
+            if _record_is_stale(runtime, identifier, record):
+                return True
     return False
+
+
+def _record_is_stale(runtime, identifier, record):
+    """Check whether a settled target record diverged from its manifest."""
+    if record["action"] != "SKIP":
+        key = record["operation_key"]
+        if not key:
+            return False
+        row = runtime.ledger.row("operations", key)
+        if row is None or row["status"] != "COMMITTED":
+            return False
+    point = runtime.store.get(identifier, Scope(**record["scope"]))
+    return (
+        runtime.ledger.has_open_operations(identifier)
+        or point is None
+        or digest(point.payload) != record["payload_hash"]
+    )
 
 
 def durable_plan(runtime, records, source_type, source_identifier, source_sha256):
@@ -348,7 +349,12 @@ def update_manifest_counts(runtime, manifest, expected):
     for record in manifest["records"].values():
         key = record["operation_key"]
         row = runtime.ledger.row("operations", key) if key else None
-        status = row["status"] if row else ("MISSING" if key else "COMMITTED")
+        if row:
+            status = row["status"]
+        elif key:
+            status = "MISSING"
+        else:
+            status = "COMMITTED"
         if status == "COMMITTED":
             counts["processed"] += 1
             counts[{"ADD": "added", "UPDATE": "updated", "SKIP": "skipped"}[record["action"]]] += 1

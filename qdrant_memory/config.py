@@ -281,7 +281,7 @@ def ledger_namespace(cfg):
 def backend_destination(q):
     """Compare physical destinations independently of server/Cloud mode labels."""
     if q["mode"] == "embedded":
-        return ("embedded", str(Path(q["path"]).resolve()))
+        return ("embedded", str(Path(q["path"]).resolve()), None, None, None)
     endpoint = urlsplit(q["url"])
     return (
         "remote",
