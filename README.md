@@ -108,7 +108,12 @@ embedded store: Qdrant's local persistence permits only one client process.
 ## Configuration and migration
 
 Behavior lives in `$HERMES_HOME/qdrant-memory.json`; credentials belong in the
-active profile's Hermes secret scope. Defaults use embedded Qdrant. For server or
+active profile's Hermes secret scope. Defaults use embedded Qdrant.
+During setup, existing `QDRANT_URL` and `QDRANT_API_KEY` in the active profile's
+environment are reused independently without another prompt. Setup reports their
+presence without showing values, asks only for missing settings and saves environment
+references rather than copying supplied values or keys. An environment URL replaces
+any older explicit URL in the saved plugin settings. For server or
 Cloud, set `qdrant.mode`, collection and endpoint; Cloud requires HTTPS and a
 Database API key. [Configuration examples and defaults](docs/configuration.md)
 cover Ollama, OpenAI-compatible embeddings, LLM routing and explicit fallbacks.

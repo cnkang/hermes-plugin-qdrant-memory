@@ -5,6 +5,13 @@ holds secrets. The plugin never reads `mem0.json` at runtime. Missing settings
 take the defaults declared in `qdrant_memory/config.py`; unknown fields are kept
 for forward compatibility.
 
+During `hermes memory setup`, `QDRANT_URL` and `QDRANT_API_KEY` are resolved through
+Hermes's active profile secret scope. Each nonempty setting skips its corresponding
+prompt; missing settings are still requested. The wizard reports variable names only.
+An existing environment URL supersedes a previously saved explicit URL; setup saves
+`url_env` and `api_key_env` references, without copying environment values or credentials.
+Endpoint and HTTPS transport checks still apply. Deployment mode remains a user choice.
+
 ```json
 {
   "schema_version": 1,
