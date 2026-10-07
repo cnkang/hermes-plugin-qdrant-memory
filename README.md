@@ -127,14 +127,22 @@ Use a separate target collection and keep the Mem0 source unchanged:
 
 ```bash
 hermes qdrant-memory migrate mem0 --source-json /path/to/export.json --dry-run
+# Stop CLI/foreground writers; for an installed background gateway:
+hermes gateway status
+hermes gateway stop
 hermes qdrant-memory migrate mem0 --source-json /path/to/export.json \
   --target-collection hermes_qdrant_memory --resume --verify
+hermes qdrant-memory verify --collection hermes_qdrant_memory
 ```
 
 Re-embedding is the default. `--resume` needs the same snapshot and pipeline;
 add `--retry-failed` to retry failed operations from that manifest. Migration
 verification checks exact IDs, scope and payload hashes, not just record count.
-Read the [migration guide](docs/migration-from-mem0.md) before importing.
+Before a real import, stop all sessions/gateways writing to the target, including
+for Server/Cloud. `writer_busy` requires stopping the active writer, not deleting
+lock or ledger files. A successful dry-run does not check writer ownership.
+Read the [migration guide](docs/migration-from-mem0.md) for executable gateway
+stop/start, migration, verification and interrupted-import recovery commands.
 
 ## Operations and security
 

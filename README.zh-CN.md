@@ -106,8 +106,36 @@ Server 默认地址为 `http://127.0.0.1:6333`；Cloud 要求 HTTPS 和 Database
 
 ```bash
 hermes qdrant-memory migrate mem0 --source-json /path/to/export.json --dry-run
+# 正式迁移前，所有部署模式都需停止同一目标的 writer。
+# 后台服务用以下命令；CLI 会话用 /exit，前台 gateway 用 Ctrl-C。
+hermes gateway status
+hermes gateway stop
+hermes gateway status
 hermes qdrant-memory migrate mem0 --source-json /path/to/export.json \
   --target-collection hermes_qdrant_memory --resume --verify
+hermes qdrant-memory verify --collection hermes_qdrant_memory
+hermes qdrant-memory stats --collection hermes_qdrant_memory
+```
+
+仅在迁移和验证成功后，恢复原先运行的后台服务：
+
+```bash
+hermes gateway start
+hermes gateway status
+```
+
+若提示 `WriterBusyError` / `writer_busy`，说明仍有会话或 gateway 持有写入锁，
+不是迁移数据格式错误。用 `hermes gateway list` 检查其他 profile，停止相关 writer
+并等待后台请求退出后，重跑原命令；不要删除锁文件、`state.db` 或清空 collection。
+`dry-run` 不申请写入锁，也不探测目标服务，因此成功不代表可以立即正式迁移。
+前台 gateway 迁移后用 `hermes gateway run` 恢复；仅使用 CLI 时重新运行 `hermes`。
+共享 gateway 停机会影响其他 profile；其他机器上的 writer 也需协调停止。
+已开始但中断或存在失败操作时，修正原因后保持同一来源、目标和 embedding pipeline：
+
+```bash
+hermes qdrant-memory migrate mem0 --source-json /path/to/export.json \
+  --target-collection hermes_qdrant_memory --resume --retry-failed --verify
+hermes qdrant-memory verify --collection hermes_qdrant_memory
 ```
 
 默认重新 embedding。`--resume` 匹配相同 snapshot、目标和 pipeline；失败操作需要

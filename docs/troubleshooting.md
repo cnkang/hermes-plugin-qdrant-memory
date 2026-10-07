@@ -12,6 +12,8 @@ without pasting credentials into logs or issues.
 | Dimension, distance or fingerprint mismatch | Restore the previous pipeline configuration, or create a separate compatible target collection and migrate explicitly. Do not change the live collection schema or delete its identity point. |
 | Nonempty collection has no trusted fingerprint | It is not a plugin-managed target. Use a new collection; import legacy memories through migration rather than reusing an unknown schema. |
 | Embedded store already accessed | Another client owns the local persistence lock. Stop the agent and other maintenance commands. Never remove lock files while their process is alive. |
+| `WriterBusyError` / `writer_busy` during `init`, `migrate` or `retry` | A local session or gateway owns the destination's writer lease in any deployment mode. Run `hermes gateway status` and `hermes gateway list`, stop the relevant service with `hermes gateway stop`, exit CLI sessions with `/exit`, or stop a foreground gateway with Ctrl-C. Wait for workers to exit and rerun the command. See the [migration stop/resume/restart procedure](migration-from-mem0.md#json-export-plan-stop-writers-migrate-and-restart). |
+| Dry-run succeeds but real migration is refused | Dry-run only plans the source; it does not acquire writer ownership or probe target services. Stop target writers before real migration, including for Server/Cloud. Do not clear the collection or delete lock/ledger files. |
 | Cloud authentication/setup failure | Check HTTPS, endpoint and Database API key permissions in the active secret scope. A Cloud management key is not a Database API key. Authentication errors are not retried as transient transport failures. |
 | Recall is temporarily empty | The cache may not be populated yet or has been invalidated by a session/author change. Use the explicit search tool to check scoped stored memories. A cache miss performs no synchronous service call. |
 | FAILED ledger rows | Correct the service/configuration error, stop the agent if embedded, run retry, and restart the provider for raw-event extraction. Use stats to confirm state transitions. |
@@ -23,11 +25,22 @@ without pasting credentials into logs or issues.
 
 ```bash
 hermes qdrant-memory status
-# Stop the agent before opening an embedded collection.
+# Stop interactive/foreground writers; for an installed background gateway:
+hermes gateway status
+hermes gateway stop
+hermes gateway status
 hermes qdrant-memory doctor
 hermes qdrant-memory stats
 hermes qdrant-memory retry
 hermes qdrant-memory verify
+```
+
+Only after recovery and verification succeed, restart the background service if it
+was previously running:
+
+```bash
+hermes gateway start
+hermes gateway status
 ```
 
 `retry` commits prepared operations but cannot perform trusted LLM extraction from
@@ -40,7 +53,12 @@ For migration-specific failure recovery, use the original source and flags:
 ```bash
 hermes qdrant-memory migrate mem0 --source-json /path/to/export.json \
   --target-collection hermes_qdrant_memory --resume --retry-failed --verify
+hermes qdrant-memory verify --collection hermes_qdrant_memory
 ```
+
+Keep writers stopped while running migration recovery. The [migration guide](migration-from-mem0.md)
+includes the complete shutdown, verification and restart sequence, including foreground
+gateways. Local locks do not stop writers on other machines.
 
 ## CI failures
 
