@@ -25,6 +25,7 @@ ollama pull qwen3-embedding:4b
 # 如果 Ollama 尚未运行，先启动服务，并保持服务可用。
 hermes memory setup
 hermes config set memory.provider qdrant-memory
+hermes qdrant-memory init
 ```
 
 依赖由 Hermes PM 准备，不要向 Hermes 管理的环境直接 pip install。
@@ -63,6 +64,7 @@ hermes config set memory.provider qdrant-memory
 
 ```bash
 hermes qdrant-memory status
+hermes qdrant-memory init
 hermes qdrant-memory doctor
 hermes qdrant-memory stats
 hermes qdrant-memory verify
@@ -70,6 +72,18 @@ hermes qdrant-memory retry
 ```
 
 `status` 不访问网络；`doctor`/`verify` 探测已有 collection，不创建或修复它。
+首次配置后运行 `init`：探测 embedding，创建 collection、写入 pipeline fingerprint，
+并为 Server/Cloud 建立 payload 索引。它不调用 LLM 或写入对话记忆；重复运行会
+校验现有 collection，维度、距离或 fingerprint 不兼容时拒绝继续，不覆盖已有数据。
+发现已有 collection 时，`init` 提示选择 `use`（回车默认）或 `clear`（清空重建）。
+`use` 校验 named dense 向量、维度、距离和 pipeline fingerprint，并逐条检查已有
+记忆的 payload、内容 hash 和向量；验证失败时返回非零退出码。已有数据但没有
+可信 fingerprint 的 collection 不能直接复用。`clear` 先验证 embedding 服务，再删除
+目标 collection 的全部数据并重建，同时清除该目标的本地重放任务和迁移记录，防止
+旧记忆恢复；其他 collection 的账本和会话来源隔离记录保留。清空操作无法撤销，
+远端重建失败时需重新运行 `init`，不保证清空和重建是原子操作。
+脚本调用须显式传入 `--existing use` 或 `--existing clear`；后者即授权删除。
+`--collection NAME` 只覆盖本次命令的目标，后续 agent 使用的目标仍来自配置文件。
 `retry` 重试已准备的操作，并让原始失败事件在下次 provider 启动时重新提取。
 维护 embedded 数据库前停止 agent：本地持久化只允许一个 client 进程持有锁。
 

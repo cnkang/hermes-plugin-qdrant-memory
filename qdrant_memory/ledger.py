@@ -47,6 +47,15 @@ class Ledger:
                 session_id TEXT, collection TEXT, PRIMARY KEY(session_id,collection));
         """)
 
+    def clear_destination(self):
+        """Forget only this destination's work so cleared memories cannot replay.
+
+        Transcript provenance quarantine remains in place across collection resets.
+        """
+        with self.lock, self.db:
+            for table in ("events", "operations", "manifests", "metrics", "counters"):
+                self.db.execute(f"DELETE FROM {table} WHERE collection=?", (self.collection,))
+
     def unattributed_sessions(self):
         """Load transcript quarantine for this destination, including resumed sessions."""
         with self.lock:

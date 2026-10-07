@@ -27,6 +27,14 @@ INDEXES = {
 }
 
 
+class CollectionNotInitializedError(ValueError):
+    """Signal a missing target collection without exposing endpoint details."""
+
+
+class CollectionCompatibilityError(ValueError):
+    """Reject a collection whose schema or embedding identity cannot be trusted."""
+
+
 def build_client(cfg):
     """Create the embedded, self-hosted or Cloud Qdrant client."""
     from qdrant_client import QdrantClient
@@ -69,16 +77,25 @@ class QdrantStore:
         self.client, self.cfg, self.embedder = client, cfg, embedder
         self.collection = cfg["qdrant"]["collection"]
 
-    def initialize(self, create=True):
+    def initialize(self, create=True, reset=False, before_reset=None):
         """Probe embeddings and create or validate the named dense collection contract."""
         from qdrant_client import models as m
 
         vectors = self.embedder.embed_documents(["embedding dimension probe"])
         validate_vectors(vectors, 1, self.embedder.dimensions)
         distance = m.Distance(embedding_config(self.cfg)["distance"])
+        if reset:
+            if not create:
+                raise ValueError("Reset requires collection creation")
+            if before_reset:
+                before_reset()
+            if self.client.collection_exists(self.collection):
+                self.client.delete_collection(self.collection)
         if not self.client.collection_exists(self.collection):
             if not create:
-                raise ValueError("Collection does not exist; select the provider to initialize it")
+                raise CollectionNotInitializedError(
+                    "Collection does not exist; run hermes qdrant-memory init"
+                )
             self.client.create_collection(
                 self.collection,
                 vectors_config={
@@ -88,9 +105,9 @@ class QdrantStore:
         info = self.client.get_collection(self.collection)
         schema = info.config.params.vectors
         if not isinstance(schema, dict) or "dense" not in schema:
-            raise ValueError("Collection must have a named dense vector")
+            raise CollectionCompatibilityError("Collection must have a named dense vector")
         if schema["dense"].size != self.embedder.dimensions or schema["dense"].distance != distance:
-            raise ValueError("Collection dimension or distance mismatch")
+            raise CollectionCompatibilityError("Collection dimension or distance mismatch")
         self._validate_identity(vectors[0], create)
         if create and self.cfg["qdrant"]["mode"] != "embedded":
             for key, kind in INDEXES.items():
@@ -105,14 +122,18 @@ class QdrantStore:
         identity = self.client.retrieve(self.collection, ids=[IDENTITY_ID], with_payload=True)
         if identity:
             if identity[0].payload.get("embedding_fingerprint") != self.embedder.fingerprint:
-                raise ValueError(
+                raise CollectionCompatibilityError(
                     "Collection embedding fingerprint mismatch; migrate to a new collection"
                 )
         else:
             if not create:
-                raise ValueError("Collection has no trusted embedding fingerprint")
+                raise CollectionCompatibilityError(
+                    "Collection has no trusted embedding fingerprint"
+                )
             if self.client.count(self.collection, exact=True).count:
-                raise ValueError("Nonempty collection has no trusted embedding fingerprint")
+                raise CollectionCompatibilityError(
+                    "Nonempty collection has no trusted embedding fingerprint"
+                )
             self.client.upsert(
                 self.collection,
                 points=[
