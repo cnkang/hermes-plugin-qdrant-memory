@@ -17,7 +17,11 @@ class WriterLease:
         from .config import backend_destination
 
         q = cfg["qdrant"]
-        return cls(home, [backend_destination(q), q["collection"]])
+        destination = backend_destination(q)
+        if q["mode"] == "embedded":
+            # Keep the writer lock identity stable across plugin upgrades.
+            destination = (destination[0], destination[-1])
+        return cls(home, [destination, q["collection"]])
 
     def __init__(self, home, namespace):
         """Acquire without waiting so a replacement cannot overlap an old writer."""

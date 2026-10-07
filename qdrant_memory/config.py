@@ -274,14 +274,24 @@ def ledger_namespace(cfg):
     namespace.
     """
     q = cfg["qdrant"]
-    backend = hashlib.sha256(json.dumps(backend_destination(q)).encode()).hexdigest()
+    destination = backend_destination(q)
+    if q["mode"] == "embedded":
+        # Existing embedded ledger rows use this two-field hash input.
+        destination = (destination[0], destination[-1])
+    backend = hashlib.sha256(json.dumps(destination).encode()).hexdigest()
     return q["collection"] + ":" + backend
 
 
 def backend_destination(q):
-    """Compare physical destinations independently of server/Cloud mode labels."""
+    """Return a fixed (kind, scheme, hostname, port, path) destination tuple."""
     if q["mode"] == "embedded":
-        return ("embedded", str(Path(q["path"]).resolve()))
+        return (
+            "embedded",
+            None,
+            None,
+            None,
+            str(Path(q["path"]).resolve()),
+        )
     endpoint = urlsplit(q["url"])
     return (
         "remote",
