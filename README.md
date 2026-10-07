@@ -27,6 +27,7 @@ ollama pull qwen3-embedding:4b
 # Start Ollama if it is not already running; keep its service available.
 hermes memory setup
 hermes config set memory.provider qdrant-memory
+hermes qdrant-memory init
 ```
 
 `hermes memory setup` prepares declared dependencies through Hermes PM. Do not
@@ -75,6 +76,7 @@ The four agent tools are `qdrant_memory_search`, `qdrant_memory_add`,
 
 ```bash
 hermes qdrant-memory status
+hermes qdrant-memory init
 hermes qdrant-memory doctor
 hermes qdrant-memory stats
 hermes qdrant-memory verify
@@ -82,7 +84,24 @@ hermes qdrant-memory retry
 ```
 
 `status` is local-only. `doctor` and `verify` probe existing collections without
-creating or repairing them. `retry` requeues failed events for the next provider
+creating or repairing them. Run `init` after first-time configuration to probe
+embeddings, create the collection, record its pipeline fingerprint and build
+Server/Cloud payload indexes. It makes no LLM calls and writes no conversation
+memories. Repeated runs validate the existing collection; incompatible dimensions,
+distance or fingerprint fail without overwriting existing data.
+When the collection exists, `init` asks for `use` (the default on Enter) or `clear`.
+Reuse validates the named dense vector, dimensions, distance and pipeline identity,
+then checks every stored memory's payload, content hash and vector. Validation failure
+returns a nonzero exit code;
+a nonempty collection without a trusted fingerprint cannot be reused.
+Clear probes embeddings first, then deletes and rebuilds the target collection and
+discards that destination's local replay work and migration records. Other destinations
+and transcript provenance quarantine are retained. Clearing is irreversible and
+deletion/recreation is not atomic; rerun `init` if remote recreation fails.
+For scripts, explicitly pass `--existing use` or `--existing clear`; the latter
+authorizes deletion. `--collection NAME` overrides only this command's target,
+not the collection configured for subsequent agent sessions.
+`retry` requeues failed events for the next provider
 startup and retries prepared operations. Stop the agent before maintenance of an
 embedded store: Qdrant's local persistence permits only one client process.
 

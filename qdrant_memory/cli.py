@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import sys
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -25,17 +26,56 @@ from .migration import (
     verify_manifest,
 )
 from .ownership import WriterLease
-from .qdrant_store import INDEXES, QdrantStore, build_client
+from .qdrant_store import (
+    INDEXES,
+    CollectionCompatibilityError,
+    CollectionNotInitializedError,
+    QdrantStore,
+    build_client,
+)
 from .retry import safe_error
 from .runtime import Runtime
+
+
+class InitializationChoiceRequiredError(ValueError):
+    """Require an explicit existing-collection choice outside a terminal."""
+
+
+def existing_collection_action(args, collection):
+    """Confirm reuse by default; clearing requires an explicit user choice."""
+    action = getattr(args, "existing", None)
+    if action in {"use", "clear"}:
+        return action
+    if not sys.stdin.isatty():
+        raise InitializationChoiceRequiredError()
+    print(
+        f"Collection {collection!r} already exists. Use existing or clear ALL its data and rebuild? "
+        "[use/clear] (default: use): ",
+        end="",
+        file=sys.stderr,
+        flush=True,
+    )
+    answer = sys.stdin.readline()
+    if not answer:
+        raise InitializationChoiceRequiredError()
+    action = answer.strip().lower() or "use"
+    if action not in {"use", "clear"}:
+        raise InitializationChoiceRequiredError()
+    return action
 
 
 def register_cli(subparser):
     """Register maintenance and migration subcommands without starting a provider."""
     commands = subparser.add_subparsers(dest="qdrant_command", required=True)
-    for name in ("status", "stats", "doctor", "verify", "retry"):
+    for name in ("status", "init", "stats", "doctor", "verify", "retry"):
         parser = commands.add_parser(name)
         parser.add_argument("--collection")
+        if name == "init":
+            parser.add_argument(
+                "--existing",
+                choices=["use", "clear"],
+                help="Existing collection: use after validation, or delete all data and rebuild",
+            )
         parser.set_defaults(func=main)
     parser = commands.add_parser("migrate")
     parser.add_argument("source", choices=["mem0"])
@@ -121,7 +161,7 @@ def diagnostic_status(store, ledger, cfg, command):
         "metrics": ledger.metrics(),
         "embedding_fingerprint": store.embedder.fingerprint,
     }
-    if command == "doctor":
+    if command in {"doctor", "init"}:
         info = store.client.get_collection(store.collection)
         index_ok = cfg["qdrant"]["mode"] == "embedded" or set(INDEXES) <= set(info.payload_schema)
         result.update(
@@ -194,7 +234,7 @@ def run(args, home=None):
                 "target_ids": list(planned),
             }
     with ExitStack() as resources:
-        if command in {"migrate", "retry"}:
+        if command in {"init", "migrate", "retry"}:
             lease = WriterLease.for_config(home, cfg)
             resources.callback(lease.close)
         embedder = build_embedder(None, cfg)
@@ -202,11 +242,36 @@ def run(args, home=None):
             resources.callback(embedder.close)
         store = QdrantStore(build_client(cfg), cfg, embedder)
         resources.callback(store.close)
-        store.initialize(create=command == "migrate")
-        ledger = Ledger(home, ledger_namespace(cfg))
-        resources.callback(ledger.close)
+        action = "create"
+        ledger = None
+        if command == "init" and store.client.collection_exists(store.collection):
+            action = existing_collection_action(args, store.collection)
+        if action == "clear":
+            ledger = Ledger(home, ledger_namespace(cfg))
+            resources.callback(ledger.close)
+            store.initialize(reset=True, before_reset=ledger.clear_destination)
+        else:
+            store.initialize(create=command in {"init", "migrate"})
+        if ledger is None:
+            ledger = Ledger(home, ledger_namespace(cfg))
+            resources.callback(ledger.close)
         runtime = Runtime(cfg, store, ledger)
-        return execute_command(args, runtime, (records, source_type, source_identifier, checksum))
+        result = execute_command(args, runtime, (records, source_type, source_identifier, checksum))
+        if command == "init":
+            result.update(collection=store.collection, action=action)
+            verification = verify_collection(store)
+            result["payload_verification"] = {
+                "ok": verification["ok"],
+                "checked": verification["checked"],
+                "invalid_count": len(verification["invalid_ids"]),
+            }
+            result["ok"] = result["ok"] and verification["ok"]
+            if not verification["ok"]:
+                result["message"] = (
+                    "Collection contains incompatible memory payloads or vectors. "
+                    "Choose another collection or explicitly clear and rebuild it."
+                )
+        return result
 
 
 def main(args):
@@ -216,7 +281,27 @@ def main(args):
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result.get("ok", True) else 1
     except Exception as exc:
-        print(json.dumps({"error": safe_error(exc)}))
+        error = safe_error(exc)
+        if isinstance(exc, CollectionNotInitializedError):
+            error.update(
+                code="collection_not_initialized",
+                message="Collection does not exist. Run hermes qdrant-memory init first.",
+            )
+        elif isinstance(exc, InitializationChoiceRequiredError):
+            error.update(
+                code="existing_collection_choice_required",
+                message="Choose use or clear. For noninteractive init, pass --existing use "
+                "or --existing clear (deletes all collection data).",
+            )
+        elif isinstance(exc, CollectionCompatibilityError):
+            error.update(
+                code="collection_incompatible",
+                message="Collection is incompatible: a named dense vector with matching "
+                "dimensions, distance and a trusted embedding fingerprint is required. "
+                "Choose a different collection, or explicitly clear and rebuild with "
+                "hermes qdrant-memory init --existing clear (deletes all collection data).",
+            )
+        print(json.dumps({"error": error}))
         return 1
 
 
