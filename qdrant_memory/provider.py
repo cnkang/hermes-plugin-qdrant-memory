@@ -205,8 +205,8 @@ class QdrantMemoryProvider(MemoryProvider):
                 self._cache.pop(session, None)
                 self._generations[session] = self._generations.get(session, 0) + 1
                 if session not in self._unattributed_sessions:
-                    self._unattributed_sessions.add(session)
                     self.ledger.set_session_unattributed(session)
+                    self._unattributed_sessions.add(session)
                 return
             self._blocked_sessions.discard(session)
             if author and not kwargs.get("author_is_bot"):

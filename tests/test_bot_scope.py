@@ -18,6 +18,30 @@ def remember_alice(p):
     return p.store.search("cats", Scope("alice", "hermes"))[0]
 
 
+def test_failed_quarantine_write_remains_blocked_and_retries(tmp_path, monkeypatch):
+    """A failed durable marker must not suppress the next persistence attempt."""
+    p = provider(tmp_path)
+    try:
+        persist = p.ledger.set_session_unattributed
+
+        def fail_write(*args, **kwargs):
+            raise OSError("ledger write unavailable")
+
+        monkeypatch.setattr(p.ledger, "set_session_unattributed", fail_write)
+        with pytest.raises(OSError, match="ledger write unavailable"):
+            p.on_turn_start(1, "", author_is_bot=True)
+        assert "first" in p._blocked_sessions
+        assert "first" not in p._unattributed_sessions
+        result = json.loads(p.handle_tool_call("qdrant_memory_search", {"query": "cats"}))
+        assert result["error"]["type"] == "PermissionError"
+        monkeypatch.setattr(p.ledger, "set_session_unattributed", persist)
+        p.on_turn_start(2, "", author_is_bot=True)
+        assert "first" in p._unattributed_sessions
+        assert "first" in p.ledger.unattributed_sessions()
+    finally:
+        p.shutdown()
+
+
 @pytest.mark.parametrize("author_id", ["bot:peer", None])
 def test_bot_cannot_recall_or_use_any_memory_tool(tmp_path, monkeypatch, author_id):
     """Bot admission must not inherit the previous human's cached or tool authority."""
