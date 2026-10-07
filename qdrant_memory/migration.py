@@ -193,7 +193,8 @@ def migrate(
     is persisted before commit. Missing ledger operations fail explicitly, retaining
     failed manifest counts instead of certifying an incomplete migration.
     """
-    report(progress, "Validating source", 0, len(records))
+    total = len(records) if hasattr(records, "__len__") else None
+    report(progress, "Validating source", 0, total)
     planned = durable_plan(
         runtime, records, source_type, source_identifier, source_sha256, progress
     )

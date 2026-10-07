@@ -9,7 +9,7 @@ import pytest
 
 from qdrant_memory import cli
 from qdrant_memory.migration import migrate
-from qdrant_memory.progress import MigrationProgress
+from qdrant_memory.progress import MigrationProgress, report
 
 from .helpers import Embedder, config, runtime
 
@@ -193,3 +193,95 @@ def test_reporter_stops_on_failure_and_quiet_never_starts_thread(failure):
     with MigrationProgress(quiet=True) as quiet:
         quiet("Reading source")
     assert quiet.thread is None
+
+
+@pytest.mark.parametrize("unsized", [False, True])
+def test_migration_validation_progress_accepts_unsized_iterables(tmp_path, unsized):
+    """A generator migrates successfully with an unknown validation total."""
+    rt = runtime(tmp_path)
+    records = [{"id": "one", "memory": "cats"}, {"id": "two", "memory": "dogs"}]
+    events = []
+
+    def observe(stage, completed=None, total=None):
+        """Capture the validation phase's input count contract."""
+        if stage == "Validating source":
+            events.append((completed, total))
+
+    try:
+        result = migrate(
+            rt,
+            iter(records) if unsized else records,
+            "mem0-json",
+            "fixture",
+            verify=True,
+            progress=observe,
+        )
+        total = None if unsized else 2
+        assert events == [(0, total), (1, total), (2, total)]
+        assert result["processed"] == 2
+        assert rt.store.count() == 2
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+
+
+def test_observer_failure_after_commit_does_not_abort_migration(tmp_path):
+    """A diagnostic failure after a durable batch cannot prevent later batches."""
+    rt = runtime(tmp_path, cfg=config(write={"batch_size": 1}))
+    committed = []
+
+    def observe(stage, completed=None, total=None):
+        """Raise only after a successful commit, verifying persisted state first."""
+        if stage == "Embedding and writing pending records" and completed:
+            assert rt.store.count() == completed
+            committed.append(completed)
+            raise RuntimeError("observer failed after commit")
+
+    try:
+        result = migrate(
+            rt,
+            [{"id": str(i), "memory": "cats"} for i in range(2)],
+            "mem0-json",
+            "fixture",
+            verify=True,
+            progress=observe,
+        )
+        assert committed == [1, 2]
+        assert result["processed"] == 2
+        assert rt.ledger.manifests()[-1]["completed_at"] is not None
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+
+
+@pytest.mark.parametrize("failure", [KeyboardInterrupt, SystemExit])
+def test_progress_callback_preserves_base_exceptions(failure):
+    """Observer isolation must not swallow process control exceptions."""
+    original = failure("stop")
+
+    def observe(*args):
+        """Raise the exact control exception supplied by the test."""
+        raise original
+
+    with pytest.raises(failure) as caught:
+        report(observe, "Writing", 1, 1)
+    assert caught.value is original
+
+
+@pytest.mark.parametrize("failure", [ValueError, KeyboardInterrupt])
+def test_exit_diagnostic_failure_preserves_original_exception(monkeypatch, failure):
+    """Shutdown joins the thread before isolating a failed stop message."""
+    progress = MigrationProgress()
+    progress.stream = io.StringIO()
+    original = failure("migration failed")
+
+    def broken_output(*args, **kwargs):
+        """Simulate an unexpected output exception outside existing I/O handling."""
+        raise RuntimeError("stop message failed")
+
+    with pytest.raises(failure) as caught, progress:
+        monkeypatch.setattr(progress, "_write", broken_output)
+        raise original
+    assert caught.value is original
+    assert progress.stop.is_set()
+    assert not progress.thread.is_alive()
