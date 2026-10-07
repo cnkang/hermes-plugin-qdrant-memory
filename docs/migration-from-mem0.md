@@ -1,15 +1,86 @@
 # Migrating Mem0
 
 Keep the source collection unchanged and use a separate target collection.
-Back up the export and configuration. Stop the agent before accessing an embedded
-store; maintenance commands do not coordinate Qdrant's exclusive local lock.
+Back up the export and configuration. Use the same active Hermes profile for setup,
+migration and verification. Stop all sessions/gateways writing to the target before
+the real migration in **every deployment mode**, including Server and Cloud.
+Embedded Qdrant also requires stopping other clients that hold its local storage lock.
+
+## JSON export: plan, stop writers, migrate and restart
+
+Replace `/path/export.json` with your export's absolute path and
+`hermes_qdrant_memory` with the intended target collection throughout these commands.
+The target must match the plugin configuration if the agent should use it afterward;
+`--target-collection` overrides only the migration command, not saved configuration.
 
 ```bash
-hermes qdrant-memory migrate mem0 --source-json /path/export.json --dry-run
+hermes qdrant-memory status
+hermes qdrant-memory migrate mem0 --source-json /path/export.json \
+  --target-collection hermes_qdrant_memory --dry-run
+
+# For a gateway installed as a background service:
+hermes gateway status
+hermes gateway stop
+hermes gateway status
+
+# Exit interactive Hermes sessions with /exit. For a foreground gateway,
+# press Ctrl-C in its terminal and wait for the process to exit.
 hermes qdrant-memory migrate mem0 --source-json /path/export.json \
   --target-collection hermes_qdrant_memory --reembed --resume --verify
-hermes qdrant-memory verify
+hermes qdrant-memory verify --collection hermes_qdrant_memory
+hermes qdrant-memory stats --collection hermes_qdrant_memory
 ```
+
+Only after migration and verification succeed, restart the background service if it
+was running before maintenance:
+
+```bash
+hermes gateway start
+hermes gateway status
+```
+
+If you normally run the gateway in the foreground, restart it with `hermes gateway run`
+instead of `gateway start`. For CLI-only use, start a new session with `hermes`.
+Stopping a shared gateway can interrupt other routed profiles; coordinate its downtime.
+Writers on other machines are not covered by the plugin's local writer lock and must
+also be stopped before maintenance.
+
+`--dry-run` validates and plans the source without opening the target collection or
+ledger. It may succeed while an agent is running; this does not prove that the real
+migration can acquire the writer lock or that the target services are ready.
+
+## Writer lock conflict and interrupted migration
+
+`WriterBusyError` / `code: writer_busy` means another local session or gateway still
+owns the target's writer lock. Migration has not started writing target records.
+Use `hermes gateway status` and `hermes gateway list` to locate running gateways,
+stop the relevant service with `hermes gateway stop`, and exit other sessions as above.
+Wait for shutdown to finish: an in-flight request may retain the lock until its worker
+exits. If a supervisor restarts the process, stop it through that supervisor.
+Do not delete `.writer.lock`, `state.db` or its SQLite sidecars to bypass ownership.
+
+Once the writer has stopped, rerun the original source and target:
+
+```bash
+hermes qdrant-memory migrate mem0 --source-json /path/export.json \
+  --target-collection hermes_qdrant_memory --resume --verify
+```
+
+For a migration that actually started but was interrupted or retained failed operations,
+correct the connection/configuration problem first, then resume the same export,
+target and embedding pipeline while writers remain stopped:
+
+```bash
+hermes qdrant-memory migrate mem0 --source-json /path/export.json \
+  --target-collection hermes_qdrant_memory --resume --retry-failed --verify
+hermes qdrant-memory verify --collection hermes_qdrant_memory
+hermes qdrant-memory stats --collection hermes_qdrant_memory
+```
+
+Do not clear the collection to resolve a lock conflict. Counts alone do not prove a
+successful import; require successful verification before restarting the agent.
+
+## Supported sources and verification
 
 JSON input may be an array, an object with `memories`, `results` or `data` array,
 or an ID-to-record mapping. Conflicting duplicates are refused so an export merge
