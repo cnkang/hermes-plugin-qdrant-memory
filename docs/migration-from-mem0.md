@@ -51,6 +51,25 @@ migration can acquire the writer lock or that the target services are ready.
 
 ## Writer lock conflict and interrupted migration
 
+Migration prints live progress to **stderr** by default, while stdout remains the
+final JSON result. Phase messages cover source loading, target/embedding
+initialization, target comparison, embedding/writing pending records, and
+`--verify`. Record counters use the total for that phase; writing counts only
+pending operations and advances after a batch is durably committed. Resume may
+therefore have fewer pending writes than source records. Updates are throttled;
+phase changes and final counts are always shown.
+
+During a slow service request or retry, a waiting line appears every 10 seconds
+without new output, showing the current phase, elapsed time, and time since the
+last progress update. This confirms that the CLI reporter is alive, but does not
+prove that the service request is advancing. No source text, record identifiers,
+paths, or credentials are included in progress lines. Use `--quiet` to suppress
+progress, or redirect stdout to save JSON while keeping progress visible:
+
+```bash
+hermes qdrant-memory migrate mem0 --source-json /path/export.json --verify > migration-result.json
+```
+
 `WriterBusyError` / `code: writer_busy` means another local session or gateway still
 owns the target's writer lock. Migration has not started writing target records.
 Use `hermes gateway status` and `hermes gateway list` to locate running gateways,

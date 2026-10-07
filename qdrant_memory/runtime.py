@@ -6,6 +6,7 @@ from threading import RLock
 
 from .dedupe import decide
 from .models import Scope, content_hash, enforce_limits, now, payload, point_id
+from .progress import report
 from .retry import run_with_retry
 
 
@@ -39,17 +40,21 @@ class Runtime:
             identifier, action, value, source_id, source_version, generation
         )
 
-    def commit(self, keys):
+    def commit(self, keys, progress=None):
         """Commit pending keys in insertion order and bounded action-preserving batches."""
         with self.lock:
             rows = [self.ledger.row("operations", key) for key in keys]
             rows = [row for row in rows if row and row["status"] == "PENDING"]
             size = int(self.cfg["write"]["batch_size"])
+            report(progress, "Embedding and writing pending records", 0, len(rows))
             # Preserve operation order, including delete followed by re-add.
             for start in range(0, len(rows), size):
                 self.check_active()
                 group = rows[start : start + size]
                 self._commit_group(group)
+                report(
+                    progress, "Embedding and writing pending records", start + len(group), len(rows)
+                )
 
     def _commit_group(self, rows):
         # Mixed action groups are split without reordering.

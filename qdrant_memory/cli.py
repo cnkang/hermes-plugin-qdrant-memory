@@ -27,6 +27,7 @@ from .migration import (
     verify_manifest,
 )
 from .ownership import WriterBusyError, WriterLease
+from .progress import MigrationProgress, report
 from .qdrant_store import (
     INDEXES,
     CollectionCompatibilityError,
@@ -96,6 +97,9 @@ def register_cli(subparser):
     for flag in ("resume", "retry-failed", "dry-run", "verify"):
         parser.add_argument("--" + flag, action="store_true")
     parser.add_argument("--oversize", choices=["reject", "truncate"], default="reject")
+    parser.add_argument(
+        "--quiet", action="store_true", help="Suppress migration progress on stderr"
+    )
     parser.set_defaults(func=main)
 
 
@@ -177,7 +181,7 @@ def diagnostic_status(store, ledger, cfg, command):
     return result
 
 
-def execute_command(args, runtime, source):
+def execute_command(args, runtime, source, progress=None):
     """Dispatch a maintenance command using an initialized store and ledger."""
     command = args.qdrant_command
     if command == "migrate":
@@ -192,6 +196,7 @@ def execute_command(args, runtime, source):
                 args.resume,
                 args.retry_failed,
                 args.verify,
+                progress=progress,
             )
         )
     if command == "verify":
@@ -204,6 +209,14 @@ def execute_command(args, runtime, source):
 
 
 def run(args, home=None):
+    """Run maintenance, with live stderr diagnostics for migrations only."""
+    if args.qdrant_command == "migrate":
+        with MigrationProgress(quiet=getattr(args, "quiet", False)) as progress:
+            return _run(args, home, progress)
+    return _run(args, home)
+
+
+def _run(args, home=None, progress=None):
     """Run a command with profile-scoped configuration and owned service resources.
 
     Dry runs validate records without opening a target collection or ledger.
@@ -218,6 +231,7 @@ def run(args, home=None):
     if getattr(args, "oversize", None):
         overrides["limits"] = {"oversize_policy": args.oversize}
     command = args.qdrant_command
+    report(progress, "Loading configuration")
     cfg = load_config(home, overrides, resolve_secrets=command != "status")
     if command == "status":
         # Availability/status is local-only and does not probe external services.
@@ -225,9 +239,13 @@ def run(args, home=None):
     records = None
     source_type = source_identifier = checksum = None
     if command == "migrate":
+        report(progress, "Reading source")
         records, source_type, source_identifier, checksum = migration_source(args, cfg, home)
+        report(progress, "Source loaded", len(records), len(records))
         if args.dry_run:
-            planned = plan(records, cfg)
+            report(progress, "Validating source", 0, len(records))
+            planned = plan(records, cfg, progress=progress)
+            report(progress, "Dry run complete", len(planned), len(planned))
             return {
                 "dry_run": True,
                 "source_unique_count": len(planned),
@@ -236,11 +254,14 @@ def run(args, home=None):
             }
     with ExitStack() as resources:
         if command in {"init", "migrate", "retry"}:
+            report(progress, "Acquiring writer lock")
             lease = WriterLease.for_config(home, cfg)
             resources.callback(lease.close)
+        report(progress, "Initializing embedding client")
         embedder = build_embedder(None, cfg)
         if hasattr(embedder, "close"):
             resources.callback(embedder.close)
+        report(progress, "Connecting to target")
         store = QdrantStore(build_client(cfg), cfg, embedder)
         resources.callback(store.close)
         action = "create"
@@ -252,12 +273,15 @@ def run(args, home=None):
             resources.callback(ledger.close)
             store.initialize(reset=True, before_reset=ledger.clear_destination)
         else:
+            report(progress, "Initializing target collection and probing embedding")
             store.initialize(create=command in {"init", "migrate"})
         if ledger is None:
             ledger = Ledger(home, ledger_namespace(cfg))
             resources.callback(ledger.close)
         runtime = Runtime(cfg, store, ledger)
-        result = execute_command(args, runtime, (records, source_type, source_identifier, checksum))
+        result = execute_command(
+            args, runtime, (records, source_type, source_identifier, checksum), progress
+        )
         if command == "init":
             result.update(collection=store.collection, action=action)
             verification = verify_collection(store)
@@ -272,7 +296,15 @@ def run(args, home=None):
                     "Collection contains incompatible memory payloads or vectors. "
                     "Choose another collection or explicitly clear and rebuild it."
                 )
-        return result
+        report(progress, "Closing resources")
+    if command == "migrate":
+        stage = (
+            "Migration complete"
+            if result["processed"] == result["source_unique_count"]
+            else "Migration incomplete; rerun with --resume --retry-failed"
+        )
+        report(progress, stage, result["processed"], result["source_unique_count"])
+    return result
 
 
 def print_json(value, *, indent=None):
