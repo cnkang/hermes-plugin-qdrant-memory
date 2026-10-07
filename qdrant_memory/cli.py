@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import sys
 from contextlib import ExitStack
 from pathlib import Path
@@ -274,11 +275,27 @@ def run(args, home=None):
         return result
 
 
+def print_json(value, *, indent=None):
+    """Handle a downstream reader closing stdout without a shutdown traceback."""
+    try:
+        print(json.dumps(value, ensure_ascii=False, indent=indent), flush=True)
+        return True
+    except BrokenPipeError:
+        # Prevent Python's final stdout flush from failing on the same closed pipe.
+        descriptor = os.open(os.devnull, os.O_WRONLY)
+        try:
+            os.dup2(descriptor, sys.stdout.fileno())
+        finally:
+            os.close(descriptor)
+        return False
+
+
 def main(args):
     """Print a JSON result and return a nonzero exit code on sanitized failures."""
     try:
         result = run(args)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if not print_json(result, indent=2):
+            return 1
         return 0 if result.get("ok", True) else 1
     except Exception as exc:
         error = safe_error(exc)
@@ -309,7 +326,7 @@ def main(args):
                 "Choose a different collection, or explicitly clear and rebuild with "
                 "hermes qdrant-memory init --existing clear (deletes all collection data).",
             )
-        print(json.dumps({"error": error}))
+        print_json({"error": error})
         return 1
 
 
