@@ -8,6 +8,10 @@ import portalocker
 from .models import digest
 
 
+class WriterBusyError(RuntimeError):
+    """Report exclusive writer ownership without disclosing destination details."""
+
+
 class WriterLease:
     """Hold an OS lock until every owned service and worker has finished."""
 
@@ -35,7 +39,7 @@ class WriterLease:
             portalocker.lock(self.file, portalocker.LOCK_EX | portalocker.LOCK_NB)
         except portalocker.LockException as exc:
             self.file.close()
-            raise RuntimeError("Another writer still owns this profile destination") from exc
+            raise WriterBusyError("Another writer still owns this profile destination") from exc
 
     def close(self):
         """Release ownership only after the owner's other cleanup callbacks."""

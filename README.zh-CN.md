@@ -84,6 +84,10 @@ hermes qdrant-memory retry
 远端重建失败时需重新运行 `init`，不保证清空和重建是原子操作。
 脚本调用须显式传入 `--existing use` 或 `--existing clear`；后者即授权删除。
 `--collection NAME` 只覆盖本次命令的目标，后续 agent 使用的目标仍来自配置文件。
+所有部署模式的 `init`、`migrate` 和 `retry` 都要求独占写入锁，运行前需停止正在
+向同一 profile 和 collection 写入的 Hermes 会话或 gateway。若 `doctor` 已报告
+`ok: true`，collection 已就绪，无需再次初始化；远端 `doctor`、`stats` 和 `verify`
+可在 writer 运行时检查状态。
 `retry` 重试已准备的操作，并让原始失败事件在下次 provider 启动时重新提取。
 维护 embedded 数据库前停止 agent：本地持久化只允许一个 client 进程持有锁。
 

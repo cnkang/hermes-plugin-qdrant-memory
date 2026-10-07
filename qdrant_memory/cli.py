@@ -25,7 +25,7 @@ from .migration import (
     verify_collection,
     verify_manifest,
 )
-from .ownership import WriterLease
+from .ownership import WriterBusyError, WriterLease
 from .qdrant_store import (
     INDEXES,
     CollectionCompatibilityError,
@@ -282,7 +282,15 @@ def main(args):
         return 0 if result.get("ok", True) else 1
     except Exception as exc:
         error = safe_error(exc)
-        if isinstance(exc, CollectionNotInitializedError):
+        if isinstance(exc, WriterBusyError):
+            error.update(
+                code="writer_busy",
+                message="Another Hermes session or gateway owns the writer lock for this "
+                "profile and collection. Stop that runtime before init, migrate or retry, "
+                "then rerun the command. For an existing remote collection, doctor, stats "
+                "and verify can check readiness while the writer is running.",
+            )
+        elif isinstance(exc, CollectionNotInitializedError):
             error.update(
                 code="collection_not_initialized",
                 message="Collection does not exist. Run hermes qdrant-memory init first.",
