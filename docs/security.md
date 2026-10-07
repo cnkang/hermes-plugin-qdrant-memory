@@ -33,10 +33,27 @@ simultaneous writers for one profile destination, including a retiring worker. I
 on separate machines or make explicitly shared absolute storage paths safe.
 
 Every recall and exact-ID tool operation enforces user/agent scope. A gateway
-author takes precedence for their turn; bot turns and non-primary agent contexts
-do not automatically write memories. Switching back to a known session without a
+author takes precedence for their turn. Bot turns cannot recall or invoke personal
+memory tools, including bots without an author ID. An unidentified turn in a session
+with gateway author history also fails closed; ordinary CLI turns without author
+metadata retain their configured profile scope. Bot and non-primary turns do not
+automatically write memories, and builtin notifications during a blocked turn are
+ignored. Completed human turns carrying an explicit author can still persist if
+delivered asynchronously after a bot transition.
+
+Bot or unidentified shared-session participation quarantines supplementary
+session-end/checkpoint extraction, even after a human resumes. Checkpoints remain
+durably archived under the neutral `__mixed__`/null-agent scope without extraction.
+Quarantine is persisted in the private ledger and survives provider restart and
+session rewind. Compression and branch continuations inherit the parent's scope,
+author history, active denial, and durable quarantine. An explicit transcript reset
+clears it once the current turn is authorized. Bot transitions invalidate cached
+and in-flight recall generations.
+Existing memories created before this protection are not automatically removed.
+
+Switching back to a known session without a
 `user_id` preserves that session's previously recorded author scope; the scope is
 only overwritten on `reset=True` or an explicit `user_id`, and a brand-new session
-still falls back to the default scope. Migration preserves source scopes, including
-null agent identity, and tools cannot supply a scope override. Recalled text is
+without a parent still falls back to the default scope. Migration preserves source
+scopes, including null agent identity, and tools cannot supply a scope override. Recalled text is
 untrusted data and never becomes executable plugin instructions.

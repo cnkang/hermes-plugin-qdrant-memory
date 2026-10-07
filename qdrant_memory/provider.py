@@ -40,6 +40,8 @@ class QdrantMemoryProvider(MemoryProvider):
         self._jobs = deque()
         self._cache, self._scopes, self._turns, self._generations = {}, {}, {}, {}
         self._authors = {}
+        self._blocked_sessions = set()
+        self._unattributed_sessions = set()
         self._accepting = False
         self._worker = None
         self._busy = False
@@ -93,6 +95,8 @@ class QdrantMemoryProvider(MemoryProvider):
             self.store.initialize()
             self.ledger = Ledger(self.home, ledger_namespace(self.cfg))
             self._resources.callback(self.ledger.close)
+            self._unattributed_sessions = self.ledger.unattributed_sessions()
+            self._blocked_sessions.update(self._unattributed_sessions)
             self.runtime = Runtime(
                 self.cfg,
                 self.store,
@@ -171,12 +175,16 @@ class QdrantMemoryProvider(MemoryProvider):
                 self._latencies = self._latencies[-512:]
 
     def _scope(self, session_id, author=None):
-        """Resolve session scope with an explicit non-bot turn author taking precedence."""
+        """Authorize the current principal or a captured completed human turn."""
         with self._condition:
             scope = self._scopes.get(session_id, self.default_scope)
-        if author and author.get("id") and not author.get("is_bot"):
-            return Scope(str(author["id"]), scope.agent_id)
-        return scope
+            if author is not None:
+                if author.get("id") and not author.get("is_bot"):
+                    return Scope(str(author["id"]), scope.agent_id)
+                raise PermissionError("Memory requires an attributable human author")
+            if session_id in self._blocked_sessions:
+                raise PermissionError("Personal memory is unavailable for this turn")
+            return scope
 
     def on_turn_start(self, turn_number, message, **kwargs):
         """Update author scope and invalidate recall without performing service I/O."""
@@ -184,6 +192,23 @@ class QdrantMemoryProvider(MemoryProvider):
         with self._condition:
             self._turns[session] = turn_number
             author = kwargs.get("author_id")
+            unattributed = kwargs.get("author_is_bot") or (
+                not author
+                and (
+                    kwargs.get("author_name")
+                    or self._authors.get(session)
+                    or session in self._unattributed_sessions
+                )
+            )
+            if unattributed:
+                self._blocked_sessions.add(session)
+                self._cache.pop(session, None)
+                self._generations[session] = self._generations.get(session, 0) + 1
+                if session not in self._unattributed_sessions:
+                    self._unattributed_sessions.add(session)
+                    self.ledger.set_session_unattributed(session)
+                return
+            self._blocked_sessions.discard(session)
             if author and not kwargs.get("author_is_bot"):
                 scope = Scope(str(author), self.default_scope.agent_id)
                 self._authors.setdefault(session, set()).add(str(author))
@@ -218,6 +243,9 @@ class QdrantMemoryProvider(MemoryProvider):
         if not self._primary or (turn_author and turn_author.get("is_bot")):
             return
         session = session_id or self.session_id
+        with self._condition:
+            if not turn_author and session in self._blocked_sessions:
+                return
         self._event(
             {
                 "kind": "turn",
@@ -234,15 +262,19 @@ class QdrantMemoryProvider(MemoryProvider):
         """Invalidate old recall and queue a search tied to the session generation."""
         session = session_id or self.session_id
         with self._condition:
+            if session in self._blocked_sessions:
+                return
             generation = self._generations.get(session, 0) + 1
             self._generations[session] = generation
             self._cache.pop(session, None)
-        self._queue("prefetch", (session, query, self._scope(session), generation))
+            self._queue("prefetch", (session, query, self._scope(session), generation))
 
     def prefetch(self, query, *, session_id=""):
         """Return matching cached recall or an empty string without network I/O."""
         session = session_id or self.session_id
         with self._condition:
+            if session in self._blocked_sessions:
+                return ""
             self._cache_calls += 1
             cached = self._cache.get(session)
             if cached and cached[0] == self._scopes.get(session, self.default_scope):
@@ -261,9 +293,23 @@ class QdrantMemoryProvider(MemoryProvider):
 
         An explicit user_id or a reset re-attributes the target session; otherwise any
         scope recorded for an existing session is preserved and only a brand-new session
-        falls back to the default profile scope.
+        inherits its parent's scope/history or falls back to the default profile scope.
+        Continuations retain parent denial and quarantine unless explicitly reset.
         """
         with self._condition:
+            parent = kwargs.get("parent_session_id")
+            if parent and parent != new_session_id and not kwargs.get("reset"):
+                self._scopes.setdefault(
+                    new_session_id, self._scopes.get(parent, self.default_scope)
+                )
+                self._authors.setdefault(new_session_id, set()).update(
+                    self._authors.get(parent, set())
+                )
+                if parent in self._blocked_sessions:
+                    self._blocked_sessions.add(new_session_id)
+                if parent in self._unattributed_sessions:
+                    self.ledger.set_session_unattributed(new_session_id)
+                    self._unattributed_sessions.add(new_session_id)
             self.session_id = new_session_id
             user_id = kwargs.get("user_id")
             if user_id or kwargs.get("reset"):
@@ -276,6 +322,10 @@ class QdrantMemoryProvider(MemoryProvider):
             if kwargs.get("reset"):
                 self._authors.pop(new_session_id, None)
                 self._turns.pop(new_session_id, None)
+                # Reset discards transcript history, but cannot authorize an active bot.
+                if new_session_id not in self._blocked_sessions:
+                    self.ledger.set_session_unattributed(new_session_id, False)
+                    self._unattributed_sessions.discard(new_session_id)
             self._cache.clear()
             for session in self._generations:
                 self._generations[session] += 1
@@ -283,7 +333,12 @@ class QdrantMemoryProvider(MemoryProvider):
     def on_session_end(self, messages):
         """Persist supplementary user messages only for a single-author transcript."""
         # A group transcript cannot safely be attributed to its most recent author.
-        if self._primary and messages and len(self._authors.get(self.session_id, set())) <= 1:
+        if (
+            self._primary
+            and messages
+            and self.session_id not in self._unattributed_sessions
+            and len(self._authors.get(self.session_id, set())) <= 1
+        ):
             self._event(
                 {
                     "kind": "session_end",
@@ -303,7 +358,10 @@ class QdrantMemoryProvider(MemoryProvider):
         Mixed-author checkpoints use a neutral scope marker so the archived evidence
         is never attributed to a single participant.
         """
-        multi_author = len(self._authors.get(self.session_id, set())) > 1
+        multi_author = (
+            self.session_id in self._unattributed_sessions
+            or len(self._authors.get(self.session_id, set())) > 1
+        )
         scope = (
             Scope(user_id="__mixed__", agent_id=None)
             if multi_author
@@ -335,6 +393,9 @@ class QdrantMemoryProvider(MemoryProvider):
             raise ValueError("Unsupported builtin memory notification")
         metadata = metadata or {}
         session = metadata.get("session_id") or self.session_id
+        with self._condition:
+            if session in self._blocked_sessions:
+                return
         self._event(
             {
                 "kind": "builtin",
