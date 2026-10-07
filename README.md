@@ -101,6 +101,11 @@ deletion/recreation is not atomic; rerun `init` if remote recreation fails.
 For scripts, explicitly pass `--existing use` or `--existing clear`; the latter
 authorizes deletion. `--collection NAME` overrides only this command's target,
 not the collection configured for subsequent agent sessions.
+`init`, `migrate` and `retry` require exclusive writer ownership in all deployment
+modes. Stop any Hermes session or gateway writing to the same profile and collection
+before running them. If `doctor` already reports `ok: true`, the collection is ready;
+initialization is unnecessary. Remote `doctor`, `stats` and `verify` can inspect it
+while the writer is running.
 `retry` requeues failed events for the next provider
 startup and retries prepared operations. Stop the agent before maintenance of an
 embedded store: Qdrant's local persistence permits only one client process.

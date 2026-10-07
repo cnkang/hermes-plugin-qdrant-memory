@@ -230,3 +230,34 @@ def test_invalid_migration_retains_sanitized_error_manifest(tmp_path):
     assert rt.store.count() == 0
     rt.store.close()
     rt.ledger.close()
+
+
+@pytest.mark.parametrize("command", ["init", "retry"])
+def test_cli_reports_held_writer_lock_before_service_access(tmp_path, monkeypatch, capsys, command):
+    """An active writer blocks mutations with a useful, destination-free diagnostic."""
+    from qdrant_memory.ownership import WriterLease
+
+    cfg = config(qdrant={"mode": "cloud", "url": "https://private.example"})
+    monkeypatch.setattr("qdrant_memory.cli.active_home", lambda: tmp_path)
+    monkeypatch.setattr("qdrant_memory.cli.load_config", lambda *args, **kwargs: cfg)
+    monkeypatch.setattr(
+        "qdrant_memory.cli.build_embedder",
+        lambda *args: pytest.fail("A blocked writer must not initialize services"),
+    )
+    parser = argparse.ArgumentParser()
+    register_cli(parser)
+    args = parser.parse_args(["init", "--existing", "clear"] if command == "init" else [command])
+    lease = WriterLease.for_config(tmp_path, cfg)
+    try:
+        assert main(args) == 1
+        output = capsys.readouterr().out
+        error = json.loads(output)["error"]
+        assert error["code"] == "writer_busy"
+        assert "Stop that runtime" in error["message"]
+        assert not error["retryable"]
+        assert "private.example" not in output and str(tmp_path) not in output
+        assert not (tmp_path / "qdrant-memory" / "state.db").exists()
+    finally:
+        lease.close()
+    replacement = WriterLease.for_config(tmp_path, cfg)
+    replacement.close()
