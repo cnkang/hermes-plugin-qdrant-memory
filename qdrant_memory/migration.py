@@ -8,6 +8,7 @@ from urllib.parse import urlunsplit
 
 from .config import backend_destination, validate_url
 from .models import Scope, content_hash, digest, enforce_limits, normalize, now, payload, point_id
+from .progress import report
 from .qdrant_store import build_client
 from .retry import safe_error
 from .version import VERSION
@@ -158,11 +159,12 @@ def read_qdrant_records(client, collection):
             return
 
 
-def plan(records, cfg):
+def plan(records, cfg, progress=None):
     """Validate records and reject conflicting versions of one source ID."""
     scope = Scope(**cfg["scope"])
     unique = {}
-    for record in records:
+    total = len(records) if hasattr(records, "__len__") else None
+    for completed, record in enumerate(records, 1):
         identifier, value = map_record(record, scope)
         value = enforce_limits(value, cfg["limits"])
         if identifier in unique and digest(unique[identifier]) != digest(value):
@@ -170,6 +172,7 @@ def plan(records, cfg):
             # arbitrary record and silently lose a later update.
             raise ValueError("Conflicting duplicate Mem0 source ID")
         unique[identifier] = value
+        report(progress, "Validating source", completed, total)
     return unique
 
 
@@ -182,6 +185,7 @@ def migrate(
     resume=False,
     retry_failed=False,
     verify=False,
+    progress=None,
 ):
     """Execute or resume a source-ID migration with durable target verification.
 
@@ -189,17 +193,24 @@ def migrate(
     is persisted before commit. Missing ledger operations fail explicitly, retaining
     failed manifest counts instead of certifying an incomplete migration.
     """
-    planned = durable_plan(runtime, records, source_type, source_identifier, source_sha256)
+    report(progress, "Validating source", 0, len(records))
+    planned = durable_plan(
+        runtime, records, source_type, source_identifier, source_sha256, progress
+    )
+    report(progress, "Checking resume manifest")
     manifest = (
         resume_manifest(runtime, planned, source_type, source_identifier, source_sha256)
         if resume
         else None
     )
-    if manifest is not None and stale_skips(runtime, manifest):
+    if manifest is not None and stale_skips(runtime, manifest, progress):
         manifest = None
     if manifest is None:
-        manifest = create_manifest(runtime, planned, source_type, source_identifier, source_sha256)
+        manifest = create_manifest(
+            runtime, planned, source_type, source_identifier, source_sha256, progress
+        )
     try:
+        report(progress, "Preparing pending operations")
         for record in manifest["records"].values():
             key = record["operation_key"]
             row = runtime.ledger.row("operations", key) if key else None
@@ -209,16 +220,18 @@ def migrate(
             if retry_failed and row and row["status"] == "FAILED":
                 runtime.ledger.reset_operation(key)
         runtime.commit(
-            [r["operation_key"] for r in manifest["records"].values() if r["operation_key"]]
+            [r["operation_key"] for r in manifest["records"].values() if r["operation_key"]],
+            progress=progress,
         )
     finally:
+        report(progress, "Saving manifest counts")
         update_manifest_counts(runtime, manifest, len(planned))
-    if verify and not verify_manifest(runtime.store, manifest)["ok"]:
+    if verify and not verify_manifest(runtime.store, manifest, progress)["ok"]:
         raise ValueError("Migration verification failed")
     return manifest
 
 
-def stale_skips(runtime, manifest):
+def stale_skips(runtime, manifest, progress=None):
     """Check skipped and committed records still match settled target data before resuming.
 
     SKIP records are verified against live target data; COMMITTED records with
@@ -226,9 +239,12 @@ def stale_skips(runtime, manifest):
     modified points trigger a fresh migration plan.
     """
     with runtime.lock:
-        for identifier, record in manifest["records"].items():
+        total = len(manifest["records"])
+        report(progress, "Checking resumed target records", 0, total)
+        for completed, (identifier, record) in enumerate(manifest["records"].items(), 1):
             if _record_is_stale(runtime, identifier, record):
                 return True
+            report(progress, "Checking resumed target records", completed, total)
     return False
 
 
@@ -249,10 +265,10 @@ def _record_is_stale(runtime, identifier, record):
     )
 
 
-def durable_plan(runtime, records, source_type, source_identifier, source_sha256):
+def durable_plan(runtime, records, source_type, source_identifier, source_sha256, progress=None):
     """Validate a source snapshot and retain sanitized planning failures."""
     try:
-        planned = plan(records, runtime.cfg)
+        planned = plan(records, runtime.cfg, progress)
     except Exception as exc:
         runtime.ledger.save_manifest(
             {
@@ -294,7 +310,7 @@ def resume_manifest(runtime, planned, source_type, source_identifier, source_sha
     return None
 
 
-def create_manifest(runtime, planned, source_type, source_identifier, source_sha256):
+def create_manifest(runtime, planned, source_type, source_identifier, source_sha256, progress=None):
     """Prepare ADD/UPDATE/SKIP without semantically merging distinct source IDs."""
     manifest = {
         "migration_id": str(uuid.uuid4()),
@@ -315,7 +331,8 @@ def create_manifest(runtime, planned, source_type, source_identifier, source_sha
         "records": {},
     }
     with runtime.lock:
-        for identifier, value in planned.items():
+        report(progress, "Comparing target and preparing manifest", 0, len(planned))
+        for completed, (identifier, value) in enumerate(planned.items(), 1):
             scope = Scope(value["user_id"], value["agent_id"])
             old = runtime.store.get(identifier, scope)
             open_write = runtime.ledger.has_open_operations(identifier)
@@ -339,6 +356,7 @@ def create_manifest(runtime, planned, source_type, source_identifier, source_sha
                 "payload_hash": digest(value),
                 "scope": scope.as_dict(),
             }
+            report(progress, "Comparing target and preparing manifest", completed, len(planned))
     runtime.ledger.save_manifest(manifest)
     return manifest
 
@@ -365,17 +383,21 @@ def update_manifest_counts(runtime, manifest, expected):
     runtime.ledger.save_manifest(manifest)
 
 
-def verify_manifest(store, manifest):
+def verify_manifest(store, manifest, progress=None):
     """Verify every planned ID, scope and payload hash rather than count alone."""
     if "planning_error" in manifest:
         return {"ok": False, "planning_error": manifest["planning_error"]}
     missing, mismatched = [], []
-    for identifier, record in manifest["records"].items():
+    total = len(manifest["records"])
+    report(progress, "Verifying target records", 0, total)
+    for completed, (identifier, record) in enumerate(manifest["records"].items(), 1):
         point = store.get(identifier, Scope(**record["scope"]))
         if point is None:
             missing.append(identifier)
         elif digest(point.payload) != record["payload_hash"]:
             mismatched.append(identifier)
+        report(progress, "Verifying target records", completed, total)
+    report(progress, "Checking target count")
     return {
         "ok": not missing and not mismatched,
         "expected": len(manifest["records"]),
