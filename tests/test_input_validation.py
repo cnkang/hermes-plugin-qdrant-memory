@@ -15,18 +15,19 @@ from .helpers import config, runtime
 def test_truncation_rejects_normalized_empty_text(text, bound):
     """Reject incomplete UTF-8 and whitespace-only truncated memories."""
     limits = config(limits={"max_text_bytes": bound, "oversize_policy": "truncate"})["limits"]
+    record = payload(text, Scope("user", None), "manual_tool")
     with pytest.raises(ValueError, match="nonempty"):
-        enforce_limits(payload(text, Scope("user", None), "manual_tool"), limits)
+        enforce_limits(record, limits)
 
 
 def test_evaluation_rejects_empty_queries_before_writing():
     """Validate query samples before store writes or metric calculations."""
     writes = []
     store = SimpleNamespace(upsert=writes.append)
+    dataset = {"memories": [{"id": "one", "text": "cats"}], "queries": []}
+    scope = Scope("u", None)
     with pytest.raises(ValueError, match="queries.*nonempty"):
-        evaluate(
-            {"memories": [{"id": "one", "text": "cats"}], "queries": []}, store, Scope("u", None)
-        )
+        evaluate(dataset, store, scope)
     assert writes == []
 
 
@@ -97,6 +98,8 @@ def test_evaluation_rejects_invalid_labels_before_writing(invalid):
     else:
         dataset["queries"][0]["query"] = " "
     writes = []
+    store = SimpleNamespace(upsert=writes.append)
+    scope = Scope("u", None)
     with pytest.raises(ValueError, match="Dataset"):
-        evaluate(dataset, SimpleNamespace(upsert=writes.append), Scope("u", None))
+        evaluate(dataset, store, scope)
     assert writes == []

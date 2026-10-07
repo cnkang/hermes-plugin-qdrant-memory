@@ -43,8 +43,9 @@ def test_cloud_status_without_secrets_is_local(tmp_path, monkeypatch, ledger_exi
     assert result["mode"] == "cloud"
     assert result["ledger_exists"] is ledger_exists
     for command in ("stats", "doctor", "verify", "retry", "migrate"):
+        request = SimpleNamespace(qdrant_command=command)
         with pytest.raises(ValueError):
-            run(SimpleNamespace(qdrant_command=command), home=tmp_path)
+            run(request, home=tmp_path)
 
 
 @pytest.mark.parametrize("user_id", ["bob", None])

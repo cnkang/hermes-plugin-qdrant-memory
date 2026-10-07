@@ -93,9 +93,8 @@ def test_writer_lease_covers_remote_mode_and_url_aliases(tmp_path):
         tmp_path, config(qdrant={"mode": "server", "url": "https://example.com"})
     )
     try:
+        cloud_config = config(qdrant={"mode": "cloud", "url": "https://EXAMPLE.com:443/"})
         with pytest.raises(RuntimeError, match="writer"):
-            WriterLease.for_config(
-                tmp_path, config(qdrant={"mode": "cloud", "url": "https://EXAMPLE.com:443/"})
-            )
+            WriterLease.for_config(tmp_path, cloud_config)
     finally:
         lease.close()
