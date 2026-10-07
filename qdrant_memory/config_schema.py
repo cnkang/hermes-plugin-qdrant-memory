@@ -86,11 +86,12 @@ def save_config(values, hermes_home):
         # Keep the environment reference, not a stale copy or a legacy explicit URL.
         cfg["qdrant"]["url"] = None
         cfg["qdrant"]["url_env"] = "QDRANT_URL"
-        validate_url(
-            environment["url"],
-            cloud=cfg["qdrant"]["mode"] == "cloud",
-            api_key=environment.get("api_key"),
-        )
+        if cfg["qdrant"]["mode"] != "embedded":
+            validate_url(
+                environment["url"],
+                cloud=cfg["qdrant"]["mode"] == "cloud",
+                api_key=environment.get("api_key"),
+            )
     if "api_key" in environment:
         cfg["qdrant"]["api_key_env"] = "QDRANT_API_KEY"
     for key in ("provider", "model", "base_url", "dimensions"):

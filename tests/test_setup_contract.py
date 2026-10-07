@@ -177,3 +177,27 @@ def test_setup_rejects_invalid_environment_url_without_overwriting_config(tmp_pa
     with pytest.raises(ValueError, match="Cloud requires HTTPS"):
         save_config({"mode": "cloud"}, tmp_path)
     assert path.read_text() == original
+
+
+@pytest.mark.parametrize("mode", ["embedded", "server", "cloud"])
+@pytest.mark.parametrize("url", ["not-a-url", "http://remote.example"])
+def test_setup_validates_environment_url_only_for_remote_modes(tmp_path, monkeypatch, mode, url):
+    """An unused remote endpoint cannot prevent embedded setup; remote checks remain."""
+    from qdrant_memory.config import load_config
+    from qdrant_memory.config_schema import save_config
+
+    monkeypatch.setenv("QDRANT_URL", url)
+    monkeypatch.setenv("QDRANT_API_KEY", "test-key")
+    path = tmp_path / "qdrant-memory.json"
+    original = json.dumps({"qdrant": {"url": "https://previous.example"}})
+    path.write_text(original)
+    if mode != "embedded":
+        with pytest.raises(ValueError):
+            save_config({"mode": mode}, tmp_path)
+        assert path.read_text() == original
+    else:
+        save_config({"mode": mode}, tmp_path)
+        saved = json.loads(path.read_text())
+        assert saved["qdrant"]["url"] is None
+        assert saved["qdrant"]["url_env"] == "QDRANT_URL"
+        assert load_config(tmp_path)["qdrant"]["mode"] == "embedded"
