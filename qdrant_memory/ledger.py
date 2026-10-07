@@ -43,7 +43,34 @@ class Ledger:
             CREATE TABLE IF NOT EXISTS metrics (name TEXT, value REAL, collection TEXT);
             CREATE TABLE IF NOT EXISTS counters (
                 name TEXT, value INTEGER, collection TEXT, PRIMARY KEY(name,collection));
+            CREATE TABLE IF NOT EXISTS unattributed_sessions (
+                session_id TEXT, collection TEXT, PRIMARY KEY(session_id,collection));
         """)
+
+    def unattributed_sessions(self):
+        """Load transcript quarantine for this destination, including resumed sessions."""
+        with self.lock:
+            return {
+                row[0]
+                for row in self.db.execute(
+                    "SELECT session_id FROM unattributed_sessions WHERE collection=?",
+                    (self.collection,),
+                )
+            }
+
+    def set_session_unattributed(self, session_id, unattributed=True):
+        """Retain uncertain transcript provenance until the host explicitly resets it."""
+        with self.lock, self.db:
+            if unattributed:
+                self.db.execute(
+                    "INSERT OR IGNORE INTO unattributed_sessions VALUES(?,?)",
+                    (session_id, self.collection),
+                )
+            else:
+                self.db.execute(
+                    "DELETE FROM unattributed_sessions WHERE session_id=? AND collection=?",
+                    (session_id, self.collection),
+                )
 
     def enqueue_event(self, value):
         """Persist an immutable event once and return its deterministic key."""

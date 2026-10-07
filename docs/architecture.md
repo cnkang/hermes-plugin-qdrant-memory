@@ -48,7 +48,15 @@ During failed initialization, created resources are closed immediately.
 Every retrieval filters `user_id` and `agent_id`; a null agent has an explicit null
 condition. Exact-ID reads check payload scope before update/delete. A tool cannot
 submit a scope override. Non-bot gateway author identity takes precedence for that
-turn. Mixed-author session transcripts are not attributed to the latest author.
+turn. Current-turn memory eligibility is separate from that stored human scope:
+bot and unidentified shared-session turns cannot use it. Explicit authors on
+asynchronously completed human turns retain their own write scope.
+Mixed-author session transcripts are not attributed to the latest author. Bot or
+unidentified participation also disables supplementary transcript extraction;
+the ledger persists that quarantine across restart until an authorized transcript
+reset. Continuation IDs inherit the parent's scope, author history, active denial,
+and durable quarantine. Checkpoint archival continues with neutral attribution
+and no extraction.
 
 Prefetch runs in the worker. `prefetch()` itself reads only a matching cached value
 or returns an empty string. Each queued search has a generation; session/author

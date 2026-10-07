@@ -118,10 +118,15 @@ def test_host_switch_clears_transients_and_preserves_durable_memory(tmp_path, mo
         )
         assert p.prefetch("cats") == ""
         assert p.store.count() == 1
-        if mode != "rewind":
+        if mode in {"new", "reset"}:
             assert p._authors.get(target, set()) == set()
             assert target not in p._turns
         else:
             assert p._authors[target] == {"alice", "bob"}
+            p.on_pre_compress([{"role": "user", "content": "dogs preferred"}])
+            assert p.wait_idle()
+            event = json.loads(p.ledger.rows("events", "COMMITTED")[-1]["payload_json"])
+            assert event["scope"]["user_id"] == "__mixed__"
+            assert event["extract"] is False
     finally:
         p.shutdown()
