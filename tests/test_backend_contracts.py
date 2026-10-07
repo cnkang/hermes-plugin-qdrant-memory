@@ -1,5 +1,7 @@
 """Remote-client configuration and destination isolation contracts."""
 
+import hashlib
+import json
 from unittest.mock import Mock
 
 import pytest
@@ -41,6 +43,21 @@ def test_ledger_destination_namespace_changes_with_endpoint():
     a = config(qdrant={"mode": "server", "url": "http://one.example"})
     b = config(qdrant={"mode": "server", "url": "http://two.example"})
     assert ledger_namespace(a) != ledger_namespace(b)
+
+
+def test_embedded_ledger_namespace_preserves_legacy_hash_input(tmp_path):
+    """Embedded destination hashes stay compatible with existing ledger rows."""
+    from qdrant_memory.config import ledger_namespace
+
+    qdrant = {
+        "mode": "embedded",
+        "path": str(tmp_path / "embedded"),
+        "collection": "notes",
+    }
+    legacy_destination = ["embedded", str((tmp_path / "embedded").resolve())]
+    legacy_hash = hashlib.sha256(json.dumps(legacy_destination).encode()).hexdigest()
+
+    assert ledger_namespace({"qdrant": qdrant}) == f"notes:{legacy_hash}"
 
 
 def test_server_cloud_url_alias_resolves_to_same_ledger_namespace():
