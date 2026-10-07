@@ -91,6 +91,9 @@ hermes qdrant-memory retry
 
 行为配置位于 `$HERMES_HOME/qdrant-memory.json`，凭据放在当前 profile 的 Hermes
 secret scope。默认 embedded 数据位于 `$HERMES_HOME/qdrant-memory/qdrant`。
+`hermes memory setup` 检测当前 profile 环境中的 `QDRANT_URL` 和 `QDRANT_API_KEY`，
+已有值直接使用并跳过对应输入，只提示变量已设置，不显示其内容。两项分别检测，
+缺失项仍需输入；环境 URL 优先于旧配置 URL，保存环境引用而不复制值或密钥。
 Server 默认地址为 `http://127.0.0.1:6333`；Cloud 要求 HTTPS 和 Database API key。
 详细示例、默认值、OpenAI-compatible embedding、LLM 路由及显式 fallback 见
 [配置文档](docs/configuration.md)（英文）。
