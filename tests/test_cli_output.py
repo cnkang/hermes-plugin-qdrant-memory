@@ -1,9 +1,11 @@
 """Exercise closed output pipes in real processes, including interpreter shutdown."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -59,3 +61,26 @@ def test_open_stdout_preserves_json_and_exit_status(mode, expected_code):
         assert b"private-error-text" not in result.stdout
     else:
         assert output == {"target_ids": ["x" * 100]}
+
+
+@pytest.mark.parametrize("mode,count", [("success", 1), ("success", 3000), ("error", 1)])
+def test_closed_pipe_in_current_process_can_flush_after_failure(monkeypatch, mode, count):
+    """Exercise real pipe failures under coverage and ensure later flushes remain safe."""
+    from qdrant_memory import cli
+
+    def run(args):
+        if mode == "error":
+            raise RuntimeError("private-error-text")
+        return {"target_ids": ["x" * 100] * count}
+
+    monkeypatch.setattr(cli, "run", run)
+    reader, writer = os.pipe()
+    os.close(reader)
+    with os.fdopen(writer, "w") as output:
+        with monkeypatch.context() as capture:
+            capture.setattr(sys, "stdout", output)
+            assert cli.main(SimpleNamespace(qdrant_command="status")) == 1
+            output.flush()
+            # Also exercise the interpreter's later write/flush behavior.
+            output.write("shutdown flush")
+            output.flush()
