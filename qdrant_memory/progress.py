@@ -8,7 +8,11 @@ from threading import Event, Lock, Thread
 def report(progress, stage, completed=None, total=None):
     """Notify an optional observer without including source data or credentials."""
     if progress is not None:
-        progress(stage, completed, total)
+        try:
+            progress(stage, completed, total)
+        except Exception:
+            # Diagnostics must not change the outcome of durable work.
+            pass
 
 
 class MigrationProgress:
@@ -41,7 +45,11 @@ class MigrationProgress:
         if self.thread is not None:
             self.thread.join()
         if exc_type is not None:
-            self("Migration stopped; see error output or rerun with --resume")
+            try:
+                self("Migration stopped; see error output or rerun with --resume")
+            except Exception:
+                # Preserve the original migration failure after reporter shutdown.
+                pass
 
     def __call__(self, stage, completed=None, total=None):
         """Throttle record updates, but always show phase starts and completions."""
