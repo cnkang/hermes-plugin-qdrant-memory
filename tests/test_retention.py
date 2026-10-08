@@ -104,3 +104,78 @@ def test_delete_fence_is_bound_to_scope_and_event_admission_time(tmp_path):
         assert fence_time
     finally:
         ledger.close()
+
+
+def test_ledger_retained_history_uses_targeted_lookup_indexes(tmp_path):
+    """Avoid scanning retained rows for replay, migration, and delete-fence lookups."""
+    ledger = Ledger(tmp_path)
+    try:
+        plans = {
+            "events": ledger.db.execute(
+                "EXPLAIN QUERY PLAN SELECT * FROM events WHERE status=? AND collection=? ORDER BY rowid",
+                ("PENDING", ledger.collection),
+            ).fetchall(),
+            "operations": ledger.db.execute(
+                "EXPLAIN QUERY PLAN SELECT * FROM operations WHERE status=? AND collection=? ORDER BY rowid",
+                ("PENDING", ledger.collection),
+            ).fetchall(),
+            "open_point": ledger.db.execute(
+                """EXPLAIN QUERY PLAN SELECT 1 FROM operations
+                WHERE point_id=? AND collection=? AND status IN ('PENDING','FAILED') LIMIT 1""",
+                ("point", ledger.collection),
+            ).fetchall(),
+            "delete_fence_point": ledger.db.execute(
+                """EXPLAIN QUERY PLAN SELECT source_version,created_at FROM operations
+                WHERE action='DELETE' AND source_id=? AND collection=? AND point_id=?""",
+                (ledger.delete_fence_source(Scope("alice", "hermes")), ledger.collection, "point"),
+            ).fetchall(),
+            "delete_fence_hash": ledger.db.execute(
+                """EXPLAIN QUERY PLAN SELECT source_version,created_at FROM operations
+                WHERE action='DELETE' AND source_id=? AND collection=? AND content_hash=?""",
+                (ledger.delete_fence_source(Scope("alice", "hermes")), ledger.collection, "hash"),
+            ).fetchall(),
+        }
+        details = {name: [row["detail"] for row in rows] for name, rows in plans.items()}
+
+        assert any("events_by_collection_status" in detail for detail in details["events"])
+        assert any("operations_by_collection_status" in detail for detail in details["operations"])
+        assert any("operations_by_point_status" in detail for detail in details["open_point"])
+        assert any(
+            "operations_delete_by_point" in detail for detail in details["delete_fence_point"]
+        )
+        assert any("operations_delete_by_hash" in detail for detail in details["delete_fence_hash"])
+    finally:
+        ledger.close()
+
+
+def test_opening_existing_ledger_adds_indexes_without_losing_rows(tmp_path):
+    """Upgrade an existing ledger schema in place and preserve its replay rows."""
+    ledger = Ledger(tmp_path)
+    event_key = ledger.enqueue_event({"session_id": "session", "user": "keep this"})
+    operation_key = ledger.enqueue_operation("point", "UPSERT", {"text": "keep this"})
+    with ledger.db:
+        for name in (
+            "events_by_collection_status",
+            "operations_by_collection_status",
+            "operations_by_point_status",
+            "operations_delete_by_point",
+            "operations_delete_by_hash",
+        ):
+            ledger.db.execute(f"DROP INDEX {name}")
+    ledger.close()
+
+    upgraded = Ledger(tmp_path)
+    try:
+        names = {row[1] for row in upgraded.db.execute("PRAGMA index_list(operations)")}
+        assert {
+            "operations_by_collection_status",
+            "operations_by_point_status",
+            "operations_delete_by_point",
+            "operations_delete_by_hash",
+        } <= names
+        event_names = {row[1] for row in upgraded.db.execute("PRAGMA index_list(events)")}
+        assert "events_by_collection_status" in event_names
+        assert upgraded.row("events", event_key)["payload_json"]
+        assert upgraded.row("operations", operation_key)["payload_json"]
+    finally:
+        upgraded.close()
