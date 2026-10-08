@@ -89,6 +89,15 @@ class QdrantStore:
                 raise ValueError("Reset requires collection creation")
             if self.client.collection_exists(self.collection):
                 self.client.delete_collection(self.collection)
+                if self.cfg["qdrant"]["mode"] == "embedded":
+                    # Reopen the local engine so its filesystem-backed collection
+                    # catalog reflects the completed delete on every platform.
+                    self.client.close()
+                    self.client = build_client(self.cfg)
+                if self.client.collection_exists(self.collection):
+                    raise CollectionCompatibilityError(
+                        "Qdrant did not confirm collection deletion during reset"
+                    )
         if not self.client.collection_exists(self.collection):
             if not create:
                 raise CollectionNotInitializedError(

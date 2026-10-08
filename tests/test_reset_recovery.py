@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import utils
 from qdrant_client import QdrantClient, models
 from utils import atomic_json_write
 
@@ -88,6 +89,7 @@ def test_cli_resumes_reset_after_process_death(
     root = str(Path(__file__).resolve().parents[1])
     child = r"""
 import os, sys
+sys.path.insert(0, sys.argv[4])
 sys.path.insert(0, sys.argv[3])
 from argparse import ArgumentParser
 from qdrant_client import QdrantClient
@@ -109,9 +111,18 @@ cli.build_embedder = lambda context, cfg: Embedder()
 parser = ArgumentParser()
 cli.register_cli(parser)
 cli.run(parser.parse_args(["init", "--existing", "clear"]), home=sys.argv[1])
-"""
+    """
     completed = subprocess.run(
-        [sys.executable, "-c", child, str(tmp_path), cutpoint, root], timeout=30
+        [
+            sys.executable,
+            "-c",
+            child,
+            str(tmp_path),
+            cutpoint,
+            root,
+            str(Path(utils.__file__).resolve().parent),
+        ],
+        timeout=30,
     )
     assert completed.returncode == (71 if cutpoint == "before-create" else 72)
 

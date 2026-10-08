@@ -15,6 +15,7 @@ CASES = [("success", "success", "success", "success", "success", 0)] + [
 
 
 @pytest.mark.parametrize("lint,tests,sonar,snyk,snyk_code,expected", CASES)
+@pytest.mark.skipif(os.name == "nt", reason="The checked workflow step is POSIX Bash.")
 def test_required_gate_executes_actual_workflow_step(lint, tests, sonar, snyk, snyk_code, expected):
     """Verify required gate executes actual workflow step."""
     workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text(

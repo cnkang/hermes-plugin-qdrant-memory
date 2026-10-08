@@ -18,7 +18,10 @@ credentialed Cloud smoke workflow is triggered only by pushes to `main` and manu
 dispatch, never by `codex/**` branch pushes, so repository Cloud secrets are not
 exposed to arbitrary branch code.
 
-State directories are private (0700), SQLite state and saved config are 0600.
+On POSIX systems, state directories are mode 0700 and SQLite state and saved config
+are mode 0600. Windows uses inherited filesystem ACLs; Python's `chmod` mode bits do
+not establish an equivalent private ACL, so operators must protect the Hermes profile
+directory with an appropriate Windows ACL.
 The durable ledger can contain raw conversation events and prepared memory payloads.
 It logically scrubs committed event bodies and committed/superseded operation bodies,
 except operations still needed by an incomplete migration manifest. Identity/status

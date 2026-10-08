@@ -27,6 +27,7 @@ sys.exit(cli.main(SimpleNamespace(qdrant_command='status')))
 
 
 @pytest.mark.parametrize("mode,count", [("success", 1), ("success", 3000), ("error", 1)])
+@pytest.mark.skipif(os.name == "nt", reason="Closed-pipe shutdown codes differ on Windows.")
 def test_closed_stdout_exits_without_traceback(mode, count):
     """Closing the reader before printing covers both buffered and large outputs."""
     process = subprocess.Popen(
@@ -64,6 +65,7 @@ def test_open_stdout_preserves_json_and_exit_status(mode, expected_code):
 
 
 @pytest.mark.parametrize("mode,count", [("success", 1), ("success", 3000), ("error", 1)])
+@pytest.mark.skipif(os.name == "nt", reason="This pipe contract relies on POSIX EPIPE behavior.")
 def test_closed_pipe_in_current_process_can_flush_after_failure(monkeypatch, mode, count):
     """Exercise real pipe failures under coverage and ensure later flushes remain safe."""
     from qdrant_memory import cli
