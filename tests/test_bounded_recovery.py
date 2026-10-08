@@ -254,3 +254,80 @@ def test_network_phase_does_not_hold_ledger_lock(tmp_path):
             assert ledger.stats()["events"] == {"PENDING": 1}
         finally:
             ledger.close()
+
+
+def test_pending_progress_count_uses_bounded_key_only_queries(tmp_path):
+    """Progress counting preserves duplicate keys while avoiding large payload reads."""
+    ledger = Ledger(tmp_path, "one")
+    other = Ledger(tmp_path, "two")
+    try:
+        seed(ledger, 1000)
+        terminal = ledger.enqueue_operation("terminal", "DELETE", {})
+        failed = ledger.enqueue_operation("failed", "DELETE", {})
+        foreign = other.enqueue_operation("foreign", "DELETE", {})
+        ledger.finish("operations", terminal)
+        ledger.failure("operations", failed, ValueError(), terminal=True)
+        queries = []
+        ledger.db.set_trace_callback(queries.append)
+        keys = [str(i) for i in range(1000)] + ["0", "0", "missing", terminal, failed, foreign]
+        assert ledger.count_pending_operations(keys) == 1002
+        assert len(queries) == 8
+        assert all(sql.startswith("SELECT idempotency_key FROM operations") for sql in queries)
+        assert all("payload_json" not in sql and "SELECT *" not in sql for sql in queries)
+        assert ledger.count_pending_operations([]) == 0
+    finally:
+        ledger.close()
+        other.close()
+
+
+def test_pending_progress_count_binds_hostile_shaped_keys(tmp_path):
+    """Requested key contents remain exact bound values in the static count query."""
+    ledger = Ledger(tmp_path)
+    try:
+        seed(ledger, 3)
+        key = "' OR 1=1 --"
+        assert ledger.count_pending_operations([key]) == 0
+        with ledger.db:
+            ledger.db.execute(
+                "INSERT INTO operations(idempotency_key,point_id,action,payload_json,collection) "
+                "VALUES(?,?,'DELETE','{}',?)",
+                (key, "fixture", ledger.collection),
+            )
+        assert ledger.count_pending_operations([key, key]) == 2
+        assert ledger.count_pending_operations([key + " "]) == 0
+    finally:
+        ledger.close()
+
+
+@pytest.mark.parametrize("unsized", [False, True])
+def test_commit_progress_prepass_never_reads_payloads(tmp_path, monkeypatch, unsized):
+    """Sized keys get an exact lightweight total; generators remain single-pass."""
+    rt = runtime(tmp_path, cfg=config(write={"batch_size": 1}))
+    scope = Scope(**rt.cfg["scope"])
+    value = payload("cats", scope, "fixture", "")
+    key = rt.operation("00000000-0000-0000-0000-000000000001", "UPSERT", value)
+    full_reads = []
+    original = rt.ledger.row
+    notifications = []
+
+    def read(table, identifier):
+        """Observe full payload reads separately from lightweight count queries."""
+        full_reads.append(identifier)
+        return original(table, identifier)
+
+    def progress(stage, completed, total):
+        """The initial progress notification must precede every payload read."""
+        if not notifications:
+            assert full_reads == []
+        notifications.append((completed, total))
+
+    monkeypatch.setattr(rt.ledger, "row", read)
+    try:
+        keys = [key, key, "missing"]
+        rt.commit(iter(keys) if unsized else keys, progress=progress)
+        total = None if unsized else 2
+        assert notifications == [(0, total), (1, total)]
+        assert full_reads == keys
+    finally:
+        rt.store.close()
+        rt.ledger.close()

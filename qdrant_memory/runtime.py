@@ -46,11 +46,7 @@ class Runtime:
         with self.lock:
             # Keys are lightweight; never retain every payload in a large import.
             total = (
-                sum(
-                    1
-                    for key in keys
-                    if (row := self.ledger.row("operations", key)) and row["status"] == "PENDING"
-                )
+                self.ledger.count_pending_operations(keys)
                 if progress is not None and hasattr(keys, "__len__")
                 else None
             )

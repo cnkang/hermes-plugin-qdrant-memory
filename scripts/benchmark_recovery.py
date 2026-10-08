@@ -99,17 +99,19 @@ def query_plans(ledger):
     """Capture the actual SQLite planner's list and bounded scan choices."""
     statements = {
         "legacy": (
-            "SELECT * FROM operations WHERE status=? AND collection=? ORDER BY rowid",
+            "EXPLAIN QUERY PLAN SELECT * FROM operations "
+            "WHERE status=? AND collection=? ORDER BY rowid",
             ("PENDING", COLLECTION),
         ),
         "bounded": (
-            "SELECT rowid AS scan_rowid,* FROM operations WHERE collection=? AND status=? "
+            "EXPLAIN QUERY PLAN SELECT rowid AS scan_rowid,* FROM operations "
+            "WHERE collection=? AND status=? "
             "AND rowid>? AND rowid<=? ORDER BY rowid LIMIT ?",
             (COLLECTION, "PENDING", 0, 100000, 128),
         ),
     }
     return {
-        name: [row[3] for row in ledger.db.execute("EXPLAIN QUERY PLAN " + sql, args)]
+        name: [row[3] for row in ledger.db.execute(sql, args)]
         for name, (sql, args) in statements.items()
     }
 
