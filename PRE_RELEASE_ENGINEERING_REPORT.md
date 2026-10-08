@@ -3,7 +3,18 @@
 > 本文件保留了早期加固阶段的记录；PR #10 已合并。当前最终审查、精确验证
 > 结果与发布决定见 [PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md)。
 
-## 最终预发布加固（2026-10-08）
+## 当前验收（2026-10-08）
+
+PR #10、#11 均已合并。最新 main 为 `79565e755716f3d812b73e550417b5049b9642e6`。
+该 SHA 的 [Cloud 实测](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788044033)、
+[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788043978) 和
+[跨平台矩阵](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788044014) 已通过。
+本轮修复分支为 `fix/v0.1.0-final-release-hardening`；本轮代码验证和发布结论以
+[最终验收报告](PRE_RELEASE_FINAL_REVIEW.md) 为准，不能由历史成功替代。
+
+## 历史 PR #11 预发布加固（合并前记录，2026-10-08）
+
+以下 Cloud 阻塞与 NOT READY 结论只描述 PR #11 合并前的实现提交；已被上方 main 验证更新。
 
 - 本轮基线：远端 `main` 的 `a6a883cd3db3bfdf57cb923f1e9c26fb336df211`；工作分支为
   `codex/v0.1.0-pre-release-hardening`。用户数据未用于迁移或测试。
@@ -27,7 +38,7 @@
   ([37766278783](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766278783))
   在测试开始前被 `qdrant-cloud` 环境保护规则拒绝；Cloud 行为尚未验证。
 - CodeRabbit 状态虽为绿色，但其报告要求 OSS 仓库人工审查；Sourcery 检查已跳过，
-  不将这两项表述为已完成的自动化代码审查。最新预发布决定仍为 **NOT READY**。
+  不将这两项表述为已完成的自动化代码审查。当时的预发布决定为 **NOT READY**。
 
 ## 历史 PR 摘要（PR #10，已合并）
 

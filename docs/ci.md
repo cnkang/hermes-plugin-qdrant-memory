@@ -1,5 +1,12 @@
 # CI services
 
+Candidate validation must name the plugin SHA and actual test execution. A green
+optional Cloud workflow with missing credentials is SKIPPED, not Cloud validation.
+The `qdrant-cloud` environment currently allows only `main`; keep this restriction.
+Branch rejection is a release gate, not permission to weaken secret protection.
+Latest-Hermes tracking remains separate from the immutable compatibility matrix.
+See the [current acceptance report](../PRE_RELEASE_FINAL_REVIEW.md) for run links.
+
 Ruff lint/format, the Python 3.11 and 3.14 behavior-contract jobs, and the separate
 Snyk dependency and code jobs run
 independently in parallel. Both Python versions run files serially because remote

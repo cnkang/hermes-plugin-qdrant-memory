@@ -2,6 +2,17 @@
 
 ## 0.1.0
 
+Unreleased; no tag or GitHub Release has been published.
+
+- Merged PR #10: durable destination reset intents and crash recovery, scoped
+  deletion fences, terminal payload scrubbing, resource cleanup, platform matrix
+  and separate latest-Hermes tracking.
+- Merged PR #11: commit-time fences for prepared UPSERT replay across point IDs
+  sharing content, retained-history lookup indexes, and installed-wheel upstream
+  discovery/manifest checks.
+- Final hardening: migration terminal-state accounting and bounded ledger replay,
+  additional hard process-exit reset tests, and refreshed release evidence.
+
 Initial standalone dense-memory provider: Hermes LLM inheritance, Ollama and
 OpenAI-compatible embeddings, scoped Qdrant storage, durable turn/operation ledger,
 cached recall, exact builtin mirroring, tools, setup and maintenance CLI, and Mem0

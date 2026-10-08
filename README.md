@@ -1,9 +1,11 @@
 # Qdrant Memory for Hermes
 
-> **v0.1.0 pre-release status: NOT READY.** [PR #11](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/11)
-> remains open; no release has been tagged or published. Qdrant Cloud validation is
-> blocked by environment protection. See the [final review](PRE_RELEASE_FINAL_REVIEW.md)
-> for evidence and remaining limits.
+> **v0.1.0: Ready for limited technical preview.** PRs #10 and #11 are merged;
+> [PR #12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12) contains final hardening.
+> Preview supports one writer per destination with the documented durability limits.
+> Candidate Cloud validation remains a protected release gate; historical main
+> Cloud success does not validate this PR. No release has been tagged or published.
+> See the [final review](PRE_RELEASE_FINAL_REVIEW.md) for evidence and support limits.
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -149,6 +151,11 @@ hermes qdrant-memory verify --collection hermes_qdrant_memory
 Re-embedding is the default. `--resume` needs the same snapshot and pipeline;
 add `--retry-failed` to retry failed operations from that manifest. Migration
 verification checks exact IDs, scope and payload hashes, not just record count.
+Canceled migration records are terminal `SUPERSEDED` work, never certified as
+successful writes. Resume preserves later deletion intent; `--verify` reports the
+conflict. Only a deliberate fresh import or changed snapshot authorizes replanning.
+Recovery reads operations and events in finite bounded pages; retained ledger
+history still needs disk-capacity monitoring.
 Before a real import, stop all sessions/gateways writing to the target, including
 for Server/Cloud. `writer_busy` requires stopping the active writer, not deleting
 lock or ledger files. A successful dry-run does not check writer ownership.

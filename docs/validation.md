@@ -6,6 +6,13 @@
 
 ## Recorded rereview snapshot (2026-10-06)
 
+This section records the earlier snapshot only. PRs #10 and #11 subsequently
+merged. Main `79565e755716f3d812b73e550417b5049b9642e6` passed
+[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788043978),
+[all six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788044014),
+and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788044033).
+The following unavailable-service statements apply to the historical local run.
+
 Minimum complete host contract: v2026.9.24
 (`f97608f178d1ffeca59860195ab7da295f7c8e5f`). v2026.9.21 lacks authoritative
 builtin `previous_content`; earlier tags also lack author/context-thread features.

@@ -138,6 +138,21 @@ not the source record's preserved `updated_at`. A fresh import after a scoped
 delete can intentionally restore that content, including records without source
 timestamps. Operations prepared before the delete remain fenced on replay.
 
+`SUPERSEDED` means that a later mutation or explicit deletion invalidated a prepared
+write. It is terminal work, not a successful write. Migration summaries distinguish
+processed records from applied ADD/UPDATE records and superseded records. `applied`
+counts operations actually acknowledged COMMITTED, including a write later deleted;
+it is not a claim that those points still exist. `superseded` identifies invalidated
+plan records and can overlap historical applied/skipped counts. An operation fenced
+before it committed never increments applied/added/updated. A settled
+manifest can contain superseded work; exact snapshot verification still reports
+the conflict and cannot certify the deleted source record as present.
+Repeated `--resume --retry-failed` must preserve that result rather than restoring
+deleted content. Review the conflict before starting a deliberately new import
+without `--resume`; a new import explicitly authorizes planning against current
+target state. Source timestamps, including future timestamps, do not grant that
+authorization to an old operation. Changed source snapshots create a fresh plan.
+
 Re-embedding is the default. `--reuse-vectors` is reserved, not implemented in 0.1,
 and refused because supported
 Mem0 inputs do not expose a trusted pipeline fingerprint and metric contract.
