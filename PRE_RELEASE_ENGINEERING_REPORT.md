@@ -1,5 +1,24 @@
 # v0.1.0 预发布工程加固报告
 
+> 本文件保留了早期加固阶段的记录；PR #10 已合并。当前最终审查、精确验证
+> 结果与发布决定见 [PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md)。
+
+## 最终预发布加固（2026-10-08）
+
+- 本轮基线：远端 `main` 的 `a6a883cd3db3bfdf57cb923f1e9c26fb336df211`；工作分支为
+  `codex/v0.1.0-pre-release-hardening`。用户数据未用于迁移或测试。
+- 新确认的删除顺序问题：旧 UPSERT 已写入账本并失败后，若相同事实通过另一来源写入
+  不同 point ID，再删除该事实，重试仍可能仅按 point ID 判断而恢复旧值。
+- 修复在每次提交 UPSERT 前重新检查 scoped Delete Fence，并依据 point ID 或内容哈希
+  将过期操作标记为 `SUPERSEDED`。新增重现覆盖相同 point ID 与跨 point ID 的情况；
+  后续新接收的写入仍可重新添加该事实。
+- 为长期保留的 events/operations 历史增加 SQLite 索引；升级时通过
+  `CREATE INDEX IF NOT EXISTS` 增量创建，不清理行或幂等键。100,000 条合成 pending
+  operation 的空 ID 检查由未索引约 0.58 秒/100 次降至约 0.0003 秒/100 次。
+- 最终测试、最新 Hermes 主线 SHA、未覆盖的服务/崩溃边界和发布建议以最终审查报告为准。
+
+## 历史 PR 摘要（PR #10，已合并）
+
 验证日期：2026-10-08
 
 仓库基线：`5281dc6fdb3c4fcb952cb67d6d1eb7cf3a31e870`（`main`）
@@ -54,7 +73,7 @@ Hermes 当前上游基线：`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`
 - 标题：`fix: harden reset and ledger recovery contracts`
 - 目标分支：`main`；源分支：`codex/pre-release-engineering-hardening`
 - PR：[#10 — fix: harden reset and ledger recovery contracts](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/10)
-- 当前状态：草稿；检查状态以 [PR Checks](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/10/checks) 页面最新 SHA 为准。本次工作不合并 PR、不发布版本。
+- 历史状态：PR #10 于 2026-10-08 合并。该阶段的发布建议仅适用于当时审查的提交范围；本轮状态见上方最终加固记录和独立的最终审查报告。
 - 本地验证结果与 GitHub 检查分开记录；后者不会被本地结果替代。
 
 ## 剩余风险
@@ -66,7 +85,7 @@ Hermes 当前上游基线：`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`
 - 插件侧完整测试没有连接外部 Qdrant Server 或 Cloud。平台矩阵和最新上游跟踪 workflow 已添加，但其 GitHub 运行结果仍须以 PR SHA 的实际检查为准。
 - 评估集仍是小型合成数据；privacy-lifecycle 分类的首位排序表现需要更多标注样本验证。本次不调整检索排序算法。
 
-## 发布建议
+## 历史发布建议（2026-10-06）
 
 **READY FOR LIMITED TECHNICAL PREVIEW**
 

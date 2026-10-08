@@ -1,5 +1,8 @@
 # Hermes Qdrant 记忆插件
 
+> **v0.1.0 预发布状态：** 当前仓库正在进行最终加固审查，尚未打标签或发布。
+> 验证证据、剩余限制和发布决定见[最终审查报告](PRE_RELEASE_FINAL_REVIEW.md)。
+
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 独立的 Hermes 原生 `MemoryProvider`：通过 Hermes 的可信 `ctx.llm` 提取记忆，

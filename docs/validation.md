@@ -1,5 +1,9 @@
 # Validation evidence
 
+> The snapshots below are historical. See the [v0.1.0 final pre-release review](../PRE_RELEASE_FINAL_REVIEW.md)
+> for this branch's current test results, exact upstream Hermes revision, open
+> limitations and release decision.
+
 ## Recorded rereview snapshot (2026-10-06)
 
 Minimum complete host contract: v2026.9.24

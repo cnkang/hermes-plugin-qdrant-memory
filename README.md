@@ -1,5 +1,9 @@
 # Qdrant Memory for Hermes
 
+> **v0.1.0 pre-release status:** This repository is under final hardening review; it
+> has not been tagged or published. See the [final review](PRE_RELEASE_FINAL_REVIEW.md)
+> for validation evidence, remaining limits and the release decision.
+
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 Standalone native `MemoryProvider` for Hermes Agent. Hermes performs extraction
