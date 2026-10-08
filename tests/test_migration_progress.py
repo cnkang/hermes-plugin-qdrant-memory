@@ -6,10 +6,14 @@ import json
 from threading import Event
 
 import pytest
+from qdrant_client import QdrantClient
 
 from qdrant_memory import cli
+from qdrant_memory.config import ledger_namespace
 from qdrant_memory.migration import migrate
+from qdrant_memory.models import Scope
 from qdrant_memory.progress import MigrationProgress, report
+from qdrant_memory.qdrant_store import QdrantStore
 
 from .helpers import Embedder, config, runtime
 
@@ -161,6 +165,67 @@ def test_failed_batch_is_not_reported_as_committed_and_resumes(tmp_path, monkeyp
     finally:
         rt.store.close()
         rt.ledger.close()
+
+
+@pytest.mark.parametrize("retry_failed", [False, True])
+def test_cli_mixed_superseded_and_failed_completion(tmp_path, monkeypatch, capsys, retry_failed):
+    """Only fully terminal imports report completion when some records are superseded."""
+    cfg = config(qdrant={"mode": "embedded", "path": str(tmp_path / "target")})
+    monkeypatch.setattr(cli, "load_config", lambda *a, **kw: cfg)
+    monkeypatch.setattr(cli, "build_embedder", lambda *a: Embedder())
+    source = tmp_path / "export.json"
+    source.write_text(
+        json.dumps([{"id": "one", "memory": "cats"}, {"id": "two", "memory": "dogs"}])
+    )
+    parser = argparse.ArgumentParser()
+    cli.register_cli(parser)
+    arguments = ["migrate", "mem0", "--source-json", str(source)]
+    original = QdrantStore.upsert
+
+    def fail_write(self, records):
+        """Leave durable FAILED operations for a later CLI resume."""
+        raise ValueError("synthetic failure")
+
+    monkeypatch.setattr(QdrantStore, "upsert", fail_write)
+    with pytest.raises(ValueError, match="synthetic failure"):
+        cli.run(parser.parse_args(arguments), home=tmp_path)
+    monkeypatch.setattr(QdrantStore, "upsert", original)
+    rt = runtime(
+        tmp_path,
+        client=QdrantClient(path=cfg["qdrant"]["path"]),
+        cfg=cfg,
+        ledger_namespace=ledger_namespace(cfg),
+    )
+    try:
+        identifier, record = next(iter(rt.ledger.manifests()[-1]["records"].items()))
+        value = json.loads(rt.ledger.row("operations", record["operation_key"])["payload_json"])
+        rt.store.upsert([(identifier, value)])
+        delete = rt.operation(
+            identifier,
+            "DELETE",
+            {"content_hash": value["content_hash"]},
+            source_id=rt.ledger.delete_fence_source(Scope(**record["scope"])),
+        )
+        rt.commit([delete])
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+    capsys.readouterr()
+    arguments.append("--resume")
+    if retry_failed:
+        arguments.append("--retry-failed")
+    result = cli.run(parser.parse_args(arguments), home=tmp_path)
+    diagnostics = capsys.readouterr().err
+    assert result["superseded"] == 1
+    assert result["processed"] == 1 + int(retry_failed)
+    assert result["failed"] == int(not retry_failed)
+    assert (result["completed_at"] is not None) == retry_failed
+    if retry_failed:
+        assert "Migration completed with superseded records" in diagnostics
+        assert "Migration incomplete" not in diagnostics
+    else:
+        assert "Migration incomplete; rerun with --resume --retry-failed 1/2" in diagnostics
+        assert "Migration completed" not in diagnostics
 
 
 def test_reporter_throttles_and_ignores_closed_stderr(monkeypatch):

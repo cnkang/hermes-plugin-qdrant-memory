@@ -314,11 +314,11 @@ def _run(args, home=None, progress=None):
         report(progress, "Closing resources")
     if command == "migrate":
         stage = (
-            "Migration completed with superseded records; inspect manifest before a fresh import"
+            "Migration incomplete; rerun with --resume --retry-failed"
+            if result["processed"] != result["source_unique_count"]
+            else "Migration completed with superseded records; inspect manifest before a fresh import"
             if result.get("superseded")
             else "Migration complete"
-            if result["processed"] == result["source_unique_count"]
-            else "Migration incomplete; rerun with --resume --retry-failed"
         )
         report(progress, stage, result["processed"], result["source_unique_count"])
     return result
