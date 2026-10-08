@@ -52,8 +52,9 @@ Hermes 当前上游基线：`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`
 
 - 标题：`fix: harden reset and ledger recovery contracts`
 - 目标分支：`main`；源分支：`codex/pre-release-engineering-hardening`
-- 状态：草稿 PR；本次工作不合并 PR、不发布版本。
-- PR 链接及远端检查结果会在推送并创建 PR 后补入本报告；本节不把本地验证冒充 GitHub 检查结果。
+- PR：[#10 — fix: harden reset and ledger recovery contracts](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/10)
+- 当前状态：草稿；检查状态以 [PR Checks](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/10/checks) 页面最新 SHA 为准。本次工作不合并 PR、不发布版本。
+- 本地验证结果与 GitHub 检查分开记录；后者不会被本地结果替代。
 
 ## 剩余风险
 
