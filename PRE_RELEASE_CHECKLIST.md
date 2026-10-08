@@ -1,6 +1,20 @@
 # v0.1.0 Pre-release Checklist
 
-## Current candidate
+## Post-merge status (2026-10-08)
+
+PRs #10, #11 and #12 are merged. Main
+`32bd4e7abdb3b417cc5b0dd0f793f93db188db3b` has the following recorded results:
+
+- **PASS** — [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338914), including the required security gate.
+- **PASS** — [Six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802339623).
+- **PASS** — [Authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338838); the test step executed, without changing main-only protection.
+- **NOT RUN** — Full interactive Quick Start against live Ollama/LLM; existing deterministic smoke and synthetic retrieval measurements have narrower scope.
+- **READY FOR LIMITED TECHNICAL PREVIEW** — One writer per destination across all profiles/hosts; documented admission, retention and capacity limits remain.
+- **NOT PUBLISHED** — No tag or GitHub Release. These results do not declare public beta.
+
+Evidence below records pre-merge candidates and does not override this snapshot.
+
+## Historical PR #12 candidate (before merge)
 
 Base main: `79565e755716f3d812b73e550417b5049b9642e6`.
 Branch: `fix/v0.1.0-final-release-hardening`.

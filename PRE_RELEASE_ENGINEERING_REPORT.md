@@ -5,12 +5,14 @@
 
 ## 当前验收（2026-10-08）
 
-PR #10、#11 均已合并。最新 main 为 `79565e755716f3d812b73e550417b5049b9642e6`。
-该 SHA 的 [Cloud 实测](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788044033)、
-[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788043978) 和
-[跨平台矩阵](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788044014) 已通过。
-本轮修复分支为 `fix/v0.1.0-final-release-hardening`；本轮代码验证和发布结论以
-[最终验收报告](PRE_RELEASE_FINAL_REVIEW.md) 为准，不能由历史成功替代。
+PR #10、#11、#12 均已合并。合并后的 main 为 `32bd4e7abdb3b417cc5b0dd0f793f93db188db3b`。
+该 SHA 的 [Cloud 实测](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338838)、
+[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338914) 和
+[六项跨平台检查](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802339623) 已通过。
+Cloud 测试步骤实际执行，早期候选分支受 main-only 环境保护阻止的记录仅属于历史。
+项目仍为有限技术预览，要求所有 profile/主机对每个目的地仅保留一个 writer；
+尚未打标签或发布。实时交互 Quick Start 尚无完整记录，持久化接收点、账本保留与
+合成评估边界仍适用，详见[最终验收报告](PRE_RELEASE_FINAL_REVIEW.md)。
 
 ## 历史 PR #11 预发布加固（合并前记录，2026-10-08）
 

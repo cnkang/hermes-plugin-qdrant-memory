@@ -1,8 +1,29 @@
 # Validation evidence
 
-> The snapshots below are historical. See the [v0.1.0 final pre-release review](../PRE_RELEASE_FINAL_REVIEW.md)
-> for this branch's current test results, exact upstream Hermes revision, open
-> limitations and release decision.
+## Post-merge main snapshot (2026-10-08)
+
+PRs #10, #11 and [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12)
+are merged. Main `32bd4e7abdb3b417cc5b0dd0f793f93db188db3b` passed:
+
+| Gate | Evidence |
+| --- | --- |
+| CI, including immutable host matrix, Server tests and security scans | [37802338914](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338914) |
+| Linux/macOS/Windows × Python 3.11/3.14 | [37802339623](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802339623) |
+| Authenticated Cloud integration | [37802338838](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338838) |
+
+The Cloud job's `Exercise authenticated Cloud` step executed successfully; this was
+not a missing-credentials skip. The earlier candidate branch rejection is historical.
+The main-only environment restriction remains intact. These results certify the
+named code snapshot, not later documentation commits or future Hermes revisions.
+
+The project remains an unreleased limited technical preview. The full interactive
+Quick Start with live Ollama/LLM remains unrecorded; synthetic retrieval and recovery
+measurements do not establish production quality or capacity. See the
+[final pre-release review](../PRE_RELEASE_FINAL_REVIEW.md) for historical local
+results, exact upstream Hermes revisions and support limits, and the
+[recovery benchmark](recovery-benchmark.md) for the separate storage/replay evidence.
+
+The sections below retain earlier evidence with its original scope.
 
 ## Recorded rereview snapshot (2026-10-06)
 
