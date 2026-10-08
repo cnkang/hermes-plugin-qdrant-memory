@@ -271,9 +271,26 @@ def test_pending_progress_count_uses_bounded_key_only_queries(tmp_path):
         ledger.db.set_trace_callback(queries.append)
         keys = [str(i) for i in range(1000)] + ["0", "0", "missing", terminal, failed, foreign]
         assert ledger.count_pending_operations(keys) == 1002
+        ledger.db.set_trace_callback(None)
         assert len(queries) == 8
         assert all(sql.startswith("SELECT idempotency_key FROM operations") for sql in queries)
         assert all("payload_json" not in sql and "SELECT *" not in sql for sql in queries)
+        assert all("INDEXED BY sqlite_autoindex_operations_1" in sql for sql in queries)
+        plan = [
+            row[3]
+            for row in ledger.db.execute(
+                "EXPLAIN QUERY PLAN SELECT idempotency_key FROM operations "
+                "INDEXED BY sqlite_autoindex_operations_1 WHERE status='PENDING' "
+                "AND collection=? AND idempotency_key IN (?,?)",
+                (ledger.collection, "0", "1"),
+            )
+        ]
+        assert any(
+            "SEARCH operations USING INDEX sqlite_autoindex_operations_1 (idempotency_key=?)"
+            in step
+            for step in plan
+        )
+        assert all("operations_by_collection_status" not in step for step in plan)
         assert ledger.count_pending_operations([]) == 0
     finally:
         ledger.close()
