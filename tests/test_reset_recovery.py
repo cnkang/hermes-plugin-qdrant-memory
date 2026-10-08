@@ -77,6 +77,37 @@ def assert_other_destination_and_quarantine_survive(home, cfg):
     other.close()
 
 
+def test_embedded_reset_closes_collection_storage_before_delete(tmp_path, monkeypatch):
+    """Release SQLite handles before Qdrant removes the embedded collection directory."""
+    cfg = reset_fixture(tmp_path)
+    client = QdrantClient(path=cfg["qdrant"]["path"])
+    store = QdrantStore(client, cfg, Embedder())
+    local_collection = client._client.collections[cfg["qdrant"]["collection"]]
+    original_close = local_collection.close
+    original_delete = client.delete_collection
+    calls = []
+
+    def tracked_close():
+        calls.append("close")
+        original_close()
+
+    def tracked_delete(collection_name, **kwargs):
+        calls.append("delete")
+        assert calls[-2:] == ["close", "delete"]
+        return original_delete(collection_name, **kwargs)
+
+    monkeypatch.setattr(local_collection, "close", tracked_close)
+    monkeypatch.setattr(client, "delete_collection", tracked_delete)
+
+    try:
+        store.initialize(reset=True)
+
+        assert calls == ["close", "delete"]
+        assert store.client.retrieve(store.collection, ids=[42]) == []
+    finally:
+        store.close()
+
+
 @pytest.mark.parametrize(
     ("cutpoint", "collection_exists_after_crash"),
     [("before-create", False), ("before-identity", True)],
