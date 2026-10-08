@@ -76,10 +76,17 @@ class Runtime:
             for row in group:
                 value = json.loads(row["payload_json"])
                 scope = Scope(value["user_id"], value.get("agent_id"))
+                # Migration preserves source timestamps; its ledger insertion time
+                # records admission. Event payloads retain the original event age.
+                admitted_at = (
+                    row.get("created_at")
+                    if (row.get("source_id") or "").startswith("mem0:")
+                    else value.get("updated_at")
+                )
                 if self.ledger.is_delete_fenced(
                     row["point_id"],
                     scope,
-                    value.get("updated_at"),
+                    admitted_at,
                     row.get("content_hash") or value.get("content_hash"),
                 ):
                     self.ledger.finish("operations", row["idempotency_key"], "SUPERSEDED")
