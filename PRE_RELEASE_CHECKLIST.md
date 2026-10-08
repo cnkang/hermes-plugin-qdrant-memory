@@ -1,7 +1,8 @@
 # v0.1.0 Pre-release Checklist
 
 Last reviewed: 2026-10-08. This checklist records evidence for the current hardening
-branch. See [PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md) for details.
+branch and [PR #11](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/11).
+See [PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md) for details.
 
 ## Code and data safety
 
@@ -34,8 +35,9 @@ branch. See [PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md) for detai
   temporary embedded Qdrant collection.
 - **PASS** — 100,000 synthetic pending operations: indexed lookup and point/hash
   query plans verified.
-- **SKIPPED** — Local remote-Qdrant tests: two Server tests require an explicit
-  disposable endpoint; Cloud requires secret-gated configuration.
+- **SKIPPED** — Two local Server tests require an explicit disposable endpoint.
+- **PASS** — PR CI Qdrant Server REST/gRPC integration lane on implementation
+  commit `a81d09c` ([run 37766236440](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766236440)).
 
 ## Reset, host and live-service gates
 
@@ -45,16 +47,19 @@ branch. See [PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md) for detai
 - **NOT RUN** — Hard process death immediately after reset-intent commit and before
   delete; after ledger clear and before intent removal; and during a second recovery
   attempt. Additional reset errors have injected-failure coverage.
-- **NOT RUN** — Latest-Hermes workflow against the sampled current `main` SHA
-  `328a75e2b140000069c5775e1fdf75a1a734dddc` on Python 3.11 and 3.14.
-- **NOT RUN** — Current-branch GitHub CI and the Linux/macOS/Windows compatibility
-  matrix on the final PR head.
-- **NOT RUN** — Current-branch authenticated Qdrant Cloud smoke.
+- **PASS** — Latest-Hermes workflow checked out `e6848c2c9a86e84d9a5c672085bb7d79079a66ba`
+  and passed on Python 3.11 and 3.14 ([run 37766274748](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766274748)).
+- **PASS** — PR CI on implementation commit `a81d09c` ([run 37766236440](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766236440)).
+- **PASS** — Linux/macOS/Windows × Python 3.11/3.14 platform matrix on implementation
+  commit `a81d09c` ([run 37766236512](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766236512)).
+- **BLOCKED BEFORE TEST** — Authenticated Cloud smoke ([run 37766278783](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766278783)) was rejected by `qdrant-cloud` environment protection before any test step. Cloud behavior remains unvalidated.
+- **SKIPPED** — CodeRabbit indicated manual review is required for this OSS repository;
+  Sourcery review was skipped.
 
 ## Release gate
 
-- **NOT READY** — Do not tag or publish while current-head CI/latest-Hermes evidence
-  is missing and the durability/retention risks documented in the final review have
-  no accepted release boundary.
+- **NOT READY** — CI, platform compatibility and latest-Hermes checks passed on the
+  implementation commit, but Cloud behavior was not tested and the durability/
+  retention risks documented in the final review have no accepted release boundary.
 - **PASS** — Changes are prepared for PR review only; no merge or release action was
   taken.
