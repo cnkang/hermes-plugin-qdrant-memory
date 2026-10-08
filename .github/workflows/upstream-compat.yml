@@ -76,8 +76,33 @@ jobs:
           PY
           python -c 'import tomllib; from pathlib import Path; p = tomllib.loads(Path("../pyproject.toml").read_text()); print("\n".join(p["project"]["dependencies"] + p["dependency-groups"]["test"]))' \
             >> "$RUNNER_TEMP/upstream-host-requirements.txt"
+          python -m pm.build_env --out "$RUNNER_TEMP/wheel-build-env" \
+            --requirement 'setuptools>=75,<83' --requirement 'wheel>=0.45,<1'
+          cd "$GITHUB_WORKSPACE"
+          "$RUNNER_TEMP/wheel-build-env/bin/python" -c 'import os, setuptools.build_meta as b; b.build_wheel(os.environ["RUNNER_TEMP"] + "/plugin-wheel")'
+          cd .pm-host
           python -m pm.build_env --out "$GITHUB_WORKSPACE/.test-env" \
-            --requirements "$RUNNER_TEMP/upstream-host-requirements.txt"
+            --requirements "$RUNNER_TEMP/upstream-host-requirements.txt" \
+            --requirement "hermes-plugin-qdrant-memory @ file://$RUNNER_TEMP/plugin-wheel/hermes_plugin_qdrant_memory-0.1.0-py3-none-any.whl"
+      - name: Install plugin distribution and verify its entry point
+        working-directory: ${{ runner.temp }}
+        run: |
+          "$GITHUB_WORKSPACE/.test-env/bin/python" - <<'PY'
+          from importlib.metadata import entry_points
+          from importlib.resources import files
+
+          matches = [
+              entry
+              for entry in entry_points(group="hermes_agent.memory_providers")
+              if entry.name == "qdrant-memory"
+          ]
+          assert len(matches) == 1, matches
+          register = matches[0].load()
+          assert callable(register), register
+          manifest = files("qdrant_memory").joinpath("plugin.yaml")
+          assert manifest.is_file(), manifest
+          print(f"Installed entry point: {matches[0].name} = {matches[0].value}; manifest packaged")
+          PY
       - name: Run focused host integration contracts
         working-directory: .host
         env:
@@ -90,6 +115,7 @@ jobs:
             "$GITHUB_WORKSPACE/tests/test_shutdown_contract.py" \
             "$GITHUB_WORKSPACE/tests/test_provider.py" \
             "$GITHUB_WORKSPACE/tests/test_recovery_evaluation.py" \
+            "$GITHUB_WORKSPACE/tests/test_manifest_contract.py" \
             -j 1 --file-retries 0 -- --tb=short
       - name: Require Hermes MemoryManager admission and shutdown contracts
         working-directory: .host
