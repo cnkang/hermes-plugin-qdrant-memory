@@ -44,7 +44,7 @@ historical run applies only to the exact Hermes SHA printed in that run summary.
 ## Platform compatibility
 
 `.github/workflows/platform-compat.yml` runs the local behavior and host lifecycle
-contracts on Ubuntu, macOS and Windows with Python 3.11 and 3.14. This matrix
+contracts on Ubuntu 24.04 LTS, macOS and Windows with Python 3.11 and 3.14. This matrix
 checks platform-specific embedded Qdrant storage behavior alongside the main
 behavior-contract jobs.
 
