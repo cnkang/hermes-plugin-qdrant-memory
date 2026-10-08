@@ -24,11 +24,12 @@ Hermes 当前上游基线：`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`
 
 ## 实施
 
-- 添加目的地级 reset intent；`init` 可恢复中断重置，其他命令在存在待恢复 intent 时失败关闭。重置先重建并验证 Qdrant，再清除本地目的地账本；其他目的地及隔离会话保持不变。添加进程退出和各失败点注入测试。
+- 添加目的地级 reset intent；`init` 可恢复中断重置，其他命令在存在待恢复 intent 时失败关闭。重置先重建并验证 Qdrant，再清除本地目的地账本；其他目的地及隔离会话保持不变。嵌入式 Qdrant 删除 collection 后关闭并重开本地 client，再确认删除完成。添加进程退出和各失败点注入测试。
 - DELETE 操作持久化作用域、删除时间和内容 hash。重放会拦截删除前已接纳的旧事件，即使它会映射到不同 point ID；新接纳事件仍可有意重新添加该内容。
 - 在账本打开、终态操作完成和迁移清单更新时，对 COMMITTED/SUPERSEDED payload 做逻辑清除。保留 PENDING/FAILED payload、去重与身份状态，以及未完成迁移恢复所引用的数据。
 - 关闭 provider 初始化失败时已创建的 Qdrant 资源，避免泄漏嵌入式文件锁。
 - 增加 macOS/Windows × Python 3.11/3.14 行为矩阵，以及每周和手动运行的 Hermes 最新 `main` 兼容性作业；后者记录实际 Hermes SHA。固定兼容性基线继续使用不可变 refs。
+- 跨平台作业为测试子进程设置 Hermes host import path。只依赖 POSIX Bash/closed-pipe 行为的断言在 Windows 上单独跳过；POSIX 文件 mode 断言也只在 POSIX 上执行。
 - 扩展合成检索样本并输出 Recall@1/5/10、Precision@1/5、MRR 及分类指标，不改排序算法。
 - 两份 v2 manifest 补充 `author`、`license`、`homepage`、`tags` 和与 `pyproject.toml` 同步的 `python_dependencies`。`provides_hooks: []` 是有意设置：Hermes 此字段表示通用事件总线注册；本插件实现的是 `MemoryProvider` 回调，不调用 `PluginContext.register_hook`。完整 provider 回调清单和接口区别已写入架构文档并由真实 Hermes parser 合约测试覆盖。
 - `.gitignore` 添加 `IDEA.md`；该文件不在本分支 Git 跟踪列表中。
@@ -61,6 +62,7 @@ Hermes 当前上游基线：`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`
 - Hermes 的 `sync_turn` 回调在到达插件并提交 ledger 之前仍处在 Host 内存队列中；Host 异常退出或有限等待的 shutdown 可能丢失尚未接纳的回调。插件无法在自身代码内使这段 Host 队列持久化。
 - WriterLease 只保护同机合作进程。对共享目录或远端 Qdrant，维护操作前仍需由运维方停止所有主机上的写入者。
 - payload 清理和 destination reset 是 SQLite 逻辑操作，不会保证覆盖 WAL/数据库旧页、快照或备份；不要宣传安全擦除。
+- POSIX state/config mode 保护不会自动转化为 Windows ACL；Windows 操作方须在 Hermes profile 目录设置合适的 ACL。
 - 插件侧完整测试没有连接外部 Qdrant Server 或 Cloud。平台矩阵和最新上游跟踪 workflow 已添加，但其 GitHub 运行结果仍须以 PR SHA 的实际检查为准。
 - 评估集仍是小型合成数据；privacy-lifecycle 分类的首位排序表现需要更多标注样本验证。本次不调整检索排序算法。
 

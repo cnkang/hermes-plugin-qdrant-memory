@@ -66,6 +66,7 @@ jobs:
         shell: bash
         env:
           HERMES_QDRANT_REQUIRE_HOST_SYNC: '1'
+          PYTHONPATH: ${{ github.workspace }}/.host
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
             TEST_PYTHON="$GITHUB_WORKSPACE/.test-env/Scripts/python.exe"

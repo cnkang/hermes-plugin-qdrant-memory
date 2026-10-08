@@ -1,6 +1,7 @@
 """Configuration, identity, embedding wire format and retry contracts."""
 
 import json
+import os
 
 import httpx
 import pytest
@@ -39,7 +40,8 @@ def test_scoped_config_and_secret_safe_save(tmp_path, monkeypatch):
     saved = json.loads(path.read_text())
     assert "api_key" not in saved["qdrant"]
     assert "api_key" not in saved["embedding"]
-    assert path.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o777 == 0o600
     assert load_config(tmp_path)["qdrant"]["api_key"] == "sentinel-key"
 
 
