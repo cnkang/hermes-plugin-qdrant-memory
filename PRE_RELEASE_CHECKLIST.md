@@ -53,8 +53,11 @@ See [PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md) for details.
 - **PASS** — Linux/macOS/Windows × Python 3.11/3.14 platform matrix on implementation
   commit `a81d09c` ([run 37766236512](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766236512)).
 - **BLOCKED BEFORE TEST** — Authenticated Cloud smoke ([run 37766278783](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766278783)) was rejected by `qdrant-cloud` environment protection before any test step. Cloud behavior remains unvalidated.
-- **SKIPPED** — CodeRabbit indicated manual review is required for this OSS repository;
-  Sourcery review was skipped.
+- **MANUAL REVIEW REQUIRED** — CodeRabbit's green status says its review was skipped
+  for this OSS repository; it does not represent a completed CodeRabbit review.
+- **PASS** — Sourcery review on documentation follow-up commit `d8a1f3d` completed
+  and found no blocking security issues. Sourcery was skipped on implementation SHA
+  `a81d09c`.
 
 ## Release gate
 
