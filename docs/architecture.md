@@ -17,6 +17,7 @@ there. Model selection, credentials and operator trust remain host-owned.
 | embedding | HTTP pipeline adapters, response-order and vector validation |
 | extraction / dedupe | Host LLM extraction and factual relation adjudication |
 | migration | Read-only sources, source-ID mapping, resumable plans and exact verification |
+| reset | Durable destination reset intent, fail-closed admission and interrupted reset recovery |
 | cli / config_schema | Maintenance commands and non-secret setup persistence |
 | models / config / retry | Payload identity, validated settings and sanitized transport retries |
 
@@ -51,8 +52,9 @@ so foreground tool calls cannot race connection closure.
 During failed initialization, created resources are closed immediately.
 
 The OS lease is local process coordination, not a distributed lock contract. It
-does not establish exclusion for writers on other machines or make shared absolute
-storage paths safe. Run one writer per destination and stop writers on every host
+does not establish exclusion across separate profile homes on the same machine or
+writers on other machines, or make shared absolute storage paths safe. Run one writer
+per destination and stop writers across all profiles and hosts
 before mutating maintenance operations.
 
 ## MemoryProvider callbacks and manifest hooks
@@ -114,6 +116,16 @@ Migration never semantically merges distinct source IDs. It preserves source met
 re-embeds texts and retains a durable plan with expected IDs and payload hashes.
 Changed source snapshots create new plans; a missing ledger operation is an explicit
 failure, not a completed migration. Collection counts supplement exact verification.
+`SUPERSEDED` operations are terminal conflicts, not successful writes. Migration
+verification raises a sanitized conflict; resuming an old plan does not authorize
+restoring memories deleted later. Recovery scans use bounded rowid pages and a finite
+watermark; this limits transient reads, not retained database or manifest size.
+
+Collection clearing commits a destination reset intent before deleting Qdrant data.
+The intent blocks ordinary destination use until `init` completes collection rebuild,
+identity validation and destination ledger cleanup. Interrupted recovery can itself
+be resumed. Other destinations and transcript quarantine remain intact; collection
+deletion/recreation is recoverable rather than atomic.
 
 v0.1 supports dense retrieval only. Sparse/hybrid retrieval, reranking and recency
 weighting are future work. Host embedding inheritance is feature-detected and requires

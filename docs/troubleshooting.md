@@ -18,6 +18,9 @@ without pasting credentials into logs or issues.
 | Recall is temporarily empty | The cache may not be populated yet or has been invalidated by a session/author change. Use the explicit search tool to check scoped stored memories. A cache miss performs no synchronous service call. |
 | FAILED ledger rows | Correct the service/configuration error, stop the agent if embedded, run retry, and restart the provider for raw-event extraction. Use stats to confirm state transitions. |
 | Missing migration operation | Preserve the ledger and source export. Re-run without resume to create a fresh source plan, then verify; never mark the damaged manifest complete by editing counts. |
+| `reset_recovery_required` | A previously authorized collection clear was interrupted. Stop every writer and rerun `init` for the same destination to resume it. Preserve the ledger/reset intent; recovery continues the destructive reset. Verify before restarting. |
+| `migration_superseded` | Later mutation/deletion invalidated migration records. Verification returns nonzero; repeated resume will not restore deleted memories. Inspect the manifest and intent before deliberately importing without `--resume`. |
+| Migration has failed and superseded records | Incomplete progress takes precedence over completed-with-conflicts reporting. Correct failed work and run `--resume --retry-failed --verify`; superseded records remain conflicts and need separate review. |
 | Migration verification fails despite matching count | Check the manifest's missing/mismatched IDs. Counts do not establish identity or payload correctness. Preserve the source and rerun the appropriate snapshot. |
 | Oversize memory rejected | Inspect text, metadata and total UTF-8 byte limits. Truncate is explicit and applies only to text; metadata and total payload limits still fail. |
 
@@ -58,7 +61,8 @@ hermes qdrant-memory verify --collection hermes_qdrant_memory
 
 Keep writers stopped while running migration recovery. The [migration guide](migration-from-mem0.md)
 includes the complete shutdown, verification and restart sequence, including foreground
-gateways. Local locks do not stop writers on other machines.
+gateways. Profile-local locks do not stop writers in another profile home on the same
+machine or writers on other machines. Stop all writers targeting that destination.
 
 ## CI failures
 

@@ -153,6 +153,16 @@ without `--resume`; a new import explicitly authorizes planning against current
 target state. Source timestamps, including future timestamps, do not grant that
 authorization to an old operation. Changed source snapshots create a fresh plan.
 
+With `--verify`, a superseded plan raises the sanitized JSON error
+`migration_superseded` (`retryable: false`) and exits nonzero. The message explains
+that resume will not restore deleted memories; source text and IDs are not exposed.
+Without verification, a settled plan can report completion with superseded records;
+that is not certification of the original snapshot. If failed work remains alongside
+superseded records, progress reports `Migration incomplete` first. Correct the failure
+and use `--resume --retry-failed --verify`, then inspect any remaining conflict before
+authorizing a fresh import. Do not use a fresh import merely to hide an unexplained
+failure or deletion conflict.
+
 Re-embedding is the default. `--reuse-vectors` is reserved, not implemented in 0.1,
 and refused because supported
 Mem0 inputs do not expose a trusted pipeline fingerprint and metric contract.
