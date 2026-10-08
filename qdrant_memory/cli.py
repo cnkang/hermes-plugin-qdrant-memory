@@ -17,6 +17,7 @@ from .config import (
 from .embedding import build_embedder
 from .ledger import Ledger
 from .migration import (
+    MigrationSupersededError,
     migrate,
     plan,
     read_json_records,
@@ -347,7 +348,14 @@ def main(args):
         return 0 if result.get("ok", True) else 1
     except Exception as exc:
         error = safe_error(exc)
-        if isinstance(exc, WriterBusyError):
+        if isinstance(exc, MigrationSupersededError):
+            error.update(
+                code="migration_superseded",
+                message="Later user intent superseded migration records. Inspect the manifest. "
+                "Resuming this migration will not restore deleted memories. Only start a new "
+                "migration without --resume if you explicitly intend to import them again.",
+            )
+        elif isinstance(exc, WriterBusyError):
             error.update(
                 code="writer_busy",
                 message="Another Hermes session or gateway owns the writer lock for this "

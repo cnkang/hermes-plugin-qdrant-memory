@@ -29,8 +29,9 @@ Pending gates are not PASS.
 The items below describe the earlier PR #11 implementation and its then-current
 Cloud rejection; later main Cloud tests passed (see the final report).
 
-Last reviewed: 2026-10-08. This checklist records evidence for the current hardening
-branch and [PR #11](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/11).
+Historical review: 2026-10-08. The following checklist records evidence only for
+the then-current [PR #11](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/11)
+branch, before its merge; it does not validate PR #12.
 See [PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md) for details.
 
 ## Code and data safety

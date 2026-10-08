@@ -14,6 +14,12 @@ from .retry import safe_error
 from .version import VERSION
 
 EPOCH = "1970-01-01T00:00:00Z"
+
+
+class MigrationSupersededError(ValueError):
+    """Signal a completed migration with records canceled by later user intent."""
+
+
 KNOWN = {
     "id",
     "memory",
@@ -233,7 +239,7 @@ def migrate(
         report(progress, "Saving manifest counts")
         update_manifest_counts(runtime, manifest, len(planned))
     if verify and manifest["superseded"]:
-        raise ValueError(
+        raise MigrationSupersededError(
             "Migration contains superseded records; inspect manifest before starting a new migration"
         )
     if verify and not verify_manifest(runtime.store, manifest, progress)["ok"]:
