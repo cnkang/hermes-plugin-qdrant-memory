@@ -12,7 +12,7 @@ Hermes 当前上游基线：`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`
 - 预审发现清空集合的 delete/create 窗口没有持久化恢复意图；删除后仍可能由先前已接纳但尚未准备操作的事件恢复记忆。
 - 已提交的事件和操作长期保留原始 payload；异常退出前尚未进入插件回调的 Hermes 内存队列不在插件 ledger 的保证范围内。
 - 文件锁只协调本机合作进程，不能充当跨机器分布式锁。
-- CI 尚未提供 macOS/Windows × Python 3.11/3.14 的直接行为契约矩阵，也没有跟踪每周 Hermes 最新 `main` 的独立作业。检索基准样本较小。
+- CI 尚未提供 Linux/macOS/Windows × Python 3.11/3.14 的直接行为契约矩阵，也没有跟踪每周 Hermes 最新 `main` 的独立作业。检索基准样本较小。
 
 ## 发现
 
@@ -28,7 +28,7 @@ Hermes 当前上游基线：`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`
 - DELETE 操作持久化作用域、删除时间和内容 hash。重放会拦截删除前已接纳的旧事件，即使它会映射到不同 point ID；新接纳事件仍可有意重新添加该内容。
 - 在账本打开、终态操作完成和迁移清单更新时，对 COMMITTED/SUPERSEDED payload 做逻辑清除。保留 PENDING/FAILED payload、去重与身份状态，以及未完成迁移恢复所引用的数据。
 - 关闭 provider 初始化失败时已创建的 Qdrant 资源，避免泄漏嵌入式文件锁。
-- 增加 macOS/Windows × Python 3.11/3.14 行为矩阵，以及每周和手动运行的 Hermes 最新 `main` 兼容性作业；后者记录实际 Hermes SHA。固定兼容性基线继续使用不可变 refs。
+- 增加 Linux/macOS/Windows × Python 3.11/3.14 行为矩阵，以及每周和手动运行的 Hermes 最新 `main` 兼容性作业；后者记录实际 Hermes SHA。固定兼容性基线继续使用不可变 refs。
 - 跨平台作业为测试子进程设置 Hermes host import path。只依赖 POSIX Bash/closed-pipe 行为的断言在 Windows 上单独跳过；POSIX 文件 mode 断言也只在 POSIX 上执行。
 - 扩展合成检索样本并输出 Recall@1/5/10、Precision@1/5、MRR 及分类指标，不改排序算法。
 - 两份 v2 manifest 补充 `author`、`license`、`homepage`、`tags` 和与 `pyproject.toml` 同步的 `python_dependencies`。`provides_hooks: []` 是有意设置：Hermes 此字段表示通用事件总线注册；本插件实现的是 `MemoryProvider` 回调，不调用 `PluginContext.register_hook`。完整 provider 回调清单和接口区别已写入架构文档并由真实 Hermes parser 合约测试覆盖。
