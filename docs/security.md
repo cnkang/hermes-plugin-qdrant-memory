@@ -52,8 +52,10 @@ to the latest speaker. A multi-author checkpoint stores a non-attributed `__mixe
 scope marker with a null agent identity instead of any one speaker's scope, while a
 single-author checkpoint keeps that author's real scope. A local OS lease excludes
 simultaneous cooperating processes for one profile destination, including a retiring
-worker. It is not distributed coordination: it does not guarantee exclusion for
-writers on separate machines or make explicitly shared absolute storage paths safe.
+worker. Lease files are local to `HERMES_HOME`; different profile homes on the same
+machine do not share the lease even when targeting the same remote collection.
+Deploy only one writer per destination across all profiles and hosts. It is not
+distributed coordination and does not make explicitly shared absolute storage paths safe.
 Stop all writers across hosts before maintenance.
 
 Every recall and exact-ID tool operation enforces user/agent scope. A gateway
