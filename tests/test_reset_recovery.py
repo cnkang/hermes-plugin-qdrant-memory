@@ -14,7 +14,7 @@ from utils import atomic_json_write
 from qdrant_memory import cli
 from qdrant_memory.config import ledger_namespace, load_config
 from qdrant_memory.ledger import Ledger
-from qdrant_memory.qdrant_store import QdrantStore
+from qdrant_memory.qdrant_store import QdrantStore, _close_embedded_collection_storage
 from qdrant_memory.reset import (
     ResetRecoveryRequiredError,
     begin_destination_reset,
@@ -296,8 +296,17 @@ def test_provider_resumes_reset_before_queuing_ledger_replay(tmp_path, monkeypat
     begin_destination_reset(ledger)
     ledger.close()
     client = QdrantClient(path=cfg["qdrant"]["path"])
-    client.delete_collection(cfg["qdrant"]["collection"])
+    _close_embedded_collection_storage(client, cfg["qdrant"]["collection"])
+    from qdrant_client.local import qdrant_local
+
+    with monkeypatch.context() as patch:
+        # Model Windows' ignored rmtree failure after Qdrant already removed the
+        # collection from its catalog, leaving its SQLite directory orphaned.
+        patch.setattr(qdrant_local.shutil, "rmtree", lambda *_args, **_kwargs: None)
+        client.delete_collection(cfg["qdrant"]["collection"])
     client.close()
+    collection_path = Path(cfg["qdrant"]["path"]) / "collection" / cfg["qdrant"]["collection"]
+    assert collection_path.is_dir()
 
     provider = QdrantMemoryProvider(
         plugin_context=SimpleNamespace(llm=LLM()),
@@ -323,6 +332,7 @@ def test_provider_resumes_reset_before_queuing_ledger_replay(tmp_path, monkeypat
         provider.initialize("session", hermes_home=str(tmp_path))
         assert provider.wait_idle()
         assert observed == [("recover", False, 0, 0)]
+        assert provider.store.client.retrieve(cfg["qdrant"]["collection"], ids=[42]) == []
     finally:
         if provider._worker is not None:
             provider.shutdown()
