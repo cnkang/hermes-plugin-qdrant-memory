@@ -10,8 +10,13 @@ Unreleased; no tag or GitHub Release has been published.
 - Merged PR #11: commit-time fences for prepared UPSERT replay across point IDs
   sharing content, retained-history lookup indexes, and installed-wheel upstream
   discovery/manifest checks.
-- Final hardening: migration terminal-state accounting and bounded ledger replay,
+- Merged PR #12: migration terminal-state accounting and bounded ledger replay,
   additional hard process-exit reset tests, and refreshed release evidence.
+- Migration verification exposes sanitized `migration_superseded` conflicts;
+  mixed failed/superseded plans report incomplete progress before terminal conflicts.
+  Progress counts use bounded primary-key lookups without reading payload bodies.
+- Post-merge main `32bd4e7` passed CI, the six-job platform matrix and executed
+  authenticated Cloud integration; see [validation evidence](docs/validation.md).
 
 Initial standalone dense-memory provider: Hermes LLM inheritance, Ollama and
 OpenAI-compatible embeddings, scoped Qdrant storage, durable turn/operation ledger,

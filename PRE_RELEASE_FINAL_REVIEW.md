@@ -1,6 +1,24 @@
 # Hermes Qdrant Memory v0.1.0 — Final Release Acceptance
 
-## Current candidate (2026-10-08)
+## Post-merge status (2026-10-08)
+
+PRs #10, #11 and [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12)
+are merged. The post-merge main revision is
+`32bd4e7abdb3b417cc5b0dd0f793f93db188db3b`.
+[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338914),
+[all six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802339623)
+and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338838)
+passed on that exact SHA. The Cloud exercise step actually ran; the candidate branch
+rejection below no longer represents the merged code's validation status.
+
+Status remains **READY FOR LIMITED TECHNICAL PREVIEW** with one writer per destination
+across all profiles and hosts. No tag or GitHub Release has been published. The live
+interactive Quick Start remains unrecorded, and admission, retention and synthetic
+retrieval/capacity limits still apply. Passing these gates does not declare public
+beta or authorize a release. See [validation](docs/validation.md) for the current
+snapshot; the following candidate reports and decisions are historical records.
+
+## Historical PR #12 candidate (2026-10-08, before merge)
 
 Base: `79565e755716f3d812b73e550417b5049b9642e6` (latest main fetched for this task).
 Branch: `fix/v0.1.0-final-release-hardening`.
