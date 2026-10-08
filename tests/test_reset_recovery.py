@@ -1,6 +1,7 @@
 """Crash recovery contracts for destructive, destination-scoped resets."""
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ from utils import atomic_json_write
 from qdrant_memory import cli
 from qdrant_memory.config import ledger_namespace, load_config
 from qdrant_memory.ledger import Ledger
+from qdrant_memory.provider import QdrantMemoryProvider
 from qdrant_memory.qdrant_store import QdrantStore, _close_embedded_collection_storage
 from qdrant_memory.reset import (
     ResetRecoveryRequiredError,
@@ -106,6 +108,70 @@ def test_embedded_reset_closes_collection_storage_before_delete(tmp_path, monkey
         assert store.client.retrieve(store.collection, ids=[42]) == []
     finally:
         store.close()
+
+
+def test_provider_closes_replacement_client_after_reset(tmp_path, monkeypatch):
+    """Keep the provider client synchronized and close its reset replacement."""
+    cfg = reset_fixture(tmp_path)
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    begin_destination_reset(ledger)
+    ledger.close()
+
+    original_client = QdrantClient(path=cfg["qdrant"]["path"])
+    original_close = original_client.close
+    original_closed = []
+
+    def tracked_original_close():
+        original_closed.append(True)
+        original_close()
+
+    monkeypatch.setattr(original_client, "close", tracked_original_close)
+    from qdrant_memory import qdrant_store
+
+    build_client = qdrant_store.build_client
+    replacement_clients = []
+    replacement_closed = []
+
+    def tracked_build_client(settings):
+        client = build_client(settings)
+        close = client.close
+
+        def tracked_replacement_close():
+            replacement_closed.append(True)
+            close()
+
+        client.close = tracked_replacement_close
+        replacement_clients.append(client)
+        return client
+
+    monkeypatch.setattr(qdrant_store, "build_client", tracked_build_client)
+    provider = QdrantMemoryProvider(
+        SimpleNamespace(llm=LLM()), embedder=Embedder(), client=original_client
+    )
+    try:
+        provider.initialize("session", hermes_home=str(tmp_path))
+        assert provider.wait_idle()
+        assert len(replacement_clients) == 1
+        assert provider.client is provider.store.client is replacement_clients[0]
+    finally:
+        if provider._worker is not None:
+            provider.shutdown()
+
+    assert original_closed
+    assert replacement_closed == [True]
+
+
+def test_cli_reports_actionable_reset_recovery_error(monkeypatch, capsys):
+    """Expose the required init recovery command in the sanitized CLI response."""
+
+    def require_recovery(_args):
+        raise ResetRecoveryRequiredError()
+
+    monkeypatch.setattr(cli, "run", require_recovery)
+    assert cli.main(parse_cli("stats")) == 1
+    error = json.loads(capsys.readouterr().out)["error"]
+    assert error["code"] == "reset_recovery_required"
+    assert "Rerun hermes qdrant-memory init" in error["message"]
 
 
 @pytest.mark.parametrize(

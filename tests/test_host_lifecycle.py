@@ -13,7 +13,9 @@ def _memory_manager_class():
     """Load the host's lifecycle API, requiring it in the latest-upstream lane."""
     required = os.environ.get("HERMES_QDRANT_REQUIRE_HOST_SYNC") == "1"
     try:
-        from agent.memory_manager import MemoryManager
+        import agent.memory_manager as memory_manager
+
+        MemoryManager = memory_manager.MemoryManager
     except ImportError as exc:
         if required:
             pytest.fail(f"Latest Hermes host has no MemoryManager: {exc}")
@@ -23,12 +25,33 @@ def _memory_manager_class():
     missing = [method for method in methods if not callable(getattr(MemoryManager, method, None))]
     if not hasattr(MemoryManager, "shutdown_drain_state"):
         missing.append("shutdown_drain_state")
+    if not hasattr(memory_manager, "_SYNC_DRAIN_TIMEOUT_S"):
+        missing.append("_SYNC_DRAIN_TIMEOUT_S")
     if missing:
         message = f"Hermes host lacks memory lifecycle methods: {', '.join(missing)}"
         if required:
             pytest.fail(message)
         pytest.skip(message)
     return MemoryManager
+
+
+@pytest.mark.parametrize("required", [False, True])
+def test_missing_sync_drain_timeout_uses_lane_requirement(monkeypatch, required):
+    """Skip or fail cleanly when the host lacks the timeout used by monkeypatch."""
+    try:
+        import agent.memory_manager as memory_manager
+    except ImportError:
+        pytest.skip("Hermes host does not expose MemoryManager")
+
+    monkeypatch.delattr(memory_manager, "_SYNC_DRAIN_TIMEOUT_S", raising=False)
+    if required:
+        monkeypatch.setenv("HERMES_QDRANT_REQUIRE_HOST_SYNC", "1")
+        with pytest.raises(pytest.fail.Exception, match="_SYNC_DRAIN_TIMEOUT_S"):
+            _memory_manager_class()
+    else:
+        monkeypatch.delenv("HERMES_QDRANT_REQUIRE_HOST_SYNC", raising=False)
+        with pytest.raises(pytest.skip.Exception, match="_SYNC_DRAIN_TIMEOUT_S"):
+            _memory_manager_class()
 
 
 def test_host_submit_queue_shutdown_and_restart(tmp_path):

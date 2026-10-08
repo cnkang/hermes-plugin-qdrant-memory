@@ -358,6 +358,11 @@ def main(args):
                 code="collection_not_initialized",
                 message="Collection does not exist. Run hermes qdrant-memory init first.",
             )
+        elif isinstance(exc, ResetRecoveryRequiredError):
+            error.update(
+                code="reset_recovery_required",
+                message="Rerun hermes qdrant-memory init before using this destination.",
+            )
         elif isinstance(exc, InitializationChoiceRequiredError):
             error.update(
                 code="existing_collection_choice_required",

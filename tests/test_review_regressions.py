@@ -139,6 +139,26 @@ def test_retrieval_evaluation_handles_no_results():
     assert result["mrr"] == 0
 
 
+def test_retrieval_evaluation_normalizes_missing_and_null_categories():
+    """Group absent and null labels without breaking sorted mixed categories."""
+    store = SimpleNamespace(upsert=lambda records: None, search=lambda *args, **kwargs: [])
+    result = evaluate(
+        {
+            "memories": [{"id": "one", "text": "猫"}],
+            "queries": [
+                {"query": "first", "relevant_ids": ["one"]},
+                {"query": "second", "relevant_ids": ["one"], "category": None},
+                {"query": "third", "relevant_ids": ["one"], "category": "paraphrase"},
+            ],
+        },
+        store,
+        Scope("user", None),
+    )
+
+    assert list(result["by_category"]) == ["paraphrase", "uncategorized"]
+    assert result["by_category"]["uncategorized"]["queries"] == 2
+
+
 def test_retrieval_evaluation_reports_cutoffs_and_case_categories():
     """Verify multi-label recall, precision cutoffs, MRR and category metrics."""
     scope = Scope("user", None)

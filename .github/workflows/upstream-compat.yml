@@ -64,6 +64,16 @@ jobs:
         run: |
           python -m pm.build_env --source "$GITHUB_WORKSPACE/.host" \
             --export-requirements "$RUNNER_TEMP/upstream-host-requirements.txt"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          requirements = Path(os.environ["RUNNER_TEMP"]) / "upstream-host-requirements.txt"
+          requirements.write_text(
+              requirements.read_text(encoding="utf-8").rstrip() + "\n",
+              encoding="utf-8",
+          )
+          PY
           python -c 'import tomllib; from pathlib import Path; p = tomllib.loads(Path("../pyproject.toml").read_text()); print("\n".join(p["project"]["dependencies"] + p["dependency-groups"]["test"]))' \
             >> "$RUNNER_TEMP/upstream-host-requirements.txt"
           python -m pm.build_env --out "$GITHUB_WORKSPACE/.test-env" \

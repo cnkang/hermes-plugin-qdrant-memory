@@ -3,6 +3,7 @@
 import json
 import os
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from threading import RLock
 
@@ -163,7 +164,7 @@ class Ledger:
             # Unknown event age must not let an old event undo an explicit delete.
             return True
         try:
-            event_time = timestamp(admitted_at)
+            event_time = datetime.fromisoformat(timestamp(admitted_at).replace("Z", "+00:00"))
         except (TypeError, ValueError, OverflowError):
             return True
         for row in rows:
@@ -171,7 +172,8 @@ class Ledger:
             if not delete_time:
                 return True
             try:
-                if event_time <= timestamp(delete_time):
+                delete_at = datetime.fromisoformat(timestamp(delete_time).replace("Z", "+00:00"))
+                if event_time <= delete_at:
                     return True
             except (TypeError, ValueError, OverflowError):
                 return True

@@ -101,12 +101,23 @@ class QdrantMemoryProvider(MemoryProvider):
             if self.client is None:
                 self.client = build_client(self.cfg)
                 self._resources.callback(self.client.close)
-            self.store = QdrantStore(self.client, self.cfg, self.embedder)
+            store = QdrantStore(self.client, self.cfg, self.embedder)
+            self.store = store
+            original_client = store.client
+
+            def close_replaced_client():
+                if store.client is not original_client:
+                    store.client.close()
+
+            self._resources.callback(close_replaced_client)
             if pending_reset:
                 # Finish an explicitly authorized reset before recovery can replay rows.
-                resume_destination_reset(self.store, self.ledger)
+                try:
+                    resume_destination_reset(store, self.ledger)
+                finally:
+                    self.client = store.client
             else:
-                self.store.initialize()
+                store.initialize()
             self._unattributed_sessions = self.ledger.unattributed_sessions()
             self._blocked_sessions.update(self._unattributed_sessions)
             self.runtime = Runtime(
