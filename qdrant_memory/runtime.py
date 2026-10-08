@@ -71,6 +71,23 @@ class Runtime:
 
     def _commit_action(self, action, group):
         """Retry one homogeneous action group and acknowledge it after confirmation."""
+        if action == "UPSERT":
+            active_group = []
+            for row in group:
+                value = json.loads(row["payload_json"])
+                scope = Scope(value["user_id"], value.get("agent_id"))
+                if self.ledger.is_delete_fenced(
+                    row["point_id"],
+                    scope,
+                    value.get("updated_at"),
+                    row.get("content_hash") or value.get("content_hash"),
+                ):
+                    self.ledger.finish("operations", row["idempotency_key"], "SUPERSEDED")
+                else:
+                    active_group.append(row)
+            group = active_group
+            if not group:
+                return
 
         def apply():
             """Apply a batch and record throughput after successful upsert."""

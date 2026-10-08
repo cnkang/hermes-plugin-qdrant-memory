@@ -41,6 +41,16 @@ class Ledger:
                 payload_json TEXT NOT NULL, source_id TEXT, source_version TEXT, content_hash TEXT,
                 status TEXT NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0,
                 last_error TEXT, created_at TEXT, committed_at TEXT, collection TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS events_by_collection_status
+                ON events(collection,status);
+            CREATE INDEX IF NOT EXISTS operations_by_collection_status
+                ON operations(collection,status);
+            CREATE INDEX IF NOT EXISTS operations_by_point_status
+                ON operations(collection,point_id,status);
+            CREATE INDEX IF NOT EXISTS operations_delete_by_point
+                ON operations(collection,source_id,action,point_id);
+            CREATE INDEX IF NOT EXISTS operations_delete_by_hash
+                ON operations(collection,source_id,action,content_hash);
             CREATE TABLE IF NOT EXISTS manifests (
                 migration_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, collection TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS metrics (name TEXT, value REAL, collection TEXT);
@@ -146,18 +156,25 @@ class Ledger:
     def is_delete_fenced(self, identifier, scope, admitted_at, candidate_hash=None):
         """Check whether a scoped delete supersedes an older point or content hash."""
         source_id = self.delete_fence_source(scope)
-        hash_clause = " OR content_hash=?" if candidate_hash else ""
-        parameters = [source_id, self.collection, identifier]
-        if candidate_hash:
-            parameters.append(candidate_hash)
         with self.lock:
-            rows = self.db.execute(
-                f"""SELECT source_version,created_at FROM operations
+            rows = list(
+                self.db.execute(
+                    """SELECT source_version,created_at FROM operations
                 WHERE action='DELETE' AND source_id=? AND collection=?
-                AND (point_id=?{hash_clause})
+                AND point_id=?
                 ORDER BY rowid""",
-                parameters,
-            ).fetchall()
+                    (source_id, self.collection, identifier),
+                ).fetchall()
+            )
+            if candidate_hash:
+                rows.extend(
+                    self.db.execute(
+                        """SELECT source_version,created_at FROM operations
+                        WHERE action='DELETE' AND source_id=? AND collection=?
+                        AND content_hash=? ORDER BY rowid""",
+                        (source_id, self.collection, candidate_hash),
+                    ).fetchall()
+                )
         if not rows:
             return False
         if not admitted_at:

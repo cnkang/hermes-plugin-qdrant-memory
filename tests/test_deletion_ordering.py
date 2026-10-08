@@ -94,6 +94,63 @@ def test_unprepared_pre_delete_event_cannot_recreate_memory(tmp_path):
         rt.ledger.close()
 
 
+@pytest.mark.parametrize(
+    ("add_source", "same_point"),
+    [("conversation", True), ("second_source", False)],
+    ids=["same-point", "cross-point-same-hash"],
+)
+def test_prepared_old_upsert_is_fenced_after_delete(tmp_path, monkeypatch, add_source, same_point):
+    """A pending old operation cannot restore a fact deleted from its point or hash."""
+    rt = runtime(tmp_path)
+    scope = Scope("alice", "hermes")
+    try:
+        event_key = _queue_old_turn(rt, scope)
+        original_upsert = rt.store.upsert
+
+        def fail_old_upsert(records):
+            raise ValueError("simulated old upsert failure")
+
+        monkeypatch.setattr(rt.store, "upsert", fail_old_upsert)
+        with pytest.raises(ValueError, match="simulated old upsert failure"):
+            rt.process_event(event_key)
+
+        old_operation = rt.ledger.db.execute(
+            """SELECT idempotency_key,point_id,status,content_hash,created_at
+            FROM operations WHERE action='UPSERT' AND collection=?""",
+            (rt.ledger.collection,),
+        ).fetchone()
+        assert old_operation is not None
+        assert old_operation["status"] == "FAILED"
+
+        # The second write can use the same or a different source-derived point ID.
+        monkeypatch.setattr(rt.store, "upsert", original_upsert)
+        added = rt.add("cats preferred", scope, source=add_source, session_id="alice-session")
+        assert (added["id"] == old_operation["point_id"]) is same_point
+        assert (
+            rt.ledger.db.execute(
+                "SELECT content_hash FROM operations WHERE point_id=? AND action='UPSERT'",
+                (added["id"],),
+            ).fetchone()["content_hash"]
+            == old_operation["content_hash"]
+        )
+
+        result = dispatch(rt, "qdrant_memory_delete", {"id": added["id"]}, scope, "alice-session")
+        assert result == {"id": added["id"], "action": "DELETE"}
+        assert rt.store.get(added["id"], scope) is None
+
+        rt.ledger.retry_failed()
+        assert rt.recover() == 0
+        assert (
+            rt.ledger.row("operations", old_operation["idempotency_key"])["status"] == "SUPERSEDED"
+        )
+        assert rt.ledger.row("events", event_key)["status"] == "COMMITTED"
+        assert rt.store.get(old_operation["point_id"], scope) is None
+        assert rt.store.search("cats", scope) == []
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+
+
 def test_failed_delete_keeps_fence_through_retry(tmp_path, monkeypatch):
     """Keep the deletion fence active until a failed delete is replayed."""
     rt = runtime(tmp_path)
