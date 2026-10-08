@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from qdrant_memory.config import load_config
-from qdrant_memory.migration import migrate, read_qdrant_records, verify_collection
+from qdrant_memory.migration import migrate, read_qdrant_records, verify_collection, verify_manifest
 from qdrant_memory.models import Scope
 from qdrant_memory.qdrant_store import INDEXES, build_client
 from qdrant_memory.tools import dispatch
@@ -127,10 +127,74 @@ def exercise_remote(home, url, key, prefer_grpc, mode, container, collection_pre
             ]
             == 1
         )
+        exercise_fenced_migration(rt)
     finally:
         rt.store.client.delete_collection(rt.store.collection)
         rt.store.close()
         rt.ledger.close()
+
+
+def exercise_fenced_migration(rt):
+    """A failed import stays deleted across replay while a fresh import is allowed."""
+    scope = Scope(**rt.cfg["scope"])
+    other = Scope("remote-other-user", scope.agent_id)
+    records = [
+        {
+            "id": "fenced-import",
+            "memory": "dogs fenced migration",
+            "user_id": scope.user_id,
+            "agent_id": scope.agent_id,
+            "updated_at": "2999-01-01T00:00:00Z",
+        }
+    ]
+    upsert = rt.store.upsert
+
+    def fail_write(_records):
+        """Fail after durable admission without contacting the remote service."""
+        raise ValueError("synthetic disposable write failure")
+
+    rt.store.upsert = fail_write
+    try:
+        with pytest.raises(ValueError, match="synthetic disposable"):
+            migrate(rt, records, "mem0-json", "remote-fenced-fixture")
+    finally:
+        rt.store.upsert = upsert
+    manifest = rt.ledger.manifests()[-1]
+    identifier, record = next(iter(manifest["records"].items()))
+    old_key = record["operation_key"]
+    value = json.loads(rt.ledger.row("operations", old_key)["payload_json"])
+    independent_id = str(uuid.uuid4())
+    rt.store.upsert([(independent_id, value)])
+    isolated = rt.add(value["text"], other)
+    dispatch(rt, "qdrant_memory_delete", {"id": independent_id}, scope, "remote")
+    resumed = migrate(
+        rt, records, "mem0-json", "remote-fenced-fixture", resume=True, retry_failed=True
+    )
+    assert resumed["completed_at"] is not None
+    assert resumed["superseded"] == resumed["processed"] == 1
+    assert resumed["applied"] == 0
+    assert rt.ledger.row("operations", old_key)["status"] == "SUPERSEDED"
+    assert not verify_manifest(rt.store, resumed)["ok"]
+    assert rt.recover() == 0
+    assert rt.store.get(identifier, scope) is None
+    assert rt.store.get(isolated["id"], other) is not None
+    fresh = migrate(rt, records, "mem0-json", "remote-fenced-fixture", verify=True)
+    assert fresh["migration_id"] != resumed["migration_id"]
+    assert fresh["applied"] == 1
+    assert verify_manifest(rt.store, fresh)["ok"]
+    recovery_id = str(uuid.uuid4())
+    recovery_key = rt.operation(recovery_id, "UPSERT", value)
+    rt.store.upsert = fail_write
+    try:
+        with pytest.raises(ValueError, match="synthetic disposable"):
+            rt.commit([recovery_key])
+    finally:
+        rt.store.upsert = upsert
+    assert rt.ledger.row("operations", recovery_key)["status"] == "FAILED"
+    rt.ledger.retry_failed()
+    assert rt.recover() == 0
+    assert rt.ledger.row("operations", recovery_key)["status"] == "COMMITTED"
+    assert rt.store.get(recovery_id, scope) is not None
 
 
 def exercise_readonly_source(rt):

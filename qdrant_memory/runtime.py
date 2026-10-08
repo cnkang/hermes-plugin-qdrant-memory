@@ -2,6 +2,7 @@
 
 import json
 import time
+from itertools import islice
 from threading import RLock
 
 from .dedupe import decide
@@ -43,18 +44,33 @@ class Runtime:
     def commit(self, keys, progress=None):
         """Commit pending keys in insertion order and bounded action-preserving batches."""
         with self.lock:
-            rows = [self.ledger.row("operations", key) for key in keys]
-            rows = [row for row in rows if row and row["status"] == "PENDING"]
-            size = int(self.cfg["write"]["batch_size"])
-            report(progress, "Embedding and writing pending records", 0, len(rows))
-            # Preserve operation order, including delete followed by re-add.
-            for start in range(0, len(rows), size):
-                self.check_active()
-                group = rows[start : start + size]
-                self._commit_group(group)
-                report(
-                    progress, "Embedding and writing pending records", start + len(group), len(rows)
+            # Keys are lightweight; never retain every payload in a large import.
+            total = (
+                sum(
+                    1
+                    for key in keys
+                    if (row := self.ledger.row("operations", key)) and row["status"] == "PENDING"
                 )
+                if progress is not None and hasattr(keys, "__len__")
+                else None
+            )
+            size = int(self.cfg["write"]["batch_size"])
+            report(progress, "Embedding and writing pending records", 0, total)
+            iterator = iter(keys)
+            completed = 0
+            # Preserve operation order, including delete followed by re-add.
+            while key_batch := list(islice(iterator, size)):
+                self.check_active()
+                group = [
+                    row
+                    for key in key_batch
+                    if (row := self.ledger.row("operations", key)) and row["status"] == "PENDING"
+                ]
+                if not group:
+                    continue
+                self._commit_group(group)
+                completed += len(group)
+                report(progress, "Embedding and writing pending records", completed, total)
 
     def _commit_group(self, rows):
         # Mixed action groups are split without reordering.
@@ -132,14 +148,16 @@ class Runtime:
     def recover(self):
         """Replay work independently so one failure does not block the backlog."""
         failures = 0
-        for operation in self.ledger.rows("operations"):
+        operation_upper = self.ledger.high_watermark("operations")
+        event_upper = self.ledger.high_watermark("events")
+        for operation in self.ledger.iter_rows("operations", upper=operation_upper):
             if self.stop_requested():
                 return failures
             try:
                 self.commit([operation["idempotency_key"]])
             except Exception:
                 failures += 1
-        for event in self.ledger.rows("events"):
+        for event in self.ledger.iter_rows("events", upper=event_upper):
             if self.stop_requested():
                 return failures
             try:

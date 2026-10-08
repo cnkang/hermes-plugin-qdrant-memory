@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 from datetime import datetime
+from itertools import chain
 from pathlib import Path
 from threading import RLock
 
@@ -51,6 +52,12 @@ class Ledger:
                 ON operations(collection,source_id,action,point_id);
             CREATE INDEX IF NOT EXISTS operations_delete_by_hash
                 ON operations(collection,source_id,action,content_hash);
+            CREATE INDEX IF NOT EXISTS operations_unscrubbed_by_collection
+                ON operations(collection)
+                WHERE status IN ('COMMITTED','SUPERSEDED') AND payload_json!='{}';
+            CREATE INDEX IF NOT EXISTS operations_unscrubbed_by_point
+                ON operations(collection,point_id)
+                WHERE status IN ('COMMITTED','SUPERSEDED') AND payload_json!='{}';
             CREATE TABLE IF NOT EXISTS manifests (
                 migration_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, collection TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS metrics (name TEXT, value REAL, collection TEXT);
@@ -157,44 +164,46 @@ class Ledger:
         """Check whether a scoped delete supersedes an older point or content hash."""
         source_id = self.delete_fence_source(scope)
         with self.lock:
-            rows = list(
+            queries = [
                 self.db.execute(
                     """SELECT source_version,created_at FROM operations
                 WHERE action='DELETE' AND source_id=? AND collection=?
                 AND point_id=?
                 ORDER BY rowid""",
                     (source_id, self.collection, identifier),
-                ).fetchall()
-            )
+                )
+            ]
             if candidate_hash:
-                rows.extend(
+                queries.append(
                     self.db.execute(
                         """SELECT source_version,created_at FROM operations
                         WHERE action='DELETE' AND source_id=? AND collection=?
                         AND content_hash=? ORDER BY rowid""",
                         (source_id, self.collection, candidate_hash),
-                    ).fetchall()
+                    )
                 )
-        if not rows:
-            return False
-        if not admitted_at:
-            # Unknown event age must not let an old event undo an explicit delete.
-            return True
-        try:
-            event_time = datetime.fromisoformat(timestamp(admitted_at).replace("Z", "+00:00"))
-        except (TypeError, ValueError, OverflowError):
-            return True
-        for row in rows:
-            delete_time = row["source_version"] or row["created_at"]
-            if not delete_time:
-                return True
             try:
-                delete_at = datetime.fromisoformat(timestamp(delete_time).replace("Z", "+00:00"))
-                if event_time <= delete_at:
-                    return True
-            except (TypeError, ValueError, OverflowError):
-                return True
-        return False
+                for row in chain.from_iterable(queries):
+                    if not admitted_at:
+                        return True
+                    try:
+                        event_time = datetime.fromisoformat(
+                            timestamp(admitted_at).replace("Z", "+00:00")
+                        )
+                        delete_time = row["source_version"] or row["created_at"]
+                        if not delete_time:
+                            return True
+                        delete_at = datetime.fromisoformat(
+                            timestamp(delete_time).replace("Z", "+00:00")
+                        )
+                        if event_time <= delete_at:
+                            return True
+                    except (TypeError, ValueError, OverflowError):
+                        return True
+                return False
+            finally:
+                for cursor in queries:
+                    cursor.close()
 
     def has_open_operations(self, identifier):
         """Check open writes to this point in this destination."""
@@ -220,6 +229,45 @@ class Ledger:
                     (status, self.collection),
                 )
             ]
+
+    def high_watermark(self, table):
+        """Snapshot a destination scan boundary before replay starts."""
+        if table not in {"events", "operations"}:
+            raise ValueError("Unknown ledger table")
+        with self.lock:
+            return self.db.execute(
+                f"SELECT COALESCE(MAX(rowid),0) FROM {table} WHERE collection=?",
+                (self.collection,),
+            ).fetchone()[0]
+
+    def iter_rows(self, table, status="PENDING", batch_size=128, upper=None):
+        """Yield bounded keyset batches without keeping a cursor or lock across yields.
+
+        The fixed upper rowid excludes concurrent admissions. State changes cannot
+        shift pages, and every row is returned at most once per scan.
+        """
+        if table not in {"events", "operations"}:
+            raise ValueError("Unknown ledger table")
+        if batch_size < 1:
+            raise ValueError("Batch size must be positive")
+        upper = self.high_watermark(table) if upper is None else upper
+        after = 0
+        while after < upper:
+            with self.lock:
+                cursor = self.db.execute(
+                    f"SELECT rowid AS scan_rowid,* FROM {table} "
+                    "WHERE collection=? AND status=? AND rowid>? AND rowid<=? "
+                    "ORDER BY rowid LIMIT ?",
+                    (self.collection, status, after, upper, batch_size),
+                )
+                try:
+                    batch = [dict(row) for row in cursor.fetchall()]
+                finally:
+                    cursor.close()
+            if not batch:
+                return
+            after = batch[-1]["scan_rowid"]
+            yield from batch
 
     def row(self, table, key):
         """Return an event/operation by key, or None when it is missing."""
@@ -251,21 +299,22 @@ class Ledger:
                     "SELECT point_id,rowid FROM operations WHERE idempotency_key=? AND collection=?",
                     (key, self.collection),
                 ).fetchone()
-                if current:
-                    operation_keys.extend(
-                        row[0]
-                        for row in self.db.execute(
-                            """SELECT idempotency_key FROM operations WHERE point_id=?
-                            AND rowid<? AND collection=? AND status IN ('PENDING','FAILED')""",
-                            (current["point_id"], current["rowid"], self.collection),
-                        )
-                    )
                 self.db.execute(
                     """UPDATE operations SET status='SUPERSEDED' WHERE point_id=
                     (SELECT point_id FROM operations WHERE idempotency_key=?) AND rowid <
                     (SELECT rowid FROM operations WHERE idempotency_key=?) AND collection=? AND status IN ('PENDING','FAILED')""",
                     (key, key, self.collection),
                 )
+                if current:
+                    operation_keys = chain(
+                        operation_keys,
+                        (
+                            row["idempotency_key"]
+                            for row in self._terminal_operation_rows(
+                                current["point_id"], current["rowid"]
+                            )
+                        ),
+                    )
             self._scrub_terminal_payloads(
                 event_keys=[key] if table == "events" else [],
                 operation_keys=operation_keys,
@@ -398,22 +447,22 @@ class Ledger:
         if resumable_keys is None:
             return {"events": event_count, "operations": 0}
         if operation_keys is None:
-            rows = self.db.execute(
-                """SELECT idempotency_key,payload_json FROM operations
-                WHERE collection=? AND status IN ('COMMITTED','SUPERSEDED')""",
-                (self.collection,),
-            ).fetchall()
+            rows = self._terminal_operation_rows()
         else:
-            rows = []
-            for key in dict.fromkeys(operation_keys):
-                row = self.db.execute(
-                    """SELECT idempotency_key,payload_json FROM operations
+
+            def selected_rows():
+                """Read one acknowledgement at a time, including superseded history."""
+                for key in operation_keys:
+                    row = self.db.execute(
+                        """SELECT idempotency_key,payload_json FROM operations
                     WHERE idempotency_key=? AND collection=?
                     AND status IN ('COMMITTED','SUPERSEDED')""",
-                    (key, self.collection),
-                ).fetchone()
-                if row:
-                    rows.append(row)
+                        (key, self.collection),
+                    ).fetchone()
+                    if row:
+                        yield row
+
+            rows = selected_rows()
         operation_count = 0
         for row in rows:
             key = row["idempotency_key"]
@@ -426,6 +475,34 @@ class Ledger:
                 (key, self.collection),
             ).rowcount
         return {"events": event_count, "operations": operation_count}
+
+    def _terminal_operation_rows(self, point=None, before=None):
+        """Read scrub candidates in stable pages, closing queries before mutations."""
+        upper = self.high_watermark("operations") if before is None else before - 1
+        after = 0
+        while after < upper:
+            index = (
+                "operations_unscrubbed_by_collection"
+                if point is None
+                else "operations_unscrubbed_by_point"
+            )
+            sql = f"""SELECT rowid AS scan_rowid,idempotency_key,payload_json FROM operations INDEXED BY {index}
+                WHERE collection=? AND status IN ('COMMITTED','SUPERSEDED')
+                AND payload_json!='{{}}' AND rowid>? AND rowid<=?"""
+            parameters = [self.collection, after, upper]
+            if point is not None:
+                sql += " AND point_id=?"
+                parameters.append(point)
+            with self.lock:
+                cursor = self.db.execute(sql + " ORDER BY rowid LIMIT 128", parameters)
+                try:
+                    rows = cursor.fetchall()
+                finally:
+                    cursor.close()
+            if not rows:
+                return
+            after = rows[-1]["scan_rowid"]
+            yield from rows
 
     def manifests(self):
         """Read this destination's manifests in insertion order."""

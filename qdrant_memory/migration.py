@@ -204,6 +204,11 @@ def migrate(
         if resume
         else None
     )
+    if manifest is not None:
+        # Schema-v1 manifests did not retain content hashes. The matching source
+        # snapshot supplies them without storing the private source text.
+        for identifier, record in manifest["records"].items():
+            record.setdefault("content_hash", planned[identifier]["content_hash"])
     if manifest is not None and stale_skips(runtime, manifest, progress):
         manifest = None
     if manifest is None:
@@ -227,6 +232,10 @@ def migrate(
     finally:
         report(progress, "Saving manifest counts")
         update_manifest_counts(runtime, manifest, len(planned))
+    if verify and manifest["superseded"]:
+        raise ValueError(
+            "Migration contains superseded records; inspect manifest before starting a new migration"
+        )
     if verify and not verify_manifest(runtime.store, manifest, progress)["ok"]:
         raise ValueError("Migration verification failed")
     return manifest
@@ -242,11 +251,33 @@ def stale_skips(runtime, manifest, progress=None):
     with runtime.lock:
         total = len(manifest["records"])
         report(progress, "Checking resumed target records", 0, total)
+        # Replanning the entire snapshot would also re-authorize canceled records.
+        # Resume retains its original admission; only an explicit fresh migration
+        # (or changed source snapshot) authorizes a new plan.
+        if any(
+            _record_superseded(runtime, manifest, identifier, record)
+            for identifier, record in manifest["records"].items()
+        ):
+            return False
         for completed, (identifier, record) in enumerate(manifest["records"].items(), 1):
             if _record_is_stale(runtime, identifier, record):
                 return True
             report(progress, "Checking resumed target records", completed, total)
     return False
+
+
+def _record_superseded(runtime, manifest, identifier, record):
+    """Recognize overwritten operations and later scoped user delete intent."""
+    key = record["operation_key"]
+    row = runtime.ledger.row("operations", key) if key else None
+    if row and row["status"] == "SUPERSEDED":
+        return True
+    return runtime.ledger.is_delete_fenced(
+        identifier,
+        Scope(**record["scope"]),
+        row["created_at"] if row else manifest.get("started_at"),
+        record.get("content_hash") or (row and row.get("content_hash")),
+    )
 
 
 def _record_is_stale(runtime, identifier, record):
@@ -355,6 +386,7 @@ def create_manifest(runtime, planned, source_type, source_identifier, source_sha
                 "action": action,
                 "operation_key": key,
                 "payload_hash": digest(value),
+                "content_hash": value["content_hash"],
                 "scope": scope.as_dict(),
             }
             report(progress, "Comparing target and preparing manifest", completed, len(planned))
@@ -364,8 +396,16 @@ def create_manifest(runtime, planned, source_type, source_identifier, source_sha
 
 def update_manifest_counts(runtime, manifest, expected):
     """Persist status counts and clear completion for incomplete work."""
-    counts = {"processed": 0, "added": 0, "updated": 0, "skipped": 0, "failed": 0}
-    for record in manifest["records"].values():
+    counts = {
+        "processed": 0,
+        "applied": 0,
+        "superseded": 0,
+        "added": 0,
+        "updated": 0,
+        "skipped": 0,
+        "failed": 0,
+    }
+    for identifier, record in manifest["records"].items():
         key = record["operation_key"]
         row = runtime.ledger.row("operations", key) if key else None
         if row:
@@ -374,9 +414,22 @@ def update_manifest_counts(runtime, manifest, expected):
             status = "MISSING"
         else:
             status = "COMMITTED"
+        # These counts describe actual acknowledged writes or planned SKIPs,
+        # even if a later user intent cancels the record's current target state.
+        if status == "COMMITTED":
+            counts[{"ADD": "added", "UPDATE": "updated", "SKIP": "skipped"}[record["action"]]] += 1
+            if record["action"] != "SKIP":
+                counts["applied"] += 1
+        if status != "MISSING" and _record_superseded(runtime, manifest, identifier, record):
+            if row and status in {"PENDING", "FAILED"}:
+                runtime.ledger.finish("operations", key, "SUPERSEDED")
+            status = "SUPERSEDED"
+        record["status"] = status
         if status == "COMMITTED":
             counts["processed"] += 1
-            counts[{"ADD": "added", "UPDATE": "updated", "SKIP": "skipped"}[record["action"]]] += 1
+        elif status == "SUPERSEDED":
+            counts["processed"] += 1
+            counts["superseded"] += 1
         elif status in {"FAILED", "MISSING"}:
             counts["failed"] += 1
     manifest.update(counts)
@@ -388,10 +441,12 @@ def verify_manifest(store, manifest, progress=None):
     """Verify every planned ID, scope and payload hash rather than count alone."""
     if "planning_error" in manifest:
         return {"ok": False, "planning_error": manifest["planning_error"]}
-    missing, mismatched = [], []
+    missing, mismatched, superseded = [], [], []
     total = len(manifest["records"])
     report(progress, "Verifying target records", 0, total)
     for completed, (identifier, record) in enumerate(manifest["records"].items(), 1):
+        if record.get("status") == "SUPERSEDED":
+            superseded.append(identifier)
         point = store.get(identifier, Scope(**record["scope"]))
         if point is None:
             missing.append(identifier)
@@ -400,11 +455,12 @@ def verify_manifest(store, manifest, progress=None):
         report(progress, "Verifying target records", completed, total)
     report(progress, "Checking target count")
     return {
-        "ok": not missing and not mismatched,
+        "ok": not missing and not mismatched and not superseded,
         "expected": len(manifest["records"]),
         "target_exact_count": store.count(),
         "missing": missing,
         "mismatched": mismatched,
+        "superseded": superseded,
     }
 
 

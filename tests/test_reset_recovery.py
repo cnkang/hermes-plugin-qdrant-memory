@@ -49,6 +49,16 @@ def reset_fixture(home):
             )
         ],
     )
+    client.create_collection(
+        "unrelated-collection",
+        vectors_config={"dense": models.VectorParams(size=3, distance=models.Distance.COSINE)},
+    )
+    client.upsert(
+        "unrelated-collection",
+        points=[
+            models.PointStruct(id=43, vector={"dense": [1.0, 0.0, 0.0]}, payload={"text": "keep"})
+        ],
+    )
     client.close()
 
     ledger = Ledger(home, ledger_namespace(cfg))
@@ -77,6 +87,11 @@ def assert_other_destination_and_quarantine_survive(home, cfg):
     other = Ledger(home, "other-destination")
     assert len(other.rows("operations")) == 1
     other.close()
+    client = QdrantClient(path=cfg["qdrant"]["path"])
+    try:
+        assert client.retrieve("unrelated-collection", ids=[43])[0].payload == {"text": "keep"}
+    finally:
+        client.close()
 
 
 def test_embedded_reset_closes_collection_storage_before_delete(tmp_path, monkeypatch):
@@ -174,15 +189,8 @@ def test_cli_reports_actionable_reset_recovery_error(monkeypatch, capsys):
     assert "Rerun hermes qdrant-memory init" in error["message"]
 
 
-@pytest.mark.parametrize(
-    ("cutpoint", "collection_exists_after_crash"),
-    [("before-create", False), ("before-identity", True)],
-)
-def test_cli_resumes_reset_after_process_death(
-    tmp_path, monkeypatch, cutpoint, collection_exists_after_crash
-):
-    """Keep the intent and replay rows until a reset validates, then resume on init."""
-    cfg = reset_fixture(tmp_path)
+def crash_reset_process(home, cutpoint, *, resume=False):
+    """Kill a separate process at a durable reset boundary without Python cleanup."""
     root = str(Path(__file__).resolve().parents[1])
     child = r"""
 import os, sys
@@ -191,11 +199,22 @@ sys.path.insert(0, sys.argv[3])
 from argparse import ArgumentParser
 from qdrant_client import QdrantClient
 import qdrant_memory.cli as cli
+from qdrant_memory.ledger import Ledger
 from qdrant_memory.qdrant_store import QdrantStore
 from tests.helpers import Embedder
 
 cutpoint = sys.argv[2]
-if cutpoint == "before-create":
+if cutpoint == "before-delete":
+    def crash_before_delete(self, *args, **kwargs):
+        os._exit(73)
+    QdrantClient.delete_collection = crash_before_delete
+elif cutpoint == "after-ledger-clear":
+    clear = Ledger.clear_destination
+    def crash_after_clear(self):
+        clear(self)
+        os._exit(74)
+    Ledger.clear_destination = crash_after_clear
+elif cutpoint == "before-create":
     def crash_before_create(self, *args, **kwargs):
         os._exit(71)
     QdrantClient.create_collection = crash_before_create
@@ -207,29 +226,60 @@ else:
 cli.build_embedder = lambda context, cfg: Embedder()
 parser = ArgumentParser()
 cli.register_cli(parser)
-cli.run(parser.parse_args(["init", "--existing", "clear"]), home=sys.argv[1])
+args = ["init"] if sys.argv[5] == "resume" else ["init", "--existing", "clear"]
+cli.run(parser.parse_args(args), home=sys.argv[1])
     """
     completed = subprocess.run(
         [
             sys.executable,
             "-c",
             child,
-            str(tmp_path),
+            str(home),
             cutpoint,
             root,
             str(Path(utils.__file__).resolve().parent),
+            "resume" if resume else "reset",
         ],
         timeout=30,
     )
-    assert completed.returncode == (71 if cutpoint == "before-create" else 72)
+    assert (
+        completed.returncode
+        == {
+            "before-create": 71,
+            "before-identity": 72,
+            "before-delete": 73,
+            "after-ledger-clear": 74,
+        }[cutpoint]
+    )
+
+
+@pytest.mark.parametrize(
+    ("cutpoint", "collection_exists_after_crash", "replay_rows_after_crash"),
+    [
+        ("before-create", False, 1),
+        ("before-identity", True, 1),
+        ("before-delete", True, 1),
+        ("after-ledger-clear", True, 0),
+    ],
+)
+def test_cli_resumes_reset_after_process_death(
+    tmp_path, monkeypatch, cutpoint, collection_exists_after_crash, replay_rows_after_crash
+):
+    """Persist intent across hard exits before deletion and after replay cleanup."""
+    cfg = reset_fixture(tmp_path)
+    crash_reset_process(tmp_path, cutpoint)
 
     client = QdrantClient(path=cfg["qdrant"]["path"])
     assert client.collection_exists(cfg["qdrant"]["collection"]) == collection_exists_after_crash
+    if cutpoint == "before-delete":
+        assert client.retrieve(cfg["qdrant"]["collection"], ids=[42])[0].payload == {
+            "text": "old memory"
+        }
     client.close()
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     assert has_pending_reset(ledger)
-    assert len(ledger.rows("events")) == 1
-    assert len(ledger.rows("operations")) == 1
+    assert len(ledger.rows("events")) == replay_rows_after_crash
+    assert len(ledger.rows("operations")) == replay_rows_after_crash
     ledger.close()
     assert_other_destination_and_quarantine_survive(tmp_path, cfg)
 
@@ -251,6 +301,53 @@ cli.run(parser.parse_args(["init", "--existing", "clear"]), home=sys.argv[1])
     assert ledger.rows("events") == []
     assert ledger.rows("operations") == []
     ledger.close()
+    assert_other_destination_and_quarantine_survive(tmp_path, cfg)
+
+
+@pytest.mark.parametrize(
+    ("first_cutpoint", "second_cutpoint"),
+    [
+        ("before-delete", "before-create"),
+        ("before-create", "before-identity"),
+        ("before-identity", "after-ledger-clear"),
+        ("after-ledger-clear", "before-delete"),
+    ],
+)
+def test_reset_recovery_survives_another_hard_exit(
+    tmp_path, monkeypatch, first_cutpoint, second_cutpoint
+):
+    """A second dead recovery retains authorization and a third init finishes safely."""
+    cfg = reset_fixture(tmp_path)
+    crash_reset_process(tmp_path, first_cutpoint)
+    assert_other_destination_and_quarantine_survive(tmp_path, cfg)
+    crash_reset_process(tmp_path, second_cutpoint, resume=True)
+
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    assert has_pending_reset(ledger)
+    expected_rows = 0 if "after-ledger-clear" in (first_cutpoint, second_cutpoint) else 1
+    assert len(ledger.rows("operations")) == expected_rows
+    assert len(ledger.rows("events")) == expected_rows
+    ledger.close()
+    assert_other_destination_and_quarantine_survive(tmp_path, cfg)
+
+    monkeypatch.setattr(cli, "build_embedder", lambda *_args: Embedder())
+    result = cli.run(parse_cli("init"), home=tmp_path)
+    assert result["ok"] and result["action"] == "clear"
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    assert not has_pending_reset(ledger)
+    assert ledger.rows("operations") == []
+    assert ledger.rows("events") == []
+    ledger.close()
+
+    # A fourth init and an independent client prove leases and embedded file
+    # handles were released, and the completed reset no longer repeats itself.
+    result = cli.run(parse_cli("init", "--existing", "use"), home=tmp_path)
+    assert result["ok"] and result["action"] == "use"
+    client = QdrantClient(path=cfg["qdrant"]["path"])
+    try:
+        assert client.retrieve(cfg["qdrant"]["collection"], ids=[42]) == []
+    finally:
+        client.close()
     assert_other_destination_and_quarantine_survive(tmp_path, cfg)
 
 
