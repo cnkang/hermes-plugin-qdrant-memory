@@ -6,6 +6,8 @@ Base: `79565e755716f3d812b73e550417b5049b9642e6` (latest main fetched for this t
 Branch: `fix/v0.1.0-final-release-hardening`.
 PR: [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12) (open; not merged).
 Implementation SHA: `c77718edce269898db6b47088489c204cd38b234`.
+Subsequent follow-ups strengthen two replay assertions and add a typed CLI conflict
+error; their final-head gates are linked from [PR #12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12).
 Decision: **READY FOR LIMITED TECHNICAL PREVIEW** for one-writer deployments within
 the documented admission, storage and retrieval limits. Embedded and Server paths
 are locally validated. **Public beta requires candidate Cloud validation and all
@@ -40,7 +42,7 @@ All runs below checked out implementation `c77718edce269898db6b47088489c204cd38b
 | Latest-Hermes wheel + callback/manifest/Host lifecycle, Python 3.11/3.14 | PASS | [37791391129](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791391129), actual Hermes checkout `38880bd2f1e90dbc9a1aeec03af62539ee64719a` on both jobs |
 | Authenticated Cloud | BLOCKED BEFORE TEST | [37791397024](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791397024); branch disallowed by protected environment, zero test steps |
 | Sourcery review | Completed; findings triaged | [PR review findings](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12#discussion_r4220124125); check is FAILURE, not a green security gate |
-| CodeRabbit | SKIPPED automatically; manual review requested | Fewer-than-ten-stars rule; a green status did not mean review completion |
+| CodeRabbit | Completed after manual request | Reviewed base through `5c6b4dd`; two documentation comments corrected in the final follow-up. Initial automatic skip was not counted as review completion |
 
 Sourcery's concurrent-Runtime scenario requires multiple destination writers outside
 the supported one-writer deployment; production provider and mutating CLI ownership
@@ -52,6 +54,10 @@ rowid/limit values remain parameters, so no untrusted SQL is interpolated. These
 findings are retained with reasons rather than silently treated as resolved checks.
 Two real test-coverage gaps (vacuous LIMIT assertion and absent between-batch status
 mutation) are addressed by additional regressions before the final head is delivered.
+The additional benchmark SQL alert is also a false positive: EXPLAIN prefixes only
+hardcoded statements and binds every value. The progress pre-count performs a
+bounded-memory O(n) lookup pass to retain accurate pending totals; this lookup
+overhead is retained and is not an unbounded replay allocation.
 
 ### Root causes and state contract
 
@@ -61,6 +67,9 @@ or SKIP after a scoped user deletion, unintentionally granting a new write admis
 Both paths are fixed. Old snapshots remain settled with explicit canceled records;
 `--verify` fails on superseded records and reports actual missing/mismatched data.
 Only a fresh import or a changed source snapshot authorizes a new plan.
+The actual CLI JSON boundary returns nonzero with `code: migration_superseded` and
+a fixed, sanitized inspection/reimport hint. A regression verifies that generic
+error scrubbing cannot hide this actionable conflict or leak source text.
 
 `processed` counts each terminal source record once. `applied`, `added`, and
 `updated` count actual acknowledged COMMITTED operations, including writes later

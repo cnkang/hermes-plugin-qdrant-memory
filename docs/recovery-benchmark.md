@@ -9,13 +9,13 @@ commit, not historical-main results or evidence of remote CI completion.
 ## Reproduction and measurement boundaries
 
 ```sh
-PYTHONPATH=/Volumes/2T/development/hermes-agent \
+PYTHONPATH=/path/to/hermes-agent \
   .test-env/bin/python scripts/benchmark_recovery.py \
   --sizes 0 1 100 1000 10000 100000
 ```
 
 Use an environment with the plugin and actual Hermes dependencies; the
-`PYTHONPATH` in the executed command locates this machine's Hermes checkout.
+`PYTHONPATH` should locate your isolated Hermes checkout; substitute its local path.
 The script prints environment metadata and one JSON result per size.
 
 Measured environment: macOS 27.0, Apple arm64, Python 3.14.7, SQLite 3.53.1.

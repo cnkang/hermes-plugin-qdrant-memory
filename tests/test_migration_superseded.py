@@ -210,3 +210,43 @@ migrate(rt, [{"id":"one","memory":"cats"}], "mem0-json", "crash")
     finally:
         rt.store.close()
         rt.ledger.close()
+
+
+def test_main_reports_safe_superseded_conflict(tmp_path, monkeypatch, capsys):
+    """The public CLI preserves actionable conflict information without source text."""
+    rt = runtime(tmp_path)
+    records = [{"id": "private-source-id", "memory": "private-memory-payload"}]
+    scope = Scope(**rt.cfg["scope"])
+    try:
+        manifest = migrate(rt, records, "mem0-json", "private-source-path")
+        identifier = next(iter(manifest["records"]))
+        value = rt.store.get(identifier, scope).payload
+        key = rt.operation(
+            identifier,
+            "DELETE",
+            {"content_hash": value["content_hash"]},
+            source_id=rt.ledger.delete_fence_source(scope),
+        )
+        rt.commit([key])
+        args = argparse.Namespace(
+            qdrant_command="migrate", resume=True, retry_failed=True, verify=True
+        )
+        monkeypatch.setattr(
+            cli,
+            "run",
+            lambda args: cli.execute_command(
+                args, rt, (records, "mem0-json", "private-source-path", None)
+            ),
+        )
+        assert cli.main(args) == 1
+        output = capsys.readouterr().out
+        error = json.loads(output)["error"]
+        assert error["code"] == "migration_superseded"
+        assert error["retryable"] is False
+        assert "Inspect the manifest" in error["message"]
+        assert "will not restore deleted memories" in error["message"]
+        assert "without --resume" in error["message"]
+        assert "private-" not in output
+    finally:
+        rt.store.close()
+        rt.ledger.close()
