@@ -10,8 +10,11 @@ payloads. No Mem0 SDK, separate LLM SDK, telemetry, or core modifications.
 
 Requirements: Python 3.11+, a compatible Hermes installation, and a reachable
 embedding service. The minimum complete Hermes contract is v2026.9.24
-(`f97608f178d1ffeca59860195ab7da295f7c8e5f`); CI also tests pinned
-`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078` and reviewed upstream main.
+(`f97608f178d1ffeca59860195ab7da295f7c8e5f`). The required CI matrix tests that
+minimum, pinned Hermes `4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`, and the reviewed
+upstream snapshot `3dadeb9246f4eabeee893b128ab41aa917ce28f7`. A separate scheduled
+and manually dispatched tracker tests the latest Hermes `main` and records its
+checked-out SHA; it is not part of the immutable release gate.
 The default model needs Ollama and enough local resources
 to serve `qwen3-embedding:4b`.
 
@@ -61,8 +64,9 @@ For server/Cloud, configure the mode in `$HERMES_HOME/qdrant-memory.json` and su
   vector-count/dimension validation and pipeline fingerprint checks.
 - Main LLM inheritance, plugin auxiliary task routing and operator-trusted overrides.
 - User/agent scope filtering for recall, exact-ID update and deletion.
-- Nonblocking turn persistence, serialized writes, cached session recall and
-  builtin memory mirroring using authoritative `previous_content`.
+- Turn persistence to the plugin's private SQLite ledger after Hermes admits the
+  provider callback, serialized writes, cached session recall and builtin memory
+  mirroring using authoritative `previous_content`.
 - SQLite WAL event/operation ledger, transport retries and restart recovery.
 - Source-ID-only Mem0 JSON/Qdrant migration, re-embedding, dry runs, resumable
   manifests, supplemental updates, and verification of IDs and payload hashes.
@@ -102,8 +106,10 @@ For scripts, explicitly pass `--existing use` or `--existing clear`; the latter
 authorizes deletion. `--collection NAME` overrides only this command's target,
 not the collection configured for subsequent agent sessions.
 `init`, `migrate` and `retry` require exclusive writer ownership in all deployment
-modes. Stop any Hermes session or gateway writing to the same profile and collection
-before running them. If `doctor` already reports `ok: true`, the collection is ready;
+modes. The OS lease coordinates local processes using that profile destination; it
+is not a distributed lock. Stop every Hermes session or gateway on every host writing
+to the same destination before running them. If `doctor` already reports `ok: true`,
+the collection is ready;
 initialization is unnecessary. Remote `doctor`, `stats` and `verify` can inspect it
 while the writer is running.
 `retry` requeues failed events for the next provider
@@ -146,10 +152,24 @@ stop/start, migration, verification and interrupted-import recovery commands.
 
 ## Operations and security
 
-The private SQLite ledger contains raw turn events and prepared payloads. Treat
-it as sensitive memory data and back up the ledger together with the embedded
-store while the agent is stopped. Failed work stays in the ledger; do not delete
-`state.db` to recover. Changing embedding identity requires a new collection.
+The private SQLite ledger can contain raw turn events and prepared payloads. It
+logically scrubs committed event bodies and committed/superseded operation bodies,
+except operations still needed by an incomplete migration manifest. Identity/status
+rows and manifests remain; pending/failed work retains its body for recovery. There
+is no time-based expiry for ledger rows or manifests. Deleting a Qdrant memory does
+not purge pending or failed ledger work. Treat `state.db`, SQLite WAL/SHM sidecars,
+copied snapshots and backups as sensitive; back up the ledger with the embedded store
+only while the agent is stopped. `init --existing clear` clears the selected
+collection's ledger rows, but logical scrubbing/reset is not secure erasure from disk
+pages or previously copied backups. Do not delete `state.db` to recover failed work.
+Changing embedding identity requires a new collection.
+
+The durability guarantee starts only after Hermes calls the provider's `sync_turn`
+callback and the plugin commits the event to SQLite. Hermes currently submits that
+callback to an in-memory background queue; an abrupt host exit or its bounded shutdown
+can abandon work that has not reached plugin admission. After ledger admission, the
+plugin replays pending events and prepared operations after restart. This plugin ledger
+does not make the earlier host queue durable.
 
 Tool arguments cannot override user/agent scope. Automatic writes exclude bot
 and non-primary-agent turns. Recalled content is untrusted data. See
@@ -179,7 +199,9 @@ checks. Read [configuration](docs/configuration.md), [migration](docs/migration-
 Run Ruff lint and format checks before committing, and install the repository
 pre-commit hook as described in [development setup](docs/development.md). The hook
 checks the staged snapshot. CI runs lint, both Python versions and Snyk in
-parallel; SonarCloud follows coverage collection.
+parallel; SonarCloud follows coverage collection. The required matrix uses immutable
+Hermes refs. The separate latest-main tracker is scheduled weekly or manually, reports
+the exact Hermes SHA tested, and does not gate releases.
 
 Build isolated dependency environments with Hermes PM, then run the host's
 canonical test runner against this repository's tests. The tests import the real

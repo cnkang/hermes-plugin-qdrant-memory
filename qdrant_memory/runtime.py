@@ -203,9 +203,12 @@ class Runtime:
             self.ledger.increment(action)
             if action == "SKIP":
                 continue
-            identifier = identifier or point_id(
-                scope, event["source"], content_hash(candidate["text"])
-            )
+            candidate_hash = content_hash(candidate["text"])
+            identifier = identifier or point_id(scope, event["source"], candidate_hash)
+            if self.ledger.is_delete_fenced(
+                identifier, scope, event.get("created_at"), candidate_hash
+            ):
+                continue
             old = self.store.get(identifier, scope)
             value = payload(
                 candidate["text"],
@@ -224,18 +227,31 @@ class Runtime:
     def _prepare_builtin(self, event, scope):
         """Mirror builtin changes using authoritative previous content and exact targets."""
         previous = event["metadata"].get("previous_content")
+        previous_hash = content_hash(previous) if previous is not None else ""
         if event["action"] in {"replace", "remove"} and previous is None:
             return []
         old_id = (
-            point_id(scope, "builtin_memory", [event["target"], content_hash(previous)])
+            point_id(scope, "builtin_memory", [event["target"], previous_hash])
             if previous is not None
             else None
         )
         if event["action"] == "remove":
-            return [self.operation(old_id, "DELETE", {})]
-        identifier = point_id(
-            scope, "builtin_memory", [event["target"], content_hash(event["content"])]
-        )
+            return [
+                self.operation(
+                    old_id,
+                    "DELETE",
+                    {"content_hash": previous_hash},
+                    source_id=self.ledger.delete_fence_source(scope),
+                    source_version=event.get("created_at", ""),
+                )
+            ]
+        new_hash = content_hash(event["content"])
+        identifier = point_id(scope, "builtin_memory", [event["target"], new_hash])
+        if (
+            old_id
+            and self.ledger.is_delete_fenced(old_id, scope, event.get("created_at"), previous_hash)
+        ) or self.ledger.is_delete_fenced(identifier, scope, event.get("created_at"), new_hash):
+            return []
         value = payload(
             event["content"],
             scope,
@@ -247,6 +263,14 @@ class Runtime:
         )
         keys = []
         if old_id and old_id != identifier:
-            keys.append(self.operation(old_id, "DELETE", {}))
+            keys.append(
+                self.operation(
+                    old_id,
+                    "DELETE",
+                    {"content_hash": previous_hash},
+                    source_id=self.ledger.delete_fence_source(scope),
+                    source_version=event.get("created_at", ""),
+                )
+            )
         keys.append(self.operation(identifier, "UPSERT", value))
         return keys

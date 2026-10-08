@@ -5,12 +5,13 @@ Snyk dependency and code jobs run
 independently in parallel. Both Python versions run files serially because remote
 tests restart their disposable server. Python 3.14 collects coverage; SonarCloud
 waits for the test matrix and consumes that artifact, then waits for its quality
-gate. Snyk runs dependency and code scans and monitors main. Tests use
-three immutable Hermes hosts: minimum v2026.9.24 (`f97608f`), pinned `4787e4d`,
-and reviewed upstream main `3dadeb9`. A separately pinned PM prepares dependency
-environments because the minimum release predates `pm.build_env`. Each lane runs
-a digest-pinned Qdrant v1.15.5 service and requires REST/gRPC integration, including
-restart persistence. Ruff is pinned to 0.15.1 in CI and the local
+gate. Snyk runs dependency and code scans and monitors main. The required test matrix
+uses three immutable Hermes refs: minimum v2026.9.24 (`f97608f`), pinned `4787e4d`,
+and the reviewed upstream snapshot `3dadeb9`. That snapshot is not a live reference
+to today's `main`. A separately pinned PM prepares dependency environments because
+the minimum release predates `pm.build_env`. Each lane runs a digest-pinned Qdrant
+v1.15.5 service and requires REST/gRPC integration, including restart persistence.
+Ruff is pinned to 0.15.1 in CI and the local
 [pre-commit setup](development.md); lint includes docstrings and import ordering.
 Actions use immutable SHA pins. Authenticated scans run on same-repository PRs,
 pushes to `main` and `codex/**`, and manual workflow dispatches. The credentialed
@@ -24,6 +25,21 @@ cancelled or skipped prerequisite (lint, tests, SonarCloud and both Snyk jobs), 
 safely skipped fork scans. Make this
 aggregate gate a required branch check; a skipped scanner job alone is not proof
 of a successful scan. The gate needs no secrets and executes no PR code.
+
+## Latest Hermes tracking
+
+`.github/workflows/upstream-compat.yml` runs weekly and through manual dispatch. It
+checks out the current Hermes `main`, records the actual checked-out Hermes SHA and
+plugin SHA in the run summary, then uses the host's canonical test runner for
+directory discovery/CLI, setup, checkpoint/session lifecycle, shutdown, provider and
+recovery contracts on Python 3.11 and 3.14. A separate direct pytest step checks the
+host `MemoryManager.sync_all()` admission and shutdown boundary with
+`HERMES_QDRANT_REQUIRE_HOST_SYNC=1`; the canonical runner clears unlisted environment
+variables, so this required contract runs outside that runner. The dependency builder
+remains pinned to the known PM commit while the tested host source follows `main`.
+This workflow has read-only repository permissions, uses no credentials, and is
+deliberately outside the required immutable release-gate matrix. A green
+historical run applies only to the exact Hermes SHA printed in that run summary.
 
 ## Optional authenticated Cloud smoke
 

@@ -8,9 +8,11 @@
 
 ## 安装与启用
 
-需要 Python 3.11+、兼容的 Hermes 和可访问的 embedding 服务。已验证的 Hermes
-最低完整兼容版本为 v2026.9.24 (`f97608f178d1ffeca59860195ab7da295f7c8e5f`)；
-CI 同时测试固定提交 `4787e4d56fc8d9265d4c7d3c0fe5accee86b4078` 和已复核的 upstream main。
+需要 Python 3.11+、兼容的 Hermes 和可访问的 embedding 服务。Hermes 最低完整兼容
+版本为 v2026.9.24 (`f97608f178d1ffeca59860195ab7da295f7c8e5f`)。必需 CI 矩阵测试
+最低版本、固定提交 `4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`，以及已复核的
+upstream 快照 `3dadeb9246f4eabeee893b128ab41aa917ce28f7`。另有每周和手动触发的
+最新 Hermes `main` 跟踪工作流，会记录实际检出的 SHA；它不属于不可变发布门禁。
 默认 embedding 为 Ollama `qwen3-embedding:4b`，维度 2560；请准备足够的本机资源。
 
 明确选择当前 profile 的 home，不要复用其他 profile 的数据：
@@ -52,7 +54,8 @@ hermes config set memory.provider qdrant-memory
   维度、有限非零向量和 embedding pipeline fingerprint。
 - 继承主 LLM、Hermes auxiliary task，以及通过宿主信任门禁的 provider/model 覆盖。
 - user/agent 作用域检索，按精确 ID 校验后更新或删除。
-- turn 先写本地持久化账本，再由串行后台 worker 提取和提交；会话缓存检索。
+- Hermes 将 provider 回调交给插件后，turn 会先写入私有 SQLite 账本，再由串行
+  后台 worker 提取和提交；会话缓存检索。
 - 基于权威 `previous_content` 镜像 builtin memory，支持重试和崩溃恢复。
 - Mem0 JSON/Qdrant 只读迁移，保留来源 ID、支持 dry-run/resume/verify 和增量更新。
 
@@ -81,11 +84,13 @@ hermes qdrant-memory retry
 可信 fingerprint 的 collection 不能直接复用。`clear` 先验证 embedding 服务，再删除
 目标 collection 的全部数据并重建，同时清除该目标的本地重放任务和迁移记录，防止
 旧记忆恢复；其他 collection 的账本和会话来源隔离记录保留。清空操作无法撤销，
-远端重建失败时需重新运行 `init`，不保证清空和重建是原子操作。
+远端重建失败时会保留恢复意图，需重新运行 `init` 继续恢复；Qdrant 与本地账本
+属于两个系统，清空和重建仍不保证原子操作。
 脚本调用须显式传入 `--existing use` 或 `--existing clear`；后者即授权删除。
 `--collection NAME` 只覆盖本次命令的目标，后续 agent 使用的目标仍来自配置文件。
-所有部署模式的 `init`、`migrate` 和 `retry` 都要求独占写入锁，运行前需停止正在
-向同一 profile 和 collection 写入的 Hermes 会话或 gateway。若 `doctor` 已报告
+所有部署模式的 `init`、`migrate` 和 `retry` 都要求独占写入权。OS lease 只协调
+使用该 profile destination 的本机进程，不是分布式锁；运行前需停止所有主机上
+正在向同一 destination 写入的 Hermes 会话或 gateway。若 `doctor` 已报告
 `ok: true`，collection 已就绪，无需再次初始化；远端 `doctor`、`stats` 和 `verify`
 可在 writer 运行时检查状态。
 `retry` 重试已准备的操作，并让原始失败事件在下次 provider 启动时重新提取。
@@ -145,9 +150,20 @@ hermes qdrant-memory verify --collection hermes_qdrant_memory
 
 ## 运行、安全与限制
 
-SQLite 账本保存原始 turn 和待提交记忆，应按敏感数据处理。停止 agent 后一起备份
-账本与 embedded 数据库。不要通过删除 `state.db` 恢复失败；先排查配置与服务再 retry。
-embedding 模型、维度或 fingerprint 改变时需要新 collection 和显式迁移。
+SQLite 账本可能保存原始 turn 和待提交记忆。事件提交后会逻辑清除事件正文；操作
+提交或被 supersede 后也会清除正文，但未完成迁移 manifest 仍引用的操作除外。行的
+身份/状态信息和 manifest 会保留；PENDING/FAILED 工作会保留正文以支持恢复。账本行和
+manifest 没有按时间过期的策略。删除 Qdrant 记忆不会清除仍在等待或失败的账本任务。
+`state.db`、SQLite WAL/SHM sidecar、快照和备份都应按敏感数据管理；停止 agent 后再
+一起备份账本与 embedded 数据库。执行 `init --existing clear` 会清除选中 collection
+对应的账本行，但逻辑清除/重置不保证擦除磁盘页面或已有备份。不要删除 `state.db` 来
+恢复失败；先排查配置与服务再 retry。embedding 模型、维度或 fingerprint 改变时需要新
+collection 和显式迁移。
+
+插件的持久化保证从 Hermes 调用 `sync_turn` 并且插件将事件提交到 SQLite 后开始。
+Hermes 当前通过内存后台队列提交该回调；宿主进程突然退出或有界 shutdown 可能丢弃
+尚未进入插件的任务。账本接纳后，插件会在重启时重放待处理事件和已准备操作；插件
+账本无法让更早的宿主队列变成持久队列。
 
 工具参数不能覆盖调用者 scope；bot 和非 primary agent 不自动写记忆。召回文本是不
 可信数据。安全、恢复流程和设计说明见[安全](docs/security.md)、
@@ -193,7 +209,8 @@ PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate.py
 
 提交前运行 Ruff lint 和格式检查，并按[开发指南](docs/development.md)（英文）
 安装仓库 pre-commit hook。hook 检查暂存内容；CI 的 lint、Python 测试矩阵和
-Snyk 并行运行，SonarCloud 等待覆盖率结果。
+Snyk 并行运行，SonarCloud 等待覆盖率结果。必需矩阵使用不可变 Hermes 提交；另一个
+每周/手动的最新 main 跟踪工作流会记录被测 SHA，不作为发布门禁。
 
 CI 包含 Python 3.11/3.14、SonarCloud 与 Snyk 依赖/源码扫描；必需 gate 会拒绝
 failed/cancelled/skipped 扫描，fork 代码拿不到扫描 token。CodeRabbit 是独立

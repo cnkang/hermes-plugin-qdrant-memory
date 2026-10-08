@@ -35,6 +35,12 @@ from .qdrant_store import (
     QdrantStore,
     build_client,
 )
+from .reset import (
+    ResetRecoveryRequiredError,
+    begin_destination_reset,
+    has_pending_reset_file,
+    resume_destination_reset,
+)
 from .retry import safe_error
 from .runtime import Runtime
 
@@ -252,6 +258,9 @@ def _run(args, home=None, progress=None):
                 "target_collection": cfg["qdrant"]["collection"],
                 "target_ids": list(planned),
             }
+    pending_reset = has_pending_reset_file(home, ledger_namespace(cfg))
+    if pending_reset and command != "init":
+        raise ResetRecoveryRequiredError()
     with ExitStack() as resources:
         if command in {"init", "migrate", "retry"}:
             report(progress, "Acquiring writer lock")
@@ -266,12 +275,17 @@ def _run(args, home=None, progress=None):
         resources.callback(store.close)
         action = "create"
         ledger = None
-        if command == "init" and store.client.collection_exists(store.collection):
+        if command == "init" and pending_reset:
+            # A prior explicit clear remains authorized until its durable intent clears.
+            action = "clear"
+        elif command == "init" and store.client.collection_exists(store.collection):
             action = existing_collection_action(args, store.collection)
         if action == "clear":
             ledger = Ledger(home, ledger_namespace(cfg))
             resources.callback(ledger.close)
-            store.initialize(reset=True, before_reset=ledger.clear_destination)
+            if not pending_reset:
+                begin_destination_reset(ledger)
+            resume_destination_reset(store, ledger)
         else:
             report(progress, "Initializing target collection and probing embedding")
             store.initialize(create=command in {"init", "migrate"})

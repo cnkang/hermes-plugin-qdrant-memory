@@ -22,8 +22,14 @@ there. Model selection, credentials and operator trust remain host-owned.
 
 ## Turn persistence and ownership
 
-1. A completed primary-agent turn enters a small synchronous SQLite transaction.
-2. A serial worker receives the event key together with the caller's copied context.
+Hermes currently submits `sync_turn` through its in-memory background executor.
+The completed turn is not covered by this plugin's durability guarantee while it is
+waiting in that host queue: abrupt process exit or bounded host shutdown can discard
+a callback that has not started. The plugin boundary begins when Hermes invokes
+`sync_turn` and the provider commits the event to SQLite.
+
+1. The admitted primary-agent turn enters a small synchronous SQLite transaction.
+2. A serial plugin worker receives the persisted event key and caller context.
 3. Extracted candidates are persisted before relation checks and vector writes.
 4. Prepared operation keys are persisted before committing to Qdrant.
 5. The ledger acknowledges the mutation only after a `wait=True` write succeeds.
@@ -32,8 +38,9 @@ An exit between steps 4 and 5 leaves replayable work. An exit after Qdrant upser
 but before acknowledgment repeats the same prepared point ID instead of creating
 another logical record. Events can remain FAILED after service or schema errors;
 an explicit retry requeues them. Replay of other pending items continues when one
-item fails. The ledger is not an unlimited guarantee against disk failure or loss
-of the ledger itself.
+item fails. This recovery guarantee starts at plugin ledger admission and does not
+cover Hermes's earlier in-memory queue. The ledger is not an unlimited guarantee
+against disk failure or loss of the ledger itself.
 
 Provider and CLI mutations share `Runtime.lock`. The worker owns connections after
 successful initialization; shutdown stops new admission and briefly waits for the
@@ -42,6 +49,27 @@ replayable. A local OS writer lease prevents another provider/CLI from overlappi
 the retiring worker on the same profile destination. Cleanup holds the runtime lock
 so foreground tool calls cannot race connection closure.
 During failed initialization, created resources are closed immediately.
+
+The OS lease is local process coordination, not a distributed lock contract. It
+does not establish exclusion for writers on other machines or make shared absolute
+storage paths safe. Run one writer per destination and stop writers on every host
+before mutating maintenance operations.
+
+## MemoryProvider callbacks and manifest hooks
+
+Both directory and wheel entry points register a `MemoryProvider`; this plugin does
+not call `PluginContext.register_hook`. Its v2 manifests therefore declare an empty
+generic `provides_hooks` list. Implemented `MemoryProvider` lifecycle and callback
+methods are `is_available`, `unavailable_reason`, `initialize`, `system_prompt_block`,
+`prefetch`, `queue_prefetch`, `sync_turn`, `shutdown`, `on_turn_start`,
+`on_session_end`, `on_session_switch`, `on_pre_compress`, and `on_memory_write`; the
+provider also supplies `get_tool_schemas`, `handle_tool_call`, `get_config_schema`,
+and `save_config`. These provider callbacks are a separate host interface, not
+generic plugin event hooks.
+
+The v2 `python_dependencies` metadata repeats the runtime requirements from
+`pyproject.toml` for discovery. Hermes surfaces this field but does not install from
+it; Hermes PM installation continues to use the project dependency declaration.
 
 ## Scope, cache and prompt invariants
 
@@ -92,3 +120,6 @@ weighting are future work. Host embedding inheritance is feature-detected and re
 an explicit fallback. The minimum complete Hermes contract is v2026.9.24; earlier
 tags lack required authoritative builtin replacement metadata. Live Server REST/gRPC
 tests and optional authenticated Cloud tests remain separate validation lanes.
+Required compatibility CI uses immutable Hermes commits, including reviewed upstream
+snapshot `3dadeb9246f4eabeee893b128ab41aa917ce28f7`; the scheduled/manual latest-main
+tracker is separate and records the actual Hermes SHA for each run.

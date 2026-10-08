@@ -1,4 +1,13 @@
 name: qdrant-memory
 version: 0.1.0
 description: Durable native memory with Qdrant and Hermes LLM extraction
-hooks: [on_session_end, on_memory_write, on_pre_compress]
+manifest_version: 2
+author: Kang Liu
+license: MIT
+homepage: https://github.com/cnkang/hermes-plugin-qdrant-memory
+tags: [memory, qdrant, vector-search]
+python_dependencies:
+  - "qdrant-client>=1.15,<2"
+  - "httpx>=0.28,<1"
+  - "portalocker>=3.2,<4"
+provides_hooks: []

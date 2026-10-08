@@ -7,6 +7,7 @@ import pytest
 
 from qdrant_memory.models import Scope
 
+from .helpers import capture_committed_event_payloads
 from .test_provider import provider
 
 
@@ -114,10 +115,11 @@ def test_bot_transition_invalidates_inflight_prefetch(tmp_path, monkeypatch):
 @pytest.mark.parametrize("human_first", [False, True])
 @pytest.mark.parametrize("later_human", [False, True])
 def test_bot_transcript_archives_without_supplementary_extraction(
-    tmp_path, human_first, later_human
+    tmp_path, monkeypatch, human_first, later_human
 ):
     """Bot history remains unattributed even after the active turn becomes human."""
     p = provider(tmp_path)
+    captured = capture_committed_event_payloads(monkeypatch, p.ledger)
     try:
         if human_first:
             p.on_turn_start(1, "", author_id="alice")
@@ -132,10 +134,11 @@ def test_bot_transcript_archives_without_supplementary_extraction(
         assert p.context.llm.calls == []
         rows = p.ledger.rows("events", "COMMITTED")
         assert len(rows) == 1
-        event = json.loads(rows[0]["payload_json"])
+        event = captured[0]
         assert event["scope"] == {"user_id": "__mixed__", "agent_id": None}
         assert event["extract"] is False
         assert event["evidence"] == messages
+        assert rows[0]["payload_json"] == "{}"
     finally:
         p.shutdown()
 
@@ -165,7 +168,9 @@ def test_quarantine_survives_switch_restart_and_rewind_until_reset(tmp_path):
 
 
 @pytest.mark.parametrize("reason", ["compression", "branch"])
-def test_continuation_inherits_bot_restrictions_and_durable_quarantine(tmp_path, reason):
+def test_continuation_inherits_bot_restrictions_and_durable_quarantine(
+    tmp_path, monkeypatch, reason
+):
     """A new ID carrying the same transcript must retain its authorization boundaries."""
     p = provider(tmp_path)
     remember_alice(p)
@@ -183,6 +188,7 @@ def test_continuation_inherits_bot_restrictions_and_durable_quarantine(tmp_path,
     assert p.prefetch("cats") == ""
     p.shutdown()
     p = provider(tmp_path)
+    captured = capture_committed_event_payloads(monkeypatch, p.ledger)
     try:
         p.on_session_switch("child")
         assert (
@@ -199,14 +205,11 @@ def test_continuation_inherits_bot_restrictions_and_durable_quarantine(tmp_path,
             p.on_pre_compress(messages, require_checkpoint=True)
             assert p.wait_idle()
         assert p.store.count() == 1
-        checkpoints = [
-            json.loads(row["payload_json"])
-            for row in p.ledger.rows("events", "COMMITTED")
-            if json.loads(row["payload_json"])["kind"] == "checkpoint"
-        ]
+        checkpoints = [event for event in captured if event["kind"] == "checkpoint"]
         assert checkpoints
         assert all(event["extract"] is False for event in checkpoints)
         assert all(event["scope"]["user_id"] == "__mixed__" for event in checkpoints)
+        assert all(row["payload_json"] == "{}" for row in p.ledger.rows("events", "COMMITTED"))
         p.on_session_switch("fresh", parent_session_id="child", reset=True, user_id="alice")
         p.on_session_end([{"role": "user", "content": "birds preferred"}])
         assert p.wait_idle()

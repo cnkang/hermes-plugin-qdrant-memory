@@ -20,6 +20,7 @@ from .ledger import Ledger
 from .models import Scope
 from .ownership import WriterLease
 from .qdrant_store import QdrantStore, build_client
+from .reset import has_pending_reset, resume_destination_reset
 from .retry import safe_error
 from .runtime import Runtime
 from .tools import dispatch, schemas
@@ -84,17 +85,28 @@ class QdrantMemoryProvider(MemoryProvider):
         )
         self._resources = ExitStack()
         try:
+            if self.client is not None:
+                # Injected clients are owned by the provider once initialization begins.
+                # Register them before ledger setup so every failure path releases the
+                # embedded Qdrant file lock.
+                self._resources.callback(self.client.close)
             lease = WriterLease.for_config(self.home, self.cfg)
             self._resources.callback(lease.close)
             self.embedder = self.embedder or build_embedder(self.context, self.cfg)
             if hasattr(self.embedder, "close"):
                 self._resources.callback(self.embedder.close)
-            self.client = self.client or build_client(self.cfg)
-            self.store = QdrantStore(self.client, self.cfg, self.embedder)
-            self._resources.callback(self.store.close)
-            self.store.initialize()
             self.ledger = Ledger(self.home, ledger_namespace(self.cfg))
             self._resources.callback(self.ledger.close)
+            pending_reset = has_pending_reset(self.ledger)
+            if self.client is None:
+                self.client = build_client(self.cfg)
+                self._resources.callback(self.client.close)
+            self.store = QdrantStore(self.client, self.cfg, self.embedder)
+            if pending_reset:
+                # Finish an explicitly authorized reset before recovery can replay rows.
+                resume_destination_reset(self.store, self.ledger)
+            else:
+                self.store.initialize()
             self._unattributed_sessions = self.ledger.unattributed_sessions()
             self._blocked_sessions.update(self._unattributed_sessions)
             self.runtime = Runtime(

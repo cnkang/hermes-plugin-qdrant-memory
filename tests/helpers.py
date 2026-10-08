@@ -11,6 +11,25 @@ from qdrant_memory.qdrant_store import QdrantStore
 from qdrant_memory.runtime import Runtime
 
 
+def capture_committed_event_payloads(monkeypatch, ledger):
+    """Capture event bodies at acknowledgement before retention scrubs them."""
+    import json
+
+    captured = []
+    finish = ledger.finish
+
+    def capture(table, key, status="COMMITTED"):
+        """Snapshot a committed event immediately before its durable body is scrubbed."""
+        if table == "events" and status == "COMMITTED":
+            row = ledger.row("events", key)
+            if row:
+                captured.append(json.loads(row["payload_json"]))
+        return finish(table, key, status)
+
+    monkeypatch.setattr(ledger, "finish", capture)
+    return captured
+
+
 class Embedder:
     """Provide deterministic three-dimensional vectors for behavior contracts."""
 
