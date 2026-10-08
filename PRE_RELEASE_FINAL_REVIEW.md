@@ -1,11 +1,158 @@
-# Hermes Qdrant Memory v0.1.0 — Final Pre-release Review
+# Hermes Qdrant Memory v0.1.0 — Final Release Acceptance
+
+## Current candidate (2026-10-08)
+
+Base: `79565e755716f3d812b73e550417b5049b9642e6` (latest main fetched for this task).
+Branch: `fix/v0.1.0-final-release-hardening`.
+PR: [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12) (open; not merged).
+Implementation SHA: `c77718edce269898db6b47088489c204cd38b234`.
+Decision: **READY FOR LIMITED TECHNICAL PREVIEW** for one-writer deployments within
+the documented admission, storage and retrieval limits. Embedded and Server paths
+are locally validated. **Public beta requires candidate Cloud validation and all
+exact-head remote gates**. Cloud is blocked by the existing main-only environment
+policy, not by a demonstrated candidate data defect. No merge, tag or Release is created.
+Implementation remote validation has completed. Historical PASS results in the
+archived PR #11 section below do not certify this candidate.
+
+PR #10 and PR #11 are merged. On this main SHA,
+[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788043978),
+[six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788044014),
+and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788044033)
+passed. Cloud tests actually executed. The earlier branch environment rejection is historical.
+
+| Finding | Severity | Status | Fix | Tests | Residual risk |
+|---|---|---|---|---|---|
+| Migration SUPERSEDED | P0/P1 | FIXED; local PASS | Terminal accounting and explicit conflict semantics | 8 lifecycle regressions plus existing migration tests | Resume preserves later deletion intent; conflicts need explicit review |
+| Recovery memory growth | P1 | FIXED; local PASS | Bounded keyset scan and finite scan watermark | 0–100,000 operations/events, ordering and hard-exit recovery | Retained history and individual manifests still grow |
+| Reset crash windows | P1 | PASS locally | No core change needed | 18 subprocess/reset tests | Remote reset is recoverable, not atomic |
+| Stale release documentation | P1 | FIXED | Separate merged-main evidence from candidate results | Status audit and linked run evidence | Final release remains a human action |
+| Latest Hermes compatibility | P1 | PASS locally | Independent latest-main lane retained | Python 3.11 and 3.14 wheel contracts against `25a71a744cb9ef06950a91638e6229b4f808d461` | Upstream can change after validation |
+| Qdrant Cloud validation | P1 | BLOCKED BEFORE TEST | Keep main-only protection intact | Candidate [run 37791397024](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791397024) rejected; job has no steps | Candidate requires protected release gate |
+
+### Remote implementation gates
+
+All runs below checked out implementation `c77718edce269898db6b47088489c204cd38b234`.
+
+| Gate | Result | Evidence |
+|---|---|---|
+| CI: six immutable Hermes/Python lanes, Server REST/gRPC, wheel, Ruff, SonarCloud, Snyk dependency/code, required gate | PASS | [37791377125](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791377125), all 12 jobs successful |
+| Linux/macOS/Windows × Python 3.11/3.14 | PASS | [37791376772](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791376772), all six jobs successful |
+| Latest-Hermes wheel + callback/manifest/Host lifecycle, Python 3.11/3.14 | PASS | [37791391129](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791391129), actual Hermes checkout `38880bd2f1e90dbc9a1aeec03af62539ee64719a` on both jobs |
+| Authenticated Cloud | BLOCKED BEFORE TEST | [37791397024](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791397024); branch disallowed by protected environment, zero test steps |
+| Sourcery review | Completed; findings triaged | [PR review findings](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12#discussion_r4220124125); check is FAILURE, not a green security gate |
+| CodeRabbit | SKIPPED automatically; manual review requested | Fewer-than-ten-stars rule; a green status did not mean review completion |
+
+Sourcery's concurrent-Runtime scenario requires multiple destination writers outside
+the supported one-writer deployment; production provider and mutating CLI ownership
+use WriterLease, and each Runtime serializes mutation with its lock. This is not a
+distributed-lock guarantee. Its fence-cursor warning does not reproduce: cursor
+iteration and closure are inside `with self.lock`. The SQL-injection warning targets
+an index name selected exclusively from two internal constants; point/collection/
+rowid/limit values remain parameters, so no untrusted SQL is interpolated. These
+findings are retained with reasons rather than silently treated as resolved checks.
+Two real test-coverage gaps (vacuous LIMIT assertion and absent between-batch status
+mutation) are addressed by additional regressions before the final head is delivered.
+
+### Root causes and state contract
+
+The old counter omitted SUPERSEDED, leaving a fully canceled migration permanently
+incomplete. Drift repair on `--resume` could also replan an already completed ADD
+or SKIP after a scoped user deletion, unintentionally granting a new write admission.
+Both paths are fixed. Old snapshots remain settled with explicit canceled records;
+`--verify` fails on superseded records and reports actual missing/mismatched data.
+Only a fresh import or a changed source snapshot authorizes a new plan.
+
+`processed` counts each terminal source record once. `applied`, `added`, and
+`updated` count actual acknowledged COMMITTED operations, including writes later
+deleted; `superseded` can overlap those historical counts. A fenced operation that
+never committed contributes zero applied writes. SKIP is never an applied write.
+Old schema-v1 manifests remain readable; matching source data supplies optional
+content hashes on resume. Missing operations remain failures rather than canceled
+successes. Completed manifests retain audit/resume metadata and permit terminal
+payload scrubbing.
+
+Recovery now uses rowid keyset pages of 128 under fixed operations/events upper
+watermarks. Commit reads only configured-size payload batches and rechecks status.
+No replay cursor or Ledger lock crosses embedding/Qdrant/LLM service calls.
+New admissions wait for a later round; status changes cannot shift pages. Cleanup
+uses bounded pages plus narrow partial indexes excluding already scrubbed history.
+Delete fence lookup streams its rows without materializing matching tombstones.
+No automatic retention deletion was introduced.
+
+### Candidate local evidence
+
+Tests use disposable profiles and synthetic memories only. Latest Hermes main:
+`25a71a744cb9ef06950a91638e6229b4f808d461`.
+Canonical runner on implementation `c77718edce269898db6b47088489c204cd38b234`:
+Python 3.11.15 **257 PASS, 0 FAIL, 1 SKIPPED** (30.4 s) and Python 3.14.7
+**257 PASS, 0 FAIL, 1 SKIPPED** (33.4 s). Each run actually includes disposable
+Qdrant 1.15.5 Server REST/gRPC, container restart and the new fenced-migration
+lifecycle exercise. The only skip is Cloud without credentials.
+Wheel smoke using independent site-packages installations on Python 3.11.15 and
+3.14.0: **PASS** (entry point, packaged manifest, schema persistence, real CLI discovery).
+Each isolated wheel environment additionally passes nine real installed-wheel
+callback/Host/shutdown/recovery contracts, without the source checkout import override.
+Wheel SHA256: `a6cd71254d4d6b208a54ef075d525ae95fa77718bfd214449ec4cc32fec00745`.
+Latest host lifecycle admission/shutdown contracts with `HERMES_QDRANT_REQUIRE_HOST_SYNC=1`:
+**4 PASS**. Ruff check/format, actionlint and diff check: **PASS**.
+These local results do not establish Cloud or cross-platform compatibility.
+
+Reproduce the canonical run from the exact Hermes checkout, with the test environment
+selected for Python 3.11 or 3.14 and a disposable Qdrant container:
+
+```sh
+HERMES_PYTHON=/path/to/isolated-env/bin/python scripts/run_tests.sh \
+  /path/to/hermes-plugin-qdrant-memory/tests -j 1 --file-retries 0 -- \
+  --tb=short --qdrant-test-url=http://127.0.0.1:6333 \
+  --qdrant-test-container=hermes-hardening-disposable-qdrant
+```
+
+Full interactive Quick Start using a real Ollama/LLM: **NOT RUN** this round.
+Fresh-profile directory discovery, setup schema and CLI are covered with deterministic
+services; this is not a claim that a live model was provisioned. The Server/client
+version-difference warning (1.15.5/1.19.1) remains visible; tested behavior passed.
+
+### Performance and privacy measurements
+
+[Reproducible benchmark](docs/recovery-benchmark.md) and
+[script](scripts/benchmark_recovery.py) validate 0/1/100/1,000/10,000/100,000
+synthetic pending operations on implementation `c77718e`. At 100,000, actual recovery
+Python `tracemalloc` peak is **0.4964 MiB**, compared with **163.6766 MiB** using
+the former list reader in the same current runtime (99.697% reduction).
+Recovery durations: **29.859949 s** bounded versus **30.675616 s** former reader.
+These measurements include FULL SQLite acknowledgement transactions and fake
+constant-memory store calls; they are not network throughput or whole-process RSS.
+EXPLAIN confirms indexed collection/status/rowid range queries without OFFSET.
+The scrubbed database remained **138,539,008 bytes**, WAL **139,383,752 bytes**
+before close; final close/reopen removed that WAL. No physical shrink or secure
+erasure is promised. Terminal reopen used 8,004 Python bytes at peak.
+
+Latest Hermes `agent/memory_manager.py` still uses an in-memory executor/Future
+queue (`_submit_background`, `sync_all`, bounded `shutdown`). The regression
+`test_host_shutdown_reports_turns_not_yet_admitted_to_provider` passes. Durability
+starts at plugin SQLite admission. WriterLease remains local process coordination;
+deploy one writer per destination and stop writers on every host for maintenance.
+
+Pending/FAILED payloads remain necessary recovery inputs. Completed manifests and
+terminal identity/hash rows remain necessary resume/idempotency/deletion evidence.
+Logical scrub is not secure erase of old pages, WAL/SHM, snapshots or backups.
+Retention compaction is deferred; see [capacity procedures](docs/operations.md)
+and the synthetic recovery benchmark. Dense retrieval quality is workload dependent.
+Repository Topics and Homepage remain unset; publishing metadata, a tag and a
+GitHub Release are manual follow-up actions. No release action is authorized here.
+
+## Historical PR #11 review (before merge)
+
+The remainder records the earlier review at base `a6a883c`, including its then-current
+NOT READY decision. It is retained as historical evidence and does not describe the
+current PR or the current Cloud validation state.
 
 Review date: 2026-10-08 (Asia/Singapore)
 Base: remote `main` at `a6a883cd3db3bfdf57cb923f1e9c26fb336df211`
 Branch: `codex/v0.1.0-pre-release-hardening`
 PR: [#11 — fix: prevent stale memory replay after delete](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/11); this work is not merged or released.
 
-## Release decision
+## Historical PR #11 release decision
 
 **NOT READY**
 
@@ -115,7 +262,7 @@ defect was confirmed in the reviewed paths.
 - Qdrant Cloud was not validated: branch protection stopped the workflow before
   tests. The PR CI Server REST/gRPC lane did pass.
 
-## Final status
+## Historical PR #11 final status
 
 **NOT READY.** CI, platform compatibility, and latest-Hermes checks passed for the
 implementation commit, but Cloud behavior remains unvalidated and the remaining

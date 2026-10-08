@@ -40,12 +40,24 @@ def test_keyset_scan_is_bounded_and_stable(tmp_path, count, table):
     try:
         seed(ledger, count, table)
         queries = []
-        ledger.db.set_trace_callback(lambda sql: queries.append(sql) if "LIMIT" in sql else None)
+
+        def capture_scan(sql):
+            """Capture scan SELECTs even when a regression removes their LIMIT."""
+            if (
+                sql.lstrip().upper().startswith("SELECT")
+                and f"FROM {table}" in sql
+                and "MAX(rowid)" not in sql
+            ):
+                queries.append(sql)
+
+        ledger.db.set_trace_callback(capture_scan)
         seen = 0
         for row in ledger.iter_rows(table, batch_size=97):
             assert row["scan_rowid"] == seen + 1
             seen += 1
         assert seen == count
+        if count:
+            assert queries, "No bounded scan query was observed"
         assert all("OFFSET" not in sql and "LIMIT 97" in sql for sql in queries)
     finally:
         ledger.close()
@@ -109,6 +121,35 @@ def test_commit_rechecks_superseded_rows_between_batches(tmp_path, batch_size):
         assert rt.ledger.row("operations", delete)["status"] == "COMMITTED"
         assert rt.ledger.row("operations", last)["status"] == "COMMITTED"
         assert rt.store.get(identifier, scope).payload == fresh_value
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+
+
+def test_commit_skips_operation_superseded_during_previous_batch(tmp_path, monkeypatch):
+    """Later batches reload status instead of replaying an already superseded payload."""
+    rt = runtime(tmp_path, cfg=config(write={"batch_size": 1}))
+    scope = Scope(**rt.cfg["scope"])
+    identifiers = ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"]
+    value = payload("cats", scope, "fixture", "")
+    keys = [rt.operation(identifier, "UPSERT", value) for identifier in identifiers]
+    original = rt.store.upsert
+    calls = []
+
+    def supersede_next_batch(records):
+        """Invalidate the next prepared operation while the first write completes."""
+        calls.extend(identifier for identifier, _ in records)
+        original(records)
+        rt.ledger.finish("operations", keys[1], "SUPERSEDED")
+
+    monkeypatch.setattr(rt.store, "upsert", supersede_next_batch)
+    try:
+        rt.commit(keys)
+        assert calls == identifiers[:1]
+        assert rt.ledger.row("operations", keys[0])["status"] == "COMMITTED"
+        assert rt.ledger.row("operations", keys[1])["status"] == "SUPERSEDED"
+        assert rt.store.get(identifiers[0], scope) is not None
+        assert rt.store.get(identifiers[1], scope) is None
     finally:
         rt.store.close()
         rt.ledger.close()

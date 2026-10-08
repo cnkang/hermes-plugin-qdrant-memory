@@ -1,5 +1,34 @@
 # v0.1.0 Pre-release Checklist
 
+## Current candidate
+
+Base main: `79565e755716f3d812b73e550417b5049b9642e6`.
+Branch: `fix/v0.1.0-final-release-hardening`.
+PRs #10 and #11 are merged. Candidate results and the release decision are in
+[PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md).
+Pending gates are not PASS.
+
+- **PASS** — Migration cancellation is terminal without claiming an uncommitted write;
+  old and completed manifests resume without authorizing restoration after deletion.
+- **PASS** — Operations/events scan 0–100,000 synthetic rows in bounded rowid pages;
+  stable watermarks, failure continuation, retry, locks and hard-exit recovery tested.
+- **PASS** — All missing Reset hard process-exit transitions and interrupted recovery.
+- **PASS** — Latest-Hermes two-version canonical and independent wheel validation;
+  exact implementation evidence is in the final report.
+- **PASS** — Disposable Server REST/gRPC and restart, including fenced migration.
+- **BLOCKED BEFORE TEST** — Candidate Cloud run 37791397024 rejected by main-only
+  environment protection. No credentials or protection rules were changed.
+- **NOT RUN** — Full interactive Quick Start against a live Ollama/LLM; deterministic
+  fresh-profile discovery/setup/CLI and packaged-wheel smoke are tested separately.
+- **READY FOR LIMITED TECHNICAL PREVIEW** — Single writer and documented admission /
+  retention limits; public beta requires protected Cloud and exact-head remote gates.
+- **NOT RUN** — Merge, tag and GitHub Release, intentionally outside this task.
+
+## Historical PR #11 checklist (before merge)
+
+The items below describe the earlier PR #11 implementation and its then-current
+Cloud rejection; later main Cloud tests passed (see the final report).
+
 Last reviewed: 2026-10-08. This checklist records evidence for the current hardening
 branch and [PR #11](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/11).
 See [PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md) for details.

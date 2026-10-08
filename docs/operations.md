@@ -53,6 +53,26 @@ static through the conversation.
 
 ## Backup and restore
 
+### Capacity and retained history
+
+Replay paging bounds transient backlog reads, not the total database or an individual
+event/manifest size. Pending/FAILED bodies are recovery inputs; completed manifests
+retain source-plan hashes, operation keys and payload hashes for audit and resume.
+Do not delete terminal identity rows, tombstones or manifests as routine compaction.
+They protect replay idempotency and later deletion intent. Automatic retention
+compaction requires a separate design and is not implemented in 0.1.0.
+
+Monitor `state.db`, `state.db-wal`, free disk and destination pending/failed counts
+with the agent stopped for maintenance. Treat 100,000 pending operations as the
+tested synthetic backlog envelope, not a production capacity guarantee; benchmark
+larger workloads before deployment. Set an operational disk alert at 70% usage and
+pause new writes before exhausting storage. Reserve space for both a stopped backup
+and the active database/WAL; resolve service failures, then explicitly retry.
+SQLite may reuse freed pages without reducing file size. A stopped, consistent
+backup and SQLite VACUUM can reclaim free pages, but neither securely erases old
+backups nor safely authorizes deletion of retained rows. Never remove WAL/SHM files
+from a live database. See the acceptance report for measured sizes and memory.
+
 Stop the agent and every embedded maintenance client before copying state. Back up
 `qdrant-memory.json`, the `qdrant-memory` state directory (including SQLite sidecar
 files if present), and the embedded Qdrant path if it is configured elsewhere.

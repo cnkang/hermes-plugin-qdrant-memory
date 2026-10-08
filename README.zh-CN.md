@@ -1,8 +1,10 @@
 # Hermes Qdrant 记忆插件
 
-> **v0.1.0 预发布状态：尚未达到发布条件。** [PR #11](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/11)
-> 仍开放，尚未打标签或发布。Qdrant Cloud 验证受环境保护规则阻止。
-> 证据和剩余限制见[最终审查报告](PRE_RELEASE_FINAL_REVIEW.md)。
+> **v0.1.0：可进行有限技术预览（Ready for limited technical preview）。** PR #10、#11 已合并；
+> [PR #12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12) 包含最终加固。
+> 预览要求每个目的地仅一个写入者，并接受文档中的持久化边界。
+> 本轮 Cloud 验证仍是受保护发布门禁；历史 main 的 Cloud 成功不代表此 PR 已验证。
+> 尚未打标签或发布。证据和支持边界见[最终审查报告](PRE_RELEASE_FINAL_REVIEW.md)。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -150,6 +152,9 @@ hermes qdrant-memory verify --collection hermes_qdrant_memory
 默认重新 embedding。`--resume` 匹配相同 snapshot、目标和 pipeline；失败操作需要
 `--retry-failed`。验证逐条检查 ID、scope 和 payload hash，数量相等不足以证明迁移
 正确。来源 collection 不会被修改；返回 Mem0 时修改 provider 配置并重启。
+被取消的迁移记录以 `SUPERSEDED` 终态结束，不会冒充成功写入；resume 保留后续删除
+意图，`--verify` 明确报告冲突。只有明确启动新导入或更改来源快照才能重新规划。
+恢复按有限水位分批读取 operation/event；保留的账本历史仍需监控磁盘容量。
 支持的输入、Qdrant 来源和回退步骤见[迁移文档](docs/migration-from-mem0.md)（英文）。
 
 ## 运行、安全与限制

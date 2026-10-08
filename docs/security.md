@@ -1,5 +1,10 @@
 # Security
 
+Terminal identity rows and delete fences are deliberately retained. Do not prune
+them or completed migration manifests to reduce replay memory: they preserve
+deletion intent, idempotency and resume evidence. Logical payload scrubbing is not
+secure erase; encryption and backup expiry must be enforced by the deployment.
+
 Credentials are resolved through Hermes's profile-aware `get_secret()`. Explicit
 Qdrant JSON credentials have higher precedence for compatibility. LLM credentials
 never enter this plugin: extraction and relation calls use `PluginContext.llm`.
