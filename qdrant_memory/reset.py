@@ -28,7 +28,7 @@ def has_pending_reset(ledger):
             return False
         return (
             ledger.db.execute(
-                f"SELECT 1 FROM {RESET_INTENTS_TABLE} WHERE collection=?",
+                "SELECT 1 FROM qdrant_reset_intents WHERE collection=?",
                 (ledger.collection,),
             ).fetchone()
             is not None
@@ -49,7 +49,7 @@ def has_pending_reset_file(home, collection):
             return False
         return (
             db.execute(
-                f"SELECT 1 FROM {RESET_INTENTS_TABLE} WHERE collection=?", (collection,)
+                "SELECT 1 FROM qdrant_reset_intents WHERE collection=?", (collection,)
             ).fetchone()
             is not None
         )
@@ -59,13 +59,13 @@ def begin_destination_reset(ledger):
     """Commit reset intent before any remote collection deletion can begin."""
     with ledger.lock, ledger.db:
         ledger.db.execute(
-            f"""CREATE TABLE IF NOT EXISTS {RESET_INTENTS_TABLE} (
+            """CREATE TABLE IF NOT EXISTS qdrant_reset_intents (
                 collection TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )"""
         )
         ledger.db.execute(
-            f"INSERT OR IGNORE INTO {RESET_INTENTS_TABLE}(collection) VALUES(?)",
+            "INSERT OR IGNORE INTO qdrant_reset_intents(collection) VALUES(?)",
             (ledger.collection,),
         )
 
@@ -83,6 +83,6 @@ def resume_destination_reset(store, ledger):
     ledger.clear_destination()
     with ledger.lock, ledger.db:
         ledger.db.execute(
-            f"DELETE FROM {RESET_INTENTS_TABLE} WHERE collection=?",
+            "DELETE FROM qdrant_reset_intents WHERE collection=?",
             (ledger.collection,),
         )
