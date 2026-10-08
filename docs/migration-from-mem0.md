@@ -133,6 +133,11 @@ source snapshot produces a fresh plan, permitting supplemental imports.
 alone cannot certify a migration. `verify` separately checks payload hashes and
 vector dimensions across the collection using exact counts.
 
+Delete fences compare migration operations by their durable ledger admission time,
+not the source record's preserved `updated_at`. A fresh import after a scoped
+delete can intentionally restore that content, including records without source
+timestamps. Operations prepared before the delete remain fenced on replay.
+
 Re-embedding is the default. `--reuse-vectors` is reserved, not implemented in 0.1,
 and refused because supported
 Mem0 inputs do not expose a trusted pipeline fingerprint and metric contract.

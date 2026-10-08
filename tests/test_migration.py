@@ -4,8 +4,16 @@ import json
 
 import pytest
 
-from qdrant_memory.migration import map_record, migrate, plan, verify_collection, verify_manifest
+from qdrant_memory.migration import (
+    create_manifest,
+    map_record,
+    migrate,
+    plan,
+    verify_collection,
+    verify_manifest,
+)
 from qdrant_memory.models import Scope
+from qdrant_memory.tools import dispatch
 
 from .helpers import runtime
 
@@ -78,6 +86,70 @@ def test_failed_migration_resume_and_no_semantic_merge(tmp_path, monkeypatch):
     assert rt.store.count() == 5
     rt.store.close()
     rt.ledger.close()
+
+
+@pytest.mark.parametrize("updated_at", ["2000-01-01T00:00:00Z", None])
+@pytest.mark.parametrize("source_id", ["one", "another"])
+def test_fresh_migration_after_delete_preserves_source_time(tmp_path, updated_at, source_id):
+    """New imports may restore deleted content without rewriting source timestamps."""
+    rt = runtime(tmp_path)
+    original = {"id": "one", "memory": "cats preferred", "updated_at": updated_at}
+    try:
+        first = migrate(rt, [original], "mem0-json", "fixture", "first", verify=True)
+        identifier = next(iter(first["records"]))
+        scope = Scope(**first["records"][identifier]["scope"])
+        dispatch(rt, "qdrant_memory_delete", {"id": identifier}, scope, "session")
+
+        records = [{**original, "id": source_id}]
+        imported = migrate(rt, records, "mem0-json", "fixture", "second", verify=True)
+        assert imported["processed"] == imported["added"] == 1
+        assert imported["failed"] == 0
+        assert imported["completed_at"] is not None
+        expected = plan(records, rt.cfg)
+        for point, value in expected.items():
+            assert rt.store.get(point, scope).payload == value
+        resumed = migrate(
+            rt,
+            records,
+            "mem0-json",
+            "fixture",
+            "second",
+            resume=True,
+            retry_failed=True,
+            verify=True,
+        )
+        assert resumed["migration_id"] == imported["migration_id"]
+        assert resumed["processed"] == 1
+        assert rt.store.count() == 1
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+
+
+def test_pre_delete_migration_is_fenced_even_with_future_source_time(tmp_path):
+    """A source timestamp cannot make an old prepared import bypass a later delete."""
+    rt = runtime(tmp_path)
+    records = [{"id": "one", "memory": "cats preferred", "updated_at": "2999-01-01T00:00:00Z"}]
+    try:
+        planned = plan(records, rt.cfg)
+        manifest = create_manifest(rt, planned, "mem0-json", "fixture", "checksum")
+        identifier = next(iter(planned))
+        scope = Scope(**manifest["records"][identifier]["scope"])
+        key = manifest["records"][identifier]["operation_key"]
+        with rt.ledger.db:
+            rt.ledger.db.execute(
+                "UPDATE operations SET created_at=? WHERE idempotency_key=?",
+                ("2000-01-01T00:00:00Z", key),
+            )
+        added = rt.add("cats preferred", scope, session_id="session")
+        dispatch(rt, "qdrant_memory_delete", {"id": added["id"]}, scope, "session")
+        rt.commit([key])
+        assert rt.ledger.row("operations", key)["status"] == "SUPERSEDED"
+        assert rt.store.get(identifier, scope) is None
+        assert rt.store.count() == 0
+    finally:
+        rt.store.close()
+        rt.ledger.close()
 
 
 def test_conflicting_source_duplicate_refused(tmp_path):
