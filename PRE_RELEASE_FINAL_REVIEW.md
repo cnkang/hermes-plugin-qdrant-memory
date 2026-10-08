@@ -8,6 +8,8 @@ PR: [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12) (open; 
 Implementation SHA: `c77718edce269898db6b47088489c204cd38b234`.
 Subsequent follow-ups strengthen two replay assertions and add a typed CLI conflict
 error; their final-head gates are linked from [PR #12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12).
+The PR review follow-up below records additional changes after `b957e43`; the
+implementation runs in the tables remain evidence for their stated SHA only.
 Decision: **READY FOR LIMITED TECHNICAL PREVIEW** for one-writer deployments within
 the documented admission, storage and retrieval limits. Embedded and Server paths
 are locally validated. **Public beta requires candidate Cloud validation and all
@@ -44,20 +46,36 @@ All runs below checked out implementation `c77718edce269898db6b47088489c204cd38b
 | Sourcery review | Completed; findings triaged | [PR review findings](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12#discussion_r4220124125); check is FAILURE, not a green security gate |
 | CodeRabbit | Completed after manual request | Reviewed base through `5c6b4dd`; two documentation comments corrected in the final follow-up. Initial automatic skip was not counted as review completion |
 
-Sourcery's concurrent-Runtime scenario requires multiple destination writers outside
-the supported one-writer deployment; production provider and mutating CLI ownership
-use WriterLease, and each Runtime serializes mutation with its lock. This is not a
-distributed-lock guarantee. Its fence-cursor warning does not reproduce: cursor
-iteration and closure are inside `with self.lock`. The SQL-injection warning targets
-an index name selected exclusively from two internal constants; point/collection/
-rowid/limit values remain parameters, so no untrusted SQL is interpolated. These
-findings are retained with reasons rather than silently treated as resolved checks.
-Two real test-coverage gaps (vacuous LIMIT assertion and absent between-batch status
-mutation) are addressed by additional regressions before the final head is delivered.
-The additional benchmark SQL alert is also a false positive: EXPLAIN prefixes only
-hardcoded statements and binds every value. The progress pre-count performs a
-bounded-memory O(n) lookup pass to retain accurate pending totals; this lookup
-overhead is retained and is not an unbounded replay allocation.
+### PR #12 review follow-up
+
+| Review finding | Disposition | Regression evidence |
+|---|---|---|
+| Progress reads each full payload twice | FIXED: count pending keys in static, parameterized batches of 128, reading only keys | Exact progress totals, duplicate/missing/failed/foreign keys, hostile-shaped keys, unsized generators; 1,000 keys need eight count queries |
+| SQL construction in terminal cleanup | HARDENED: two complete static statements retain the partial indexes, rowid bounds and page size | Existing terminal scrubbing/recovery tests |
+| SQL construction in benchmark EXPLAIN | HARDENED: complete static EXPLAIN statements bind every value | Both real SQLite plans use the collection/status index; bounded plan keeps rowid bounds without a temporary sort |
+| Two independent Runtime writers race with DELETE | Outside supported ownership: manually constructed Runtime instances bypass WriterLease | Four production ownership tests block a second provider, mutating CLI and child-process lease during an in-flight write; one provider serializes DELETE after UPSERT |
+
+The two SQL warnings did not establish injection: their original fragments were
+internal constants. Static statements remove the construction altogether without
+suppressing the checker. Progress still visits O(n) lightweight keys for an exact
+initial total, but no longer loads every payload or issues one count query per key.
+No manifest, ledger schema or deletion semantics change in this follow-up.
+
+The concurrent-Runtime scenario is reproducible when callers bypass production
+ownership. Provider and mutating CLI entries acquire WriterLease before services
+or Runtime are constructed, and one Runtime serializes mutation with its lock.
+Separate profiles/hosts writing the same remote destination remain unsupported;
+the lease is not distributed. The fence-cursor warning does not reproduce: cursor
+iteration and closure are inside `with self.lock`. Two coverage gaps and both
+CodeRabbit documentation comments were fixed in the earlier follow-ups; they
+remain covered rather than being implemented again.
+
+Follow-up validation uses disposable fixtures only. Local Python 3.11/3.14 full
+suite results and exact-head remote outcomes are recorded in the
+[PR #12 validation updates](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12).
+The benchmark's 0/1/100-record smoke run passed all correctness assertions after
+the static EXPLAIN change; the large-scale measurements below retain their original
+execution provenance. Candidate Cloud remains blocked by the main-only environment.
 
 ### Root causes and state contract
 

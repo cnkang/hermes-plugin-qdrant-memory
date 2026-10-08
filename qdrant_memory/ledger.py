@@ -3,8 +3,9 @@
 import json
 import os
 import sqlite3
+from collections import Counter
 from datetime import datetime
-from itertools import chain
+from itertools import chain, islice
 from pathlib import Path
 from threading import RLock
 
@@ -276,6 +277,35 @@ class Ledger:
             row = self.db.execute(f"SELECT * FROM {table} WHERE {column}=?", (key,)).fetchone()
             return dict(row) if row else None
 
+    def count_pending_operations(self, keys):
+        """Count requested pending keys in small batches without loading payloads.
+
+        Repeated keys retain their multiplicity, matching commit's progress contract.
+        Missing, terminal and other-destination operations contribute no count.
+        """
+        total = 0
+        iterator = iter(keys)
+        while batch := list(islice(iterator, 128)):
+            multiplicities = Counter(batch)
+            parameters = list(multiplicities)
+            parameters.extend([None] * (128 - len(parameters)))
+            with self.lock:
+                cursor = self.db.execute(
+                    "SELECT idempotency_key FROM operations WHERE status='PENDING' "
+                    "AND collection=? AND idempotency_key IN ("
+                    "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
+                    "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
+                    "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
+                    "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
+                    ")",
+                    (self.collection, *parameters),
+                )
+                try:
+                    total += sum(multiplicities[row[0]] for row in cursor)
+                finally:
+                    cursor.close()
+        return total
+
     def prepare_event(self, key, value):
         """Persist extraction or preparation progress before any service mutation."""
         with self.lock, self.db:
@@ -481,20 +511,25 @@ class Ledger:
         upper = self.high_watermark("operations") if before is None else before - 1
         after = 0
         while after < upper:
-            index = (
-                "operations_unscrubbed_by_collection"
-                if point is None
-                else "operations_unscrubbed_by_point"
-            )
-            sql = f"""SELECT rowid AS scan_rowid,idempotency_key,payload_json FROM operations INDEXED BY {index}
-                WHERE collection=? AND status IN ('COMMITTED','SUPERSEDED')
-                AND payload_json!='{{}}' AND rowid>? AND rowid<=?"""
-            parameters = [self.collection, after, upper]
-            if point is not None:
-                sql += " AND point_id=?"
-                parameters.append(point)
             with self.lock:
-                cursor = self.db.execute(sql + " ORDER BY rowid LIMIT 128", parameters)
+                if point is None:
+                    cursor = self.db.execute(
+                        """SELECT rowid AS scan_rowid,idempotency_key,payload_json
+                        FROM operations INDEXED BY operations_unscrubbed_by_collection
+                        WHERE collection=? AND status IN ('COMMITTED','SUPERSEDED')
+                        AND payload_json!='{}' AND rowid>? AND rowid<=?
+                        ORDER BY rowid LIMIT 128""",
+                        (self.collection, after, upper),
+                    )
+                else:
+                    cursor = self.db.execute(
+                        """SELECT rowid AS scan_rowid,idempotency_key,payload_json
+                        FROM operations INDEXED BY operations_unscrubbed_by_point
+                        WHERE collection=? AND status IN ('COMMITTED','SUPERSEDED')
+                        AND payload_json!='{}' AND rowid>? AND rowid<=? AND point_id=?
+                        ORDER BY rowid LIMIT 128""",
+                        (self.collection, after, upper, point),
+                    )
                 try:
                     rows = cursor.fetchall()
                 finally:
