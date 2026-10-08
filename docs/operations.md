@@ -30,8 +30,10 @@ queued jobs are discarded and durable work remains available for recovery. An
 in-flight network call cannot be forcibly cancelled: timeout raises an explicit
 error and the worker retains its writer lease and connections until it exits.
 A replacement provider or mutating maintenance CLI for that profile destination is refused
-while the old worker owns the lease. Leases do not provide distributed exclusion for
-writers on other machines and do not make a shared absolute storage path safe. Stop
+while the old worker owns the lease. Lease files live under `HERMES_HOME`, so separate
+profile homes on the same machine do not coordinate writes to one remote collection.
+Deploy only one writer per destination across all profiles and hosts. Leases do not
+provide distributed exclusion or make a shared absolute storage path safe. Stop
 writers on every host before maintenance. Never delete `state.db` to recover an error;
 inspect stats and correct configuration before retrying.
 
