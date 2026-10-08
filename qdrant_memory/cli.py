@@ -17,6 +17,7 @@ from .config import (
 from .embedding import build_embedder
 from .ledger import Ledger
 from .migration import (
+    MigrationIncompleteError,
     MigrationSupersededError,
     migrate,
     plan,
@@ -354,6 +355,12 @@ def main(args):
                 message="Later user intent superseded migration records. Inspect the manifest. "
                 "Resuming this migration will not restore deleted memories. Only start a new "
                 "migration without --resume if you explicitly intend to import them again.",
+            )
+        elif isinstance(exc, MigrationIncompleteError):
+            error.update(
+                code="migration_incomplete",
+                message="Migration incomplete; rerun with --resume --retry-failed. Recover "
+                "failed work before reviewing any superseded conflict.",
             )
         elif isinstance(exc, WriterBusyError):
             error.update(

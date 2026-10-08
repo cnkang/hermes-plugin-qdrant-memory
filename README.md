@@ -156,10 +156,10 @@ add `--retry-failed` to retry failed operations from that manifest. Migration
 verification checks exact IDs, scope and payload hashes, not just record count.
 Canceled migration records are terminal `SUPERSEDED` work, never certified as
 successful writes. Resume preserves later deletion intent; `--verify` reports the
-conflict as `migration_superseded` with a nonzero exit code. Mixed failed and
-superseded work reports incomplete progress first; correct failures and resume before
-reviewing any deliberate fresh import. Only a fresh import or changed snapshot
-authorizes replanning.
+conflict as `migration_superseded` with a nonzero exit code. While failed records
+remain, `--verify` reports `migration_incomplete` instead, so failures are corrected
+and resumed before any conflict review or deliberate fresh import. Only a fresh
+import or changed snapshot authorizes replanning.
 Recovery reads operations and events in finite bounded pages; retained ledger
 history still needs disk-capacity monitoring.
 Before a real import, stop all sessions/gateways writing to the target, including

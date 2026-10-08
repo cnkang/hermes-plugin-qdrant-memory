@@ -156,8 +156,8 @@ hermes qdrant-memory verify --collection hermes_qdrant_memory
 `--retry-failed`。验证逐条检查 ID、scope 和 payload hash，数量相等不足以证明迁移
 正确。来源 collection 不会被修改；返回 Mem0 时修改 provider 配置并重启。
 被取消的迁移记录以 `SUPERSEDED` 终态结束，不会冒充成功写入；resume 保留后续删除
-意图，`--verify` 返回 `migration_superseded` 和非零退出码。失败与 superseded 操作
-并存时，进度优先报告迁移未完成；先修复失败并 resume，再审查是否需要新导入。
+意图，`--verify` 返回 `migration_superseded` 和非零退出码。只要仍有失败记录，
+`--verify` 先返回 `migration_incomplete`：先修复失败并 resume，再审查冲突或新导入。
 只有明确启动新导入或更改来源快照才能重新规划。
 恢复按有限水位分批读取 operation/event；保留的账本历史仍需监控磁盘容量。
 支持的输入、Qdrant 来源和回退步骤见[迁移文档](docs/migration-from-mem0.md)（英文）。

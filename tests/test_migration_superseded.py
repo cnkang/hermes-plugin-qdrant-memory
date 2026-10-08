@@ -10,7 +10,12 @@ import pytest
 from qdrant_client import QdrantClient
 
 from qdrant_memory import cli
-from qdrant_memory.migration import migrate, verify_manifest
+from qdrant_memory.migration import (
+    MigrationIncompleteError,
+    MigrationSupersededError,
+    migrate,
+    verify_manifest,
+)
 from qdrant_memory.models import Scope
 
 from .helpers import config, runtime
@@ -247,6 +252,97 @@ def test_main_reports_safe_superseded_conflict(tmp_path, monkeypatch, capsys):
         assert "will not restore deleted memories" in error["message"]
         assert "without --resume" in error["message"]
         assert "private-" not in output
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+
+
+def _mixed_failed_and_superseded(tmp_path, monkeypatch):
+    """Leave one operation FAILED and supersede another through later delete intent."""
+    rt = runtime(tmp_path)
+    records = [{"id": "one", "memory": "cats"}, {"id": "two", "memory": "dogs"}]
+    original = rt.store.upsert
+    monkeypatch.setattr(
+        rt.store, "upsert", lambda _records: (_ for _ in ()).throw(ValueError("synthetic"))
+    )
+    with pytest.raises(ValueError):
+        migrate(rt, records, "mem0-json", "fixture")
+    monkeypatch.setattr(rt.store, "upsert", original)
+    manifest = rt.ledger.manifests()[-1]
+    identifier, record = next(iter(manifest["records"].items()))
+    value = json.loads(rt.ledger.row("operations", record["operation_key"])["payload_json"])
+    rt.store.upsert([(identifier, value)])
+    delete = rt.operation(
+        identifier,
+        "DELETE",
+        {"content_hash": value["content_hash"]},
+        source_id=rt.ledger.delete_fence_source(Scope(**record["scope"])),
+    )
+    rt.commit([delete])
+    return rt, records
+
+
+def test_verify_reports_incomplete_before_superseded(tmp_path, monkeypatch):
+    """Failed work outranks a superseded conflict under --verify until recovered."""
+    rt, records = _mixed_failed_and_superseded(tmp_path, monkeypatch)
+    try:
+        with pytest.raises(MigrationIncompleteError, match="--resume --retry-failed"):
+            migrate(rt, records, "mem0-json", "fixture", resume=True, verify=True)
+        # Recovery resolves the failed record; the remaining conflict is then reported.
+        with pytest.raises(MigrationSupersededError, match="superseded"):
+            migrate(
+                rt, records, "mem0-json", "fixture", resume=True, retry_failed=True, verify=True
+            )
+        manifest = rt.ledger.manifests()[-1]
+        assert (manifest["processed"], manifest["failed"], manifest["superseded"]) == (2, 0, 1)
+        assert manifest["completed_at"] is not None
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+
+
+def test_verify_reports_failed_only_plan_as_incomplete(tmp_path, monkeypatch):
+    """A plan without conflicts still reports failed work as migration_incomplete."""
+    rt = runtime(tmp_path)
+    records = [{"id": "one", "memory": "cats"}]
+    original = rt.store.upsert
+    monkeypatch.setattr(
+        rt.store, "upsert", lambda _records: (_ for _ in ()).throw(ValueError("synthetic"))
+    )
+    with pytest.raises(ValueError):
+        migrate(rt, records, "mem0-json", "fixture")
+    monkeypatch.setattr(rt.store, "upsert", original)
+    try:
+        with pytest.raises(MigrationIncompleteError, match="--resume --retry-failed"):
+            migrate(rt, records, "mem0-json", "fixture", resume=True, verify=True)
+        recovered = migrate(
+            rt, records, "mem0-json", "fixture", resume=True, retry_failed=True, verify=True
+        )
+        assert recovered["completed_at"] is not None
+        assert recovered["applied"] == 1
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+
+
+def test_main_reports_incomplete_before_superseded(tmp_path, monkeypatch, capsys):
+    """The CLI JSON boundary reports migration_incomplete with recovery guidance."""
+    rt, records = _mixed_failed_and_superseded(tmp_path, monkeypatch)
+    try:
+        args = argparse.Namespace(
+            qdrant_command="migrate", resume=True, retry_failed=False, verify=True
+        )
+        monkeypatch.setattr(
+            cli,
+            "run",
+            lambda args: cli.execute_command(args, rt, (records, "mem0-json", "fixture", None)),
+        )
+        assert cli.main(args) == 1
+        error = json.loads(capsys.readouterr().out)["error"]
+        assert error["code"] == "migration_incomplete"
+        assert error["retryable"] is False
+        assert "--resume --retry-failed" in error["message"]
+        assert "superseded conflict" in error["message"]
     finally:
         rt.store.close()
         rt.ledger.close()
