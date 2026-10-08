@@ -210,7 +210,7 @@ def execute_command(args, runtime, source, progress=None):
     if command == "retry":
         # Raw events require trusted host LLM calls on the next provider startup.
         runtime.ledger.retry_failed()
-        runtime.commit([r["idempotency_key"] for r in runtime.ledger.rows("operations")])
+        runtime.commit(r["idempotency_key"] for r in runtime.ledger.iter_rows("operations"))
     return diagnostic_status(runtime.store, runtime.ledger, runtime.cfg, command)
 
 
@@ -313,7 +313,9 @@ def _run(args, home=None, progress=None):
         report(progress, "Closing resources")
     if command == "migrate":
         stage = (
-            "Migration complete"
+            "Migration completed with superseded records; inspect manifest before a fresh import"
+            if result.get("superseded")
+            else "Migration complete"
             if result["processed"] == result["source_unique_count"]
             else "Migration incomplete; rerun with --resume --retry-failed"
         )
