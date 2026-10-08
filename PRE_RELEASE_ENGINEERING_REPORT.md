@@ -16,6 +16,18 @@
   `CREATE INDEX IF NOT EXISTS` 增量创建，不清理行或幂等键。100,000 条合成 pending
   operation 的空 ID 检查由未索引约 0.58 秒/100 次降至约 0.0003 秒/100 次。
 - 最终测试、最新 Hermes 主线 SHA、未覆盖的服务/崩溃边界和发布建议以最终审查报告为准。
+- PR #11 的代码实现提交 `a81d09c` 已通过 CI
+  ([run 37766236440](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766236440))、
+  Linux/macOS/Windows × Python 3.11/3.14 平台矩阵
+  ([run 37766236512](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766236512))，
+  以及最新 Hermes 跟踪检查
+  ([run 37766274748](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766274748))。
+  最新 Hermes 实际检出 SHA 为 `e6848c2c9a86e84d9a5c672085bb7d79079a66ba`，两个 Python
+  版本均通过。Cloud smoke 运行
+  ([37766278783](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37766278783))
+  在测试开始前被 `qdrant-cloud` 环境保护规则拒绝；Cloud 行为尚未验证。
+- CodeRabbit 状态虽为绿色，但其报告要求 OSS 仓库人工审查；Sourcery 检查已跳过，
+  不将这两项表述为已完成的自动化代码审查。最新预发布决定仍为 **NOT READY**。
 
 ## 历史 PR 摘要（PR #10，已合并）
 
