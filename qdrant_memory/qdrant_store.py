@@ -53,6 +53,24 @@ def build_client(cfg):
     )
 
 
+def _close_embedded_collection_storage(client, collection_name):
+    """Close local SQLite handles before Qdrant removes a collection directory.
+
+    qdrant-client's local delete path ignores directory-removal errors. On Windows,
+    an open collection database prevents removal and can make a later reset reload
+    the old points into the recreated collection.
+    """
+    local_client = getattr(client, "_client", None)
+    collections = getattr(local_client, "collections", None)
+    collection = collections.get(collection_name) if isinstance(collections, dict) else None
+    close = getattr(collection, "close", None)
+    if not callable(close):
+        raise CollectionCompatibilityError(
+            "Embedded Qdrant cannot safely reset a collection without closing its local storage"
+        )
+    close()
+
+
 def scope_filter(scope, extra=None):
     """Build mandatory user/agent filters plus payload constraints."""
     from qdrant_client import models as m
@@ -88,6 +106,8 @@ class QdrantStore:
             if not create:
                 raise ValueError("Reset requires collection creation")
             if self.client.collection_exists(self.collection):
+                if self.cfg["qdrant"]["mode"] == "embedded":
+                    _close_embedded_collection_storage(self.client, self.collection)
                 self.client.delete_collection(self.collection)
                 if self.cfg["qdrant"]["mode"] == "embedded":
                     # Reopen the local engine so its filesystem-backed collection
