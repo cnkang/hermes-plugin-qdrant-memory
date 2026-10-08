@@ -141,6 +141,10 @@ These plugin settings do not bypass Hermes trust grants or contain LLM credentia
 | limits.max_payload_bytes | 131072 | Full payload oversize is always rejected |
 
 Explicit JSON Qdrant credentials are accepted for compatibility, but setup saves
-remove them. Prefer the profile's secret scope for all keys. Do not point two profiles
-at the same embedded path unless shared ownership is deliberate and access is serialized.
+remove them. Prefer the profile's secret scope for all keys. Keep embedded paths
+distinct across profiles. Writer leases live under each `HERMES_HOME`: separate
+profiles do not coordinate ownership even on the same machine. Run only one writer
+per destination across all profiles and hosts, including Server/Cloud, and stop all
+of them before mutating maintenance commands. A shared absolute storage path does
+not provide safe cross-profile ownership.
 Changing scope does not automatically migrate or grant access to another scope's records.

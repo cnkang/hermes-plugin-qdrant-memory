@@ -97,6 +97,13 @@ does not guarantee secure erasure from SQLite pages/WAL storage or copied backup
 
 ## Retry and maintenance ownership
 
+If a collection clear is interrupted, preserve the ledger and rerun
+`hermes qdrant-memory init` with the same destination configuration (and the same
+`--collection` override, if used). The durable reset intent resumes the previously
+authorized destructive operation; it is not a request to reuse the remaining data.
+Other destination commands report `reset_recovery_required` until recovery completes.
+Keep every writer stopped through recovery, then run `doctor`, `stats` and `verify`.
+
 ```bash
 hermes qdrant-memory stats
 hermes qdrant-memory retry
@@ -109,6 +116,12 @@ Pending operations are recovered automatically on startup; FAILED items require
 operator correction and explicit retry. A missing migration operation invalidates
 its manifest rather than counting it as completed. A fresh migration plan can repair
 an unchanged target with stale open work using a new operation generation.
+`SUPERSEDED` migration operations are terminal but do not certify a successful
+import. Verification reports `migration_superseded`; inspect the plan and later
+deletion intent before deliberately starting a fresh import without `--resume`.
+When failed and superseded operations coexist, the final progress line reports the
+incomplete plan first. Fix failed work and use `--resume --retry-failed`; this does
+not authorize restoring superseded records. See [migration](migration-from-mem0.md).
 
 ## Metrics
 

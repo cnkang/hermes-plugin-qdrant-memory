@@ -1,10 +1,11 @@
 # Hermes Qdrant 记忆插件
 
-> **v0.1.0：可进行有限技术预览（Ready for limited technical preview）。** PR #10、#11 已合并；
-> [PR #12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12) 包含最终加固。
+> **v0.1.0：可进行有限技术预览（Ready for limited technical preview）。** PR #10、#11 和
+> [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12) 均已合并。
 > 预览要求每个目的地仅一个写入者，并接受文档中的持久化边界。
-> 本轮 Cloud 验证仍是受保护发布门禁；历史 main 的 Cloud 成功不代表此 PR 已验证。
-> 尚未打标签或发布。证据和支持边界见[最终审查报告](PRE_RELEASE_FINAL_REVIEW.md)。
+> 合并后的 main `32bd4e7` 已通过 CI、六项跨平台检查及实际执行的 Cloud 集成测试。
+> 尚未打标签或发布。证据和支持边界见[验证记录](docs/validation.md)与
+> [最终审查报告](PRE_RELEASE_FINAL_REVIEW.md)。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -92,6 +93,8 @@ hermes qdrant-memory retry
 旧记忆恢复；其他 collection 的账本和会话来源隔离记录保留。清空操作无法撤销，
 远端重建失败时会保留恢复意图，需重新运行 `init` 继续恢复；Qdrant 与本地账本
 属于两个系统，清空和重建仍不保证原子操作。
+清空中断后，其他目标操作返回 `reset_recovery_required`；在同一目的地重新运行
+`init`，完成已授权的重置后再启用 provider。
 脚本调用须显式传入 `--existing use` 或 `--existing clear`；后者即授权删除。
 `--collection NAME` 只覆盖本次命令的目标，后续 agent 使用的目标仍来自配置文件。
 所有部署模式的 `init`、`migrate` 和 `retry` 都要求独占写入权。OS lease 只协调
@@ -153,7 +156,9 @@ hermes qdrant-memory verify --collection hermes_qdrant_memory
 `--retry-failed`。验证逐条检查 ID、scope 和 payload hash，数量相等不足以证明迁移
 正确。来源 collection 不会被修改；返回 Mem0 时修改 provider 配置并重启。
 被取消的迁移记录以 `SUPERSEDED` 终态结束，不会冒充成功写入；resume 保留后续删除
-意图，`--verify` 明确报告冲突。只有明确启动新导入或更改来源快照才能重新规划。
+意图，`--verify` 返回 `migration_superseded` 和非零退出码。失败与 superseded 操作
+并存时，进度优先报告迁移未完成；先修复失败并 resume，再审查是否需要新导入。
+只有明确启动新导入或更改来源快照才能重新规划。
 恢复按有限水位分批读取 operation/event；保留的账本历史仍需监控磁盘容量。
 支持的输入、Qdrant 来源和回退步骤见[迁移文档](docs/migration-from-mem0.md)（英文）。
 
@@ -214,7 +219,9 @@ PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate.py
 
 评估使用临时 embedded 数据库和 UTF-8 JSON；自定义数据集包含带 `id`/`text` 的
 `memories`，以及带 `query`/`relevant_ids` 的 `queries`。12-topic 合成 pilot 只用于
-回归基线，不代表生产召回质量。
+回归基线，不代表生产召回质量。当前默认 fixture 已扩展为 24 条带标签的查询，
+覆盖中文、英文、混合语言和 hard-negative 场景；后续实测见最终审查报告。
+重放与账本存储的独立合成测量见[恢复基准](docs/recovery-benchmark.md)（英文）。
 
 提交前运行 Ruff lint 和格式检查，并按[开发指南](docs/development.md)（英文）
 安装仓库 pre-commit hook。hook 检查暂存内容；CI 的 lint、Python 测试矩阵和

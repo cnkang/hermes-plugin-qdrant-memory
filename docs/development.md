@@ -35,3 +35,22 @@ runs independent test files in parallel. For coverage, use `-j 1` with
 `--cov=qdrant_memory --cov-report= --cov-append`, then export the combined
 coverage database. Concurrent processes must not write one coverage database.
 See the README for dependency setup and [validation](validation.md) for evidence.
+
+Use serial file execution for the disposable Server REST/gRPC tests: they restart
+their shared test container. Supply `--qdrant-test-url` and `--qdrant-test-container`
+after the runner's explicit `--`; the host runner clears arbitrary environment
+variables. The required CI host matrix uses immutable refs, while the separate
+weekly/manual latest-Hermes lane records the moving host SHA. Linux/macOS/Windows
+compatibility has a separate six-job matrix; see [CI services](ci.md).
+
+The current retrieval fixture contains 24 labeled queries. `scripts/evaluate.py`
+requires a live embedding service and uses only a temporary collection. For a
+separate synthetic ledger recovery/storage measurement with no Qdrant network calls:
+
+```bash
+PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/benchmark_recovery.py \
+  --sizes 0 1 100 1000 10000 100000
+```
+
+This script also uses temporary data. See the [recorded recovery benchmark](recovery-benchmark.md)
+for the measured revision, allocation boundaries and retained-history limits.

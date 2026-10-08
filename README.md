@@ -1,11 +1,11 @@
 # Qdrant Memory for Hermes
 
-> **v0.1.0: Ready for limited technical preview.** PRs #10 and #11 are merged;
-> [PR #12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12) contains final hardening.
+> **v0.1.0: Ready for limited technical preview.** PRs #10, #11 and
+> [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12) are merged.
 > Preview supports one writer per destination with the documented durability limits.
-> Candidate Cloud validation remains a protected release gate; historical main
-> Cloud success does not validate this PR. No release has been tagged or published.
-> See the [final review](PRE_RELEASE_FINAL_REVIEW.md) for evidence and support limits.
+> Merged main `32bd4e7` passed CI, all six platform jobs and authenticated Cloud
+> integration. No release has been tagged or published. See
+> [validation evidence](docs/validation.md) and the [final review](PRE_RELEASE_FINAL_REVIEW.md).
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -109,6 +109,9 @@ Clear probes embeddings first, then deletes and rebuilds the target collection a
 discards that destination's local replay work and migration records. Other destinations
 and transcript provenance quarantine are retained. Clearing is irreversible and
 deletion/recreation is not atomic; rerun `init` if remote recreation fails.
+An interrupted clear leaves a durable reset intent. Other destination commands fail
+with `reset_recovery_required`; rerun `init` for the same destination to resume the
+already authorized reset before enabling the provider.
 For scripts, explicitly pass `--existing use` or `--existing clear`; the latter
 authorizes deletion. `--collection NAME` overrides only this command's target,
 not the collection configured for subsequent agent sessions.
@@ -153,7 +156,10 @@ add `--retry-failed` to retry failed operations from that manifest. Migration
 verification checks exact IDs, scope and payload hashes, not just record count.
 Canceled migration records are terminal `SUPERSEDED` work, never certified as
 successful writes. Resume preserves later deletion intent; `--verify` reports the
-conflict. Only a deliberate fresh import or changed snapshot authorizes replanning.
+conflict as `migration_superseded` with a nonzero exit code. Mixed failed and
+superseded work reports incomplete progress first; correct failures and resume before
+reviewing any deliberate fresh import. Only a fresh import or changed snapshot
+authorizes replanning.
 Recovery reads operations and events in finite bounded pages; retained ledger
 history still needs disk-capacity monitoring.
 Before a real import, stop all sessions/gateways writing to the target, including
@@ -243,7 +249,11 @@ PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate.py
 
 It uses a temporary embedded collection and UTF-8 JSON dataset. A custom dataset
 contains `memories` objects with `id`/`text`, and `queries` with `query`/`relevant_ids`.
-The recorded 12-topic pilot is a regression baseline, not a production recall claim.
+The default fixture now contains 24 labeled queries, including Chinese, English,
+mixed-language and hard-negative cases. The original 12-query recording and later
+24-query measurements in the final review are synthetic regression baselines,
+not production recall claims. See the [recovery benchmark](docs/recovery-benchmark.md)
+for a separate synthetic replay and retained-storage measurement.
 
 CI runs tests, SonarCloud quality gates and Snyk dependency/code scans. An always-run
 required gate rejects failed, cancelled or skipped scans without exposing tokens to
