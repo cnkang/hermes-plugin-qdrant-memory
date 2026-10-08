@@ -32,6 +32,27 @@ def _add_original_memory(rt, scope):
     return result["id"]
 
 
+def test_delete_fence_compares_instants_not_timestamp_strings(tmp_path):
+    """A post-delete event with fractional seconds must not be lexically fenced."""
+    rt = runtime(tmp_path)
+    scope = Scope("alice", "hermes")
+    try:
+        rt.ledger.enqueue_operation(
+            "memory",
+            "DELETE",
+            {},
+            source_id=rt.ledger.delete_fence_source(scope),
+            source_version="2026-10-08T12:00:00Z",
+        )
+
+        assert not rt.ledger.is_delete_fenced("memory", scope, "2026-10-08T12:00:00.000001Z")
+        assert rt.ledger.is_delete_fenced("memory", scope, "invalid-timestamp")
+        assert rt.ledger.is_delete_fenced("memory", scope, None)
+    finally:
+        rt.store.close()
+        rt.ledger.close()
+
+
 def test_unprepared_pre_delete_event_cannot_recreate_memory(tmp_path):
     """A previously admitted event must not restore an explicitly deleted point."""
     rt = runtime(tmp_path)

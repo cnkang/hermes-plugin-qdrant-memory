@@ -45,7 +45,7 @@
     {"query": "Which remote change is retried after a restart?", "relevant_ids": ["prepared_replay"], "category": "recovery"},
     {"query": "我应该用什么服务来生成文本向量？", "relevant_ids": ["embedding"], "category": "multilingual"},
     {"query": "把旧快照恢复后，之前删除的内容会怎样？", "relevant_ids": ["restore_history"], "category": "multilingual"},
-    {"query": "Which tool manages secrets and which files contain vector search data?", "relevant_ids": ["secrets", "database"], "category": "multi-relevant"},
+    {"query": "Which vector database is used, and where are service API keys stored?", "relevant_ids": ["secrets", "database"], "category": "multi-relevant"},
     {"query": "Is a host's queued callback the same durability boundary as the plugin's SQLite commit?", "relevant_ids": ["host_queue", "sync_boundary"], "category": "hard-distinction"}
   ]
 }

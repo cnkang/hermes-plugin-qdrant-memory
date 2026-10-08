@@ -59,7 +59,7 @@ def evaluate(dataset, store, scope):
         latencies.append((time.monotonic() - started) * 1000)
         retrieved = [names[str(h.id)] for h in hits]
         relevant = set(query["relevant_ids"])
-        sample = {"category": query.get("category", "uncategorized")}
+        sample = {"category": query.get("category") or "uncategorized"}
         for k in (1, 5, 10):
             sample[f"recall_at_{k}"] = len(relevant & set(retrieved[:k])) / len(relevant)
         for k in (1, 5):
