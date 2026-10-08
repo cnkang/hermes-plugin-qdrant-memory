@@ -20,6 +20,10 @@ class MigrationSupersededError(ValueError):
     """Signal a completed migration with records canceled by later user intent."""
 
 
+class MigrationIncompleteError(ValueError):
+    """Signal verification while failed or missing records still need recovery."""
+
+
 KNOWN = {
     "id",
     "memory",
@@ -198,6 +202,7 @@ def migrate(
     The source is never mutated and target vectors are re-embedded. Prepared work
     is persisted before commit. Missing ledger operations fail explicitly, retaining
     failed manifest counts instead of certifying an incomplete migration.
+    Verification reports failed work as incomplete before any superseded conflict.
     """
     total = len(records) if hasattr(records, "__len__") else None
     report(progress, "Validating source", 0, total)
@@ -238,6 +243,11 @@ def migrate(
     finally:
         report(progress, "Saving manifest counts")
         update_manifest_counts(runtime, manifest, len(planned))
+    if verify and manifest["failed"]:
+        raise MigrationIncompleteError(
+            "Migration incomplete; rerun with --resume --retry-failed before reviewing "
+            "superseded conflicts"
+        )
     if verify and manifest["superseded"]:
         raise MigrationSupersededError(
             "Migration contains superseded records; inspect manifest before starting a new migration"

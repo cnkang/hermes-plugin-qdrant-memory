@@ -15,6 +15,8 @@ Unreleased; no tag or GitHub Release has been published.
 - Migration verification exposes sanitized `migration_superseded` conflicts;
   mixed failed/superseded plans report incomplete progress before terminal conflicts.
   Progress counts use bounded primary-key lookups without reading payload bodies.
+- Verification raises `migration_incomplete` with `--resume --retry-failed`
+  guidance while failed or missing records remain, ahead of any superseded conflict.
 - Post-merge main `32bd4e7` passed CI, the six-job platform matrix and executed
   authenticated Cloud integration; see [validation evidence](docs/validation.md).
 

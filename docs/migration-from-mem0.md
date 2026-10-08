@@ -157,9 +157,10 @@ With `--verify`, a superseded plan raises the sanitized JSON error
 `migration_superseded` (`retryable: false`) and exits nonzero. The message explains
 that resume will not restore deleted memories; source text and IDs are not exposed.
 Without verification, a settled plan can report completion with superseded records;
-that is not certification of the original snapshot. If failed work remains alongside
-superseded records, progress reports `Migration incomplete` first. Correct the failure
-and use `--resume --retry-failed --verify`, then inspect any remaining conflict before
+that is not certification of the original snapshot. While failed or missing records
+remain, `--verify` raises `migration_incomplete` (`retryable: false`) instead, and
+progress reports `Migration incomplete` first. Correct the failure and use
+`--resume --retry-failed --verify`, then inspect any remaining conflict before
 authorizing a fresh import. Do not use a fresh import merely to hide an unexplained
 failure or deletion conflict.
 

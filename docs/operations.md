@@ -119,9 +119,10 @@ an unchanged target with stale open work using a new operation generation.
 `SUPERSEDED` migration operations are terminal but do not certify a successful
 import. Verification reports `migration_superseded`; inspect the plan and later
 deletion intent before deliberately starting a fresh import without `--resume`.
-When failed and superseded operations coexist, the final progress line reports the
-incomplete plan first. Fix failed work and use `--resume --retry-failed`; this does
-not authorize restoring superseded records. See [migration](migration-from-mem0.md).
+When failed operations remain, verification raises `migration_incomplete` before any
+conflict, and the final progress line reports the incomplete plan first. Fix failed
+work and use `--resume --retry-failed`; this does not authorize restoring superseded
+records. See [migration](migration-from-mem0.md).
 
 ## Metrics
 
