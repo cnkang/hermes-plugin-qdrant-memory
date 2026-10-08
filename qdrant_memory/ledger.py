@@ -6,8 +6,10 @@ import sqlite3
 from pathlib import Path
 from threading import RLock
 
-from .models import digest, now
+from .models import digest, now, timestamp
 from .retry import safe_error
+
+DELETE_FENCE_PREFIX = "hermes-qdrant-delete-fence-v1:"
 
 
 class Ledger:
@@ -46,6 +48,9 @@ class Ledger:
             CREATE TABLE IF NOT EXISTS unattributed_sessions (
                 session_id TEXT, collection TEXT, PRIMARY KEY(session_id,collection));
         """)
+        self._resumable_operation_keys = self._load_resumable_operation_keys()
+        with self.lock, self.db:
+            self._scrub_terminal_payloads()
 
     def clear_destination(self):
         """Forget only this destination's work so cleared memories cannot replay.
@@ -55,6 +60,7 @@ class Ledger:
         with self.lock, self.db:
             for table in ("events", "operations", "manifests", "metrics", "counters"):
                 self.db.execute(f"DELETE FROM {table} WHERE collection=?", (self.collection,))
+            self._resumable_operation_keys = set()
 
     def unattributed_sessions(self):
         """Load transcript quarantine for this destination, including resumed sessions."""
@@ -130,6 +136,47 @@ class Ledger:
             )
         return key
 
+    @staticmethod
+    def delete_fence_source(scope):
+        """Return a scope-bound marker for deletes that fence older admitted events."""
+        scope_value = scope.as_dict() if hasattr(scope, "as_dict") else dict(scope)
+        return DELETE_FENCE_PREFIX + digest(scope_value)
+
+    def is_delete_fenced(self, identifier, scope, admitted_at, candidate_hash=None):
+        """Check whether a scoped delete supersedes an older point or content hash."""
+        source_id = self.delete_fence_source(scope)
+        hash_clause = " OR content_hash=?" if candidate_hash else ""
+        parameters = [source_id, self.collection, identifier]
+        if candidate_hash:
+            parameters.append(candidate_hash)
+        with self.lock:
+            rows = self.db.execute(
+                f"""SELECT source_version,created_at FROM operations
+                WHERE action='DELETE' AND source_id=? AND collection=?
+                AND (point_id=?{hash_clause})
+                ORDER BY rowid""",
+                parameters,
+            ).fetchall()
+        if not rows:
+            return False
+        if not admitted_at:
+            # Unknown event age must not let an old event undo an explicit delete.
+            return True
+        try:
+            event_time = timestamp(admitted_at)
+        except (TypeError, ValueError, OverflowError):
+            return True
+        for row in rows:
+            delete_time = row["source_version"] or row["created_at"]
+            if not delete_time:
+                return True
+            try:
+                if event_time <= timestamp(delete_time):
+                    return True
+            except (TypeError, ValueError, OverflowError):
+                return True
+        return False
+
     def has_open_operations(self, identifier):
         """Check open writes to this point in this destination."""
         with self.lock:
@@ -174,18 +221,36 @@ class Ledger:
         """Acknowledge completion and supersede older open writes to the same point."""
         column = {"events": "event_id", "operations": "idempotency_key"}[table]
         with self.lock, self.db:
+            operation_keys = [key] if table == "operations" else []
             self.db.execute(
                 f"UPDATE {table} SET status=?,last_error=NULL,committed_at=? WHERE {column}=?",
                 (status, now(), key),
             )
             if table == "operations" and status == "COMMITTED":
                 # An older failed write must never overwrite a later committed update.
+                current = self.db.execute(
+                    "SELECT point_id,rowid FROM operations WHERE idempotency_key=? AND collection=?",
+                    (key, self.collection),
+                ).fetchone()
+                if current:
+                    operation_keys.extend(
+                        row[0]
+                        for row in self.db.execute(
+                            """SELECT idempotency_key FROM operations WHERE point_id=?
+                            AND rowid<? AND collection=? AND status IN ('PENDING','FAILED')""",
+                            (current["point_id"], current["rowid"], self.collection),
+                        )
+                    )
                 self.db.execute(
                     """UPDATE operations SET status='SUPERSEDED' WHERE point_id=
                     (SELECT point_id FROM operations WHERE idempotency_key=?) AND rowid <
                     (SELECT rowid FROM operations WHERE idempotency_key=?) AND collection=? AND status IN ('PENDING','FAILED')""",
                     (key, key, self.collection),
                 )
+            self._scrub_terminal_payloads(
+                event_keys=[key] if table == "events" else [],
+                operation_keys=operation_keys,
+            )
 
     def failure(self, table, key, exc, terminal=False, count_attempt=True):
         """Record a sanitized failure and optionally increment its attempt count."""
@@ -256,6 +321,92 @@ class Ledger:
                 "INSERT OR REPLACE INTO manifests VALUES(?,?,?)",
                 (value["migration_id"], json.dumps(value), self.collection),
             )
+            self._resumable_operation_keys = self._load_resumable_operation_keys()
+            self._scrub_terminal_payloads()
+
+    def scrub_terminal_payloads(self):
+        """Scrub completed event and operation bodies while retaining dedupe rows."""
+        with self.lock, self.db:
+            return self._scrub_terminal_payloads()
+
+    def _load_resumable_operation_keys(self):
+        """Find operations referenced by manifests that have not completed."""
+        keys = set()
+        for row in self.db.execute(
+            "SELECT payload_json FROM manifests WHERE collection=?", (self.collection,)
+        ):
+            try:
+                manifest = json.loads(row["payload_json"])
+            except (TypeError, ValueError):
+                return None
+            if not isinstance(manifest, dict):
+                return None
+            if manifest.get("completed_at") is not None:
+                continue
+            records = manifest.get("records", {})
+            if not isinstance(records, dict):
+                return None
+            for record in records.values():
+                if not isinstance(record, dict):
+                    return None
+                key = record.get("operation_key")
+                if key:
+                    keys.add(key)
+        return keys
+
+    def _scrub_terminal_payloads(self, event_keys=None, operation_keys=None):
+        """Scrub terminal bodies except operations still needed by an open migration."""
+        if event_keys is None:
+            event_count = self.db.execute(
+                """UPDATE events SET payload_json='{}'
+                WHERE collection=? AND status IN ('COMMITTED','SUPERSEDED')
+                AND payload_json!='{}'""",
+                (self.collection,),
+            ).rowcount
+        else:
+            event_count = sum(
+                self.db.execute(
+                    """UPDATE events SET payload_json='{}'
+                    WHERE event_id=? AND collection=?
+                    AND status IN ('COMMITTED','SUPERSEDED')
+                    AND payload_json!='{}'""",
+                    (key, self.collection),
+                ).rowcount
+                for key in event_keys
+            )
+
+        resumable_keys = self._resumable_operation_keys
+        if resumable_keys is None:
+            return {"events": event_count, "operations": 0}
+        if operation_keys is None:
+            rows = self.db.execute(
+                """SELECT idempotency_key,payload_json FROM operations
+                WHERE collection=? AND status IN ('COMMITTED','SUPERSEDED')""",
+                (self.collection,),
+            ).fetchall()
+        else:
+            rows = []
+            for key in dict.fromkeys(operation_keys):
+                row = self.db.execute(
+                    """SELECT idempotency_key,payload_json FROM operations
+                    WHERE idempotency_key=? AND collection=?
+                    AND status IN ('COMMITTED','SUPERSEDED')""",
+                    (key, self.collection),
+                ).fetchone()
+                if row:
+                    rows.append(row)
+        operation_count = 0
+        for row in rows:
+            key = row["idempotency_key"]
+            if key in resumable_keys or row["payload_json"] == "{}":
+                continue
+            operation_count += self.db.execute(
+                """UPDATE operations SET payload_json='{}'
+                WHERE idempotency_key=? AND collection=?
+                AND status IN ('COMMITTED','SUPERSEDED')""",
+                (key, self.collection),
+            ).rowcount
+        return {"events": event_count, "operations": operation_count}
 
     def manifests(self):
         """Read this destination's manifests in insertion order."""

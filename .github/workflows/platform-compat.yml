@@ -1,0 +1,90 @@
+name: Platform compatibility
+
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-contracts:
+    name: Local contracts (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        python: ['3.11', '3.14']
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Check out pinned Hermes host and dependency manager
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+          repository: NousResearch/hermes-agent
+          ref: 4787e4d56fc8d9265d4c7d3c0fe5accee86b4078
+          path: .host
+      - name: Build isolated test environment with Hermes PM
+        working-directory: .host
+        env:
+          HERMES_HOME: ${{ runner.temp }}/hermes-platform-home
+          HERMES_RUNTIME_DIR: ${{ runner.temp }}/hermes-platform-runtime
+        shell: bash
+        run: |
+          python -m pm.build_env --source "$GITHUB_WORKSPACE/.host" \
+            --export-requirements "$RUNNER_TEMP/host-test-requirements.txt"
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          root = Path(os.environ["GITHUB_WORKSPACE"])
+          requirements = Path(os.environ["RUNNER_TEMP"]) / "host-test-requirements.txt"
+          project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+          entries = project["project"]["dependencies"] + project["dependency-groups"]["test"]
+          requirements.write_text(
+              requirements.read_text(encoding="utf-8").rstrip() + "\n" + "\n".join(entries) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          python -m pm.build_env --out "$GITHUB_WORKSPACE/.test-env" \
+            --requirements "$RUNNER_TEMP/host-test-requirements.txt"
+      - name: Run local behavior and host lifecycle contracts
+        shell: bash
+        env:
+          HERMES_QDRANT_REQUIRE_HOST_SYNC: '1'
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            TEST_PYTHON="$GITHUB_WORKSPACE/.test-env/Scripts/python.exe"
+          else
+            TEST_PYTHON="$GITHUB_WORKSPACE/.test-env/bin/python"
+          fi
+          "$TEST_PYTHON" - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+
+          root = Path(os.environ["GITHUB_WORKSPACE"])
+          sys.path.insert(0, str(root / ".host"))
+          import pytest
+
+          raise SystemExit(
+              pytest.main(
+                  ["-q", "tests", "--ignore=tests/test_remote_qdrant.py"],
+                  plugins=[],
+              )
+          )
+          PY

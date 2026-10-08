@@ -7,9 +7,13 @@ is excluded from memory counts and recall. Embedded indexes are not created beca
 Qdrant local mode does not use payload indexes; server/Cloud create keyword,
 datetime and integer indexes at provider/migration initialization.
 
-Completed turns are persisted synchronously as small SQLite transactions, then
-extraction and Qdrant work run on one context-preserving worker. Tool mutations
-share the serialization lock. Background prefetch caches are session/scope-bound;
+Hermes submits the completed-turn `sync_turn` callback through an in-memory host
+background queue. Once the callback reaches the provider, its event is committed
+synchronously in a small SQLite transaction; extraction and Qdrant work then run on
+one context-preserving plugin worker. A process exit or bounded host shutdown can
+lose a callback still waiting in the host queue. The plugin's durable recovery starts
+at its own SQLite admission point. Tool mutations share the serialization lock.
+Background prefetch caches are session/scope-bound;
 `prefetch()` returns cached results without embedding or network calls. Cache
 generations prevent old background results from repopulating a switched session.
 
@@ -26,18 +30,24 @@ queued jobs are discarded and durable work remains available for recovery. An
 in-flight network call cannot be forcibly cancelled: timeout raises an explicit
 error and the worker retains its writer lease and connections until it exits.
 A replacement provider or mutating maintenance CLI for that profile destination is refused
-while the old worker owns the lease. Leases coordinate local processes, not writers
-on other machines. Never delete `state.db` to recover an error;
+while the old worker owns the lease. Leases do not provide distributed exclusion for
+writers on other machines and do not make a shared absolute storage path safe. Stop
+writers on every host before maintenance. Never delete `state.db` to recover an error;
 inspect stats and correct configuration before retrying.
 
 Builtin replace/remove mirror the exact `metadata.previous_content`, scoped by
 target and author. Older hosts without that authoritative value skip destructive
 mirroring. Session end/compression provides supplementary extraction; every turn
-already follows the durable write path. Checkpoint API v2 synchronously commits
+whose `sync_turn` callback reaches the provider follows the plugin's durable write
+path. Checkpoint API v2 synchronously commits
 filtered user/assistant evidence before compression; disk failures propagate and
 prevent acknowledged checkpoints. Mixed-author evidence is archived without
 automatic extraction. Reset clears the target session's author history and turn
 counter; rewind preserves conservative attribution history and long-term memory.
+An explicit memory delete keeps a scope-bound content-hash tombstone in the ledger
+so older admitted events cannot recreate the same content under a different point
+ID; a later newly admitted event may intentionally add it again. The tombstone
+contains a hash, not the deleted text, and remains until destination reset.
 System prompt text and tool schemas remain
 static through the conversation.
 
@@ -46,14 +56,22 @@ static through the conversation.
 Stop the agent and every embedded maintenance client before copying state. Back up
 `qdrant-memory.json`, the `qdrant-memory` state directory (including SQLite sidecar
 files if present), and the embedded Qdrant path if it is configured elsewhere.
-Keep credentials in a secret manager rather than a portable plaintext backup.
+The ledger logically scrubs committed event bodies and committed/superseded operation
+bodies, except operations still needed by an incomplete migration manifest. Identity
+and status rows, manifests, and pending/failed payloads remain; pending/failed bodies
+are needed for recovery. Rows and manifests have no time-based expiry, so treat
+database files, snapshots, and backups as sensitive conversation data. Keep
+credentials in a secret manager rather than a portable plaintext backup.
 
 Restore the store and ledger from the same stopped snapshot into the intended
 profile. Restore the matching embedding configuration, confirm directory/file
 permissions, then run doctor, stats and verify before enabling the provider. A
 ledger restored against unrelated target state may replay prepared changes; do
 not mix arbitrary snapshots. Back up remote Qdrant through its deployment's own
-snapshot procedure, coordinated with the stopped plugin ledger.
+snapshot procedure, coordinated with the stopped plugin ledger. Deleting a Qdrant
+point does not clear its ledger identity or pending/failed work. `init --existing
+clear` removes the chosen destination's ledger rows as part of collection reset, but
+does not guarantee secure erasure from SQLite pages/WAL storage or copied backups.
 
 ## Retry and maintenance ownership
 

@@ -58,7 +58,12 @@ def dispatch(runtime, name, args, scope, session_id):
         if old is None:
             raise ValueError("Memory ID not found in caller scope")
         if name == "qdrant_memory_delete":
-            key = runtime.operation(str(old.id), "DELETE", {})
+            key = runtime.operation(
+                str(old.id),
+                "DELETE",
+                {"content_hash": old.payload.get("content_hash", "")},
+                source_id=runtime.ledger.delete_fence_source(scope),
+            )
         else:
             value = payload(
                 args["text"],

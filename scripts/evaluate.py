@@ -33,6 +33,9 @@ def validate_dataset(dataset):
     for query in dataset["queries"]:
         if not isinstance(query.get("query"), str) or not normalize(query["query"]):
             raise ValueError("Dataset query text must be nonempty")
+        category = query.get("category")
+        if category is not None and (not isinstance(category, str) or not category.strip()):
+            raise ValueError("Dataset query category must be a nonempty string")
         relevant = query.get("relevant_ids")
         if not isinstance(relevant, list) or not relevant:
             raise ValueError("Dataset relevant_ids must be nonempty")
@@ -49,34 +52,50 @@ def evaluate(dataset, store, scope):
     ]
     names = {point_id(scope, "manual_tool", m["id"]): m["id"] for m in dataset["memories"]}
     store.upsert(rows)
-    recalls, precisions, top1, reciprocal, latencies = [], [], [], [], []
+    samples, latencies = [], []
     for query in dataset["queries"]:
         started = time.monotonic()
         hits = store.search(query["query"], scope, top_k=10)
         latencies.append((time.monotonic() - started) * 1000)
         retrieved = [names[str(h.id)] for h in hits]
         relevant = set(query["relevant_ids"])
-        recalls.append(len(relevant & set(retrieved[:10])) / len(relevant))
-        precisions.append(len(relevant & set(retrieved[:5])) / min(5, len(rows)))
-        top1.append(int(bool(retrieved) and retrieved[0] in relevant))
-        reciprocal.append(
-            next(
-                (1 / (i + 1) for i, identifier in enumerate(retrieved) if identifier in relevant), 0
-            )
+        sample = {"category": query.get("category", "uncategorized")}
+        for k in (1, 5, 10):
+            sample[f"recall_at_{k}"] = len(relevant & set(retrieved[:k])) / len(relevant)
+        for k in (1, 5):
+            sample[f"precision_at_{k}"] = len(relevant & set(retrieved[:k])) / min(k, len(rows))
+        sample["mrr"] = next(
+            (1 / (i + 1) for i, identifier in enumerate(retrieved) if identifier in relevant), 0
         )
+        samples.append(sample)
     latencies.sort()
 
-    def avg(values):
-        """Return the arithmetic mean of a nonempty metric sample."""
-        return sum(values) / len(values)
+    def summarize(items):
+        """Summarize retrieval quality for the supplied labeled query samples."""
+        return {
+            "queries": len(items),
+            **{
+                metric: sum(item[metric] for item in items) / len(items)
+                for metric in (
+                    "recall_at_1",
+                    "recall_at_5",
+                    "recall_at_10",
+                    "precision_at_1",
+                    "precision_at_5",
+                    "mrr",
+                )
+            },
+        }
+
+    categories = sorted({sample["category"] for sample in samples})
 
     return {
         "memories": len(rows),
-        "queries": len(recalls),
-        "recall_at_10": avg(recalls),
-        "precision_at_5": avg(precisions),
-        "precision_at_1": avg(top1),
-        "mrr": avg(reciprocal),
+        **summarize(samples),
+        "by_category": {
+            category: summarize([sample for sample in samples if sample["category"] == category])
+            for category in categories
+        },
         "search_latency_ms_p50": latencies[(len(latencies) - 1) // 2],
         "search_latency_ms_p95": latencies[min(len(latencies) - 1, int(len(latencies) * 0.95))],
     }
@@ -112,7 +131,10 @@ def main():
                 platform=platform.platform(),
                 python=platform.python_version(),
                 dataset=str(args.dataset.name),
-                note="Synthetic 12-topic pilot; not a production recall guarantee.",
+                note=(
+                    "Synthetic labeled retrieval cases; results are not a production recall "
+                    "guarantee."
+                ),
             )
             print(json.dumps(result, indent=2))
         finally:

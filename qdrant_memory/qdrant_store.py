@@ -77,7 +77,7 @@ class QdrantStore:
         self.client, self.cfg, self.embedder = client, cfg, embedder
         self.collection = cfg["qdrant"]["collection"]
 
-    def initialize(self, create=True, reset=False, before_reset=None):
+    def initialize(self, create=True, reset=False):
         """Probe embeddings and create or validate the named dense collection contract."""
         from qdrant_client import models as m
 
@@ -87,8 +87,6 @@ class QdrantStore:
         if reset:
             if not create:
                 raise ValueError("Reset requires collection creation")
-            if before_reset:
-                before_reset()
             if self.client.collection_exists(self.collection):
                 self.client.delete_collection(self.collection)
         if not self.client.collection_exists(self.collection):

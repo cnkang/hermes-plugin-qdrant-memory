@@ -1,0 +1,90 @@
+name: Latest Hermes compatibility
+on:
+  schedule:
+    - cron: '23 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  latest-hermes:
+    name: Current Hermes main (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.14']
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Check out latest Hermes main
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+          repository: NousResearch/hermes-agent
+          ref: main
+          path: .host
+      - name: Check out pinned dependency manager
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+          repository: NousResearch/hermes-agent
+          ref: 4787e4d56fc8d9265d4c7d3c0fe5accee86b4078
+          path: .pm-host
+      - name: Record tested revisions
+        id: revisions
+        shell: bash
+        run: |
+          hermes_sha=$(git -C .host rev-parse HEAD)
+          plugin_sha=$(git rev-parse HEAD)
+          echo "hermes_sha=$hermes_sha" >> "$GITHUB_OUTPUT"
+          echo "plugin_sha=$plugin_sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Hermes compatibility inputs"
+            echo ""
+            echo "- Hermes ref: main"
+            echo "- Hermes checked-out SHA: $hermes_sha"
+            echo "- Plugin checked-out SHA: $plugin_sha"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build combined isolated test environment with pinned PM
+        working-directory: .pm-host
+        env:
+          HERMES_HOME: ${{ runner.temp }}/hermes-upstream-home
+          HERMES_RUNTIME_DIR: ${{ runner.temp }}/hermes-upstream-runtime
+        run: |
+          python -m pm.build_env --source "$GITHUB_WORKSPACE/.host" \
+            --export-requirements "$RUNNER_TEMP/upstream-host-requirements.txt"
+          python -c 'import tomllib; from pathlib import Path; p = tomllib.loads(Path("../pyproject.toml").read_text()); print("\n".join(p["project"]["dependencies"] + p["dependency-groups"]["test"]))' \
+            >> "$RUNNER_TEMP/upstream-host-requirements.txt"
+          python -m pm.build_env --out "$GITHUB_WORKSPACE/.test-env" \
+            --requirements "$RUNNER_TEMP/upstream-host-requirements.txt"
+      - name: Run focused host integration contracts
+        working-directory: .host
+        env:
+          HERMES_PYTHON: ${{ github.workspace }}/.test-env/bin/python
+        run: |
+          scripts/run_tests.sh \
+            "$GITHUB_WORKSPACE/tests/test_discovery_cli.py" \
+            "$GITHUB_WORKSPACE/tests/test_setup_contract.py" \
+            "$GITHUB_WORKSPACE/tests/test_checkpoint_lifecycle.py" \
+            "$GITHUB_WORKSPACE/tests/test_shutdown_contract.py" \
+            "$GITHUB_WORKSPACE/tests/test_provider.py" \
+            "$GITHUB_WORKSPACE/tests/test_recovery_evaluation.py" \
+            -j 1 --file-retries 0 -- --tb=short
+      - name: Require Hermes MemoryManager admission and shutdown contracts
+        working-directory: .host
+        env:
+          HERMES_QDRANT_REQUIRE_HOST_SYNC: '1'
+        run: |
+          "$GITHUB_WORKSPACE/.test-env/bin/python" -m pytest \
+            "$GITHUB_WORKSPACE/tests/test_host_lifecycle.py" -q --tb=short

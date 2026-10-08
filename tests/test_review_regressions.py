@@ -132,5 +132,57 @@ def test_retrieval_evaluation_handles_no_results():
         Scope("user", None),
     )
     assert result["precision_at_1"] == 0
+    assert result["precision_at_5"] == 0
+    assert result["recall_at_1"] == 0
+    assert result["recall_at_5"] == 0
     assert result["recall_at_10"] == 0
     assert result["mrr"] == 0
+
+
+def test_retrieval_evaluation_reports_cutoffs_and_case_categories():
+    """Verify multi-label recall, precision cutoffs, MRR and category metrics."""
+    scope = Scope("user", None)
+    memories = [{"id": f"m{i}", "text": f"memory {i}"} for i in range(1, 7)]
+    rankings = {
+        "query one": ["m2", "m3", "m5"],
+        "query two": ["m1", "m2", "m6"],
+    }
+
+    class RankedStore:
+        """Return known rankings so metric math is deterministic."""
+
+        def upsert(self, records):
+            """Capture IDs assigned by the evaluator."""
+            self.rows = records
+
+        def search(self, query, _scope, *, top_k):
+            """Return a deterministic ranking of at most the requested length."""
+            ids = {item["text"]: identifier for identifier, item in self.rows}
+            return [
+                SimpleNamespace(id=ids[f"memory {item[1:]}"]) for item in rankings[query][:top_k]
+            ]
+
+    result = evaluate(
+        {
+            "memories": memories,
+            "queries": [
+                {
+                    "query": "query one",
+                    "relevant_ids": ["m2", "m5"],
+                    "category": "multi-relevant",
+                },
+                {"query": "query two", "relevant_ids": ["m6"], "category": "paraphrase"},
+            ],
+        },
+        RankedStore(),
+        scope,
+    )
+
+    assert result["recall_at_1"] == 0.25
+    assert result["recall_at_5"] == 1
+    assert result["recall_at_10"] == 1
+    assert result["precision_at_1"] == 0.5
+    assert result["precision_at_5"] == pytest.approx(0.3)
+    assert result["mrr"] == pytest.approx(2 / 3)
+    assert result["by_category"]["multi-relevant"]["recall_at_1"] == 0.5
+    assert result["by_category"]["paraphrase"]["mrr"] == pytest.approx(1 / 3)
