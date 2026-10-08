@@ -60,6 +60,15 @@ internal constants. Static statements remove the construction altogether without
 suppressing the checker. Progress still visits O(n) lightweight keys for an exact
 initial total, but no longer loads every payload or issues one count query per key.
 No manifest, ledger schema or deletion semantics change in this follow-up.
+The count query explicitly uses the existing primary-key index: the default planner
+otherwise chose a collection/status scan for every batch during the 100,000-record
+probe. A query-plan regression prevents that quadratic scan pattern. With 100,000
+synthetic pending operations and 1,024-byte text fixtures on local Python 3.14.7,
+the old full-row pre-count took 1.1371 s / 100,000 queries; the fixed key-only count
+took 0.1274 s / 782 queries. Both counted 100,000. `tracemalloc` measured 29,515 vs
+33,697 peak bytes, excluding the already allocated input key list; both counts
+remain bounded in auxiliary memory. This is a count-only probe using the benchmark
+seed helper, SQLite trace callback and `time.perf_counter`, not Qdrant throughput.
 
 The concurrent-Runtime scenario is reproducible when callers bypass production
 ownership. Provider and mutating CLI entries acquire WriterLease before services

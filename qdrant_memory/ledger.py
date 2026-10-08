@@ -290,8 +290,11 @@ class Ledger:
             parameters = list(multiplicities)
             parameters.extend([None] * (128 - len(parameters)))
             with self.lock:
+                # Otherwise SQLite can scan the whole pending collection for
+                # every key batch. This is the existing TEXT primary-key index.
                 cursor = self.db.execute(
-                    "SELECT idempotency_key FROM operations WHERE status='PENDING' "
+                    "SELECT idempotency_key FROM operations INDEXED BY sqlite_autoindex_operations_1 "
+                    "WHERE status='PENDING' "
                     "AND collection=? AND idempotency_key IN ("
                     "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
                     "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
