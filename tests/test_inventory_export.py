@@ -699,6 +699,31 @@ def test_legacy_intent_resolves_as_all_agents(tmp_path, monkeypatch):
     assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user fact"
 
 
+def test_corrupt_legacy_intent_is_refused_not_crashed(tmp_path, monkeypatch, capsys):
+    """A corrupt (non-dict) intent cannot be resolved and is refused cleanly."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(cfg, [(1, payload("alpha fact", Scope("u1", None), "manual", "s1"))])
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    begin_scope_delete(ledger, {"user_id": "u1", "agent_id": "*"})
+    with ledger.lock, ledger.db:
+        ledger.db.execute(
+            "UPDATE qdrant_scope_deletes SET scope_json='[]' WHERE collection=?",
+            (ledger.collection,),
+        )
+    ledger.close()
+    with pytest.raises(ScopeDeleteRefusedError):
+        run(
+            parser.parse_args(
+                ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--confirm"]
+            ),
+            home=tmp_path,
+        )
+    # The corrupt intent still fails closed with the legacy error code.
+    monkeypatch.setattr("qdrant_memory.cli.active_home", lambda: tmp_path)
+    assert main(parser.parse_args(["list"])) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_delete_legacy_intent"
+
+
 def test_all_agents_resume_after_partial_deletion(tmp_path, monkeypatch, capsys):
     """An interrupted --all-agents run resumes without widening or loss.
 

@@ -400,7 +400,7 @@ def scoped_delete_all(runtime, args):
                 )
             if not user:
                 raise ScopeSelectionError("--resolve-legacy requires --user")
-            if recorded.get("user_id") != user:
+            if not isinstance(recorded, dict) or recorded.get("user_id") != user:
                 raise ScopeDeleteRefusedError()
             if not args.confirm:
                 raise DeleteConfirmationRequiredError()
