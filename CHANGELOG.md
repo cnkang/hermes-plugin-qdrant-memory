@@ -5,6 +5,9 @@
 - Documentation: lead both READMEs with the pinned-release install through the
   Hermes CLI, add a short positioning section, and fix the Chinese install
   wording.
+- Documentation: pin the recommended install to the release commit SHA.
+  `hermes plugins install --ref` requires a full 40-character commit SHA and
+  does not accept tags.
 
 ## 0.1.0
 
