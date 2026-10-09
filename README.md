@@ -10,8 +10,8 @@
 > Preview supports one writer per destination with the documented durability limits.
 > A live Quick Start drill (fresh home, local Ollama) passed install, extraction,
 > recall, update, delete and restart. No release has been tagged or published. See
-> [validation evidence](docs/validation.md) and the
-> [final review](docs/releases/PRE_RELEASE_FINAL_REVIEW.md).
+> [validation evidence](docs/validation.md) for the exact run links and the drill
+> record, and the [final review](docs/releases/PRE_RELEASE_FINAL_REVIEW.md).
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -64,11 +64,12 @@ repository installation can use
 `hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory`.
 
 For reproducible installs, check out a release tag instead of floating `main`
-(the first release is `v0.1.0`; tags appear on the
-[releases page](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)):
+(tags are listed on the
+[releases page](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases);
+the first release will be `v0.1.0`):
 
 ```bash
-git clone --branch v0.1.0 --depth 1 \
+git clone --branch <release-tag> --depth 1 \
   https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
   "$HERMES_HOME/plugins/qdrant-memory"
 ```

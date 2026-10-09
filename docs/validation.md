@@ -1,5 +1,21 @@
 # Validation evidence
 
+## Post-merge main snapshot (2026-10-09)
+
+PRs #13 and [#14](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/14)
+are merged on top of the snapshot below. Main
+`f6a2e97f9cd16c4aed3ba2590bfcf36176ee5e29` passed:
+
+| Gate | Evidence |
+| --- | --- |
+| CI, including immutable host matrix, Server tests and security scans | [37868895051](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895051) |
+| Linux/macOS/Windows × Python 3.11/3.14 | [37868895110](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895110) |
+| Authenticated Cloud integration | [37868895002](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895002) |
+
+PR #14 makes verify mode report `migration_incomplete` ahead of superseded
+conflicts; PR #13 synchronized this documentation with the merged state. The
+snapshot below (2026-10-08) retains its original scope.
+
 ## Post-merge main snapshot (2026-10-08)
 
 PRs #10, #11 and [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12)

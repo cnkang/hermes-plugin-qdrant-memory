@@ -1,16 +1,22 @@
 # v0.1.0 Pre-release Checklist
 
-## Post-merge status (2026-10-08)
+## Post-merge status (2026-10-09)
 
-PRs #10, #11 and #12 are merged. Main
-`32bd4e7abdb3b417cc5b0dd0f793f93db188db3b` has the following recorded results:
+PRs #10–#14 are merged. Current main
+`f6a2e97f9cd16c4aed3ba2590bfcf36176ee5e29` has the following recorded results:
 
-- **PASS** — [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338914), including the required security gate.
-- **PASS** — [Six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802339623).
-- **PASS** — [Authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338838); the test step executed, without changing main-only protection.
+- **PASS** — [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895051), including the required security gate.
+- **PASS** — [Six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895110).
+- **PASS** — [Authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895002); the test step executed, without changing main-only protection.
 - **PASS** — Live Quick Start drill (2026-10-09): a fresh home with local Ollama completed install, automatic extraction, cross-session recall, update, delete and restart; see [validation evidence](../validation.md).
 - **READY FOR LIMITED TECHNICAL PREVIEW** — One writer per destination across all profiles/hosts; documented admission, retention and capacity limits remain.
 - **NOT PUBLISHED** — No tag or GitHub Release. These results do not declare public beta.
+
+Earlier snapshot (2026-10-08): PRs #10–#12 merged; main
+`32bd4e7abdb3b417cc5b0dd0f793f93db188db3b` passed
+[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338914),
+[six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802339623)
+and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338838).
 
 Evidence below records pre-merge candidates and does not override this snapshot.
 
