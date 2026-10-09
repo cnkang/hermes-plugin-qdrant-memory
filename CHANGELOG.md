@@ -13,6 +13,14 @@
 - `--all-agents` deletions fence prepared writes and supersede pending turn
   events in single bounded passes. Multi-scope runs recover from interruption
   without widening the recorded scope set.
+- CI: add a CodeQL workflow that analyzes the Python sources and the GitHub
+  Actions workflows with the `security-extended` query suite on pushes to
+  `main`, on pull requests and on a weekly schedule; results appear as
+  code-scanning alerts.
+- CI: enable grouped weekly Dependabot version updates for the Python
+  dependencies and the GitHub Actions pins. Dependabot pull requests run the
+  lint, test and platform jobs; the credentialed scans stay skipped by design
+  and re-run on `main` after merge.
 
 ## 0.1.0
 
