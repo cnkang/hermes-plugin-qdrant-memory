@@ -21,6 +21,8 @@ from .models import Scope
 from .ownership import WriterLease
 from .qdrant_store import QdrantStore, build_client
 from .reset import (
+    INTENT_SCHEMA_VERSION,
+    ScopeDeleteLegacyIntentError,
     ScopeDeleteRecoveryRequiredError,
     has_pending_reset,
     pending_scope_deletes,
@@ -103,9 +105,22 @@ class QdrantMemoryProvider(MemoryProvider):
             self.ledger = Ledger(self.home, ledger_namespace(self.cfg))
             self._resources.callback(self.ledger.close)
             pending_reset = has_pending_reset(self.ledger)
-            if pending_scope_deletes(self.ledger):
+            pending_deletes = pending_scope_deletes(self.ledger)
+            if pending_deletes:
                 # Fail closed: an interrupted scoped deletion must be resumed
-                # before queued writes can be replayed.
+                # before queued writes can be replayed. Pre-versioned intents
+                # cannot be resumed automatically (their recorded form is
+                # ambiguous); they require explicit operator disambiguation.
+                for intent in pending_deletes:
+                    try:
+                        recorded = json.loads(intent.get("scope_json") or "{}")
+                    except ValueError:
+                        recorded = {}
+                    if not isinstance(recorded, dict) or (
+                        recorded.get("schema_version") != INTENT_SCHEMA_VERSION
+                    ):
+                        user = recorded.get("user_id") if isinstance(recorded, dict) else None
+                        raise ScopeDeleteLegacyIntentError(user if isinstance(user, str) else "")
                 raise ScopeDeleteRecoveryRequiredError()
             if self.client is None:
                 self.client = build_client(self.cfg)
