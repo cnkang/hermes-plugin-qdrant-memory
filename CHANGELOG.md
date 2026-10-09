@@ -23,8 +23,10 @@ Unreleased; no tag or GitHub Release has been published.
   pinned release installs and release notes, CONTRIBUTING and SECURITY policies,
   issue/pull-request templates, release reports organized under docs/releases,
   and package `readme`/`urls` metadata.
-- Post-merge main `32bd4e7` passed CI, the six-job platform matrix and executed
-  authenticated Cloud integration; see [validation evidence](docs/validation.md).
+- Merged PRs #13 (documentation sync) and #14 (`migration_incomplete` ordering in
+  verify mode). Post-merge main `f6a2e97` passed CI, the six-job platform matrix
+  and executed authenticated Cloud integration, with the earlier `32bd4e7`
+  snapshot retained in [validation evidence](docs/validation.md).
 
 Initial standalone dense-memory provider: Hermes LLM inheritance, Ollama and
 OpenAI-compatible embeddings, scoped Qdrant storage, durable turn/operation ledger,

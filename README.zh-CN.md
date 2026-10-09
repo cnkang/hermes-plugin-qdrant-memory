@@ -9,8 +9,8 @@
 > main `f6a2e97` 已通过 CI、六项跨平台检查及实际执行的 Cloud 集成测试。
 > 预览要求每个目的地仅一个写入者，并接受文档中的持久化边界。
 > 全新 home 的实时 Quick Start 演练（本地 Ollama）已通过安装、自动提取、召回、更新、删除与重启。
-> 尚未打标签或发布。证据和支持边界见[验证记录](docs/validation.md)与
-> [最终审查报告](docs/releases/PRE_RELEASE_FINAL_REVIEW.md)。
+> 尚未打标签或发布。证据、精确 run 链接与演练记录见[验证记录](docs/validation.md)，
+> 支持边界见[最终审查报告](docs/releases/PRE_RELEASE_FINAL_REVIEW.md)。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -46,11 +46,12 @@ hermes qdrant-memory init
 支持仓库安装的 Hermes 版本也可以使用
 `hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory`。
 
-需要可复现安装时，请检出发布 tag 而不是跟随 `main`（首个发布为 `v0.1.0`，
-tag 见 [releases 页面](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)）：
+需要可复现安装时，请检出发布 tag 而不是跟随 `main`（tag 见
+[releases 页面](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)；
+首个发布将为 `v0.1.0`）：
 
 ```bash
-git clone --branch v0.1.0 --depth 1 \
+git clone --branch <release-tag> --depth 1 \
   https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
   "$HERMES_HOME/plugins/qdrant-memory"
 ```
