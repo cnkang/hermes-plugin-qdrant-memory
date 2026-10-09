@@ -1,0 +1,72 @@
+name: Bug report
+description: Report a reproducible problem with the Qdrant memory provider.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security issues: do **not** open an issue — use the repository's
+        Security tab ("Report a vulnerability"); see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Provider version / commit
+      description: The plugin version or the commit SHA you are running.
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Qdrant deployment mode
+      options:
+        - embedded (default)
+        - self-hosted server
+        - Qdrant Cloud
+    validations:
+      required: true
+  - type: input
+    id: hermes
+    attributes:
+      label: Hermes version
+      description: Output of `hermes --version`.
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you observed, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Minimal steps, including the exact commands you ran.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: >
+        Relevant output from `hermes qdrant-memory doctor`, `stats` or `verify`,
+        plus any tracebacks. Redact secrets and memory contents.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I removed credentials and private memory contents from this report.
+          required: true
+        - label: This is not a security vulnerability (those go through SECURITY.md).
+          required: true
