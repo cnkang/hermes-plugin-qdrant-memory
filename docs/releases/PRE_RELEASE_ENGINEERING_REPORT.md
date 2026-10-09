@@ -1,9 +1,9 @@
 # v0.1.0 预发布工程加固报告
 
-> 本文件保留了早期加固阶段的记录；PR #10 已合并。当前最终审查、精确验证
-> 结果与发布决定见 [PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md)。
+> 本文件保留了早期加固阶段的记录；PR #10 已合并。最新验证快照见
+> [验证记录](../validation.md)，最终审查记录见 [PRE_RELEASE_FINAL_REVIEW.md](PRE_RELEASE_FINAL_REVIEW.md)。
 
-## 当前验收（2026-10-08）
+## 历史验收（2026-10-08）
 
 PR #10、#11、#12 均已合并。合并后的 main 为 `32bd4e7abdb3b417cc5b0dd0f793f93db188db3b`。
 该 SHA 的 [Cloud 实测](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338838)、

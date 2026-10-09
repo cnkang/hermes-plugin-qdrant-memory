@@ -69,7 +69,8 @@ For reproducible installs, check out a release tag instead of floating `main`
 the first release will be `v0.1.0`):
 
 ```bash
-git clone --branch <release-tag> --depth 1 \
+RELEASE_TAG=v0.1.0   # set a published tag; the first release will be v0.1.0
+git clone --branch "$RELEASE_TAG" --depth 1 \
   https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
   "$HERMES_HOME/plugins/qdrant-memory"
 ```
@@ -111,9 +112,12 @@ For server/Cloud, configure the mode in `$HERMES_HOME/qdrant-memory.json` and su
 - Source-ID-only Mem0 JSON/Qdrant migration, re-embedding, dry runs, resumable
   manifests, supplemental updates, and verification of IDs and payload hashes.
 
-Unlike hosted memory services, all storage lives in your own Qdrant destination
-and the plugin makes no calls to external memory services; migration from Mem0
-is one-way, and 0.1 has no vector reuse or hybrid retrieval.
+Unlike hosted memory services, your memory data lives in your own Qdrant
+destination and the plugin makes no calls to external memory services. Its
+private SQLite ledger (pending operations, dedupe/retry bookkeeping and session
+mappings) stays in the local Hermes home — preserve and back that home up
+together with your Qdrant data. Migration from Mem0 is one-way, and 0.1 has no
+vector reuse or hybrid retrieval.
 
 Similarity is a candidate-selection signal, not proof that two facts are identical.
 `SAME` skips, `SUPERSEDES` updates, `CONFLICT` creates a linked record, and
