@@ -135,7 +135,7 @@ jobs:
           PYTHONPATH="$GITHUB_WORKSPACE/.host" "$RUNNER_TEMP/wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/verify_packaged.py"
       - name: Save coverage for SonarCloud
         if: matrix.python == '3.14' && matrix.host.name == 'minimum'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: python-coverage
           path: coverage.xml
@@ -152,7 +152,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: python-coverage
       - name: Require SonarCloud credentials
@@ -161,7 +161,7 @@ jobs:
         run: |
           test -n "$SONAR_TOKEN" || { echo '::error::Configure SONAR_TOKEN and import the project in SonarCloud.'; exit 1; }
       - name: Analyze and wait for quality gate
-        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -183,7 +183,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           test -n "$SNYK_TOKEN" || { echo '::error::Configure SNYK_TOKEN for the Snyk organization.'; exit 1; }
-      - uses: snyk/actions/setup@b075801f26076be9bb50521154cafab73f44da0c
+      - uses: snyk/actions/setup@11b673cfb4b0dc0d860a1323caa199d54950dcce
       - name: Check out Hermes dependency manager
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
@@ -224,7 +224,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           test -n "$SNYK_TOKEN" || { echo '::error::Configure SNYK_TOKEN for the Snyk organization.'; exit 1; }
-      - uses: snyk/actions/setup@b075801f26076be9bb50521154cafab73f44da0c
+      - uses: snyk/actions/setup@11b673cfb4b0dc0d860a1323caa199d54950dcce
       - name: Scan source
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
