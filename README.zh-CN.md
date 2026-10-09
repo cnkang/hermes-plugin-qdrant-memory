@@ -140,18 +140,22 @@ hermes qdrant-memory delete-all --user alice --confirm
 ```
 
 `list` 列出已存记忆的作用域、来源与时间戳，以及该目的地的待处理/失败操作计数
-（`--user`/`--agent` 过滤，`--limit` 限制条数）。`export` 将全部记忆（可限定
-作用域）写出为 Mem0 导入器可接受的便携 JSON，可用
+（`--user`/`--agent` 过滤；两者都不给即覆盖整个 collection，`--limit` 限制条数，
+单独使用 `--agent` 会被拒绝）。`export` 将全部记忆（可限定作用域）写出为 Mem0
+导入器可接受的便携 JSON，可用
 `hermes qdrant-memory migrate mem0 --source-json backup.json` 恢复到新的目的地
-（导入会重新 embedding；0.1 不支持向量复用）。导出文件仅属主可读，已存在时
-必须显式 `--force` 才覆盖。
+（导入会重新 embedding；0.1 不支持向量复用）。往返保留文本、作用域、分类与
+时间戳：Mem0 迁移来的记忆会恢复到同一 point，原生记忆在导出记录中保留原
+point UUID 作为来源信息。导出文件仅属主可读，已存在时必须显式 `--force` 才覆盖。
 
-`delete-all` 持久删除一个作用域的全部记忆：先写入 reset 风格的删除意图，为
-每个枚举到的 point 登记删除围栏（防止已准备的写入令其复活），以一次过滤删除
-清除该作用域，并在确认作用域为空后才清除意图。`--dry-run` 预览条数；`--confirm`
-授权删除。删除中断会 fail-closed——其他命令返回 `scope_delete_recovery_required`，
-需 `delete-all` 恢复完成后才能继续。删除后新接收的轮次仍可写入新记忆；本操作只
-移除已存记忆和已准备的写入。`list`、`export`、`delete-all` 不访问 embedding 服务。
+`delete-all` 持久删除一个作用域的全部记忆（必须显式 `--user`）：先写入 reset
+风格的删除意图，为每个枚举到的 point 以及该作用域内所有已准备的写入（含 point
+尚未落库的写入）登记删除围栏，防止其复活；随后以一次过滤删除清除该作用域，并在
+确认作用域为空后才清除意图。`--dry-run` 预览条数；`--confirm` 授权删除。删除
+中断会 fail-closed：其他命令与 provider 启动都会返回 `scope_delete_recovery_required`，
+需 `delete-all --confirm` 恢复完成后才能继续。删除后新接收的轮次仍可写入新记忆；
+本操作只移除已存记忆和已准备的写入。`list`、`export`、`delete-all` 不依赖
+embedding 服务。
 
 ## 数据流与隐私
 

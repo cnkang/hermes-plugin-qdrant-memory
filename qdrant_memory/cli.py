@@ -34,7 +34,7 @@ from .migration import (
     verify_collection,
     verify_manifest,
 )
-from .models import Scope, now
+from .models import Scope
 from .ownership import WriterBusyError, WriterLease
 from .progress import MigrationProgress, report
 from .qdrant_store import (
@@ -47,6 +47,7 @@ from .qdrant_store import (
 )
 from .reset import (
     ResetRecoveryRequiredError,
+    ScopeDeleteIncompleteError,
     ScopeDeleteRecoveryRequiredError,
     ScopeDeleteRefusedError,
     begin_destination_reset,
@@ -293,7 +294,9 @@ def scope_from(args):
 def inventory_list(runtime, args):
     """Return a bounded read-only inventory of stored memories and ledger backlog."""
     scope = scope_from(args)
-    limit = max(int(args.limit), 1)
+    limit = int(args.limit)
+    if limit < 1:
+        raise ValueError("--limit must be at least 1")
     total = runtime.store.count(scope)
     memories = []
     for point in runtime.store.scroll(scope):
@@ -353,7 +356,9 @@ def scoped_delete_all(runtime, args):
         raise ScopeDeleteRefusedError()
     identity = store.client.retrieve(store.collection, ids=[IDENTITY_ID], with_payload=True)
     if not identity or not identity[0].payload.get("_qdrant_memory_schema"):
-        raise ScopeDeleteRefusedError()
+        raise CollectionCompatibilityError(
+            "Collection has no trusted qdrant-memory schema identity; refusing scoped deletion"
+        )
     result = {
         "collection": store.collection,
         "scope": scope.as_dict(),
@@ -364,8 +369,9 @@ def scoped_delete_all(runtime, args):
         return result
     if not args.confirm:
         raise DeleteConfirmationRequiredError()
-    begin_scope_delete(ledger, scope)
+    intent_time = begin_scope_delete(ledger, scope)
     records = list(store.scroll(scope))
+    fenced = set()
     for point in records:
         value = point.payload or {}
         operation_key = ledger.enqueue_operation(
@@ -373,14 +379,36 @@ def scoped_delete_all(runtime, args):
             "DELETE",
             {"content_hash": value.get("content_hash", "")},
             source_id=ledger.delete_fence_source(scope),
-            source_version=now(),
+            source_version=intent_time,
         )
         ledger.finish("operations", operation_key, "COMMITTED")
+        fenced.add(str(point.id))
+    # Prepared writes whose points are not stored yet must be fenced too;
+    # otherwise a later recovery could replay them and resurrect memories.
+    for status in ("PENDING", "FAILED"):
+        for row in ledger.iter_rows("operations", status):
+            if row["action"] != "UPSERT" or row["point_id"] in fenced:
+                continue
+            try:
+                value = json.loads(row["payload_json"] or "{}")
+            except ValueError:
+                continue
+            if value.get("user_id") != scope.user_id or value.get("agent_id") != scope.agent_id:
+                continue
+            operation_key = ledger.enqueue_operation(
+                row["point_id"],
+                "DELETE",
+                {"content_hash": row["content_hash"] or value.get("content_hash", "")},
+                source_id=ledger.delete_fence_source(scope),
+                source_version=intent_time,
+            )
+            ledger.finish("operations", operation_key, "COMMITTED")
+            fenced.add(row["point_id"])
     store.delete_scope(scope)
     if store.count(scope):
-        raise ScopeDeleteRefusedError()
+        raise ScopeDeleteIncompleteError()
     finish_scope_delete(ledger, scope_delete_key(scope))
-    result.update(deleted=len(records), ok=True)
+    result.update(deleted=len(records), fenced_operations=len(fenced), ok=True)
     return result
 
 
@@ -438,10 +466,15 @@ def _run(args, home=None, progress=None):
             report(progress, "Acquiring writer lock")
             lease = WriterLease.for_config(home, cfg)
             resources.callback(lease.close)
-        report(progress, "Initializing embedding client")
-        embedder = build_embedder(None, cfg)
-        if hasattr(embedder, "close"):
-            resources.callback(embedder.close)
+        if command in {"list", "export", "delete-all"}:
+            # Inventory and scoped deletion never embed; they must work even
+            # when the embedding service is unavailable or misconfigured.
+            embedder = None
+        else:
+            report(progress, "Initializing embedding client")
+            embedder = build_embedder(None, cfg)
+            if hasattr(embedder, "close"):
+                resources.callback(embedder.close)
         report(progress, "Connecting to target")
         store = QdrantStore(build_client(cfg), cfg, embedder)
         resources.callback(store.close)
@@ -581,8 +614,14 @@ def main(args):
             error.update(
                 code="scope_delete_refused",
                 message="Scoped deletion refused. A pending scoped deletion must be "
-                "resumed with its recorded scope, --user is required for a new "
-                "scoped deletion, and a completed pass must leave the scope empty.",
+                "resumed with its recorded scope (one at a time), and --user is "
+                "required for a new scoped deletion.",
+            )
+        elif isinstance(exc, ScopeDeleteIncompleteError):
+            error.update(
+                code="scope_delete_incomplete",
+                message="Scoped deletion incomplete: the scope still contains points. "
+                "The durable intent remains; rerun delete-all --confirm to resume it.",
             )
         elif isinstance(exc, ExportTargetExistsError):
             error.update(

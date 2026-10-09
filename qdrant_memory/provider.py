@@ -20,7 +20,12 @@ from .ledger import Ledger
 from .models import Scope
 from .ownership import WriterLease
 from .qdrant_store import QdrantStore, build_client
-from .reset import has_pending_reset, resume_destination_reset
+from .reset import (
+    ScopeDeleteRecoveryRequiredError,
+    has_pending_reset,
+    pending_scope_deletes,
+    resume_destination_reset,
+)
 from .retry import safe_error
 from .runtime import Runtime
 from .tools import dispatch, schemas
@@ -98,6 +103,10 @@ class QdrantMemoryProvider(MemoryProvider):
             self.ledger = Ledger(self.home, ledger_namespace(self.cfg))
             self._resources.callback(self.ledger.close)
             pending_reset = has_pending_reset(self.ledger)
+            if pending_scope_deletes(self.ledger):
+                # Fail closed: an interrupted scoped deletion must be resumed
+                # before queued writes can be replayed.
+                raise ScopeDeleteRecoveryRequiredError()
             if self.client is None:
                 self.client = build_client(self.cfg)
                 self._resources.callback(self.client.close)

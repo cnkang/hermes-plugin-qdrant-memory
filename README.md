@@ -178,22 +178,28 @@ hermes qdrant-memory delete-all --user alice --confirm
 ```
 
 `list` reports stored memories with scope, provenance and timestamps, plus the
-destination's pending/failed operation counts (`--user`/`--agent` filter,
-`--limit` bounds the output). `export` writes every stored memory — optionally
-one scope — as portable JSON in the shape the Mem0 importer accepts, so
-`hermes qdrant-memory migrate mem0 --source-json backup.json` restores it into
-a fresh destination (imports re-embed; 0.1 has no vector reuse). Exports are
-written owner-only and refuse to overwrite without `--force`.
+destination's pending/failed operation counts (`--user`/`--agent` filter;
+omitting both covers the whole collection, `--limit` bounds the output, and
+`--agent` without `--user` is refused). `export` writes every stored memory —
+optionally one scope — as portable JSON in the shape the Mem0 importer accepts,
+so `hermes qdrant-memory migrate mem0 --source-json backup.json` restores it
+into a fresh destination (imports re-embed; 0.1 has no vector reuse). Round
+trips preserve text, scope, categories and timestamps: Mem0-migrated memories
+re-import to the same points, while native memories keep their original point
+UUID in the exported record for provenance. Exports are written owner-only and
+refuse to overwrite without `--force`.
 
-`delete-all` durably deletes every memory in one scope: it records a
-reset-style intent first, fences every enumerated point so a prepared write
-cannot resurrect it, deletes the scope in one filtered operation and clears the
-intent only after the scope is confirmed empty. `--dry-run` previews the count;
-`--confirm` authorizes deletion. An interrupted deletion fails closed — other
-commands return `scope_delete_recovery_required` until `delete-all` resumes it.
-Turns admitted after the deletion can still add new memories; only stored
-memories and prepared writes are removed. `list`, `export` and `delete-all` do
-not contact the embedding service.
+`delete-all` durably deletes every memory in one scope (`--user` required): it
+records a reset-style intent first, fences every enumerated point and every
+prepared write for that scope — including writes whose points were never
+stored — so they cannot resurrect deleted memories, deletes the scope in one
+filtered operation and clears the intent only after the scope is confirmed
+empty. `--dry-run` previews the count; `--confirm` authorizes deletion. An
+interrupted deletion fails closed: other commands and provider startup return
+`scope_delete_recovery_required` until `delete-all --confirm` resumes it. Turns
+admitted after the deletion can still add new memories; only stored memories
+and prepared writes are removed. `list`, `export` and `delete-all` do not
+require the embedding service.
 
 ## Data flow and privacy
 

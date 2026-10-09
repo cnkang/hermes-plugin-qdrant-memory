@@ -22,6 +22,7 @@ from qdrant_memory.reset import (
 )
 
 from .helpers import Embedder, config, runtime
+from .test_provider import provider
 
 
 def prepared_home(tmp_path, monkeypatch):
@@ -129,8 +130,16 @@ def test_delete_all_is_durable_and_fences_prepared_writes(tmp_path, monkeypatch)
     stale = payload(
         "alpha fact", Scope("u1", None), "manual", "s1", updated_at="2020-01-01T00:00:00Z"
     )
+    never = payload(
+        "never stored fact",
+        Scope("u1", None),
+        "manual",
+        "s1",
+        updated_at="2020-01-01T00:00:00Z",
+    )
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     stale_key = ledger.enqueue_operation("stale-point", "UPSERT", stale)
+    never_key = ledger.enqueue_operation("never-written-point", "UPSERT", never)
     ledger.close()
     with pytest.raises(DeleteConfirmationRequiredError):
         run(parser.parse_args(["delete-all", "--user", "u1"]), home=tmp_path)
@@ -143,12 +152,66 @@ def test_delete_all_is_durable_and_fences_prepared_writes(tmp_path, monkeypatch)
     assert remaining["count"]["total"] == 1
     assert remaining["memories"][0]["text"] == "gamma fact"
     runtime_home = runtime(tmp_path, ledger_namespace=ledger_namespace(cfg))
-    runtime_home.commit([stale_key])
-    row = runtime_home.ledger.row("operations", stale_key)
-    assert row["status"] == "SUPERSEDED"
+    runtime_home.commit([stale_key, never_key])
+    assert runtime_home.ledger.row("operations", stale_key)["status"] == "SUPERSEDED"
+    assert runtime_home.ledger.row("operations", never_key)["status"] == "SUPERSEDED"
     assert runtime_home.store.count() == 0
     runtime_home.store.close()
     runtime_home.ledger.close()
+
+
+def test_repeated_resume_does_not_duplicate_fences(tmp_path, monkeypatch):
+    """An interrupted scoped deletion resumes idempotently without fence growth."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1, payload("alpha fact", Scope("u1", None), "manual", "s1")),
+            (2, payload("alpha two", Scope("u1", None), "manual", "s1")),
+        ],
+    )
+    from qdrant_memory.qdrant_store import QdrantStore
+
+    original = QdrantStore.delete_scope
+    calls = {"count": 0}
+
+    def fail_once(self, scope):
+        """Interrupt the first deletion attempt after its fences are committed."""
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("simulated interruption")
+        return original(self, scope)
+
+    monkeypatch.setattr(QdrantStore, "delete_scope", fail_once)
+    with pytest.raises(RuntimeError):
+        run(parser.parse_args(["delete-all", "--user", "u1", "--confirm"]), home=tmp_path)
+    check = Ledger(tmp_path, ledger_namespace(cfg))
+    source_id = check.delete_fence_source(Scope("u1", None))
+    first = len(
+        [r for r in check.rows("operations", status="COMMITTED") if r["source_id"] == source_id]
+    )
+    check.close()
+    resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
+    assert resumed["resumed"] is True
+    assert resumed["deleted"] == 2
+    check = Ledger(tmp_path, ledger_namespace(cfg))
+    second = len(
+        [r for r in check.rows("operations", status="COMMITTED") if r["source_id"] == source_id]
+    )
+    check.close()
+    assert first == second == 2
+
+
+def test_provider_startup_fails_closed_while_scope_delete_pending(tmp_path):
+    """Provider startup refuses to replay while a scoped deletion is pending."""
+    p = provider(tmp_path)
+    namespace = p.ledger.collection
+    p.shutdown()
+    ledger = Ledger(tmp_path, namespace)
+    begin_scope_delete(ledger, Scope("u1", None))
+    ledger.close()
+    with pytest.raises(ScopeDeleteRecoveryRequiredError):
+        provider(tmp_path)
 
 
 def test_interrupted_scope_delete_blocks_commands_and_resumes(tmp_path, monkeypatch):
