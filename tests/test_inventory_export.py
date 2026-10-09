@@ -6,7 +6,6 @@ import json
 import pytest
 
 from qdrant_memory.cli import (
-    ALL_AGENTS,
     DeleteConfirmationRequiredError,
     ScopeSelectionError,
     main,
@@ -18,9 +17,11 @@ from qdrant_memory.inventory import ExportPublicationUnsupportedError, ExportTar
 from qdrant_memory.ledger import Ledger
 from qdrant_memory.models import Scope, payload
 from qdrant_memory.reset import (
+    ScopeDeleteLegacyIntentError,
     ScopeDeleteRecoveryRequiredError,
     ScopeDeleteRefusedError,
     begin_scope_delete,
+    scope_delete_intent,
 )
 
 from .helpers import Embedder, config, runtime
@@ -217,9 +218,21 @@ def test_provider_startup_fails_closed_while_scope_delete_pending(tmp_path):
     namespace = p.ledger.collection
     p.shutdown()
     ledger = Ledger(tmp_path, namespace)
-    begin_scope_delete(ledger, Scope("u1", None))
+    begin_scope_delete(ledger, scope_delete_intent("u1"))
     ledger.close()
     with pytest.raises(ScopeDeleteRecoveryRequiredError):
+        provider(tmp_path)
+
+
+def test_provider_startup_refuses_legacy_scope_delete_intent(tmp_path):
+    """Provider startup refuses an ambiguous pre-versioned intent explicitly."""
+    p = provider(tmp_path)
+    namespace = p.ledger.collection
+    p.shutdown()
+    ledger = Ledger(tmp_path, namespace)
+    begin_scope_delete(ledger, {"user_id": "u1", "agent_id": "*"})
+    ledger.close()
+    with pytest.raises(ScopeDeleteLegacyIntentError):
         provider(tmp_path)
 
 
@@ -307,7 +320,7 @@ def test_delete_all_all_agents_covers_every_scope(tmp_path, monkeypatch):
             home=tmp_path,
         )
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
-    begin_scope_delete(ledger, {"user_id": "u2", "agent_id": ALL_AGENTS})
+    begin_scope_delete(ledger, scope_delete_intent("u2", all_agents=True))
     ledger.close()
     resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
     assert resumed["resumed"] is True and resumed["deleted"] == 1
@@ -346,12 +359,17 @@ def test_resume_restores_recorded_agent_scope(tmp_path, monkeypatch):
         ],
     )
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
-    begin_scope_delete(ledger, Scope("u1", "bot"))
+    begin_scope_delete(ledger, scope_delete_intent("u1", "bot"))
     ledger.close()
     resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
     assert resumed["resumed"] is True
     assert resumed["deleted"] == 1
-    assert resumed["scope"] == {"user_id": "u1", "agent_id": "bot"}
+    assert resumed["scope"] == {
+        "schema_version": 2,
+        "mode": "single_agent",
+        "user_id": "u1",
+        "agent_id": "bot",
+    }
     remaining = run(parser.parse_args(["list"]), home=tmp_path)
     assert remaining["count"]["total"] == 1
     assert remaining["memories"][0]["text"] == "no agent fact"
@@ -383,7 +401,7 @@ def test_resume_refuses_mismatched_explicit_scope_flags(tmp_path, monkeypatch):
     parser, cfg = prepared_home(tmp_path, monkeypatch)
     seed(cfg, [(1, payload("bot fact", Scope("u1", "bot"), "manual", "s1"))])
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
-    begin_scope_delete(ledger, Scope("u1", "bot"))
+    begin_scope_delete(ledger, scope_delete_intent("u1", "bot"))
     ledger.close()
     with pytest.raises(ScopeDeleteRefusedError):
         run(parser.parse_args(["delete-all", "--all-agents", "--confirm"]), home=tmp_path)
@@ -401,7 +419,7 @@ def test_interrupted_scope_delete_blocks_commands_and_resumes(tmp_path, monkeypa
     parser, cfg = prepared_home(tmp_path, monkeypatch)
     seed(cfg, [(1, payload("alpha fact", Scope("u1", None), "manual", "s1"))])
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
-    begin_scope_delete(ledger, Scope("u1", None))
+    begin_scope_delete(ledger, scope_delete_intent("u1"))
     ledger.close()
     with pytest.raises(ScopeDeleteRecoveryRequiredError):
         run(parser.parse_args(["stats"]), home=tmp_path)
@@ -443,3 +461,293 @@ def test_scope_delete_error_codes(tmp_path, monkeypatch, capsys):
     target.write_text("{}")
     assert main(parser.parse_args(["export", "--output", str(target)])) == 1
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "export_target_exists"
+
+
+def test_single_star_agent_delete_does_not_widen_on_resume(tmp_path, monkeypatch):
+    """A single-agent deletion of the literal agent '*' never widens on resume."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1, payload("star fact", Scope("u1", "*"), "manual", "s1")),
+            (2, payload("hermes fact", Scope("u1", "hermes"), "manual", "s1")),
+            (3, payload("no agent fact", Scope("u1", None), "manual", "s1")),
+            (4, payload("other user fact", Scope("u2", "*"), "manual", "s1")),
+        ],
+    )
+    from qdrant_memory.qdrant_store import QdrantStore
+
+    original = QdrantStore.delete_scope
+    calls = {"count": 0}
+
+    def fail_once(self, scope):
+        """Interrupt the first deletion attempt after its fences are committed."""
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("simulated interruption")
+        return original(self, scope)
+
+    monkeypatch.setattr(QdrantStore, "delete_scope", fail_once)
+    with pytest.raises(RuntimeError):
+        run(
+            parser.parse_args(["delete-all", "--user", "u1", "--agent", "*", "--confirm"]),
+            home=tmp_path,
+        )
+    resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
+    assert resumed["resumed"] is True and resumed["deleted"] == 1
+    assert resumed["scope"]["mode"] == "single_agent"
+    assert resumed["scope"]["agent_id"] == "*"
+    listed = run(parser.parse_args(["list"]), home=tmp_path)
+    assert listed["count"]["total"] == 3
+    assert run(parser.parse_args(["stats"]), home=tmp_path)["points_count"] == 3
+
+
+def test_all_agents_includes_literal_star_agent_scope(tmp_path, monkeypatch):
+    """--all-agents covers a real agent id '*' and never touches other users."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1, payload("star fact", Scope("u1", "*"), "manual", "s1")),
+            (2, payload("hermes fact", Scope("u1", "hermes"), "manual", "s1")),
+            (3, payload("no agent fact", Scope("u1", None), "manual", "s1")),
+            (4, payload("other user star", Scope("u2", "*"), "manual", "s1")),
+        ],
+    )
+    result = run(
+        parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--confirm"]),
+        home=tmp_path,
+    )
+    assert result["deleted"] == 3
+    assert result["scope"] == {"schema_version": 2, "mode": "all_agents", "user_id": "u1"}
+    listed = run(parser.parse_args(["list"]), home=tmp_path)
+    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user star"
+
+
+def test_no_agent_scope_isolated_from_star_agent(tmp_path, monkeypatch):
+    """The no-agent scope and a literal '*' agent scope never overlap."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1, payload("star fact", Scope("u1", "*"), "manual", "s1")),
+            (2, payload("no agent fact", Scope("u1", None), "manual", "s1")),
+        ],
+    )
+    result = run(parser.parse_args(["delete-all", "--user", "u1", "--confirm"]), home=tmp_path)
+    assert result["deleted"] == 1
+    assert result["scope"]["agent_id"] is None
+    assert result["other_agent_scopes"] == {"*": 1}
+    listed = run(parser.parse_args(["list"]), home=tmp_path)
+    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "star fact"
+
+
+def test_resume_refuses_widening_and_mismatched_flags(tmp_path, monkeypatch):
+    """Explicit resume flags that contradict the recorded intent fail closed."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1, payload("star fact", Scope("u1", "*"), "manual", "s1")),
+            (2, payload("hermes fact", Scope("u1", "hermes"), "manual", "s1")),
+        ],
+    )
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    begin_scope_delete(ledger, scope_delete_intent("u1", "*"))
+    ledger.close()
+    with pytest.raises(ScopeDeleteRefusedError):
+        run(
+            parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--confirm"]),
+            home=tmp_path,
+        )
+    with pytest.raises(ScopeDeleteRefusedError):
+        run(
+            parser.parse_args(["delete-all", "--user", "u1", "--agent", "hermes", "--confirm"]),
+            home=tmp_path,
+        )
+    resumed = run(
+        parser.parse_args(["delete-all", "--user", "u1", "--agent", "*", "--confirm"]),
+        home=tmp_path,
+    )
+    assert resumed["resumed"] is True and resumed["deleted"] == 1
+    listed = run(parser.parse_args(["list"]), home=tmp_path)
+    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "hermes fact"
+
+
+def test_legacy_intent_refused_until_resolved(tmp_path, monkeypatch):
+    """Pre-versioned intents are never auto-resumed; resolution is explicit."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1, payload("star fact", Scope("u1", "*"), "manual", "s1")),
+            (2, payload("hermes fact", Scope("u1", "hermes"), "manual", "s1")),
+        ],
+    )
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    begin_scope_delete(ledger, {"user_id": "u1", "agent_id": "*"})
+    ledger.close()
+    with pytest.raises(ScopeDeleteLegacyIntentError):
+        run(parser.parse_args(["stats"]), home=tmp_path)
+    with pytest.raises(ScopeDeleteLegacyIntentError):
+        run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
+    check = Ledger(tmp_path, ledger_namespace(cfg))
+    with check.lock:
+        remaining_intents = check.db.execute(
+            "SELECT scope_json FROM qdrant_scope_deletes WHERE collection=?",
+            (check.collection,),
+        ).fetchall()
+    check.close()
+    assert len(remaining_intents) == 1
+    from qdrant_client import QdrantClient
+
+    client = QdrantClient(path=cfg["qdrant"]["path"])
+    try:
+        # Two seeded memories plus the reserved schema identity point.
+        assert client.count(cfg["qdrant"]["collection"]).count == 3
+    finally:
+        client.close()
+    with pytest.raises(ScopeDeleteRefusedError):
+        run(
+            parser.parse_args(
+                ["delete-all", "--user", "u2", "--resolve-legacy", "all_agents", "--confirm"]
+            ),
+            home=tmp_path,
+        )
+    resolved = run(
+        parser.parse_args(
+            ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--confirm"]
+        ),
+        home=tmp_path,
+    )
+    assert resolved["deleted"] == 1 and resolved["scope"]["mode"] == "single_agent"
+    listed = run(parser.parse_args(["list"]), home=tmp_path)
+    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "hermes fact"
+
+
+def test_legacy_intent_resolves_as_all_agents(tmp_path, monkeypatch):
+    """An operator can resolve a legacy intent as an all-agents deletion."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1, payload("star fact", Scope("u1", "*"), "manual", "s1")),
+            (2, payload("hermes fact", Scope("u1", "hermes"), "manual", "s1")),
+            (3, payload("other user fact", Scope("u2", None), "manual", "s1")),
+        ],
+    )
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    begin_scope_delete(ledger, {"user_id": "u1", "agent_id": "*"})
+    ledger.close()
+    resolved = run(
+        parser.parse_args(
+            ["delete-all", "--user", "u1", "--resolve-legacy", "all_agents", "--confirm"]
+        ),
+        home=tmp_path,
+    )
+    assert resolved["deleted"] == 2 and resolved["scope"]["mode"] == "all_agents"
+    listed = run(parser.parse_args(["list"]), home=tmp_path)
+    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user fact"
+
+
+def test_all_agents_resume_after_partial_deletion(tmp_path, monkeypatch):
+    """An interrupted --all-agents run resumes without widening or loss."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1, payload("star fact", Scope("u1", "*"), "manual", "s1")),
+            (2, payload("hermes fact", Scope("u1", "hermes"), "manual", "s1")),
+            (3, payload("no agent fact", Scope("u1", None), "manual", "s1")),
+            (4, payload("other user fact", Scope("u2", None), "manual", "s1")),
+        ],
+    )
+    from qdrant_memory.qdrant_store import QdrantStore
+
+    original = QdrantStore.delete_scope
+    calls = {"count": 0}
+
+    def fail_second(self, scope):
+        """Interrupt after one agent scope was already deleted."""
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise RuntimeError("simulated interruption")
+        return original(self, scope)
+
+    monkeypatch.setattr(QdrantStore, "delete_scope", fail_second)
+    with pytest.raises(RuntimeError):
+        run(
+            parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--confirm"]),
+            home=tmp_path,
+        )
+    resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
+    assert resumed["resumed"] is True
+    listed = run(parser.parse_args(["list"]), home=tmp_path)
+    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user fact"
+
+
+def test_all_agents_handles_many_agent_scopes(tmp_path, monkeypatch):
+    """--all-agents deletes every agent scope across many pages of scopes."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    entries = [
+        (1000 + index, payload(f"bulk {index}", Scope("u1", f"agent-{index}"), "manual", "s1"))
+        for index in range(150)
+    ]
+    entries.append((2000, payload("other user", Scope("u2", "agent-0"), "manual", "s1")))
+    seed(cfg, entries)
+    result = run(
+        parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--confirm"]),
+        home=tmp_path,
+    )
+    assert result["deleted"] == 150
+    listed = run(parser.parse_args(["list"]), home=tmp_path)
+    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user"
+
+
+def test_legacy_intent_error_codes(tmp_path, monkeypatch, capsys):
+    """CLI maps ambiguous legacy intents to a stable sanitized code."""
+    from utils import atomic_json_write
+
+    atomic_json_write(tmp_path / "qdrant-memory.json", config(), mode=0o600)
+    monkeypatch.setattr("qdrant_memory.cli.active_home", lambda: tmp_path)
+    monkeypatch.setattr("qdrant_memory.cli.build_embedder", lambda ctx, cfg: Embedder())
+    parser = argparse.ArgumentParser()
+    register_cli(parser)
+    assert main(parser.parse_args(["init", "--existing", "use"])) == 0
+    capsys.readouterr()
+    cfg = load_config(tmp_path)
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    begin_scope_delete(ledger, {"user_id": "u1", "agent_id": "*"})
+    ledger.close()
+    assert main(parser.parse_args(["list"])) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_delete_legacy_intent"
+    assert main(parser.parse_args(["delete-all", "--confirm"])) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_delete_legacy_intent"
+    assert (
+        main(
+            parser.parse_args(
+                ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--dry-run"]
+            )
+        )
+        == 1
+    )
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_selection_error"
+    assert (
+        main(
+            parser.parse_args(
+                ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--all-agents"]
+            )
+        )
+        == 1
+    )
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_selection_error"
+    assert (
+        main(
+            parser.parse_args(
+                ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--confirm"]
+            )
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert main(parser.parse_args(["list"])) == 0
