@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Documentation: lead both READMEs with the pinned-release install through the
+  Hermes CLI, add a short positioning section, and fix the Chinese install
+  wording.
+
 ## 0.1.0
 
 Limited technical preview; released 2026-10-09; the re-publication retargets

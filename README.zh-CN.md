@@ -28,18 +28,51 @@ flowchart LR
     search --> store
 ```
 
+## 为什么选择这个插件
+
+- 为 Hermes Agent 提供持久、私有的记忆：对话沉淀为你自有 Qdrant 存储中的可检索
+  记忆，召回、更新与按作用域删除均由你掌控。
+- 它是 Hermes 原生 `MemoryProvider`，不是 Mem0；`migrate mem0` 可导入既有
+  Mem0 导出数据。
+- embedded Qdrant 无需额外服务；同一套代码也可指向自建 Server 与 Qdrant Cloud。
+- 完全本地运行可行：embedded Qdrant + 本地 Ollama，数据留在本机。
+- 数据位置取决于目的地：记忆提取使用 Hermes 配置的 LLM，向量化使用配置的
+  embedding 服务，两者都可能是远程服务。见[数据流与隐私](#数据流与隐私)。
+- 本预览版不支持：多写入者 Server/Cloud、hybrid 检索与 Web UI。
+
 ## 安装与启用
 
 需要 Python 3.11+、兼容的 Hermes 和可访问的 embedding 服务。最低支持的 Hermes
 版本为 v0.21.5（v2026.9.24）；已测试的主机版本见 [CI 服务](docs/ci.md)。
 默认 embedding 为 Ollama `qwen3-embedding:4b`，维度 2560；请准备足够的本机资源。
 
-明确选择当前 profile 的 home，不要复用其他 profile 的数据：
+明确选择当前 profile 的 home，不要复用其他 profile 的数据。
+
+**推荐：通过 Hermes CLI 安装固定版本。**
+
+```bash
+export HERMES_HOME="/absolute/path/to/your/hermes-profile"
+ollama pull qwen3-embedding:4b
+# 如果 Ollama 尚未运行，先启动服务，并保持服务可用。
+hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
+  --ref v0.1.0
+hermes plugins enable qdrant-memory
+hermes memory setup
+hermes config set memory.provider qdrant-memory
+hermes qdrant-memory init
+```
+
+`hermes plugins install` 会检出指定 ref，`hermes plugins enable` 通过 Hermes PM
+准备声明的依赖；不要向 Hermes 管理的环境直接 pip install。省略 `--ref` 即跟随
+`main`（开发线）。
+
+**替代方式：手动克隆发布 tag。**
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 mkdir -p "$HERMES_HOME/plugins"
-git clone \
+RELEASE_TAG=v0.1.0   # 设为已发布的 release tag
+git clone --branch "$RELEASE_TAG" --depth 1 \
   https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
   "$HERMES_HOME/plugins/qdrant-memory"
 ollama pull qwen3-embedding:4b
@@ -49,20 +82,15 @@ hermes config set memory.provider qdrant-memory
 hermes qdrant-memory init
 ```
 
-依赖由 Hermes PM 准备，不要向 Hermes 管理的环境直接 pip install。
-支持仓库安装的 Hermes 版本也可以使用
-`hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory`。
-
-需要可复现安装时，请检出发布 tag 而不是跟随 `main`（tag 见
-[releases 页面](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)；
-首个发布将为 `v0.1.0`）：
+安装后验证：
 
 ```bash
-RELEASE_TAG=v0.1.0   # 设为已发布的 tag；首个发布将是 v0.1.0
-git clone --branch "$RELEASE_TAG" --depth 1 \
-  https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
-  "$HERMES_HOME/plugins/qdrant-memory"
+hermes qdrant-memory status
+hermes qdrant-memory doctor
 ```
+
+安装健康时会报告目的地、embedding 服务与 schema fingerprint；`doctor` 会校验
+运行时发现、manifest 解析、导入与注册。开发安装见[开发指南](docs/development.md)。
 
 发布说明、支持的 Hermes/Python 版本与当前限制记录在
 [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)；`main` 始终是开发线。
