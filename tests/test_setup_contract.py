@@ -86,6 +86,8 @@ BLOCKED = {"portalocker", "qdrant_client", "httpx"}
 class _BlockRuntimeDeps:
     def find_spec(self, name, path=None, target=None):
         if name.split(".")[0] in BLOCKED:
+            # Raising simulates an absent distribution; returning None would
+            # let later finders import an installed copy and void the probe.
             raise ModuleNotFoundError(f"blocked for discovery: {name}")
         return None
 
