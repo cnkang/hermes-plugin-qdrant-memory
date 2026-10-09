@@ -46,7 +46,6 @@ from .qdrant_store import (
     build_client,
 )
 from .reset import (
-    INTENT_SCHEMA_VERSION,
     ResetRecoveryRequiredError,
     ScopeDeleteIncompleteError,
     ScopeDeleteLegacyIntentError,
@@ -54,8 +53,10 @@ from .reset import (
     ScopeDeleteRefusedError,
     begin_destination_reset,
     begin_scope_delete,
+    decode_scope_delete_record,
     finish_scope_delete,
     has_pending_reset_file,
+    is_legacy_scope_delete,
     parse_scope_delete_intent,
     pending_scope_deletes,
     pending_scope_deletes_file,
@@ -383,13 +384,8 @@ def scoped_delete_all(runtime, args):
     if pending:
         if len(pending) > 1:
             raise ScopeDeleteRefusedError()
-        try:
-            recorded = json.loads(pending[0]["scope_json"] or "{}")
-        except ValueError:
-            recorded = {}
-        if not isinstance(recorded, dict) or (
-            recorded.get("schema_version") != INTENT_SCHEMA_VERSION
-        ):
+        recorded = decode_scope_delete_record(pending[0])
+        if is_legacy_scope_delete(recorded):
             # Pre-versioned intents cannot distinguish a single-agent deletion
             # of the literal agent '*' from an all-agents deletion. Never
             # guess; the operator disambiguates explicitly.
@@ -407,6 +403,10 @@ def scoped_delete_all(runtime, args):
             if resolve_legacy == "all_agents":
                 all_agents, agent = True, None
             else:
+                if "agent_id" not in recorded:
+                    # A pre-versioned record without an agent cannot be
+                    # resolved as a single-agent deletion without guessing.
+                    raise ScopeDeleteRefusedError()
                 all_agents = False
                 agent = recorded.get("agent_id")
             intent_value = scope_delete_intent(user, agent, all_agents)
@@ -587,13 +587,8 @@ def _pending_intent_error(intents):
     guidance.
     """
     for intent in intents:
-        try:
-            recorded = json.loads(intent.get("scope_json") or "{}")
-        except ValueError:
-            recorded = {}
-        if not isinstance(recorded, dict) or (
-            recorded.get("schema_version") != INTENT_SCHEMA_VERSION
-        ):
+        recorded = decode_scope_delete_record(intent)
+        if is_legacy_scope_delete(recorded):
             user = recorded.get("user_id") if isinstance(recorded, dict) else None
             return ScopeDeleteLegacyIntentError(user if isinstance(user, str) else "")
     return ScopeDeleteRecoveryRequiredError()
