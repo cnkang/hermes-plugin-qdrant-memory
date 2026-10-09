@@ -23,8 +23,8 @@ and re-certified by the gates on main at release time, with
 and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752899)
 all green; the `v0.1.0` tag was created from the documentation commit that
 records this certification (`d50f2cc5c4704a9204596e81e4192fa58da5f500`), with
-no functional changes since `112e403c`. The snapshots below retain their
-original scope.
+no functional changes between `112e403c` and that tag. The snapshots below
+retain their original scope.
 
 The project is a limited technical preview. The `v0.1.0` release was published
 on 2026-10-09 from this certification record.
@@ -38,7 +38,9 @@ plugin refuses it (`scope_delete_legacy_intent`). An operator resolves it with
 `delete-all --resolve-legacy single_agent|all_agents`. Fault-injection
 regressions cover interruption after the intent and fences commit, partial
 multi-scope deletion and resume, resume scope restoration, and both legacy
-resolution paths. The full local suite passes (298 tests, 1 skipped).
+resolution paths. The full local suite passes (299 tests, 1 skipped). These
+post-release changes are validated by their own pull-request gates; the
+v0.1.0 certification runs above do not cover them.
 
 ## Post-merge main snapshot (2026-10-09)
 
