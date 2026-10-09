@@ -335,6 +335,47 @@ def test_large_scope_pages_export_and_delete(tmp_path, monkeypatch):
     assert run(parser.parse_args(["list"]), home=tmp_path)["count"]["total"] == 0
 
 
+def test_resume_restores_recorded_agent_scope(tmp_path, monkeypatch):
+    """Resuming without scope arguments restores the recorded agent scope."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1, payload("bot fact", Scope("u1", "bot"), "manual", "s1")),
+            (2, payload("no agent fact", Scope("u1", None), "manual", "s1")),
+        ],
+    )
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    begin_scope_delete(ledger, Scope("u1", "bot"))
+    ledger.close()
+    resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
+    assert resumed["resumed"] is True
+    assert resumed["deleted"] == 1
+    assert resumed["scope"] == {"user_id": "u1", "agent_id": "bot"}
+    remaining = run(parser.parse_args(["list"]), home=tmp_path)
+    assert remaining["count"]["total"] == 1
+    assert remaining["memories"][0]["text"] == "no agent fact"
+    assert run(parser.parse_args(["stats"]), home=tmp_path)["points_count"] == 1
+
+
+def test_resume_refuses_mismatched_explicit_scope_flags(tmp_path, monkeypatch):
+    """Resuming with explicit scope flags that contradict the intent is refused."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(cfg, [(1, payload("bot fact", Scope("u1", "bot"), "manual", "s1"))])
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    begin_scope_delete(ledger, Scope("u1", "bot"))
+    ledger.close()
+    with pytest.raises(ScopeDeleteRefusedError):
+        run(parser.parse_args(["delete-all", "--all-agents", "--confirm"]), home=tmp_path)
+    with pytest.raises(ScopeDeleteRefusedError):
+        run(parser.parse_args(["delete-all", "--user", "u2", "--confirm"]), home=tmp_path)
+    resumed = run(
+        parser.parse_args(["delete-all", "--user", "u1", "--agent", "bot", "--confirm"]),
+        home=tmp_path,
+    )
+    assert resumed["resumed"] is True and resumed["deleted"] == 1
+
+
 def test_interrupted_scope_delete_blocks_commands_and_resumes(tmp_path, monkeypatch):
     """A recorded scoped-deletion intent fails closed until delete-all resumes it."""
     parser, cfg = prepared_home(tmp_path, monkeypatch)

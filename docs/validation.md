@@ -13,8 +13,11 @@ are merged on top of the snapshots below. Main
 | Authenticated Cloud integration | [37887162253](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162253) |
 
 PR #17 delivered the memory inventory/export/scoped-deletion commands
-(issue #15); PR #16 delivered the release/community readiness set. The
-snapshots below retain their original scope.
+(issue #15); PR #16 delivered the release/community readiness set. This
+snapshot certifies the main state through PR #17: the scoped-deletion
+hardening in the follow-up finalization PR is validated on its own head and
+re-certified by the gates on main at release time. The snapshots below retain
+their original scope.
 
 ## Post-merge main snapshot (2026-10-09)
 

@@ -11,6 +11,7 @@ PRs #10–#17 are merged. Current main
 - **PASS** — Live Quick Start drill (2026-10-09): a fresh home with local Ollama completed install, automatic extraction, cross-session recall, update, delete and restart; see [validation evidence](../validation.md).
 - **READY FOR LIMITED TECHNICAL PREVIEW** — One writer per destination across all profiles/hosts; documented admission, retention and capacity limits remain.
 - **NOT PUBLISHED** — No tag or GitHub Release. These results do not declare public beta.
+- **PENDING RE-CERTIFICATION** — Scoped-deletion hardening (finalization PR): validated on its head; the gates on main are recorded at release time.
 
 Intermediate snapshot (2026-10-09, PRs #13–#14): main
 `f6a2e97f9cd16c4aed3ba2590bfcf36176ee5e29` passed

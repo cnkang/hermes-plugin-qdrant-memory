@@ -112,6 +112,21 @@ def write_export(path, collection, points, force=False):
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
-    os.replace(temporary, path)
+    if force:
+        os.replace(temporary, path)
+    else:
+        # Atomic no-clobber: os.link fails if the target appeared after the
+        # existence check, so a concurrent export can never overwrite it.
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            temporary.unlink(missing_ok=True)
+            raise ExportTargetExistsError(
+                "Export target already exists; pass --force to overwrite it"
+            ) from None
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
+        temporary.unlink()
     path.chmod(0o600)
     return count
