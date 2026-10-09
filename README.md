@@ -5,8 +5,8 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **v0.1.0: Ready for limited technical preview.** PRs #10–#14 are merged; main
-> `f6a2e97` passed CI, all six platform jobs and authenticated Cloud integration.
+> **v0.1.0: Ready for limited technical preview.** PRs #10–#17 are merged; main
+> `ff5712d` passed CI, all six platform jobs and authenticated Cloud integration.
 > Preview supports one writer per destination with the documented durability limits.
 > A live Quick Start drill (fresh home, local Ollama) passed install, extraction,
 > recall, update, delete and restart. No release has been tagged or published. See
@@ -187,19 +187,27 @@ into a fresh destination (imports re-embed; 0.1 has no vector reuse). Round
 trips preserve text, scope, categories and timestamps: Mem0-migrated memories
 re-import to the same points, while native memories keep their original point
 UUID in the exported record for provenance. Exports are written owner-only and
-refuse to overwrite without `--force`.
+refuse to overwrite without `--force`. An export covers stored memories only —
+pending events, retry history and crash-recovery state stay in the local
+ledger; back up the profile home for a full recovery point.
 
-`delete-all` durably deletes every memory in one scope (`--user` required): it
-records a reset-style intent first, fences every enumerated point and every
-prepared write for that scope — including writes whose points were never
-stored — so they cannot resurrect deleted memories, deletes the scope in one
-filtered operation and clears the intent only after the scope is confirmed
-empty. `--dry-run` previews the count; `--confirm` authorizes deletion. An
-interrupted deletion fails closed: other commands and provider startup return
-`scope_delete_recovery_required` until `delete-all --confirm` resumes it. Turns
-admitted after the deletion can still add new memories; only stored memories
-and prepared writes are removed. `list`, `export` and `delete-all` do not
-require the embedding service.
+`delete-all` durably deletes stored memories and pending work for one scope
+(`--user` required): it records a reset-style intent first, fences every
+enumerated point and every prepared write for that scope — including writes
+whose points were never stored — invalidates admitted-but-unprocessed turn
+events for the scope, deletes the scope in one filtered operation and clears
+the intent only after the scope is confirmed empty. A scope is exactly one
+(user, agent) pair: omitting `--agent` selects the no-agent scope, and the
+default profile scope uses an agent (`hermes`), so pass `--agent hermes` to
+target it or `--all-agents` to delete every agent scope of the user. Without
+`--all-agents`, the result reports `other_agent_scopes` when other agent
+scopes still hold memories. `--dry-run` previews the per-scope counts;
+`--confirm` authorizes deletion. An interrupted deletion fails closed: other
+commands and provider startup return `scope_delete_recovery_required` until
+`delete-all --confirm` resumes it. Turns admitted after the deletion can still
+add new memories; everything admitted before it — stored memories, prepared
+writes and unprocessed turn events — is removed or invalidated. `list`,
+`export` and `delete-all` do not require the embedding service.
 
 ## Data flow and privacy
 
@@ -221,6 +229,11 @@ Three common deployments:
 | Fully offline | local (e.g. Ollama) | inherits the local model | local Ollama | embedded local |
 | Hybrid | cloud | inherits the cloud model by default | local Ollama | embedded local |
 | Full cloud | cloud | cloud | OpenAI-compatible endpoint | Qdrant Cloud |
+
+A fully offline setup needs enough local compute for the chat model and the
+embeddings together: on a 24 GB host a 27B local chat model plus local
+embeddings exceeded comfortable VRAM during validation, and local-model turns
+can take minutes each. Budget accordingly or use a smaller local model.
 
 In the hybrid layout, extraction and relation checks inherit the session model
 unless you route them elsewhere (`llm.mode: task` with the plugin's auxiliary

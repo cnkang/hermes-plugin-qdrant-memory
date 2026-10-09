@@ -5,8 +5,8 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **v0.1.0：可进行有限技术预览（Ready for limited technical preview）。** PR #10–#14 均已合并；
-> main `f6a2e97` 已通过 CI、六项跨平台检查及实际执行的 Cloud 集成测试。
+> **v0.1.0：可进行有限技术预览（Ready for limited technical preview）。** PR #10–#17 均已合并；
+> main `ff5712d` 已通过 CI、六项跨平台检查及实际执行的 Cloud 集成测试。
 > 预览要求每个目的地仅一个写入者，并接受文档中的持久化边界。
 > 全新 home 的实时 Quick Start 演练（本地 Ollama）已通过安装、自动提取、召回、更新、删除与重启。
 > 尚未打标签或发布。证据、精确 run 链接与演练记录见[验证记录](docs/validation.md)，
@@ -147,14 +147,21 @@ hermes qdrant-memory delete-all --user alice --confirm
 （导入会重新 embedding；0.1 不支持向量复用）。往返保留文本、作用域、分类与
 时间戳：Mem0 迁移来的记忆会恢复到同一 point，原生记忆在导出记录中保留原
 point UUID 作为来源信息。导出文件仅属主可读，已存在时必须显式 `--force` 才覆盖。
+导出仅覆盖已存记忆——待处理事件、重试历史与崩溃恢复状态保留在本地账本中；
+如需完整恢复点，请一并备份 profile home。
 
-`delete-all` 持久删除一个作用域的全部记忆（必须显式 `--user`）：先写入 reset
-风格的删除意图，为每个枚举到的 point 以及该作用域内所有已准备的写入（含 point
-尚未落库的写入）登记删除围栏，防止其复活；随后以一次过滤删除清除该作用域，并在
-确认作用域为空后才清除意图。`--dry-run` 预览条数；`--confirm` 授权删除。删除
-中断会 fail-closed：其他命令与 provider 启动都会返回 `scope_delete_recovery_required`，
-需 `delete-all --confirm` 恢复完成后才能继续。删除后新接收的轮次仍可写入新记忆；
-本操作只移除已存记忆和已准备的写入。`list`、`export`、`delete-all` 不依赖
+`delete-all` 持久删除一个作用域（user×agent 对）的已存记忆与待处理工作（必须显式
+`--user`）：先写入 reset 风格的删除意图，为每个枚举到的 point 以及该作用域内所有
+已准备的写入（含 point 尚未落库的写入）登记删除围栏，同时使该作用域内"已接收但
+尚未提取"的轮次事件失效，随后以一次过滤删除清除该作用域，并在确认作用域为空后
+才清除意图。注意作用域是精确的 (user, agent) 组合：省略 `--agent` 只选"无 agent"
+作用域，而默认 profile 作用域带 agent（`hermes`）——请用 `--agent hermes` 定向它，
+或用 `--all-agents` 删除该用户的全部 agent 作用域；未用 `--all-agents` 时，若其他
+agent 作用域仍有记忆，结果会给出 `other_agent_scopes`。`--dry-run` 预览各作用域
+条数；`--confirm` 授权删除。删除中断会 fail-closed：其他命令与 provider 启动都会
+返回 `scope_delete_recovery_required`，需 `delete-all --confirm` 恢复完成后才能继续。
+删除后新接收的轮次仍可写入新记忆；删除前已接收的内容——已存记忆、已准备的写入与
+未提取的轮次事件——都会被移除或失效。`list`、`export`、`delete-all` 不依赖
 embedding 服务。
 
 ## 数据流与隐私
@@ -176,6 +183,10 @@ embedding 服务。
 | 全离线 | 本地（如 Ollama） | 继承本地模型 | 本地 Ollama | 本地 embedded |
 | 混合 | 云端 | 默认继承云端模型 | 本地 Ollama | 本地 embedded |
 | 全云端 | 云端 | 云端 | OpenAI 兼容端点 | Qdrant Cloud |
+
+全离线部署需要同时为对话模型与向量化准备足够的本机算力：验证期间，24 GB 主机上
+27B 本地对话模型加本地向量化已超出可用显存，本地模型每轮可能耗时数分钟。请按此
+规划资源，或选用更小的本地模型。
 
 混合部署中，提取与关系判断默认继承会话模型；若对话文本不应到达主模型的
 provider，可将提取路由到其他模型（`llm.mode: task` 并结合插件的辅助任务解析到
