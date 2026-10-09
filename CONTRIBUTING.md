@@ -33,8 +33,8 @@ Every pull request must pass the same gates CI enforces:
 ```
 
 - Ruff lint and formatting.
-- The canonical Hermes test runner on Python 3.11 and 3.14 (CI runs the minimum,
-  pinned and current-main hosts; locally one host is enough).
+- The canonical Hermes test runner on Python 3.11 and 3.14 (CI runs the minimum
+  supported release and the latest Hermes `main`; locally one host is enough).
 - SonarCloud, Snyk dependency/code scans and the required security-scan gate run
   in CI on the pull request.
 

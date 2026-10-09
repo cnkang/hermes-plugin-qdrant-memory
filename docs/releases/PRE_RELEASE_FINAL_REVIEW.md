@@ -61,7 +61,7 @@ All runs below checked out implementation `c77718edce269898db6b47088489c204cd38b
 
 | Gate | Result | Evidence |
 |---|---|---|
-| CI: six immutable Hermes/Python lanes, Server REST/gRPC, wheel, Ruff, SonarCloud, Snyk dependency/code, required gate | PASS | [37791377125](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791377125), all 12 jobs successful |
+| CI: six Hermes/Python lanes (immutable refs at the time), Server REST/gRPC, wheel, Ruff, SonarCloud, Snyk dependency/code, required gate | PASS | [37791377125](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791377125), all 12 jobs successful |
 | Linux/macOS/Windows × Python 3.11/3.14 | PASS | [37791376772](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791376772), all six jobs successful |
 | Latest-Hermes wheel + callback/manifest/Host lifecycle, Python 3.11/3.14 | PASS | [37791391129](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791391129), actual Hermes checkout `38880bd2f1e90dbc9a1aeec03af62539ee64719a` on both jobs |
 | Authenticated Cloud | BLOCKED BEFORE TEST | [37791397024](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37791397024); branch disallowed by protected environment, zero test steps |
