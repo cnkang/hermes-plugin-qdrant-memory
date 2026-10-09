@@ -61,10 +61,10 @@ repository installation can use
 
 For reproducible installs, check out a release tag instead of floating `main`.
 The [releases page](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)
-lists the tags. The first release will be `v0.1.0`:
+lists the tags; `v0.1.0` is the first release:
 
 ```bash
-RELEASE_TAG=v0.1.0   # tag of this release (available after publication)
+RELEASE_TAG=v0.1.0   # set a published release tag
 git clone --branch "$RELEASE_TAG" --depth 1 \
   https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
   "$HERMES_HOME/plugins/qdrant-memory"

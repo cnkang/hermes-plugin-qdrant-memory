@@ -53,7 +53,10 @@ Dependabot opens grouped weekly version updates for the Python dependencies
 and for the GitHub Actions pins (`.github/dependabot.yml`). Repository-level
 security updates are enabled as well. Dependabot pull requests run the lint,
 test and platform jobs; the credentialed scanner jobs are skipped for
-`dependabot[bot]` and re-run on the push to `main` after merge.
+`dependabot[bot]` and re-run on the push to `main` after merge. A dependency
+range change also requires the plugin manifest's `python_dependencies` to be
+updated in the same pull request; the manifest contract test enforces the
+match.
 
 ## Code scanning (CodeQL)
 
