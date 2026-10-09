@@ -4,10 +4,18 @@
 
 - Hermes compatibility range: minimum v0.21.5 (v2026.9.24); the required CI
   matrix validates the minimum release and the latest Hermes `main`.
+- Scoped deletion intents are versioned and explicit. A literal agent id `*`
+  is an ordinary scope and never selects all agents. A pre-versioned intent is
+  refused (`scope_delete_legacy_intent`) until resolved with
+  `delete-all --resolve-legacy single_agent|all_agents`. The `delete-all`
+  result `scope` field reflects the versioned intent.
+- `--all-agents` deletions fence prepared writes and supersede pending turn
+  events in single bounded passes. Multi-scope runs recover from interruption
+  without widening the recorded scope set.
 
 ## 0.1.0
 
-Limited technical preview; the `v0.1.0` release will be created from this certification record (2026-10-09).
+Limited technical preview; released 2026-10-09 (`v0.1.0`).
 
 - Merged PR #10: durable destination reset intents and crash recovery, scoped
   deletion fences, terminal payload scrubbing, resource cleanup, platform matrix

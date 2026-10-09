@@ -151,10 +151,13 @@ point UUID 作为来源信息。导出文件仅属主可读，已存在时必须
 才清除意图。注意作用域是精确的 (user, agent) 组合：省略 `--agent` 只选"无 agent"
 作用域，而默认 profile 作用域带 agent（`hermes`）——请用 `--agent hermes` 定向它，
 或用 `--all-agents` 删除该用户的全部 agent 作用域；未用 `--all-agents` 时，若其他
-agent 作用域仍有记忆，结果会给出 `other_agent_scopes`。`--dry-run` 预览各作用域
+agent 作用域仍有记忆，结果会给出 `other_agent_scopes`。字面量 `*` 只是普通 agent
+id、不是通配符。`--dry-run` 预览各作用域
 条数；`--confirm` 授权删除。删除中断会 fail-closed：其他命令与 provider 启动都会
 返回 `scope_delete_recovery_required`，需 `delete-all --confirm` 恢复完成后才能继续。
-删除后新接收的轮次仍可写入新记忆；删除前已接收的内容——已存记忆、已准备的写入与
+删除意图带版本且显式：无法区分"单 agent 的 `*`"与"全部 agent"的旧版意图会被拒绝
+（`scope_delete_legacy_intent`），须用 `--resolve-legacy single_agent` 或
+`--resolve-legacy all_agents` 显式消歧后才会执行。删除后新接收的轮次仍可写入新记忆；删除前已接收的内容——已存记忆、已准备的写入与
 未提取的轮次事件——都会被移除或失效。`list`、`export`、`delete-all` 不依赖
 embedding 服务。
 
