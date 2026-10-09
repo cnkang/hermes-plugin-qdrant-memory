@@ -12,10 +12,11 @@ passed on that exact SHA. The Cloud exercise step actually ran; the candidate br
 rejection below no longer represents the merged code's validation status.
 
 Status remains **READY FOR LIMITED TECHNICAL PREVIEW** with one writer per destination
-across all profiles and hosts. No tag or GitHub Release has been published. The live
-interactive Quick Start remains unrecorded, and admission, retention and synthetic
+across all profiles and hosts. No tag or GitHub Release has been published. A live
+interactive Quick Start drill was completed on 2026-10-09 on a fresh home with local
+Ollama (see [validation](../validation.md)), and admission, retention and synthetic
 retrieval/capacity limits still apply. Passing these gates does not declare public
-beta or authorize a release. See [validation](docs/validation.md) for the current
+beta or authorize a release. See [validation](../validation.md) for the current
 snapshot; the following candidate reports and decisions are historical records.
 
 ## Historical PR #12 candidate (2026-10-08, before merge)
@@ -168,8 +169,8 @@ version-difference warning (1.15.5/1.19.1) remains visible; tested behavior pass
 
 ### Performance and privacy measurements
 
-[Reproducible benchmark](docs/recovery-benchmark.md) and
-[script](scripts/benchmark_recovery.py) validate 0/1/100/1,000/10,000/100,000
+[Reproducible benchmark](../recovery-benchmark.md) and
+[script](../../scripts/benchmark_recovery.py) validate 0/1/100/1,000/10,000/100,000
 synthetic pending operations on implementation `c77718e`. At 100,000, actual recovery
 Python `tracemalloc` peak is **0.4964 MiB**, compared with **163.6766 MiB** using
 the former list reader in the same current runtime (99.697% reduction).
@@ -190,7 +191,7 @@ deploy one writer per destination and stop writers on every host for maintenance
 Pending/FAILED payloads remain necessary recovery inputs. Completed manifests and
 terminal identity/hash rows remain necessary resume/idempotency/deletion evidence.
 Logical scrub is not secure erase of old pages, WAL/SHM, snapshots or backups.
-Retention compaction is deferred; see [capacity procedures](docs/operations.md)
+Retention compaction is deferred; see [capacity procedures](../operations.md)
 and the synthetic recovery benchmark. Dense retrieval quality is workload dependent.
 Repository Topics and Homepage remain unset; publishing metadata, a tag and a
 GitHub Release are manual follow-up actions. No release action is authorized here.
@@ -261,7 +262,7 @@ remain in the test suite.
   `hermes_agent.memory_providers` entry point, and run the manifest parser contract
   on Python 3.11 and 3.14. The workflow records exact plugin and Hermes SHAs.
 - Updated English and Chinese README pre-release notices and the changelog. Detailed
-  historical validation remains in [docs/validation.md](docs/validation.md).
+  historical validation remains in [docs/validation.md](../validation.md).
 
 ## Validation
 

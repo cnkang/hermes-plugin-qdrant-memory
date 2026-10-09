@@ -1,17 +1,35 @@
 # Qdrant Memory for Hermes
 
-> **v0.1.0: Ready for limited technical preview.** PRs #10, #11 and
-> [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12) are merged.
+[![CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml)
+[![Platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+> **v0.1.0: Ready for limited technical preview.** PRs #10–#14 are merged; main
+> `f6a2e97` passed CI, all six platform jobs and authenticated Cloud integration.
 > Preview supports one writer per destination with the documented durability limits.
-> Merged main `32bd4e7` passed CI, all six platform jobs and authenticated Cloud
-> integration. No release has been tagged or published. See
-> [validation evidence](docs/validation.md) and the [final review](PRE_RELEASE_FINAL_REVIEW.md).
+> A live Quick Start drill (fresh home, local Ollama) passed install, extraction,
+> recall, update, delete and restart. No release has been tagged or published. See
+> [validation evidence](docs/validation.md) and the
+> [final review](docs/releases/PRE_RELEASE_FINAL_REVIEW.md).
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 Standalone native `MemoryProvider` for Hermes Agent. Hermes performs extraction
 through its trusted `ctx.llm` facade; Qdrant stores named dense vectors and schema-v1
 payloads. No Mem0 SDK, separate LLM SDK, telemetry, or core modifications.
+
+## How it works
+
+```mermaid
+flowchart LR
+    turn["Hermes turn"] --> admit["Provider callback"]
+    admit --> ledger[("SQLite ledger<br/>durable admission")]
+    ledger -.async.-> extract["LLM extraction +<br/>relation checks"]
+    extract --> store[("Qdrant<br/>dense vectors + payloads")]
+    ask["Recall / search"] --> search["Scoped dense search"]
+    search --> store
+```
 
 ## Install
 
@@ -45,6 +63,20 @@ pip-install into a managed Hermes environment. Hermes versions supporting
 repository installation can use
 `hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory`.
 
+For reproducible installs, check out a release tag instead of floating `main`
+(the first release is `v0.1.0`; tags appear on the
+[releases page](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)):
+
+```bash
+git clone --branch v0.1.0 --depth 1 \
+  https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
+  "$HERMES_HOME/plugins/qdrant-memory"
+```
+
+Release notes, supported Hermes/Python versions and the current limitations are
+recorded in [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md); `main` stays the
+development line.
+
 For local development, symlink the repository into a disposable profile:
 
 ```bash
@@ -77,6 +109,10 @@ For server/Cloud, configure the mode in `$HERMES_HOME/qdrant-memory.json` and su
 - SQLite WAL event/operation ledger, transport retries and restart recovery.
 - Source-ID-only Mem0 JSON/Qdrant migration, re-embedding, dry runs, resumable
   manifests, supplemental updates, and verification of IDs and payload hashes.
+
+Unlike hosted memory services, all storage lives in your own Qdrant destination
+and the plugin makes no calls to external memory services; migration from Mem0
+is one-way, and 0.1 has no vector reuse or hybrid retrieval.
 
 Similarity is a candidate-selection signal, not proof that two facts are identical.
 `SAME` skips, `SUPERSEDES` updates, `CONFLICT` creates a linked record, and
@@ -125,6 +161,42 @@ while the writer is running.
 `retry` requeues failed events for the next provider
 startup and retries prepared operations. Stop the agent before maintenance of an
 embedded store: Qdrant's local persistence permits only one client process.
+
+## Data flow and privacy
+
+This provider sends data only toward services you configure. What each component
+carries and where it can go:
+
+| Component | Carries | Destination |
+| --- | --- | --- |
+| Chat / agent turns | Your conversation | The model configured for the Hermes session |
+| Memory extraction (`llm.mode: inherit`) | The turn's user and assistant text | The same session model — with a cloud model, turn text reaches that cloud |
+| Relation checks | The candidate memory and the similar stored memory | Same routing as extraction; runs only when similarity selects a review candidate |
+| Embeddings (`embedding`) | Memory and search text | Ollama by default, or your OpenAI-compatible endpoint |
+| Storage (`qdrant`) | Memory payloads and provenance; the ledger stays local | Embedded local path, self-hosted server, or Qdrant Cloud |
+
+Three common deployments:
+
+| Deployment | Chat model | Extraction LLM | Embeddings | Storage |
+| --- | --- | --- | --- | --- |
+| Fully offline | local (e.g. Ollama) | inherits the local model | local Ollama | embedded local |
+| Hybrid | cloud | inherits the cloud model by default | local Ollama | embedded local |
+| Full cloud | cloud | cloud | OpenAI-compatible endpoint | Qdrant Cloud |
+
+In the hybrid layout, extraction and relation checks inherit the session model
+unless you route them elsewhere (`llm.mode: task` with the plugin's auxiliary
+task resolved to a local model, or `llm.mode: override` with an explicit
+provider and model). Extraction instructions exclude obvious credentials and
+transient statuses, but any configured LLM or Qdrant destination can see the
+memories it processes; treat them accordingly. Logical scrubbing of the local
+ledger is not secure erasure — see [operations](docs/operations.md) and
+[security](docs/security.md).
+
+Extraction and relation checks run as Hermes auxiliary calls, whose per-task
+timeout defaults to 30 seconds — easy to exceed on a slow local model. Raise
+`auxiliary.qdrant_memory_extraction.timeout` (seconds) for fully local
+deployments; a timed-out extraction is retained as failed work and requeued
+with `hermes qdrant-memory retry`.
 
 ## Configuration and migration
 

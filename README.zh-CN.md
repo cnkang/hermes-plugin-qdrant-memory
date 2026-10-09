@@ -1,11 +1,16 @@
 # Hermes Qdrant 记忆插件
 
-> **v0.1.0：可进行有限技术预览（Ready for limited technical preview）。** PR #10、#11 和
-> [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12) 均已合并。
+[![CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml)
+[![Platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+> **v0.1.0：可进行有限技术预览（Ready for limited technical preview）。** PR #10–#14 均已合并；
+> main `f6a2e97` 已通过 CI、六项跨平台检查及实际执行的 Cloud 集成测试。
 > 预览要求每个目的地仅一个写入者，并接受文档中的持久化边界。
-> 合并后的 main `32bd4e7` 已通过 CI、六项跨平台检查及实际执行的 Cloud 集成测试。
+> 全新 home 的实时 Quick Start 演练（本地 Ollama）已通过安装、自动提取、召回、更新、删除与重启。
 > 尚未打标签或发布。证据和支持边界见[验证记录](docs/validation.md)与
-> [最终审查报告](PRE_RELEASE_FINAL_REVIEW.md)。
+> [最终审查报告](docs/releases/PRE_RELEASE_FINAL_REVIEW.md)。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -41,6 +46,18 @@ hermes qdrant-memory init
 支持仓库安装的 Hermes 版本也可以使用
 `hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory`。
 
+需要可复现安装时，请检出发布 tag 而不是跟随 `main`（首个发布为 `v0.1.0`，
+tag 见 [releases 页面](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)）：
+
+```bash
+git clone --branch v0.1.0 --depth 1 \
+  https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
+  "$HERMES_HOME/plugins/qdrant-memory"
+```
+
+发布说明、支持的 Hermes/Python 版本与当前限制记录在
+[docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)；`main` 始终是开发线。
+
 本地开发也可以将 checkout 链接到一个专用、可丢弃的 profile：
 
 ```bash
@@ -65,6 +82,9 @@ hermes config set memory.provider qdrant-memory
   后台 worker 提取和提交；会话缓存检索。
 - 基于权威 `previous_content` 镜像 builtin memory，支持重试和崩溃恢复。
 - Mem0 JSON/Qdrant 只读迁移，保留来源 ID、支持 dry-run/resume/verify 和增量更新。
+
+与托管式记忆服务不同，所有数据都保存在你自己的 Qdrant 目的地，插件不调用任何
+外部记忆服务；从 Mem0 的迁移是单向的，0.1 不支持向量复用或 hybrid 检索。
 
 相似度仅用于筛选需要复核的候选。事实关系 `SAME` 才跳过，`SUPERSEDES` 更新，
 `CONFLICT` 新增并记录关联，`UNRELATED` 新增。迁移按 source ID 映射，不做语义合并。
@@ -104,6 +124,37 @@ hermes qdrant-memory retry
 可在 writer 运行时检查状态。
 `retry` 重试已准备的操作，并让原始失败事件在下次 provider 启动时重新提取。
 维护 embedded 数据库前停止 agent：本地持久化只允许一个 client 进程持有锁。
+
+## 数据流与隐私
+
+本 provider 只会把数据发往你配置的服务。各组件携带的内容与去向：
+
+| 组件 | 携带内容 | 去向 |
+| --- | --- | --- |
+| 对话/agent 轮次 | 你的对话内容 | Hermes 会话配置的模型 |
+| 记忆提取（`llm.mode: inherit`） | 本轮用户与助手的文本 | 同一会话模型——主模型在云端时，轮次文本会到达该云端 |
+| 事实关系判断 | 候选记忆与相似的已存记忆 | 与提取相同的路由；仅在相似度选中复核候选时触发 |
+| 向量化（`embedding`） | 记忆与搜索文本 | 默认本地 Ollama，或你配置的 OpenAI 兼容端点 |
+| 存储（`qdrant`） | 记忆 payload 与来源信息；账本保留在本地 | 本地 embedded、自托管 server 或 Qdrant Cloud |
+
+三种常见部署：
+
+| 部署 | 对话模型 | 提取 LLM | 向量化 | 存储 |
+| --- | --- | --- | --- | --- |
+| 全离线 | 本地（如 Ollama） | 继承本地模型 | 本地 Ollama | 本地 embedded |
+| 混合 | 云端 | 默认继承云端模型 | 本地 Ollama | 本地 embedded |
+| 全云端 | 云端 | 云端 | OpenAI 兼容端点 | Qdrant Cloud |
+
+混合部署中，提取与关系判断默认继承会话模型；若对话文本不应到达主模型的
+provider，可将提取路由到其他模型（`llm.mode: task` 并结合插件的辅助任务解析到
+本地模型，或 `llm.mode: override` 显式指定 provider 与模型）。提取指令会排除
+明显的凭据与瞬时状态，但任何被配置的 LLM 或 Qdrant 目的地都可能看到其处理的
+记忆内容，请据此评估信任边界。本地账本的逻辑清理不等于安全擦除——见
+[运维文档](docs/operations.md)与[安全文档](docs/security.md)（英文）。
+
+提取与关系判断通过 Hermes 辅助调用执行，其按任务超时默认 30 秒，本地慢模型很容易
+超时。全本地部署请调大 `auxiliary.qdrant_memory_extraction.timeout`（秒）；超时的
+提取会保留为失败工作，可用 `hermes qdrant-memory retry` 重新排队。
 
 ## 配置与迁移
 
