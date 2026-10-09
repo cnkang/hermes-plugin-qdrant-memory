@@ -168,13 +168,31 @@ def scope_delete_intent(user_id, agent_id=None, all_agents=False):
     }
 
 
+def decode_scope_delete_record(intent):
+    """Decode one stored intent row into its recorded value ({} when unreadable)."""
+    try:
+        return json.loads(intent.get("scope_json") or "{}")
+    except ValueError:
+        return {}
+
+
+def is_legacy_scope_delete(recorded):
+    """True when a decoded intent record is not a current-schema object.
+
+    Pre-versioned records cannot distinguish a single-agent deletion of the
+    literal agent id ``'*'`` from an all-agents deletion. Every caller must
+    treat them as ambiguous and refuse automatic recovery.
+    """
+    return not isinstance(recorded, dict) or recorded.get("schema_version") != INTENT_SCHEMA_VERSION
+
+
 def parse_scope_delete_intent(recorded):
     """Return ``(all_agents, user_id, agent_id)`` for an explicit intent.
 
     Pre-versioned intents are ambiguous and raise
     :class:`ScopeDeleteLegacyIntentError` instead of being guessed.
     """
-    if not isinstance(recorded, dict) or recorded.get("schema_version") != INTENT_SCHEMA_VERSION:
+    if is_legacy_scope_delete(recorded):
         user = recorded.get("user_id") if isinstance(recorded, dict) else None
         raise ScopeDeleteLegacyIntentError(user if isinstance(user, str) else "")
     mode = recorded.get("mode")

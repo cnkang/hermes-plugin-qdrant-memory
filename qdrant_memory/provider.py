@@ -21,10 +21,11 @@ from .models import Scope
 from .ownership import WriterLease
 from .qdrant_store import QdrantStore, build_client
 from .reset import (
-    INTENT_SCHEMA_VERSION,
     ScopeDeleteLegacyIntentError,
     ScopeDeleteRecoveryRequiredError,
+    decode_scope_delete_record,
     has_pending_reset,
+    is_legacy_scope_delete,
     pending_scope_deletes,
     resume_destination_reset,
 )
@@ -112,13 +113,8 @@ class QdrantMemoryProvider(MemoryProvider):
                 # cannot be resumed automatically (their recorded form is
                 # ambiguous); they require explicit operator disambiguation.
                 for intent in pending_deletes:
-                    try:
-                        recorded = json.loads(intent.get("scope_json") or "{}")
-                    except ValueError:
-                        recorded = {}
-                    if not isinstance(recorded, dict) or (
-                        recorded.get("schema_version") != INTENT_SCHEMA_VERSION
-                    ):
+                    recorded = decode_scope_delete_record(intent)
+                    if is_legacy_scope_delete(recorded):
                         user = recorded.get("user_id") if isinstance(recorded, dict) else None
                         raise ScopeDeleteLegacyIntentError(user if isinstance(user, str) else "")
                 raise ScopeDeleteRecoveryRequiredError()

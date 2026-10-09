@@ -724,6 +724,30 @@ def test_corrupt_legacy_intent_is_refused_not_crashed(tmp_path, monkeypatch, cap
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_delete_legacy_intent"
 
 
+def test_legacy_intent_without_agent_id_refuses_single_agent(tmp_path, monkeypatch):
+    """An agentless legacy record cannot be resolved as a single-agent deletion."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(cfg, [(1, payload("alpha fact", Scope("u1", None), "manual", "s1"))])
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    begin_scope_delete(ledger, {"user_id": "u1"})
+    ledger.close()
+    with pytest.raises(ScopeDeleteRefusedError):
+        run(
+            parser.parse_args(
+                ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--confirm"]
+            ),
+            home=tmp_path,
+        )
+    resolved = run(
+        parser.parse_args(
+            ["delete-all", "--user", "u1", "--resolve-legacy", "all_agents", "--confirm"]
+        ),
+        home=tmp_path,
+    )
+    assert resolved["deleted"] == 1 and resolved["scope"]["mode"] == "all_agents"
+    assert scope_delete_intents(tmp_path, cfg) == []
+
+
 def test_all_agents_resume_after_partial_deletion(tmp_path, monkeypatch, capsys):
     """An interrupted --all-agents run resumes without widening or loss.
 
