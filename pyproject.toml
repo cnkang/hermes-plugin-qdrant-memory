@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Standalone durable Qdrant memory provider for Hermes Agent"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = ["qdrant-client>=1.15,<2", "httpx>=0.28,<1", "portalocker>=3.2,<4"]
 

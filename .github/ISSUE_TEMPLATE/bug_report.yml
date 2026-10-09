@@ -38,6 +38,17 @@ body:
       label: Python version
     validations:
       required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
   - type: textarea
     id: what
     attributes:
