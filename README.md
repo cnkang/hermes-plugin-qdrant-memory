@@ -203,8 +203,8 @@ commands and provider startup return `scope_delete_recovery_required` until
 `delete-all --confirm` resumes it. Deletion intents are versioned and explicit.
 A pre-versioned intent cannot show whether `*` is a single agent or all agents,
 so the plugin refuses it (`scope_delete_legacy_intent`). Resolve it with
-`--resolve-legacy single_agent` or `--resolve-legacy all_agents`. Turns
-admitted after the deletion can still
+`--resolve-legacy single_agent`, or with `--resolve-legacy all_agents` when the
+record's agent is `*` or absent. Turns admitted after the deletion can still
 add new memories; everything admitted before it — stored memories, prepared
 writes and unprocessed turn events — is removed or invalidated. `list`,
 `export` and `delete-all` do not require the embedding service.

@@ -35,10 +35,11 @@ Scoped deletion intents are versioned and explicit. The plugin records
 `single_agent` and `all_agents` modes, and a literal agent id `*` is an
 ordinary scope. A pre-versioned intent cannot show the difference, so the
 plugin refuses it (`scope_delete_legacy_intent`). An operator resolves it with
-`delete-all --resolve-legacy single_agent|all_agents`. Fault-injection
+`delete-all --resolve-legacy single_agent|all_agents` (the all-agents option
+applies only to ambiguous records: agent `*` or absent). Fault-injection
 regressions cover interruption after the intent and fences commit, partial
 multi-scope deletion and resume, resume scope restoration, and both legacy
-resolution paths. The full local suite passes (299 tests, 1 skipped). These
+resolution paths. The full local suite passes (301 tests, 1 skipped). These
 post-release changes are validated by their own pull-request gates; the
 v0.1.0 certification runs above do not cover them.
 

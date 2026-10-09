@@ -748,6 +748,37 @@ def test_legacy_intent_without_agent_id_refuses_single_agent(tmp_path, monkeypat
     assert scope_delete_intents(tmp_path, cfg) == []
 
 
+def test_legacy_intent_with_concrete_agent_refuses_all_agents(tmp_path, monkeypatch):
+    """An unambiguous legacy record never widens to an all-agents deletion."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1, payload("bot fact", Scope("u1", "bot"), "manual", "s1")),
+            (2, payload("hermes fact", Scope("u1", "hermes"), "manual", "s1")),
+        ],
+    )
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    begin_scope_delete(ledger, {"user_id": "u1", "agent_id": "bot"})
+    ledger.close()
+    with pytest.raises(ScopeDeleteRefusedError):
+        run(
+            parser.parse_args(
+                ["delete-all", "--user", "u1", "--resolve-legacy", "all_agents", "--confirm"]
+            ),
+            home=tmp_path,
+        )
+    resolved = run(
+        parser.parse_args(
+            ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--confirm"]
+        ),
+        home=tmp_path,
+    )
+    assert resolved["deleted"] == 1 and resolved["scope"]["agent_id"] == "bot"
+    listed = run(parser.parse_args(["list"]), home=tmp_path)
+    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "hermes fact"
+
+
 def test_all_agents_resume_after_partial_deletion(tmp_path, monkeypatch, capsys):
     """An interrupted --all-agents run resumes without widening or loss.
 

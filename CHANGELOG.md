@@ -7,8 +7,9 @@
 - Scoped deletion intents are versioned and explicit. A literal agent id `*`
   is an ordinary scope and never selects all agents. A pre-versioned intent is
   refused (`scope_delete_legacy_intent`) until resolved with
-  `delete-all --resolve-legacy single_agent|all_agents`. The `delete-all`
-  result `scope` field reflects the versioned intent.
+  `delete-all --resolve-legacy single_agent`, or `--resolve-legacy all_agents`
+  when the recorded agent is `*` or absent. The `delete-all` result `scope`
+  field reflects the versioned intent.
 - `--all-agents` deletions fence prepared writes and supersede pending turn
   events in single bounded passes. Multi-scope runs recover from interruption
   without widening the recorded scope set.
