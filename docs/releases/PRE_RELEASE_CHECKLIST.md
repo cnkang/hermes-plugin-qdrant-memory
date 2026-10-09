@@ -1,17 +1,18 @@
 # v0.1.0 Pre-release Checklist
 
-## Post-merge status (2026-10-09, PRs #15–#17)
+## Post-merge status (2026-10-09, PRs #15–#18)
 
-PRs #10–#17 are merged. Current main
-`ff5712d318f48054da3443598f58f6793d610514` has the following recorded results:
+PRs #10–#18 are merged. The earlier
+`ff5712d318f48054da3443598f58f6793d610514` snapshot has the following recorded
+results:
 
 - **PASS** — [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162232), including the required security gate.
 - **PASS** — [Six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162226).
 - **PASS** — [Authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162253); the test step executed, without changing main-only protection.
 - **PASS** — Live Quick Start drill (2026-10-09): a fresh home with local Ollama completed install, automatic extraction, cross-session recall, update, delete and restart; see [validation evidence](../validation.md).
 - **READY FOR LIMITED TECHNICAL PREVIEW** — One writer per destination across all profiles/hosts; documented admission, retention and capacity limits remain.
-- **NOT PUBLISHED** — No tag or GitHub Release. These results do not declare public beta.
-- **PENDING RE-CERTIFICATION** — Scoped-deletion hardening (finalization PR): validated on its head; the gates on main are recorded at release time.
+- **RELEASE PENDING** — `v0.1.0`: the tag and GitHub Release will be created from this certification record (2026-10-09); these results do not declare public beta.
+- **CURRENT CERTIFIED REVISION** — Scoped-deletion hardening (finalization PR [#18](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/18)): merged as `112e403c414f90905325322bab135493a0b03b85`; the gates on main are all green on 2026-10-09 ([CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752887), [six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752957), [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752899)). `v0.1.0` will be created from this record commit; no functional changes since.
 
 Intermediate snapshot (2026-10-09, PRs #13–#14): main
 `f6a2e97f9cd16c4aed3ba2590bfcf36176ee5e29` passed

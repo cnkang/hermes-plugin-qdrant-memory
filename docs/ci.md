@@ -5,8 +5,9 @@ optional Cloud workflow with missing credentials is SKIPPED, not Cloud validatio
 The `qdrant-cloud` environment currently allows only `main`; keep this restriction.
 Branch rejection is a release gate, not permission to weaken secret protection.
 Latest-Hermes tracking remains separate from the immutable compatibility matrix.
-Merged main `ff5712d` passed CI, the platform matrix and executed authenticated
-Cloud integration after PRs #15–#17 merged; the earlier `f6a2e97`/`32bd4e7`
+Merged main `112e403c` passed CI, the platform matrix and executed authenticated
+Cloud integration after the finalization PR #18 merged. The earlier `ff5712d`,
+`f6a2e97` and `32bd4e7`
 snapshots remain in the validation record.
 See [validation evidence](validation.md) for exact-SHA run links and the
 [acceptance report](releases/PRE_RELEASE_FINAL_REVIEW.md) for support limits.

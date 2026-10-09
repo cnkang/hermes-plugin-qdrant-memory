@@ -2,7 +2,7 @@
 
 ## 0.1.0
 
-Unreleased; no tag or GitHub Release has been published.
+Limited technical preview; the `v0.1.0` release will be created from this certification record (2026-10-09).
 
 - Merged PR #10: durable destination reset intents and crash recovery, scoped
   deletion fences, terminal payload scrubbing, resource cleanup, platform matrix

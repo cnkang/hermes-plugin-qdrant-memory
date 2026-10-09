@@ -5,13 +5,12 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **v0.1.0: Ready for limited technical preview.** PRs #10–#17 are merged; main
-> `ff5712d` passed CI, all six platform jobs and authenticated Cloud integration.
-> Preview supports one writer per destination with the documented durability limits.
-> A live Quick Start drill (fresh home, local Ollama) passed install, extraction,
-> recall, update, delete and restart. No release has been tagged or published. See
-> [validation evidence](docs/validation.md) for the exact run links and the drill
-> record, and the [final review](docs/releases/PRE_RELEASE_FINAL_REVIEW.md).
+> **v0.1.0 — limited technical preview.** Give Hermes Agent durable, private
+> long-term memory: your conversations become searchable memories in your own
+> Qdrant store, with recall, update and scoped deletion under your control.
+> The preview supports one writer per destination, with the documented
+> durability limits. See the [validation record](docs/validation.md) for the
+> current certification.
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -34,12 +33,8 @@ flowchart LR
 ## Install
 
 Requirements: Python 3.11+, a compatible Hermes installation, and a reachable
-embedding service. The minimum complete Hermes contract is v2026.9.24
-(`f97608f178d1ffeca59860195ab7da295f7c8e5f`). The required CI matrix tests that
-minimum, pinned Hermes `4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`, and the reviewed
-upstream snapshot `3dadeb9246f4eabeee893b128ab41aa917ce28f7`. A separate scheduled
-and manually dispatched tracker tests the latest Hermes `main` and records its
-checked-out SHA; it is not part of the immutable release gate.
+embedding service. The minimum supported Hermes release is v0.21.5 (v2026.9.24).
+The [CI services](docs/ci.md) page documents the tested host versions.
 The default model needs Ollama and enough local resources
 to serve `qwen3-embedding:4b`.
 
@@ -340,10 +335,8 @@ checks. Read [configuration](docs/configuration.md), [migration](docs/migration-
 
 Run Ruff lint and format checks before committing, and install the repository
 pre-commit hook as described in [development setup](docs/development.md). The hook
-checks the staged snapshot. CI runs lint, both Python versions and Snyk in
-parallel; SonarCloud follows coverage collection. The required matrix uses immutable
-Hermes refs. The separate latest-main tracker is scheduled weekly or manually, reports
-the exact Hermes SHA tested, and does not gate releases.
+checks the staged snapshot. CI runs lint, both Python versions, Snyk and
+SonarCloud. See [CI services](docs/ci.md) for the tested host versions and lanes.
 
 Build isolated dependency environments with Hermes PM, then run the host's
 canonical test runner against this repository's tests. The tests import the real
@@ -379,9 +372,7 @@ mixed-language and hard-negative cases. The original 12-query recording and late
 not production recall claims. See the [recovery benchmark](docs/recovery-benchmark.md)
 for a separate synthetic replay and retained-storage measurement.
 
-CI runs tests, SonarCloud quality gates and Snyk dependency/code scans. An always-run
-required gate rejects failed, cancelled or skipped scans without exposing tokens to
-fork code. CodeRabbit is a separate GitHub App and may require manual review triggers.
+CI runs tests, SonarCloud quality gates and Snyk dependency/code scans.
 See [CI service setup](docs/ci.md) and [validation evidence](docs/validation.md).
 
 ## License

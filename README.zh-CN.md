@@ -5,12 +5,9 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **v0.1.0：可进行有限技术预览（Ready for limited technical preview）。** PR #10–#17 均已合并；
-> main `ff5712d` 已通过 CI、六项跨平台检查及实际执行的 Cloud 集成测试。
-> 预览要求每个目的地仅一个写入者，并接受文档中的持久化边界。
-> 全新 home 的实时 Quick Start 演练（本地 Ollama）已通过安装、自动提取、召回、更新、删除与重启。
-> 尚未打标签或发布。证据、精确 run 链接与演练记录见[验证记录](docs/validation.md)，
-> 支持边界见[最终审查报告](docs/releases/PRE_RELEASE_FINAL_REVIEW.md)。
+> **v0.1.0 —— 有限技术预览（limited technical preview）。** 为 Hermes Agent 带来持久、私有的长期记忆：
+> 对话内容会沉淀为你自有 Qdrant 存储中的可检索记忆，召回、更新与按作用域删除均由你掌控。
+> 预览版要求每个目的地仅一个写入者，并遵循文档中的持久化边界。当前认证见[验证记录](docs/validation.md)。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -20,11 +17,8 @@
 
 ## 安装与启用
 
-需要 Python 3.11+、兼容的 Hermes 和可访问的 embedding 服务。Hermes 最低完整兼容
-版本为 v2026.9.24 (`f97608f178d1ffeca59860195ab7da295f7c8e5f`)。必需 CI 矩阵测试
-最低版本、固定提交 `4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`，以及已复核的
-upstream 快照 `3dadeb9246f4eabeee893b128ab41aa917ce28f7`。另有每周和手动触发的
-最新 Hermes `main` 跟踪工作流，会记录实际检出的 SHA；它不属于不可变发布门禁。
+需要 Python 3.11+、兼容的 Hermes 和可访问的 embedding 服务。最低支持的 Hermes
+版本为 v0.21.5（v2026.9.24）；已测试的主机版本见 [CI 服务](docs/ci.md)。
 默认 embedding 为 Ollama `qwen3-embedding:4b`，维度 2560；请准备足够的本机资源。
 
 明确选择当前 profile 的 home，不要复用其他 profile 的数据：
@@ -318,13 +312,11 @@ PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate.py
 重放与账本存储的独立合成测量见[恢复基准](docs/recovery-benchmark.md)（英文）。
 
 提交前运行 Ruff lint 和格式检查，并按[开发指南](docs/development.md)（英文）
-安装仓库 pre-commit hook。hook 检查暂存内容；CI 的 lint、Python 测试矩阵和
-Snyk 并行运行，SonarCloud 等待覆盖率结果。必需矩阵使用不可变 Hermes 提交；另一个
-每周/手动的最新 main 跟踪工作流会记录被测 SHA，不作为发布门禁。
+安装仓库 pre-commit hook。hook 检查暂存内容；CI 运行 lint、Python 测试、
+Snyk 与 SonarCloud。已测试的主机版本与各 lane 见 [CI 服务](docs/ci.md)。
 
-CI 包含 Python 3.11/3.14、SonarCloud 与 Snyk 依赖/源码扫描；必需 gate 会拒绝
-failed/cancelled/skipped 扫描，fork 代码拿不到扫描 token。CodeRabbit 是独立
-GitHub App，可能要求手动触发。见[CI 配置](docs/ci.md)（英文）。
+CI 运行测试、SonarCloud 质量门禁与 Snyk 依赖/源码扫描。
+见[CI 配置](docs/ci.md)（英文）。
 
 ## 许可证
 
