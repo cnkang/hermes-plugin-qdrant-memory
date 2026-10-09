@@ -51,15 +51,19 @@ so older admitted events cannot recreate the same content under a different poin
 ID; a later newly admitted event may intentionally add it again. The tombstone
 contains a hash, not the deleted text, and remains until destination reset.
 A scoped `delete-all` reuses that fence family: it records a durable deletion
-intent, commits a scope-bound tombstone for every enumerated point, deletes the
-scope in one filtered operation and clears the intent only after the scope is
-empty. An interrupted scoped deletion fails closed — other destination commands
-report `scope_delete_recovery_required` until `delete-all` resumes it. Turns
-admitted after the deletion can still add new memories; the operation removes
-stored memories and prepared writes, not future intent. `list` and `export`
-read the collection without embedding calls; an export is a portable JSON
-document accepted by the Mem0 importer for restore into a fresh destination
-(imports re-embed).
+intent, commits a scope-bound tombstone for every enumerated point and for every
+prepared write in the scope (including writes whose points were never stored),
+deletes the scope in one filtered operation and clears the intent only after the
+scope is empty. Fence rows are durable tombstones — one per fenced identity,
+retained until destination reset — and repeated resumes of the same interrupted
+deletion reuse identical rows instead of accumulating duplicates. An interrupted
+scoped deletion fails closed: other destination commands and provider startup
+report `scope_delete_recovery_required` until `delete-all --confirm` resumes it.
+Turns admitted after the deletion can still add new memories; the operation
+removes stored memories and prepared writes, not future intent. `list` and
+`export` read the collection without an embedding service; an export is a
+portable JSON document accepted by the Mem0 importer for restore into a fresh
+destination (imports re-embed).
 System prompt text and tool schemas remain
 static through the conversation.
 

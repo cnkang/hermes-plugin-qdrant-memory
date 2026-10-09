@@ -2,6 +2,7 @@
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 from .models import now
@@ -40,9 +41,10 @@ def memory_view(point):
 def export_record(point):
     """Return one stored memory in the shape the Mem0 JSON importer accepts.
 
-    Source identity is preserved for round trips: memories migrated from Mem0
-    export their original Mem0 ID, and native memories export their point UUID
-    as the record ID. Vectors are never exported; imports re-embed.
+    Round trips preserve text, scope, categories and timestamps. Memories
+    migrated from Mem0 export their original Mem0 ID and re-import to the same
+    point; native memories export their point UUID for provenance, and
+    re-imports re-embed and derive fresh point IDs. Vectors are never exported.
     """
     value = point.payload or {}
     origin = value.get("cloud_origin")
@@ -58,8 +60,14 @@ def export_record(point):
     }
     if value.get("agent_id") is not None:
         record["agent_id"] = value["agent_id"]
-    if value.get("metadata"):
-        record["metadata"] = value["metadata"]
+    metadata = value.get("metadata")
+    if isinstance(metadata, dict) and origin.get("provider") == "mem0":
+        # Round-trip fidelity: a Mem0-origin payload stores its source metadata
+        # under "legacy_mem0"; export the original object so re-import does not
+        # nest the wrapper inside another wrapper.
+        metadata = metadata.get("legacy_mem0", metadata)
+    if metadata:
+        record["metadata"] = metadata
     return record
 
 
@@ -86,8 +94,10 @@ def write_export(path, document, force=False):
     path = Path(path)
     if path.exists() and not force:
         raise ExportTargetExistsError("Export target already exists; pass --force to overwrite it")
-    temporary = path.with_name(path.name + ".tmp")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=path.name + ".", suffix=".tmp"
+    )
+    temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(document, handle, ensure_ascii=False, indent=2)

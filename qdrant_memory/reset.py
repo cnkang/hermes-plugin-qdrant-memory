@@ -4,7 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from .models import digest
+from .models import digest, now
 
 RESET_INTENTS_TABLE = "qdrant_reset_intents"
 SCOPE_DELETES_TABLE = "qdrant_scope_deletes"
@@ -99,13 +99,25 @@ class ScopeDeleteRecoveryRequiredError(ValueError):
         """Initialize the actionable recovery error."""
         super().__init__(
             "An interrupted scoped deletion is pending; rerun "
-            "`hermes qdrant-memory delete-all` with the same scope to resume it "
+            "`hermes qdrant-memory delete-all --confirm` to resume it "
             "before using this destination."
         )
 
 
 class ScopeDeleteRefusedError(ValueError):
     """Refuse a scoped deletion that cannot be authorized or completed safely."""
+
+
+class ScopeDeleteIncompleteError(ValueError):
+    """Report a scoped deletion that ended with points still stored."""
+
+    def __init__(self):
+        """Initialize the actionable incomplete-deletion error."""
+        super().__init__(
+            "Scoped deletion incomplete: the scope still contains points. "
+            "The durable intent remains; rerun `hermes qdrant-memory "
+            "delete-all --confirm` to resume it."
+        )
 
 
 def scope_delete_key(scope):
@@ -133,7 +145,7 @@ def pending_scope_deletes(ledger):
         return [
             dict(row)
             for row in ledger.db.execute(
-                "SELECT scope, scope_json FROM qdrant_scope_deletes WHERE collection=?",
+                "SELECT scope, scope_json, created_at FROM qdrant_scope_deletes WHERE collection=?",
                 (ledger.collection,),
             )
         ]
@@ -157,23 +169,33 @@ def pending_scope_deletes_file(home, collection):
 
 
 def begin_scope_delete(ledger, scope):
-    """Commit a scoped-deletion intent before any remote deletion can begin."""
+    """Commit a scoped-deletion intent before any remote deletion can begin.
+
+    Returns the durable intent timestamp so every resume reuses identical
+    fence identities instead of accumulating duplicate tombstones.
+    """
     scope_value = scope.as_dict() if hasattr(scope, "as_dict") else dict(scope)
+    key = scope_delete_key(scope_value)
     with ledger.lock, ledger.db:
         ledger.db.execute(
             """CREATE TABLE IF NOT EXISTS qdrant_scope_deletes (
                 collection TEXT NOT NULL,
                 scope TEXT NOT NULL,
                 scope_json TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_at TEXT NOT NULL,
                 PRIMARY KEY (collection, scope)
             )"""
         )
         ledger.db.execute(
-            "INSERT OR IGNORE INTO qdrant_scope_deletes(collection, scope, scope_json) "
-            "VALUES(?, ?, ?)",
-            (ledger.collection, scope_delete_key(scope_value), json.dumps(scope_value)),
+            "INSERT OR IGNORE INTO qdrant_scope_deletes(collection, scope, scope_json, created_at) "
+            "VALUES(?, ?, ?, ?)",
+            (ledger.collection, key, json.dumps(scope_value), now()),
         )
+        row = ledger.db.execute(
+            "SELECT created_at FROM qdrant_scope_deletes WHERE collection=? AND scope=?",
+            (ledger.collection, key),
+        ).fetchone()
+    return row[0] if row else ""
 
 
 def finish_scope_delete(ledger, scope_key):
