@@ -122,11 +122,13 @@ Minimum supported host release: v0.21.5
 probed empirically on 2026-10-09: v0.21.0–v0.21.2 cannot import required host APIs
 (24 test modules fail collection); v0.21.3 fails host-lifecycle contracts; v0.21.4
 lacks profile-scoped secret resolution (`set_secret_scope(profile_home=...)`).
-Local full suites use the minimum tag's native runner on Python 3.11 and pinned
+Local full suites (2026-10-06 snapshot runs) used the minimum tag's native runner
+on Python 3.11 and the fixed supported-range host
 `4787e4d56fc8d9265d4c7d3c0fe5accee86b4078` on Python 3.14: 19 files,
-104 passed, one optional Cloud skip. The required CI matrix validates the minimum
-release and the latest Hermes `main` on both Python versions; each latest-main run
-records its checked-out SHA, so a green run applies to that exact SHA.
+104 passed, one optional Cloud skip. Those runs do not validate the moving `main`.
+The current required CI matrix validates the minimum release and the latest Hermes
+`main` on both Python versions; each latest-main run records its checked-out SHA, so
+a green run applies only to that exact SHA.
 
 Real native setup, checkpoint v2 normalization/compression and session-manager
 paths are exercised. The weekly/manual tracker also requires a host lifecycle test

@@ -4,7 +4,8 @@ Candidate validation must name the plugin SHA and actual test execution. A green
 optional Cloud workflow with missing credentials is SKIPPED, not Cloud validation.
 The `qdrant-cloud` environment currently allows only `main`; keep this restriction.
 Branch rejection is a release gate, not permission to weaken secret protection.
-Latest-Hermes tracking remains separate from the immutable compatibility matrix.
+The compatibility matrix combines an immutable minimum reference with the moving
+latest `main`; the weekly tracker adds the host sync-boundary checks.
 Merged main `112e403c` passed CI, the platform matrix and executed authenticated
 Cloud integration after the finalization PR #18 merged. The earlier `ff5712d`,
 `f6a2e97` and `32bd4e7`

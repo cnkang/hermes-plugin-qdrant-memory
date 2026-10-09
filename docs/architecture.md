@@ -129,9 +129,10 @@ deletion/recreation is recoverable rather than atomic.
 
 v0.1 supports dense retrieval only. Sparse/hybrid retrieval, reranking and recency
 weighting are future work. Host embedding inheritance is feature-detected and requires
-an explicit fallback. The minimum complete Hermes contract is v2026.9.24; earlier
-tags lack required authoritative builtin replacement metadata. Live Server REST/gRPC
+an explicit fallback. The minimum supported Hermes release is v0.21.5 (v2026.9.24);
+earlier tags lack required authoritative builtin replacement metadata. Live Server REST/gRPC
 tests and optional authenticated Cloud tests remain separate validation lanes.
-Required compatibility CI uses immutable Hermes commits, including reviewed upstream
-snapshot `3dadeb9246f4eabeee893b128ab41aa917ce28f7`; the scheduled/manual latest-main
-tracker is separate and records the actual Hermes SHA for each run.
+Required compatibility CI validates the minimum supported release and the latest
+Hermes `main`, recording the checked-out `main` SHA in each run summary. The
+`MemoryManager.sync_all()` host-lifecycle check runs as a weekly/manual tracker on
+top of the required latest-main lane.
