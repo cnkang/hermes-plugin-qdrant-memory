@@ -117,7 +117,7 @@ jobs:
           HERMES_HOME: ${{ runner.temp }}/wheel-home
           HERMES_RUNTIME_DIR: ${{ runner.temp }}/wheel-runtime
         run: |
-          python -m pm.build_env --out "$RUNNER_TEMP/wheel-build-env" --requirement 'setuptools>=75,<83' --requirement 'wheel>=0.45,<1'
+          python -m pm.build_env --out "$RUNNER_TEMP/wheel-build-env" --requirement 'setuptools>=77,<83' --requirement 'wheel>=0.45,<1'
           cd "$GITHUB_WORKSPACE"
           "$RUNNER_TEMP/wheel-build-env/bin/python" -c 'import os, setuptools.build_meta as b; b.build_wheel(os.environ["RUNNER_TEMP"] + "/plugin-wheel")'
           cd .pm-host
