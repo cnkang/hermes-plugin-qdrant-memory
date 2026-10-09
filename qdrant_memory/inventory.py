@@ -58,8 +58,10 @@ def export_record(point):
         "categories": value.get("category") or [],
         "hash": value.get("content_hash"),
     }
-    if value.get("agent_id") is not None:
-        record["agent_id"] = value["agent_id"]
+    # Always export the scope's agent explicitly: an omitted field would let an
+    # importer substitute its default agent (the profile scope) and silently
+    # move no-agent memories into that agent's scope.
+    record["agent_id"] = value.get("agent_id")
     metadata = value.get("metadata")
     if isinstance(metadata, dict) and origin.get("provider") == "mem0":
         # Round-trip fidelity: a Mem0-origin payload stores its source metadata
