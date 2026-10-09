@@ -144,7 +144,7 @@ jobs:
   sonarcloud:
     name: SonarCloud quality gate
     needs: tests
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -168,7 +168,7 @@ jobs:
 
   snyk:
     name: Snyk dependency security
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -212,7 +212,7 @@ jobs:
 
   snyk-code:
     name: Snyk code security
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -273,8 +273,26 @@ jobs:
           SONAR_RESULT: ${{ needs.sonarcloud.result }}
           SNYK_RESULT: ${{ needs.snyk.result }}
           SNYK_CODE_RESULT: ${{ needs.snyk-code.result }}
+          DEPENDABOT: ${{ github.event_name == 'pull_request' && github.actor == 'dependabot[bot]' }}
         run: |
-          if [ "$LINT_RESULT" != success ] || [ "$TEST_RESULT" != success ] || [ "$SONAR_RESULT" != success ] || [ "$SNYK_RESULT" != success ] || [ "$SNYK_CODE_RESULT" != success ]; then
-            echo "::error::Required checks did not succeed: lint=$LINT_RESULT tests=$TEST_RESULT sonarcloud=$SONAR_RESULT snyk=$SNYK_RESULT snyk-code=$SNYK_CODE_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
+          if [ "$LINT_RESULT" != success ] || [ "$TEST_RESULT" != success ]; then
+            echo "::error::Required checks did not succeed: lint=$LINT_RESULT tests=$TEST_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
+            exit 1
+          fi
+          if [ "$DEPENDABOT" = "true" ]; then
+            for result in "$SONAR_RESULT" "$SNYK_RESULT" "$SNYK_CODE_RESULT"; do
+              case "$result" in
+                success|skipped) ;;
+                *)
+                  echo "::error::Dependabot scanner did not skip cleanly: sonarcloud=$SONAR_RESULT snyk=$SNYK_RESULT snyk-code=$SNYK_CODE_RESULT."
+                  exit 1
+                  ;;
+              esac
+            done
+            echo "Dependabot pull request: credentialed scans are skipped by design and re-run on main after merge."
+            exit 0
+          fi
+          if [ "$SONAR_RESULT" != success ] || [ "$SNYK_RESULT" != success ] || [ "$SNYK_CODE_RESULT" != success ]; then
+            echo "::error::Required checks did not succeed: sonarcloud=$SONAR_RESULT snyk=$SNYK_RESULT snyk-code=$SNYK_CODE_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
             exit 1
           fi

@@ -39,9 +39,32 @@ tests without scanner credentials; their scanner jobs are skipped by conditions.
 A missing required token fails a scanner job only when that job is scheduled.
 The `Required security scan gate` runs with `always()` and fails for any failed,
 cancelled or skipped prerequisite (lint, tests, SonarCloud and both Snyk jobs), including
-safely skipped fork scans. Make this
+safely skipped fork scans. Dependabot pull requests are the one deliberate
+exception: they run lint, tests and the platform matrix, the credentialed
+scanner jobs are skipped because Dependabot runs cannot read repository
+secrets, and the gate accepts exactly those skips for `dependabot[bot]`; the
+credentialed scans run on the resulting push to `main` after merge. Make this
 aggregate gate a required branch check; a skipped scanner job alone is not proof
 of a successful scan. The gate needs no secrets and executes no PR code.
+
+## Dependency updates (Dependabot)
+
+Dependabot opens grouped weekly version updates for the Python dependencies
+and for the GitHub Actions pins (`.github/dependabot.yml`). Repository-level
+security updates are enabled as well. Dependabot pull requests run the lint,
+test and platform jobs; the credentialed scanner jobs are skipped for
+`dependabot[bot]` and re-run on the push to `main` after merge.
+
+## Code scanning (CodeQL)
+
+A separate CodeQL workflow analyzes the plugin's Python sources and its
+GitHub Actions workflows with the `security-extended` query suite. It runs on
+pushes to `main`, on pull requests and on a weekly schedule. Results appear
+under the repository's Security tab as code-scanning alerts. The workflow
+uses immutable action pins and read-only repository permissions, plus
+`security-events: write` for the upload. It is independent of the required
+security scan gate, runs on its own workflow and consumes no repository
+secrets.
 
 ## Latest Hermes tracking
 
