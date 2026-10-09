@@ -16,6 +16,7 @@ from .config import (
 )
 from .embedding import build_embedder
 from .inventory import (
+    ExportPublicationUnsupportedError,
     ExportTargetExistsError,
     memory_view,
     write_export,
@@ -736,6 +737,13 @@ def main(args):
             error.update(
                 code="export_target_exists",
                 message="Export target already exists; pass --force to overwrite it.",
+            )
+        elif isinstance(exc, ExportPublicationUnsupportedError):
+            error.update(
+                code="export_publication_unsupported",
+                message="The export target cannot be written with the atomic no-clobber "
+                "guarantee (hard links unavailable or the target is not writable). "
+                "Pass --force to write without that guarantee, or choose another target.",
             )
         elif isinstance(exc, InitializationChoiceRequiredError):
             error.update(

@@ -3,7 +3,6 @@
 import contextlib
 import json
 import os
-import shutil
 import tempfile
 from pathlib import Path
 
@@ -15,6 +14,10 @@ EXPORT_VERSION = 1
 
 class ExportTargetExistsError(ValueError):
     """Refuse to overwrite an existing export without explicit authorization."""
+
+
+class ExportPublicationUnsupportedError(ValueError):
+    """Refuse a no-clobber export the target filesystem cannot publish atomically."""
 
 
 def memory_view(point):
@@ -80,9 +83,11 @@ def write_export(path, collection, points, force=False):
 
     Records are written incrementally so large scopes never materialize a full
     document in memory. An existing target is refused unless overwrite is
-    explicitly authorized; the refusal is atomic (hard-link publication, with
-    an exclusive-create fallback where hard links are unavailable). Returns
-    the number of exported records.
+    explicitly authorized; the refusal is atomic (hard-link publication).
+    Filesystems without hard links cannot refuse an overwrite without
+    publishing a partial target first, so non-force exports are refused there
+    and ``--force`` must authorize the write instead. Returns the number of
+    exported records.
     """
     path = Path(path)
     if path.exists() and not force:
@@ -131,26 +136,18 @@ def write_export(path, collection, points, force=False):
 def _publish_no_clobber(temporary, path):
     """Publish a written temporary file without ever overwriting a target.
 
-    Hard-link publication is atomic. Filesystems without hard links (FAT,
-    exFAT, some network mounts) fall back to an exclusive create-and-copy,
-    which still refuses to clobber an existing target.
+    Hard-link publication is atomic and is the only supported no-clobber
+    mechanism: a filesystem that cannot hard-link also cannot refuse an
+    overwrite without publishing a partial target first, so the export is
+    refused there and the caller must authorize ``--force`` instead.
     """
     try:
         os.link(temporary, path)
-        return
     except FileExistsError:
-        pass
-    except OSError:
-        try:
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            pass
-        else:
-            try:
-                with os.fdopen(descriptor, "wb") as target, open(temporary, "rb") as source:
-                    shutil.copyfileobj(source, target)
-            except BaseException:
-                path.unlink(missing_ok=True)
-                raise
-            return
-    raise ExportTargetExistsError("Export target already exists; pass --force to overwrite it")
+        raise ExportTargetExistsError(
+            "Export target already exists; pass --force to overwrite it"
+        ) from None
+    except OSError as error:
+        raise ExportPublicationUnsupportedError(
+            "target filesystem does not support atomic no-clobber publication"
+        ) from error
