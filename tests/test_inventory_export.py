@@ -21,6 +21,7 @@ from qdrant_memory.reset import (
     ScopeDeleteRecoveryRequiredError,
     ScopeDeleteRefusedError,
     begin_scope_delete,
+    pending_scope_deletes,
     scope_delete_intent,
 )
 
@@ -55,6 +56,15 @@ def seed(cfg, records):
         )
     finally:
         client.close()
+
+
+def scope_delete_intents(tmp_path, cfg):
+    """Read the durable scoped-deletion intents for the prepared home."""
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    try:
+        return pending_scope_deletes(ledger)
+    finally:
+        ledger.close()
 
 
 def test_list_reports_scopes_and_ledger_backlog(tmp_path, monkeypatch):
@@ -210,10 +220,11 @@ def test_repeated_resume_does_not_duplicate_fences(tmp_path, monkeypatch):
     )
     check.close()
     assert first == second == 2
+    assert scope_delete_intents(tmp_path, cfg) == []
 
 
 def test_provider_startup_fails_closed_while_scope_delete_pending(tmp_path):
-    """Provider startup refuses to replay while a scoped deletion is pending."""
+    """Provider startup refuses to run while a scoped-deletion intent is pending."""
     p = provider(tmp_path)
     namespace = p.ledger.collection
     p.shutdown()
@@ -222,6 +233,10 @@ def test_provider_startup_fails_closed_while_scope_delete_pending(tmp_path):
     ledger.close()
     with pytest.raises(ScopeDeleteRecoveryRequiredError):
         provider(tmp_path)
+    # The refusal must not mutate the recorded intent.
+    ledger = Ledger(tmp_path, namespace)
+    assert len(pending_scope_deletes(ledger)) == 1
+    ledger.close()
 
 
 def test_provider_startup_refuses_legacy_scope_delete_intent(tmp_path):
@@ -370,6 +385,7 @@ def test_resume_restores_recorded_agent_scope(tmp_path, monkeypatch):
         "user_id": "u1",
         "agent_id": "bot",
     }
+    assert scope_delete_intents(tmp_path, cfg) == []
     remaining = run(parser.parse_args(["list"]), home=tmp_path)
     assert remaining["count"]["total"] == 1
     assert remaining["memories"][0]["text"] == "no agent fact"
@@ -463,8 +479,12 @@ def test_scope_delete_error_codes(tmp_path, monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "export_target_exists"
 
 
-def test_single_star_agent_delete_does_not_widen_on_resume(tmp_path, monkeypatch):
-    """A single-agent deletion of the literal agent '*' never widens on resume."""
+def test_single_star_agent_delete_does_not_widen_on_resume(tmp_path, monkeypatch, capsys):
+    """A single-agent deletion of the literal agent '*' never widens on resume.
+
+    Covers interruption after the intent and fences commit but before any
+    remote deletion; a fresh invocation simulates the post-restart state.
+    """
     parser, cfg = prepared_home(tmp_path, monkeypatch)
     seed(
         cfg,
@@ -493,12 +513,39 @@ def test_single_star_agent_delete_does_not_widen_on_resume(tmp_path, monkeypatch
             parser.parse_args(["delete-all", "--user", "u1", "--agent", "*", "--confirm"]),
             home=tmp_path,
         )
+    intents = scope_delete_intents(tmp_path, cfg)
+    assert len(intents) == 1
+    recorded = json.loads(intents[0]["scope_json"])
+    assert recorded["mode"] == "single_agent" and recorded["agent_id"] == "*"
+    # Other commands fail closed with a stable exit status and error JSON.
+    monkeypatch.setattr("qdrant_memory.cli.active_home", lambda: tmp_path)
+    assert main(parser.parse_args(["list"])) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_delete_recovery_required"
     resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
     assert resumed["resumed"] is True and resumed["deleted"] == 1
     assert resumed["scope"]["mode"] == "single_agent"
     assert resumed["scope"]["agent_id"] == "*"
+    assert scope_delete_intents(tmp_path, cfg) == []
+    check = Ledger(tmp_path, ledger_namespace(cfg))
+    source_id = check.delete_fence_source(Scope("u1", "*"))
+    fenced = [
+        row for row in check.rows("operations", status="COMMITTED") if row["source_id"] == source_id
+    ]
+    check.close()
+    assert len(fenced) == 1
     listed = run(parser.parse_args(["list"]), home=tmp_path)
     assert listed["count"]["total"] == 3
+    assert {memory["text"] for memory in listed["memories"]} == {
+        "hermes fact",
+        "no agent fact",
+        "other user fact",
+    }
+    assert (
+        run(parser.parse_args(["list", "--user", "u2", "--agent", "*"]), home=tmp_path)["count"][
+            "total"
+        ]
+        == 1
+    )
     assert run(parser.parse_args(["stats"]), home=tmp_path)["points_count"] == 3
 
 
@@ -520,6 +567,7 @@ def test_all_agents_includes_literal_star_agent_scope(tmp_path, monkeypatch):
     )
     assert result["deleted"] == 3
     assert result["scope"] == {"schema_version": 2, "mode": "all_agents", "user_id": "u1"}
+    assert scope_delete_intents(tmp_path, cfg) == []
     listed = run(parser.parse_args(["list"]), home=tmp_path)
     assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user star"
 
@@ -538,6 +586,7 @@ def test_no_agent_scope_isolated_from_star_agent(tmp_path, monkeypatch):
     assert result["deleted"] == 1
     assert result["scope"]["agent_id"] is None
     assert result["other_agent_scopes"] == {"*": 1}
+    assert scope_delete_intents(tmp_path, cfg) == []
     listed = run(parser.parse_args(["list"]), home=tmp_path)
     assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "star fact"
 
@@ -650,8 +699,12 @@ def test_legacy_intent_resolves_as_all_agents(tmp_path, monkeypatch):
     assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user fact"
 
 
-def test_all_agents_resume_after_partial_deletion(tmp_path, monkeypatch):
-    """An interrupted --all-agents run resumes without widening or loss."""
+def test_all_agents_resume_after_partial_deletion(tmp_path, monkeypatch, capsys):
+    """An interrupted --all-agents run resumes without widening or loss.
+
+    Covers interruption after one of two agent scopes was already deleted
+    remotely; a fresh invocation simulates the post-restart state.
+    """
     parser, cfg = prepared_home(tmp_path, monkeypatch)
     seed(
         cfg,
@@ -680,8 +733,25 @@ def test_all_agents_resume_after_partial_deletion(tmp_path, monkeypatch):
             parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--confirm"]),
             home=tmp_path,
         )
+    intents = scope_delete_intents(tmp_path, cfg)
+    assert len(intents) == 1
+    assert json.loads(intents[0]["scope_json"])["mode"] == "all_agents"
+    monkeypatch.setattr("qdrant_memory.cli.active_home", lambda: tmp_path)
+    assert main(parser.parse_args(["list"])) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_delete_recovery_required"
     resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
     assert resumed["resumed"] is True
+    assert scope_delete_intents(tmp_path, cfg) == []
+    check = Ledger(tmp_path, ledger_namespace(cfg))
+    for agent in ("*", "hermes"):
+        source_id = check.delete_fence_source(Scope("u1", agent))
+        fenced = [
+            row
+            for row in check.rows("operations", status="COMMITTED")
+            if row["source_id"] == source_id
+        ]
+        assert len(fenced) == 1
+    check.close()
     listed = run(parser.parse_args(["list"]), home=tmp_path)
     assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user fact"
 
