@@ -120,6 +120,71 @@ class ScopeDeleteIncompleteError(ValueError):
         )
 
 
+INTENT_SCHEMA_VERSION = 2
+SINGLE_AGENT_MODE = "single_agent"
+ALL_AGENTS_MODE = "all_agents"
+
+
+class ScopeDeleteLegacyIntentError(ValueError):
+    """Refuse automatic recovery of an ambiguous pre-versioned deletion intent.
+
+    Version-1 intents stored ``{"user_id": ..., "agent_id": "*"}`` for both a
+    single-agent deletion of the literal agent ``'*'`` and an all-agents
+    deletion. The two cannot be told apart from the record, so automatic
+    recovery must never guess; the operator resolves the intent explicitly.
+    """
+
+    def __init__(self, user_id=None):
+        """Initialize the actionable disambiguation error."""
+        suffix = f" for user {user_id!r}" if user_id else ""
+        super().__init__(
+            "A pre-versioned scoped-deletion intent is pending"
+            f"{suffix}; its recorded form cannot distinguish a single-agent "
+            "deletion of agent '*' from an all-agents deletion, so automatic "
+            "recovery is refused and no data was modified. Resolve it explicitly "
+            "with `hermes qdrant-memory delete-all --user <user> "
+            "--resolve-legacy single_agent --confirm` or `--resolve-legacy "
+            "all_agents`."
+        )
+
+
+def scope_delete_intent(user_id, agent_id=None, all_agents=False):
+    """Return the explicit durable form of a scoped-deletion intent.
+
+    ``agent_id`` may be any string, including a literal ``'*'``, or ``None``
+    for the no-agent scope; only ``all_agents`` selects every agent scope.
+    """
+    if all_agents:
+        return {
+            "schema_version": INTENT_SCHEMA_VERSION,
+            "mode": ALL_AGENTS_MODE,
+            "user_id": user_id,
+        }
+    return {
+        "schema_version": INTENT_SCHEMA_VERSION,
+        "mode": SINGLE_AGENT_MODE,
+        "user_id": user_id,
+        "agent_id": agent_id,
+    }
+
+
+def parse_scope_delete_intent(recorded):
+    """Return ``(all_agents, user_id, agent_id)`` for an explicit intent.
+
+    Pre-versioned intents are ambiguous and raise
+    :class:`ScopeDeleteLegacyIntentError` instead of being guessed.
+    """
+    if not isinstance(recorded, dict) or recorded.get("schema_version") != INTENT_SCHEMA_VERSION:
+        user = recorded.get("user_id") if isinstance(recorded, dict) else None
+        raise ScopeDeleteLegacyIntentError(user if isinstance(user, str) else "")
+    mode = recorded.get("mode")
+    if mode == ALL_AGENTS_MODE:
+        return True, recorded.get("user_id"), None
+    if mode == SINGLE_AGENT_MODE:
+        return False, recorded.get("user_id"), recorded.get("agent_id")
+    raise ScopeDeleteRefusedError()
+
+
 def scope_delete_key(scope):
     """Return the durable identity of one scoped deletion."""
     scope_value = scope.as_dict() if hasattr(scope, "as_dict") else dict(scope)
@@ -160,9 +225,9 @@ def pending_scope_deletes_file(home, collection):
         if not _scope_deletes_table_exists(db):
             return []
         return [
-            row[0]
+            {"scope": row[0], "scope_json": row[1]}
             for row in db.execute(
-                "SELECT scope FROM qdrant_scope_deletes WHERE collection=?",
+                "SELECT scope, scope_json FROM qdrant_scope_deletes WHERE collection=?",
                 (collection,),
             )
         ]
@@ -205,3 +270,30 @@ def finish_scope_delete(ledger, scope_key):
             "DELETE FROM qdrant_scope_deletes WHERE collection=? AND scope=?",
             (ledger.collection, scope_key),
         )
+
+
+def resolve_legacy_scope_delete(ledger, old_scope_key, scope):
+    """Rewrite a pre-versioned intent into the explicit schema in place.
+
+    The original timestamp anchors every fence identity of the operation, so
+    the rewrite preserves it and repeated resumes keep reusing identical
+    tombstones instead of accumulating duplicates.
+    """
+    scope_value = scope.as_dict() if hasattr(scope, "as_dict") else dict(scope)
+    new_key = scope_delete_key(scope_value)
+    with ledger.lock, ledger.db:
+        row = ledger.db.execute(
+            "SELECT created_at FROM qdrant_scope_deletes WHERE collection=? AND scope=?",
+            (ledger.collection, old_scope_key),
+        ).fetchone()
+        created = row[0] if row else now()
+        ledger.db.execute(
+            "DELETE FROM qdrant_scope_deletes WHERE collection=? AND scope=?",
+            (ledger.collection, old_scope_key),
+        )
+        ledger.db.execute(
+            "INSERT OR REPLACE INTO qdrant_scope_deletes(collection, scope, scope_json, created_at) "
+            "VALUES(?, ?, ?, ?)",
+            (ledger.collection, new_key, json.dumps(scope_value), created),
+        )
+    return created

@@ -46,17 +46,22 @@ from .qdrant_store import (
     build_client,
 )
 from .reset import (
+    INTENT_SCHEMA_VERSION,
     ResetRecoveryRequiredError,
     ScopeDeleteIncompleteError,
+    ScopeDeleteLegacyIntentError,
     ScopeDeleteRecoveryRequiredError,
     ScopeDeleteRefusedError,
     begin_destination_reset,
     begin_scope_delete,
     finish_scope_delete,
     has_pending_reset_file,
+    parse_scope_delete_intent,
     pending_scope_deletes,
     pending_scope_deletes_file,
+    resolve_legacy_scope_delete,
     resume_destination_reset,
+    scope_delete_intent,
     scope_delete_key,
 )
 from .retry import safe_error
@@ -73,9 +78,6 @@ class DeleteConfirmationRequiredError(ValueError):
 
 class ScopeSelectionError(ValueError):
     """Reject scope arguments that cannot identify a user-anchored scope."""
-
-
-ALL_AGENTS = "*"
 
 
 def existing_collection_action(args, collection):
@@ -158,6 +160,11 @@ def register_cli(subparser):
         help="Delete every agent scope of the user, including the no-agent scope",
     )
     parser.add_argument(
+        "--resolve-legacy",
+        choices=["single_agent", "all_agents"],
+        help="Disambiguate a pre-versioned deletion intent before resuming it",
+    )
+    parser.add_argument(
         "--confirm",
         action="store_true",
         help="Authorize deleting every memory in the selected scope",
@@ -173,7 +180,8 @@ def scope_arguments(parser):
     parser.add_argument("--user", help="Memory scope user ID")
     parser.add_argument(
         "--agent",
-        help="Memory scope agent ID; omit to select the profile-wide (no agent) scope",
+        help="Memory scope agent ID; any string, including a literal '*', is a "
+        "valid agent id. Omit to select the profile-wide (no agent) scope",
     )
 
 
@@ -345,47 +353,88 @@ def inventory_export(runtime, args):
 def scoped_delete_all(runtime, args):
     """Durably delete stored memories and pending work for one scope or user.
 
-    The deletion records a durable intent, fences every enumerated point and
-    prepared write, invalidates admitted-but-unprocessed turn events for the
-    scope, deletes the scope in filtered operations and clears the intent only
-    after every target scope is confirmed empty. ``--all-agents`` covers every
-    agent scope of a user, including the no-agent scope.
+    The deletion records an explicit, versioned intent, fences every enumerated
+    point and prepared write, invalidates admitted-but-unprocessed turn events
+    for the scope, deletes the scope in filtered operations and clears the
+    intent only after every target scope is confirmed empty. ``--all-agents``
+    covers every agent scope of a user, including the no-agent scope. A literal
+    agent id ``'*'`` is an ordinary single scope and never selects all agents;
+    a pre-versioned intent that cannot distinguish the two is refused until
+    ``--resolve-legacy`` disambiguates it.
     """
     store, ledger = runtime.store, runtime.ledger
     all_agents = bool(getattr(args, "all_agents", False))
     agent = getattr(args, "agent", None)
     user = getattr(args, "user", None)
+    resolve_legacy = getattr(args, "resolve_legacy", None)
     if all_agents and agent is not None:
         raise ScopeSelectionError("--all-agents cannot be combined with --agent")
+    if resolve_legacy and (all_agents or agent is not None):
+        raise ScopeSelectionError(
+            "--resolve-legacy cannot be combined with --agent or --all-agents"
+        )
+    if resolve_legacy and getattr(args, "dry_run", False):
+        raise ScopeSelectionError("--resolve-legacy cannot be combined with --dry-run")
     if agent is not None and not user:
         raise ScopeSelectionError("--agent requires --user; scopes are user-anchored")
     pending = pending_scope_deletes(ledger)
     resumed = False
+    intent_time = None
     if pending:
         if len(pending) > 1:
             raise ScopeDeleteRefusedError()
-        recorded = json.loads(pending[0]["scope_json"])
-        recorded_all = recorded.get("agent_id") == ALL_AGENTS
-        if (user is not None or all_agents) and (
-            (user is not None and recorded.get("user_id") != user)
-            or recorded_all != all_agents
-            or (user is not None and not recorded_all and recorded.get("agent_id") != agent)
+        try:
+            recorded = json.loads(pending[0]["scope_json"] or "{}")
+        except ValueError:
+            recorded = {}
+        if not isinstance(recorded, dict) or (
+            recorded.get("schema_version") != INTENT_SCHEMA_VERSION
         ):
-            raise ScopeDeleteRefusedError()
-        user = recorded.get("user_id")
-        all_agents = recorded_all
-        agent = None if recorded_all else recorded.get("agent_id")
+            # Pre-versioned intents cannot distinguish a single-agent deletion
+            # of the literal agent '*' from an all-agents deletion. Never
+            # guess; the operator disambiguates explicitly.
+            if resolve_legacy is None:
+                user_value = recorded.get("user_id") if isinstance(recorded, dict) else None
+                raise ScopeDeleteLegacyIntentError(
+                    user_value if isinstance(user_value, str) else ""
+                )
+            if not user:
+                raise ScopeSelectionError("--resolve-legacy requires --user")
+            if recorded.get("user_id") != user:
+                raise ScopeDeleteRefusedError()
+            if not args.confirm:
+                raise DeleteConfirmationRequiredError()
+            if resolve_legacy == "all_agents":
+                all_agents, agent = True, None
+            else:
+                all_agents = False
+                agent = recorded.get("agent_id")
+            intent_value = scope_delete_intent(user, agent, all_agents)
+            intent_time = resolve_legacy_scope_delete(ledger, pending[0]["scope"], intent_value)
+        else:
+            recorded_all, recorded_user, recorded_agent = parse_scope_delete_intent(recorded)
+            if (user is not None or all_agents) and (
+                (user is not None and recorded_user != user)
+                or recorded_all != all_agents
+                or (user is not None and not recorded_all and recorded_agent != agent)
+            ):
+                raise ScopeDeleteRefusedError()
+            user, all_agents, agent = recorded_user, recorded_all, recorded_agent
+            intent_value = scope_delete_intent(user, agent, all_agents)
         resumed = True
+    elif resolve_legacy:
+        raise ScopeSelectionError("--resolve-legacy requires a pending legacy intent")
     elif user is None:
         if all_agents:
             raise ScopeSelectionError("--all-agents requires --user; scopes are user-anchored")
         raise ScopeDeleteRefusedError()
+    else:
+        intent_value = scope_delete_intent(user, agent, all_agents)
     identity = store.client.retrieve(store.collection, ids=[IDENTITY_ID], with_payload=True)
     if not identity or not identity[0].payload.get("_qdrant_memory_schema"):
         raise CollectionCompatibilityError(
             "Collection has no trusted qdrant-memory schema identity; refusing scoped deletion"
         )
-    intent_value = {"user_id": user, "agent_id": ALL_AGENTS if all_agents else agent}
     result = {
         "collection": store.collection,
         "scope": intent_value,
@@ -408,12 +457,11 @@ def scoped_delete_all(runtime, args):
         raise DeleteConfirmationRequiredError()
     if target_agents is None:
         target_agents = [agent]
-    intent_time = begin_scope_delete(ledger, intent_value)
-    fenced_total = 0
-    superseded_total = 0
-    for agent_key in target_agents:
-        scope = Scope(user, agent_key)
-        fenced = set()
+    if intent_time is None:
+        intent_time = begin_scope_delete(ledger, intent_value)
+    scopes = [Scope(user, agent_key) for agent_key in target_agents]
+    fenced = {index: set() for index in range(len(scopes))}
+    for index, scope in enumerate(scopes):
         for point in store.scroll(scope):
             value = point.payload or {}
             operation_key = ledger.enqueue_operation(
@@ -424,33 +472,14 @@ def scoped_delete_all(runtime, args):
                 source_version=intent_time,
             )
             ledger.finish("operations", operation_key, "COMMITTED")
-            fenced.add(str(point.id))
-        # Prepared writes whose points are not stored yet must be fenced too;
-        # otherwise a later recovery could replay them and resurrect memories.
-        for status in ("PENDING", "FAILED"):
-            for row in ledger.iter_rows("operations", status):
-                if row["action"] != "UPSERT" or row["point_id"] in fenced:
-                    continue
-                try:
-                    value = json.loads(row["payload_json"] or "{}")
-                except ValueError:
-                    continue
-                if value.get("user_id") != scope.user_id or value.get("agent_id") != scope.agent_id:
-                    continue
-                operation_key = ledger.enqueue_operation(
-                    row["point_id"],
-                    "DELETE",
-                    {"content_hash": row["content_hash"] or value.get("content_hash", "")},
-                    source_id=ledger.delete_fence_source(scope),
-                    source_version=intent_time,
-                )
-                ledger.finish("operations", operation_key, "COMMITTED")
-                fenced.add(row["point_id"])
-        fenced_total += len(fenced)
-        superseded_total += _supersede_scope_events(ledger, scope)
+            fenced[index].add(str(point.id))
+    # Prepared writes whose points are not stored yet must be fenced too;
+    # otherwise a later recovery could replay them and resurrect memories.
+    _fence_prepared_writes(ledger, scopes, fenced, intent_time)
+    fenced_total = sum(len(entries) for entries in fenced.values())
+    superseded_total = _supersede_scope_events(ledger, scopes)
     deleted_total = 0
-    for agent_key in target_agents:
-        scope = Scope(user, agent_key)
+    for scope in scopes:
         before = store.count(scope)
         store.delete_scope(scope)
         if store.count(scope):
@@ -494,13 +523,45 @@ def _agents_with_work(store, ledger, user):
     return sorted(agents, key=repr)
 
 
-def _supersede_scope_events(ledger, scope):
-    """Invalidate admitted-but-unprocessed turn events for a deleted scope.
+def _fence_prepared_writes(ledger, scopes, fenced, intent_time):
+    """Fence prepared UPSERTs for every target scope in one bounded pass.
+
+    Per-scope rescans of pending work would cost O(scopes x rows) under
+    ``--all-agents``; one pass with per-scope dedupe keeps the cost linear in
+    the ledger size while the per-scope fence identity stays intact.
+    """
+    targets = {(scope.user_id, scope.agent_id): index for index, scope in enumerate(scopes)}
+    for status in ("PENDING", "FAILED"):
+        for row in ledger.iter_rows("operations", status):
+            if row["action"] != "UPSERT":
+                continue
+            try:
+                value = json.loads(row["payload_json"] or "{}")
+            except ValueError:
+                continue
+            index = targets.get((value.get("user_id"), value.get("agent_id")))
+            if index is None or row["point_id"] in fenced[index]:
+                continue
+            scope = scopes[index]
+            operation_key = ledger.enqueue_operation(
+                row["point_id"],
+                "DELETE",
+                {"content_hash": row["content_hash"] or value.get("content_hash", "")},
+                source_id=ledger.delete_fence_source(scope),
+                source_version=intent_time,
+            )
+            ledger.finish("operations", operation_key, "COMMITTED")
+            fenced[index].add(row["point_id"])
+
+
+def _supersede_scope_events(ledger, scopes):
+    """Invalidate admitted-but-unprocessed turn events for the deleted scopes.
 
     Events admitted after the deletion are unaffected: the provider cannot
     start while the deletion intent is pending, and new events can only be
-    admitted once it is cleared.
+    admitted once it is cleared. One bounded pass covers every target scope.
     """
+    targets = {(scope.user_id, scope.agent_id) for scope in scopes}
     superseded = 0
     for status in ("PENDING", "FAILED"):
         for row in ledger.iter_rows("events", status):
@@ -511,14 +572,31 @@ def _supersede_scope_events(ledger, scope):
             scope_value = value.get("scope")
             if not isinstance(scope_value, dict):
                 continue
-            if (
-                scope_value.get("user_id") != scope.user_id
-                or scope_value.get("agent_id") != scope.agent_id
-            ):
+            if (scope_value.get("user_id"), scope_value.get("agent_id")) not in targets:
                 continue
             ledger.finish("events", row["event_id"], "SUPERSEDED")
             superseded += 1
     return superseded
+
+
+def _pending_intent_error(intents):
+    """Return the fail-closed error for pending scoped-deletion intents.
+
+    Pre-versioned intents are ambiguous and require explicit operator
+    disambiguation; every other pending intent uses the standard resume
+    guidance.
+    """
+    for intent in intents:
+        try:
+            recorded = json.loads(intent.get("scope_json") or "{}")
+        except ValueError:
+            recorded = {}
+        if not isinstance(recorded, dict) or (
+            recorded.get("schema_version") != INTENT_SCHEMA_VERSION
+        ):
+            user = recorded.get("user_id") if isinstance(recorded, dict) else None
+            return ScopeDeleteLegacyIntentError(user if isinstance(user, str) else "")
+    return ScopeDeleteRecoveryRequiredError()
 
 
 def run(args, home=None):
@@ -568,8 +646,9 @@ def _run(args, home=None, progress=None):
     pending_reset = has_pending_reset_file(home, ledger_namespace(cfg))
     if pending_reset and command != "init":
         raise ResetRecoveryRequiredError()
-    if pending_scope_deletes_file(home, ledger_namespace(cfg)) and command != "delete-all":
-        raise ScopeDeleteRecoveryRequiredError()
+    pending_intents = pending_scope_deletes_file(home, ledger_namespace(cfg))
+    if pending_intents and command != "delete-all":
+        raise _pending_intent_error(pending_intents)
     with ExitStack() as resources:
         if command in {"init", "migrate", "retry", "delete-all"}:
             report(progress, "Acquiring writer lock")
@@ -719,6 +798,15 @@ def main(args):
                 message="An interrupted scoped deletion is pending. Rerun hermes "
                 "qdrant-memory delete-all with --confirm to resume it before using "
                 "this destination.",
+            )
+        elif isinstance(exc, ScopeDeleteLegacyIntentError):
+            error.update(
+                code="scope_delete_legacy_intent",
+                message="A pre-versioned scoped-deletion intent is pending and "
+                "cannot be resumed automatically because its recorded form is "
+                "ambiguous. No data was modified. Resolve it explicitly with "
+                "delete-all --user <user> --resolve-legacy single_agent --confirm "
+                "or --resolve-legacy all_agents.",
             )
         elif isinstance(exc, ScopeDeleteRefusedError):
             error.update(
