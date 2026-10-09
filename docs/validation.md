@@ -16,14 +16,53 @@ not a missing-credentials skip. The earlier candidate branch rejection is histor
 The main-only environment restriction remains intact. These results certify the
 named code snapshot, not later documentation commits or future Hermes revisions.
 
-The project remains an unreleased limited technical preview. The full interactive
-Quick Start with live Ollama/LLM remains unrecorded; synthetic retrieval and recovery
-measurements do not establish production quality or capacity. See the
-[final pre-release review](../PRE_RELEASE_FINAL_REVIEW.md) for historical local
+The project remains an unreleased limited technical preview. A live Quick Start
+drill on 2026-10-09 exercised the full user flow on a fresh home (see the drill
+record below); synthetic retrieval and recovery measurements still do not
+establish production quality or capacity. See the
+[final pre-release review](releases/PRE_RELEASE_FINAL_REVIEW.md) for historical local
 results, exact upstream Hermes revisions and support limits, and the
 [recovery benchmark](recovery-benchmark.md) for the separate storage/replay evidence.
 
-The sections below retain earlier evidence with its original scope.
+The sections below retain earlier evidence with their original scope.
+
+## Live Quick Start drill (2026-10-09)
+
+A fresh isolated home (custom `HERMES_HOME`, no development shims) installed the
+provider from the public repository and ran against local Ollama on a macOS arm64
+host (24 GB). Flow: install → configuration → conversations → automatic
+extraction → cross-session recall → update → delete → restart.
+
+| Step | Result |
+| --- | --- |
+| Fresh home, clone, `hermes memory setup`, `hermes qdrant-memory init` | PASS — dependencies prepared through Hermes PM; embedded collection created; embedding probe OK (`qwen3-embedding:4b`, 2560 dimensions) |
+| Conversation writes via the agent tools | PASS — add/search/update/delete all committed in the ledger |
+| Automatic turn extraction | PASS — the pending backlog drained: events and operations committed, dedupe recorded ADD and SKIP decisions |
+| Cross-session recall | PASS — new sessions returned the taught facts from stored memory |
+| Update | PASS — the codename entries were rewritten with the new value and the old one marked obsolete |
+| Delete | PASS — the targeted memory was removed, stayed gone on re-check, and the committed event bodies were scrubbed to empty payloads |
+| Restart and consistency | PASS — `verify` reports `ok: true` (exact count, zero invalid IDs); sessions after restarts recalled the surviving facts |
+
+Drill findings and response:
+
+- **Fixed in this release**: provider discovery imported `portalocker` at module
+  load, so a home whose dependencies were not yet prepared reported “provider
+  not found” during `hermes memory setup`. The import is now lazy and covered by
+  a regression test.
+- **Documented**: extraction and relation checks run as Hermes auxiliary calls
+  (30 s per-task default). Slow local models should raise
+  `auxiliary.qdrant_memory_extraction.timeout` and requeue timed-out work with
+  `hermes qdrant-memory retry`.
+- **Environment notes**: a 27B local chat model plus local embeddings exceeds
+  comfortable VRAM on a 24 GB host (Ollama evicted runners under concurrent
+  load); the interaction phase finished on a hosted model through the same local
+  Ollama daemon. Local-model turns took 8–11 minutes each; hosted-model turns
+  took seconds. Extraction produced near-duplicate variants below the dedupe
+  review threshold — consistent with the conservative similarity design; tidying
+  them is part of the deferred memory inventory/export work.
+
+The deterministic CI gates above remain the release's hard evidence; this drill
+evidences installability and the user-facing flows on one real machine.
 
 ## Recorded rereview snapshot (2026-10-06)
 

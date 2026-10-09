@@ -8,7 +8,7 @@ Latest-Hermes tracking remains separate from the immutable compatibility matrix.
 Merged main `32bd4e7` passed CI, the platform matrix and executed authenticated
 Cloud integration after PR #12 merged. Its earlier branch rejection is historical.
 See [validation evidence](validation.md) for exact-SHA run links and the
-[acceptance report](../PRE_RELEASE_FINAL_REVIEW.md) for support limits.
+[acceptance report](releases/PRE_RELEASE_FINAL_REVIEW.md) for support limits.
 
 Ruff lint/format, the Python 3.11 and 3.14 behavior-contract jobs, and the separate
 Snyk dependency and code jobs run

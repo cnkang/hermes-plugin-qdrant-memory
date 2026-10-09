@@ -8,7 +8,7 @@ PRs #10, #11 and #12 are merged. Main
 - **PASS** — [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338914), including the required security gate.
 - **PASS** — [Six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802339623).
 - **PASS** — [Authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338838); the test step executed, without changing main-only protection.
-- **NOT RUN** — Full interactive Quick Start against live Ollama/LLM; existing deterministic smoke and synthetic retrieval measurements have narrower scope.
+- **PASS** — Live Quick Start drill (2026-10-09): a fresh home with local Ollama completed install, automatic extraction, cross-session recall, update, delete and restart; see [validation evidence](../validation.md).
 - **READY FOR LIMITED TECHNICAL PREVIEW** — One writer per destination across all profiles/hosts; documented admission, retention and capacity limits remain.
 - **NOT PUBLISHED** — No tag or GitHub Release. These results do not declare public beta.
 

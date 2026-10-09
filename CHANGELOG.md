@@ -17,6 +17,12 @@ Unreleased; no tag or GitHub Release has been published.
   Progress counts use bounded primary-key lookups without reading payload bodies.
 - Verification raises `migration_incomplete` with `--resume --retry-failed`
   guidance while failed or missing records remain, ahead of any superseded conflict.
+- Provider discovery and registration import without runtime dependencies, so
+  `hermes memory setup` works on a fresh home before Hermes prepares them.
+- Release and community readiness: data-flow/privacy guidance in the READMEs,
+  pinned release installs and release notes, CONTRIBUTING and SECURITY policies,
+  issue/pull-request templates, release reports organized under docs/releases,
+  and package `readme`/`urls` metadata.
 - Post-merge main `32bd4e7` passed CI, the six-job platform matrix and executed
   authenticated Cloud integration; see [validation evidence](docs/validation.md).
 
