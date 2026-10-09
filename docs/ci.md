@@ -18,9 +18,10 @@ independently in parallel. Both Python versions run files serially because remot
 tests restart their disposable server. Python 3.14 collects coverage; SonarCloud
 waits for the test matrix and consumes that artifact, then waits for its quality
 gate. Snyk runs dependency and code scans and monitors main. The required test matrix
-uses three immutable Hermes refs: minimum v2026.9.24 (`f97608f`), pinned `4787e4d`,
-and the reviewed upstream snapshot `3dadeb9`. That snapshot is not a live reference
-to today's `main`. A separately pinned PM prepares dependency environments because
+validates the support range endpoints: the minimum supported release v0.21.5
+(v2026.9.24, `f97608f`) and the latest Hermes `main` (a moving ref; each run
+records its checked-out SHA in the run summary). A separately pinned PM prepares
+dependency environments because
 the minimum release predates `pm.build_env`. Each lane runs a digest-pinned Qdrant
 v1.15.5 service and requires REST/gRPC integration, including restart persistence.
 Ruff is pinned to 0.15.1 in CI and the local
@@ -49,9 +50,10 @@ host `MemoryManager.sync_all()` admission and shutdown boundary with
 `HERMES_QDRANT_REQUIRE_HOST_SYNC=1`; the canonical runner clears unlisted environment
 variables, so this required contract runs outside that runner. The dependency builder
 remains pinned to the known PM commit while the tested host source follows `main`.
-This workflow has read-only repository permissions, uses no credentials, and is
-deliberately outside the required immutable release-gate matrix. A green
-historical run applies only to the exact Hermes SHA printed in that run summary.
+This workflow has read-only repository permissions, uses no credentials, and adds
+the `MemoryManager.sync_all()` boundary checks on top of the required latest-main
+lane. A green historical run applies only to the exact Hermes SHA printed in that
+run summary.
 
 ## Platform compatibility
 

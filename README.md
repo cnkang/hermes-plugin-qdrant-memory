@@ -326,7 +326,7 @@ documented global embedding facade.
 
 Compatibility requires Hermes `MemoryProvider`, checkpoint v2, trusted turn authors,
 authoritative builtin `previous_content`, scoped secrets and context threads.
-Earlier tags have incomplete contracts; v2026.9.24 is the minimum supported release. See
+Earlier tags have incomplete contracts. The minimum supported release is v0.21.5 (v2026.9.24). See
 [validation](docs/validation.md) for tested environments and remaining live-service
 checks. Read [configuration](docs/configuration.md), [migration](docs/migration-from-mem0.md),
 [security](docs/security.md) and [operations](docs/operations.md) before deployment.
