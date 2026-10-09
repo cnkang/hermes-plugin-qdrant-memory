@@ -15,6 +15,18 @@
 以 Qdrant named dense vector 保存向量和 schema-v1 payload。无需 Mem0 SDK 或
 独立 LLM SDK，不修改 Hermes 核心，不发送插件遥测。
 
+## 工作原理
+
+```mermaid
+flowchart LR
+    turn["Hermes turn"] --> admit["Provider callback"]
+    admit --> ledger[("SQLite ledger<br/>durable admission")]
+    ledger -.async.-> extract["LLM extraction +<br/>relation checks"]
+    extract --> store[("Qdrant<br/>dense vectors + payloads")]
+    ask["Recall / search"] --> search["Scoped dense search"]
+    search --> store
+```
+
 ## 安装与启用
 
 需要 Python 3.11+、兼容的 Hermes 和可访问的 embedding 服务。最低支持的 Hermes
@@ -156,8 +168,9 @@ id、不是通配符。`--dry-run` 预览各作用域
 条数；`--confirm` 授权删除。删除中断会 fail-closed：其他命令与 provider 启动都会
 返回 `scope_delete_recovery_required`，需 `delete-all --confirm` 恢复完成后才能继续。
 删除意图带版本且显式：无法区分"单 agent 的 `*`"与"全部 agent"的旧版意图会被拒绝
-（`scope_delete_legacy_intent`），须用 `--resolve-legacy single_agent` 或
-`--resolve-legacy all_agents` 显式消歧后才会执行。删除后新接收的轮次仍可写入新记忆；删除前已接收的内容——已存记忆、已准备的写入与
+（`scope_delete_legacy_intent`），须用 `--resolve-legacy single_agent` 显式消歧
+（仅当记录的 agent 为 `*` 或缺失时，才可用 `--resolve-legacy all_agents`）
+后才会执行。删除后新接收的轮次仍可写入新记忆；删除前已接收的内容——已存记忆、已准备的写入与
 未提取的轮次事件——都会被移除或失效。`list`、`export`、`delete-all` 不依赖
 embedding 服务。
 
@@ -275,13 +288,22 @@ Hermes 当前通过内存后台队列提交该回调；宿主进程突然退出�
 [运维](docs/operations.md)、[故障排查](docs/troubleshooting.md)、
 [架构](docs/architecture.md)文档（英文）。
 
-v0.1 实现 dense retrieval。Hybrid、RRF/DBSF、rerank、recency weighting 属于后续
-范围；不支持的检索模式会被拒绝。embedding `inherit` 需要显式 `inherit_fallback`；
-宿主 facade 还必须暴露 dimensions、fingerprint 和两个 embedding 方法。当前未声明
-Hermes 已提供全局 embedding facade。Server 的 REST/gRPC 已通过真实 Docker 服务
-实测；Cloud smoke 需要显式凭据，未提供凭据时跳过。最低宿主版本要求 checkpoint v2、
-可信 turn author、权威 previous_content、scoped secrets 和 context thread；
-其他验证边界见[验证记录](docs/validation.md)。
+## 兼容性与范围
+
+v0.1 实现 dense retrieval。Hybrid sparse vector、RRF/DBSF、rerank、recency
+weighting 属于后续范围；不支持的配置会被拒绝。named `dense` vector 为未来的
+sparse vector 保留了演进路径。
+
+embedding `inherit` 采用特性探测，且需要显式 `inherit_fallback`。未来的宿主
+facade 必须提供 `dimensions`、`fingerprint`、`embed_documents()` 和
+`embed_query()`。当前 Hermes 未声明提供全局 embedding facade。
+
+兼容性要求 Hermes `MemoryProvider`、checkpoint v2、可信 turn author、权威
+`previous_content`、scoped secrets 和 context thread；更早的版本契约不完整。
+最低支持版本为 v0.21.5（v2026.9.24）。已测试的环境和仍需实机验证的项目见
+[验证记录](docs/validation.md)。部署前请阅读[配置](docs/configuration.md)、
+[迁移](docs/migration-from-mem0.md)、[安全](docs/security.md) 和
+[运维](docs/operations.md)。
 
 ## 开发验证
 
