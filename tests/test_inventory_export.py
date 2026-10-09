@@ -100,6 +100,8 @@ def test_export_round_trips_through_mem0_import(tmp_path, monkeypatch):
     assert {r["memory"] for r in document["memories"]} == {"alpha fact", "beta fact"}
     record = next(r for r in document["memories"] if r["memory"] == "beta fact")
     assert record["user_id"] == "u2" and record["agent_id"] == "bot"
+    no_agent = next(r for r in document["memories"] if r["memory"] == "alpha fact")
+    assert "agent_id" in no_agent and no_agent["agent_id"] is None
     with pytest.raises(ExportTargetExistsError):
         run(parser.parse_args(["export", "--output", str(target)]), home=tmp_path)
     forced = run(parser.parse_args(["export", "--output", str(target), "--force"]), home=tmp_path)
@@ -114,6 +116,11 @@ def test_export_round_trips_through_mem0_import(tmp_path, monkeypatch):
     assert imported["processed"] == 2
     listed = run(fresh_parser.parse_args(["list"]), home=fresh)
     assert listed["count"]["total"] == 2
+    # The no-agent scope survives the round trip instead of drifting into the
+    # importer's default agent scope (the profile scope defaults to an agent).
+    scoped = run(fresh_parser.parse_args(["list", "--user", "u1"]), home=fresh)
+    assert scoped["count"]["total"] == 1
+    assert scoped["memories"][0]["agent_id"] is None
 
 
 def test_delete_all_is_durable_and_fences_prepared_writes(tmp_path, monkeypatch):
