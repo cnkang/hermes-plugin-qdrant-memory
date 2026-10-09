@@ -1,10 +1,10 @@
 # Validation evidence
 
-## Post-merge main snapshot (2026-10-09, PRs #15–#17)
+## Post-merge main snapshot (2026-10-09, PRs #15–#18)
 
 PRs #15–[#17](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/17)
-are merged on top of the snapshots below. Main
-`ff5712d318f48054da3443598f58f6793d610514` passed:
+are merged on top of the snapshots below. The earlier
+`ff5712d318f48054da3443598f58f6793d610514` snapshot passed:
 
 | Gate | Evidence |
 | --- | --- |
@@ -13,11 +13,20 @@ are merged on top of the snapshots below. Main
 | Authenticated Cloud integration | [37887162253](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162253) |
 
 PR #17 delivered the memory inventory/export/scoped-deletion commands
-(issue #15); PR #16 delivered the release/community readiness set. This
-snapshot certifies the main state through PR #17: the scoped-deletion
-hardening in the follow-up finalization PR is validated on its own head and
-re-certified by the gates on main at release time. The snapshots below retain
-their original scope.
+(issue #15); PR #16 delivered the release/community readiness set. The
+**current certified revision** is `112e403c414f90905325322bab135493a0b03b85`
+(2026-10-09): the scoped-deletion
+hardening in the follow-up finalization PR (#18) is validated on its own head
+and re-certified by the gates on main at release time, with
+[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752887),
+[six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752957)
+and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752899)
+all green; the `v0.1.0` tag will be created from the documentation commit that
+records this certification, with no functional changes since `112e403c`. The
+snapshots below retain their original scope.
+
+The project is a limited technical preview. The `v0.1.0` release will be created
+from this certification record.
 
 ## Post-merge main snapshot (2026-10-09)
 
@@ -51,9 +60,9 @@ not a missing-credentials skip. The earlier candidate branch rejection is histor
 The main-only environment restriction remains intact. These results certify the
 named code snapshot, not later documentation commits or future Hermes revisions.
 
-The project remains an unreleased limited technical preview. A live Quick Start
+The project is a limited technical preview. A live Quick Start
 drill on 2026-10-09 exercised the full user flow on a fresh home (see the drill
-record below); synthetic retrieval and recovery measurements still do not
+record below). Synthetic retrieval and recovery measurements still do not
 establish production quality or capacity. See the
 [final pre-release review](releases/PRE_RELEASE_FINAL_REVIEW.md) for historical local
 results, exact upstream Hermes revisions and support limits, and the
