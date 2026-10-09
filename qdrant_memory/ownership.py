@@ -3,8 +3,6 @@
 import os
 from pathlib import Path
 
-import portalocker
-
 from .models import digest
 
 
@@ -29,6 +27,10 @@ class WriterLease:
 
     def __init__(self, home, namespace):
         """Acquire without waiting so a replacement cannot overlap an old writer."""
+        # Imported lazily so provider discovery and registration stays free of
+        # runtime dependencies before Hermes has prepared them.
+        import portalocker
+
         directory = Path(home) / "qdrant-memory"
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         descriptor = os.open(
