@@ -19,7 +19,7 @@ from .helpers import Embedder, config, runtime
 from .test_provider import provider
 
 
-@pytest.mark.parametrize("command", ["doctor", "stats", "verify"])
+@pytest.mark.parametrize("command", ["doctor", "stats", "verify", "list"])
 def test_missing_collection_has_actionable_error_without_creation(
     tmp_path, monkeypatch, capsys, command
 ):
