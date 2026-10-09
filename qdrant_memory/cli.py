@@ -794,14 +794,7 @@ def main(args):
                 "this destination.",
             )
         elif isinstance(exc, ScopeDeleteLegacyIntentError):
-            error.update(
-                code="scope_delete_legacy_intent",
-                message="A pre-versioned scoped-deletion intent is pending and "
-                "cannot be resumed automatically because its recorded form is "
-                "ambiguous. No data was modified. Resolve it explicitly with "
-                "delete-all --user <user> --resolve-legacy single_agent --confirm "
-                "or --resolve-legacy all_agents.",
-            )
+            error.update(code="scope_delete_legacy_intent", message=str(exc))
         elif isinstance(exc, ScopeDeleteRefusedError):
             error.update(
                 code="scope_delete_refused",
