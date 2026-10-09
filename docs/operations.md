@@ -57,7 +57,11 @@ invalidates admitted-but-unprocessed turn events for the scope, deletes the
 scope in one filtered operation and clears the intent only after the scope is
 empty. A scope is one (user, agent) pair; `--all-agents` covers every agent
 scope of the user, and a strict run reports `other_agent_scopes` when other
-agent scopes still hold memories. Fence rows are durable tombstones — one per
+agent scopes still hold memories. A literal `*` is an ordinary agent id and
+never selects all agents. A pre-versioned intent cannot show whether `*` is a
+single agent or all agents. The plugin refuses it
+(`scope_delete_legacy_intent`). Resolve it with
+`--resolve-legacy single_agent` or `--resolve-legacy all_agents`. Fence rows are durable tombstones — one per
 fenced identity, retained until destination reset — and repeated resumes of the
 same interrupted deletion reuse identical rows instead of accumulating
 duplicates. An interrupted scoped deletion fails closed: other destination

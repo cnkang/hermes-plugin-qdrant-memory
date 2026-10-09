@@ -34,7 +34,10 @@ rows and manifests remain; pending/failed payloads remain for recovery. Ledger r
 and manifests have no time-based expiry. Deleting a Qdrant point does not clear its
 ledger identity or pending/failed work. A scoped content-hash tombstone prevents an
 older admitted event from recreating the exact deleted content under a different point
-ID; a later event may explicitly add it again. Treat `state.db`, WAL/SHM sidecars, snapshots
+ID; a later event may explicitly add it again. Scoped deletions record explicit
+versioned intents. A literal agent id `*` and an all-agents deletion are never
+conflated. An ambiguous pre-versioned intent is refused, not guessed.
+Treat `state.db`, WAL/SHM sidecars, snapshots
 and backups as sensitive conversation data. A destination reset clears current rows
 but is not secure erasure from SQLite pages/WAL or copied backups. API keys and
 response bodies are never logged or persisted as errors:

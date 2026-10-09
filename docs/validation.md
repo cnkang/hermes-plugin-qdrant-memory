@@ -21,12 +21,24 @@ and re-certified by the gates on main at release time, with
 [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752887),
 [six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752957)
 and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752899)
-all green; the `v0.1.0` tag will be created from the documentation commit that
-records this certification, with no functional changes since `112e403c`. The
-snapshots below retain their original scope.
+all green; the `v0.1.0` tag was created from the documentation commit that
+records this certification (`d50f2cc5c4704a9204596e81e4192fa58da5f500`), with
+no functional changes since `112e403c`. The snapshots below retain their
+original scope.
 
-The project is a limited technical preview. The `v0.1.0` release will be created
-from this certification record.
+The project is a limited technical preview. The `v0.1.0` release was published
+on 2026-10-09 from this certification record.
+
+## Scoped-deletion intent hardening (post-release, 2026-10-09)
+
+Scoped deletion intents are versioned and explicit. The plugin records
+`single_agent` and `all_agents` modes, and a literal agent id `*` is an
+ordinary scope. A pre-versioned intent cannot show the difference, so the
+plugin refuses it (`scope_delete_legacy_intent`). An operator resolves it with
+`delete-all --resolve-legacy single_agent|all_agents`. Fault-injection
+regressions cover interruption after the intent and fences commit, partial
+multi-scope deletion and resume, resume scope restoration, and both legacy
+resolution paths. The full local suite passes (298 tests, 1 skipped).
 
 ## Post-merge main snapshot (2026-10-09)
 

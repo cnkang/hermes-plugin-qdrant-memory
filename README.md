@@ -196,10 +196,15 @@ the intent only after the scope is confirmed empty. A scope is exactly one
 default profile scope uses an agent (`hermes`), so pass `--agent hermes` to
 target it or `--all-agents` to delete every agent scope of the user. Without
 `--all-agents`, the result reports `other_agent_scopes` when other agent
-scopes still hold memories. `--dry-run` previews the per-scope counts;
+scopes still hold memories. A literal `*` is an ordinary agent id, not a
+wildcard. `--dry-run` previews the per-scope counts;
 `--confirm` authorizes deletion. An interrupted deletion fails closed: other
 commands and provider startup return `scope_delete_recovery_required` until
-`delete-all --confirm` resumes it. Turns admitted after the deletion can still
+`delete-all --confirm` resumes it. Deletion intents are versioned and explicit.
+A pre-versioned intent cannot show whether `*` is a single agent or all agents,
+so the plugin refuses it (`scope_delete_legacy_intent`). Resolve it with
+`--resolve-legacy single_agent` or `--resolve-legacy all_agents`. Turns
+admitted after the deletion can still
 add new memories; everything admitted before it — stored memories, prepared
 writes and unprocessed turn events — is removed or invalidated. `list`,
 `export` and `delete-all` do not require the embedding service.
