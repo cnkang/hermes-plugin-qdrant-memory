@@ -6,7 +6,9 @@ import json
 import pytest
 
 from qdrant_memory.cli import (
+    ALL_AGENTS,
     DeleteConfirmationRequiredError,
+    ScopeSelectionError,
     main,
     register_cli,
     run,
@@ -221,6 +223,118 @@ def test_provider_startup_fails_closed_while_scope_delete_pending(tmp_path):
         provider(tmp_path)
 
 
+def test_pending_events_are_invalidated_by_scoped_delete(tmp_path, monkeypatch):
+    """Delete-all also invalidates admitted-but-unprocessed turn events."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    stale_event = {
+        "kind": "turn",
+        "source": "conversation",
+        "session_id": "s1",
+        "scope": {"user_id": "u1", "agent_id": None},
+        "user": "cats preferred",
+        "assistant": "ack",
+        "turn_number": 1,
+    }
+    stale_key = ledger.enqueue_event(stale_event)
+    failed_key = ledger.enqueue_event({**stale_event, "turn_number": 2})
+    ledger.failure("events", failed_key, RuntimeError("extraction failed"), terminal=True)
+    other_key = ledger.enqueue_event(
+        {
+            "kind": "turn",
+            "source": "conversation",
+            "session_id": "s2",
+            "scope": {"user_id": "u2", "agent_id": None},
+            "user": "dogs preferred",
+            "assistant": "ack",
+            "turn_number": 1,
+        }
+    )
+    ledger.close()
+    result = run(parser.parse_args(["delete-all", "--user", "u1", "--confirm"]), home=tmp_path)
+    assert result["superseded_events"] == 2
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    assert ledger.row("events", stale_key)["status"] == "SUPERSEDED"
+    assert ledger.row("events", failed_key)["status"] == "SUPERSEDED"
+    assert ledger.row("events", other_key)["status"] == "PENDING"
+    ledger.close()
+    # Retry must not requeue the invalidated failed event.
+    run(parser.parse_args(["retry"]), home=tmp_path)
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    assert ledger.row("events", failed_key)["status"] == "SUPERSEDED"
+    ledger.close()
+    # A provider restart recovers only the surviving scope's event.
+    p = provider(tmp_path)
+    assert p.wait_idle()
+    assert p.store.count(Scope("u1", None)) == 0
+    assert p.store.count(Scope("u2", None)) == 1
+    p.shutdown()
+
+
+def test_delete_all_all_agents_covers_every_scope(tmp_path, monkeypatch):
+    """--all-agents deletes every agent scope; strict mode reports the rest."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1, payload("no agent fact", Scope("u1", None), "manual", "s1")),
+            (2, payload("hermes fact", Scope("u1", "hermes"), "manual", "s1")),
+            (3, payload("bot fact", Scope("u1", "bot"), "manual", "s1")),
+            (4, payload("other user fact", Scope("u2", None), "manual", "s1")),
+        ],
+    )
+    strict = run(parser.parse_args(["delete-all", "--user", "u1", "--confirm"]), home=tmp_path)
+    assert strict["deleted"] == 1
+    assert strict["other_agent_scopes"] == {"bot": 1, "hermes": 1}
+    dry = run(
+        parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--dry-run"]),
+        home=tmp_path,
+    )
+    assert dry["would_delete"] == 2
+    assert {item["agent_id"] for item in dry["scopes"]} == {"bot", "hermes"}
+    result = run(
+        parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--confirm"]),
+        home=tmp_path,
+    )
+    assert result["deleted"] == 2
+    assert "other_agent_scopes" not in result
+    assert run(parser.parse_args(["list"]), home=tmp_path)["count"]["total"] == 1
+    with pytest.raises(ScopeSelectionError):
+        run(
+            parser.parse_args(
+                ["delete-all", "--user", "u1", "--agent", "bot", "--all-agents", "--confirm"]
+            ),
+            home=tmp_path,
+        )
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    begin_scope_delete(ledger, {"user_id": "u2", "agent_id": ALL_AGENTS})
+    ledger.close()
+    resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
+    assert resumed["resumed"] is True and resumed["deleted"] == 1
+    assert run(parser.parse_args(["list"]), home=tmp_path)["count"]["total"] == 0
+
+
+def test_large_scope_pages_export_and_delete(tmp_path, monkeypatch):
+    """Multi-page scopes stream through export and delete-all unchanged."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(
+        cfg,
+        [
+            (1000 + index, payload(f"bulk fact {index}", Scope("u1", None), "manual", "s1"))
+            for index in range(700)
+        ],
+    )
+    target = tmp_path / "bulk.json"
+    exported = run(parser.parse_args(["export", "--output", str(target)]), home=tmp_path)
+    assert exported["count"] == 700
+    document = json.loads(target.read_text())
+    assert document["count"] == 700
+    assert len(document["memories"]) == 700
+    result = run(parser.parse_args(["delete-all", "--user", "u1", "--confirm"]), home=tmp_path)
+    assert result["deleted"] == 700
+    assert run(parser.parse_args(["list"]), home=tmp_path)["count"]["total"] == 0
+
+
 def test_interrupted_scope_delete_blocks_commands_and_resumes(tmp_path, monkeypatch):
     """A recorded scoped-deletion intent fails closed until delete-all resumes it."""
     parser, cfg = prepared_home(tmp_path, monkeypatch)
@@ -256,6 +370,13 @@ def test_scope_delete_error_codes(tmp_path, monkeypatch, capsys):
     assert main(parser.parse_args(["delete-all"])) == 1
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_delete_refused"
     assert main(parser.parse_args(["list", "--agent", "bot"])) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_selection_error"
+    assert main(parser.parse_args(["delete-all", "--all-agents"])) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_selection_error"
+    assert (
+        main(parser.parse_args(["delete-all", "--user", "u1", "--agent", "bot", "--all-agents"]))
+        == 1
+    )
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_selection_error"
     target = tmp_path / "out.json"
     target.write_text("{}")
