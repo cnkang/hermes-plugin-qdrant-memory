@@ -24,6 +24,10 @@ Unreleased; no tag or GitHub Release has been published.
   with `migrate mem0`), and a durable scoped `delete-all` with reset-style
   intent, prepared-write fencing, `--dry-run`/`--confirm` and fail-closed
   recovery.
+- Scoped-deletion hardening: `delete-all` also invalidates admitted-but-
+  unprocessed turn events for the scope, supports `--all-agents` (strict runs
+  report `other_agent_scopes` when other agent scopes still hold memories),
+  resumes idempotently, and `export` streams records for large scopes.
 - Release and community readiness: data-flow/privacy guidance in the READMEs,
   pinned release installs and release notes, CONTRIBUTING and SECURITY policies,
   issue/pull-request templates, release reports organized under docs/releases,

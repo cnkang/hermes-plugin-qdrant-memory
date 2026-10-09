@@ -1,16 +1,22 @@
 # v0.1.0 Pre-release Checklist
 
-## Post-merge status (2026-10-09)
+## Post-merge status (2026-10-09, PRs #15–#17)
 
-PRs #10–#14 are merged. Current main
-`f6a2e97f9cd16c4aed3ba2590bfcf36176ee5e29` has the following recorded results:
+PRs #10–#17 are merged. Current main
+`ff5712d318f48054da3443598f58f6793d610514` has the following recorded results:
 
-- **PASS** — [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895051), including the required security gate.
-- **PASS** — [Six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895110).
-- **PASS** — [Authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895002); the test step executed, without changing main-only protection.
+- **PASS** — [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162232), including the required security gate.
+- **PASS** — [Six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162226).
+- **PASS** — [Authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162253); the test step executed, without changing main-only protection.
 - **PASS** — Live Quick Start drill (2026-10-09): a fresh home with local Ollama completed install, automatic extraction, cross-session recall, update, delete and restart; see [validation evidence](../validation.md).
 - **READY FOR LIMITED TECHNICAL PREVIEW** — One writer per destination across all profiles/hosts; documented admission, retention and capacity limits remain.
 - **NOT PUBLISHED** — No tag or GitHub Release. These results do not declare public beta.
+
+Intermediate snapshot (2026-10-09, PRs #13–#14): main
+`f6a2e97f9cd16c4aed3ba2590bfcf36176ee5e29` passed
+[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895051),
+[six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895110)
+and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895002).
 
 Earlier snapshot (2026-10-08): PRs #10–#12 merged; main
 `32bd4e7abdb3b417cc5b0dd0f793f93db188db3b` passed

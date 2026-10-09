@@ -1,5 +1,21 @@
 # Validation evidence
 
+## Post-merge main snapshot (2026-10-09, PRs #15–#17)
+
+PRs #15–[#17](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/17)
+are merged on top of the snapshots below. Main
+`ff5712d318f48054da3443598f58f6793d610514` passed:
+
+| Gate | Evidence |
+| --- | --- |
+| CI, including immutable host matrix, Server tests and security scans | [37887162232](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162232) |
+| Linux/macOS/Windows × Python 3.11/3.14 | [37887162226](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162226) |
+| Authenticated Cloud integration | [37887162253](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162253) |
+
+PR #17 delivered the memory inventory/export/scoped-deletion commands
+(issue #15); PR #16 delivered the release/community readiness set. The
+snapshots below retain their original scope.
+
 ## Post-merge main snapshot (2026-10-09)
 
 PRs #13 and [#14](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/14)
