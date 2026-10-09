@@ -111,6 +111,8 @@ For server/Cloud, configure the mode in `$HERMES_HOME/qdrant-memory.json` and su
 - SQLite WAL event/operation ledger, transport retries and restart recovery.
 - Source-ID-only Mem0 JSON/Qdrant migration, re-embedding, dry runs, resumable
   manifests, supplemental updates, and verification of IDs and payload hashes.
+- Read-only `list` inventory, portable `export` (Mem0-importable JSON) and a
+  durable scoped `delete-all` with prepared-write fencing.
 
 Unlike hosted memory services, your memory data lives in your own Qdrant
 destination and the plugin makes no calls to external memory services. Its
@@ -166,6 +168,32 @@ while the writer is running.
 `retry` requeues failed events for the next provider
 startup and retries prepared operations. Stop the agent before maintenance of an
 embedded store: Qdrant's local persistence permits only one client process.
+
+## Memory inventory, export and scoped deletion
+
+```bash
+hermes qdrant-memory list                        # read-only inventory
+hermes qdrant-memory export --output backup.json # portable JSON for re-import
+hermes qdrant-memory delete-all --user alice --confirm
+```
+
+`list` reports stored memories with scope, provenance and timestamps, plus the
+destination's pending/failed operation counts (`--user`/`--agent` filter,
+`--limit` bounds the output). `export` writes every stored memory — optionally
+one scope — as portable JSON in the shape the Mem0 importer accepts, so
+`hermes qdrant-memory migrate mem0 --source-json backup.json` restores it into
+a fresh destination (imports re-embed; 0.1 has no vector reuse). Exports are
+written owner-only and refuse to overwrite without `--force`.
+
+`delete-all` durably deletes every memory in one scope: it records a
+reset-style intent first, fences every enumerated point so a prepared write
+cannot resurrect it, deletes the scope in one filtered operation and clears the
+intent only after the scope is confirmed empty. `--dry-run` previews the count;
+`--confirm` authorizes deletion. An interrupted deletion fails closed — other
+commands return `scope_delete_recovery_required` until `delete-all` resumes it.
+Turns admitted after the deletion can still add new memories; only stored
+memories and prepared writes are removed. `list`, `export` and `delete-all` do
+not contact the embedding service.
 
 ## Data flow and privacy
 

@@ -50,6 +50,16 @@ An explicit memory delete keeps a scope-bound content-hash tombstone in the ledg
 so older admitted events cannot recreate the same content under a different point
 ID; a later newly admitted event may intentionally add it again. The tombstone
 contains a hash, not the deleted text, and remains until destination reset.
+A scoped `delete-all` reuses that fence family: it records a durable deletion
+intent, commits a scope-bound tombstone for every enumerated point, deletes the
+scope in one filtered operation and clears the intent only after the scope is
+empty. An interrupted scoped deletion fails closed — other destination commands
+report `scope_delete_recovery_required` until `delete-all` resumes it. Turns
+admitted after the deletion can still add new memories; the operation removes
+stored memories and prepared writes, not future intent. `list` and `export`
+read the collection without embedding calls; an export is a portable JSON
+document accepted by the Mem0 importer for restore into a fresh destination
+(imports re-embed).
 System prompt text and tool schemas remain
 static through the conversation.
 
