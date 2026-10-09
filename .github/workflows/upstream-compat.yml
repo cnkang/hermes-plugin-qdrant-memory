@@ -77,7 +77,7 @@ jobs:
           python -c 'import tomllib; from pathlib import Path; p = tomllib.loads(Path("../pyproject.toml").read_text()); print("\n".join(p["project"]["dependencies"] + p["dependency-groups"]["test"]))' \
             >> "$RUNNER_TEMP/upstream-host-requirements.txt"
           python -m pm.build_env --out "$RUNNER_TEMP/wheel-build-env" \
-            --requirement 'setuptools>=75,<83' --requirement 'wheel>=0.45,<1'
+            --requirement 'setuptools>=77,<83' --requirement 'wheel>=0.45,<1'
           cd "$GITHUB_WORKSPACE"
           "$RUNNER_TEMP/wheel-build-env/bin/python" -c 'import os, setuptools.build_meta as b; b.build_wheel(os.environ["RUNNER_TEMP"] + "/plugin-wheel")'
           cd .pm-host
