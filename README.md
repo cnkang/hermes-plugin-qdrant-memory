@@ -64,7 +64,7 @@ export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # Start Ollama if it is not running. Keep its service available.
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref v0.1.0
+  --ref d3db971ecfcd9e26caf97908bf4dd093d403f70f   # v0.1.0 release commit
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
@@ -73,8 +73,10 @@ hermes qdrant-memory init
 
 `hermes plugins install` checks out the given ref, and
 `hermes plugins enable` prepares the declared dependencies through Hermes PM.
-Do not pip-install into a managed Hermes environment. Omit `--ref` to track
-`main`, the development line.
+`--ref` takes a full 40-character commit SHA; the
+[releases page](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)
+lists the release commits. Do not pip-install into a managed Hermes
+environment. Omit `--ref` to track `main`, the development line.
 
 **Alternative: clone the release tag manually.**
 

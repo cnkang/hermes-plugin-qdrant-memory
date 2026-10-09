@@ -55,7 +55,7 @@ export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # 如果 Ollama 尚未运行，先启动服务，并保持服务可用。
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref v0.1.0
+  --ref d3db971ecfcd9e26caf97908bf4dd093d403f70f   # v0.1.0 release commit
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
@@ -63,8 +63,9 @@ hermes qdrant-memory init
 ```
 
 `hermes plugins install` 会检出指定 ref，`hermes plugins enable` 通过 Hermes PM
-准备声明的依赖；不要向 Hermes 管理的环境直接 pip install。省略 `--ref` 即跟随
-`main`（开发线）。
+准备声明的依赖；`--ref` 需要完整 40 位 commit SHA（tag 不被接受），发布提交见
+[releases 页面](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)。
+不要向 Hermes 管理的环境直接 pip install。省略 `--ref` 即跟随 `main`（开发线）。
 
 **替代方式：手动克隆发布 tag。**
 
