@@ -31,6 +31,22 @@ flowchart LR
     search --> store
 ```
 
+## Why this plugin
+
+- Durable, private memory for Hermes Agent: conversations become searchable
+  memories in your own Qdrant store, with recall, update and scoped deletion.
+- A native Hermes `MemoryProvider`, not Mem0. The `migrate mem0` command
+  imports existing Mem0 exports.
+- Embedded Qdrant needs no separate service. The same code targets
+  self-hosted Server and Qdrant Cloud.
+- A fully local setup works: embedded Qdrant and local Ollama keep the data
+  on your machine.
+- Data locality follows the destination. Extraction uses the LLM configured
+  in Hermes, and embedding uses the configured embedding service; either can
+  be remote. See [Data flow and privacy](#data-flow-and-privacy).
+- Not supported in this preview: multi-writer Server/Cloud, hybrid search and
+  a web UI.
+
 ## Install
 
 Requirements: Python 3.11+, a compatible Hermes installation, and a reachable
@@ -41,10 +57,32 @@ to serve `qwen3-embedding:4b`.
 
 Choose the **active profile's** home explicitly. Do not reuse another profile's data.
 
+**Recommended: install the pinned release through the Hermes CLI.**
+
+```bash
+export HERMES_HOME="/absolute/path/to/your/hermes-profile"
+ollama pull qwen3-embedding:4b
+# Start Ollama if it is not running. Keep its service available.
+hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
+  --ref v0.1.0
+hermes plugins enable qdrant-memory
+hermes memory setup
+hermes config set memory.provider qdrant-memory
+hermes qdrant-memory init
+```
+
+`hermes plugins install` checks out the given ref, and
+`hermes plugins enable` prepares the declared dependencies through Hermes PM.
+Do not pip-install into a managed Hermes environment. Omit `--ref` to track
+`main`, the development line.
+
+**Alternative: clone the release tag manually.**
+
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 mkdir -p "$HERMES_HOME/plugins"
-git clone \
+RELEASE_TAG=v0.1.0   # set a published release tag
+git clone --branch "$RELEASE_TAG" --depth 1 \
   https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
   "$HERMES_HOME/plugins/qdrant-memory"
 ollama pull qwen3-embedding:4b
@@ -54,25 +92,21 @@ hermes config set memory.provider qdrant-memory
 hermes qdrant-memory init
 ```
 
-`hermes memory setup` prepares declared dependencies through Hermes PM. Do not
-pip-install into a managed Hermes environment. Hermes versions supporting
-repository installation can use
-`hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory`.
-
-For reproducible installs, check out a release tag instead of floating `main`.
-The [releases page](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)
-lists the tags; `v0.1.0` is the first release:
+Then verify the install:
 
 ```bash
-RELEASE_TAG=v0.1.0   # set a published release tag
-git clone --branch "$RELEASE_TAG" --depth 1 \
-  https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
-  "$HERMES_HOME/plugins/qdrant-memory"
+hermes qdrant-memory status
+hermes qdrant-memory doctor
 ```
 
-The release notes, supported Hermes/Python versions and the current limitations
-live in [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md). `main` stays the
-development line.
+A healthy install reports the destination, the embedding service and the
+schema fingerprint. `doctor` validates runtime discovery, manifest parsing,
+import and registration. For development installs, see
+[development setup](docs/development.md).
+
+The release notes, supported Hermes/Python versions and the current
+limitations live in [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md);
+`main` stays the development line.
 
 For local development, symlink the repository into a disposable profile:
 
