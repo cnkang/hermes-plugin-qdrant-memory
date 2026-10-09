@@ -52,7 +52,7 @@ Checkpoint v2 durably archives compression evidence; setup uses the native schem
 wizard. Reset clears session bookkeeping, bounded shutdown retains local writer
 ownership during slow I/O, and stats persists dedupe decisions and active cache
 samples. Migration compares physical destinations and revalidates resumed SKIPs.
-CI exercises real Server REST/gRPC and minimum/pinned/current host contracts.
+CI exercises real Server REST/gRPC and minimum plus latest-main host contracts.
 
 Pre-release hardening also fences retries of previously prepared writes after a
 scoped delete, including same-content writes that use a different point ID, while
