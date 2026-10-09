@@ -1,9 +1,12 @@
 # Hermes Qdrant Memory v0.1.0 — Final Release Acceptance
 
-## Post-merge status (2026-10-08)
+## Earlier post-merge snapshot (2026-10-08)
+
+Superseded by the 2026-10-09 snapshot in [validation](../validation.md); retained
+as the dated record for PRs #10–#12.
 
 PRs #10, #11 and [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12)
-are merged. The post-merge main revision is
+are merged. That post-merge main revision was
 `32bd4e7abdb3b417cc5b0dd0f793f93db188db3b`.
 [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338914),
 [all six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802339623)

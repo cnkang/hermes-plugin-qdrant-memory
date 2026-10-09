@@ -51,7 +51,8 @@ hermes qdrant-memory init
 首个发布将为 `v0.1.0`）：
 
 ```bash
-git clone --branch <release-tag> --depth 1 \
+RELEASE_TAG=v0.1.0   # 设为已发布的 tag；首个发布将是 v0.1.0
+git clone --branch "$RELEASE_TAG" --depth 1 \
   https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
   "$HERMES_HOME/plugins/qdrant-memory"
 ```
@@ -84,8 +85,10 @@ hermes config set memory.provider qdrant-memory
 - 基于权威 `previous_content` 镜像 builtin memory，支持重试和崩溃恢复。
 - Mem0 JSON/Qdrant 只读迁移，保留来源 ID、支持 dry-run/resume/verify 和增量更新。
 
-与托管式记忆服务不同，所有数据都保存在你自己的 Qdrant 目的地，插件不调用任何
-外部记忆服务；从 Mem0 的迁移是单向的，0.1 不支持向量复用或 hybrid 检索。
+与托管式记忆服务不同，记忆数据保存在你自己的 Qdrant 目的地，插件不调用任何外部
+记忆服务。插件私有的 SQLite 账本（待处理操作、去重/重试记录与会话映射）保存在
+本地 Hermes home，请与 Qdrant 数据一并保留和备份。从 Mem0 的迁移是单向的，
+0.1 不支持向量复用或 hybrid 检索。
 
 相似度仅用于筛选需要复核的候选。事实关系 `SAME` 才跳过，`SUPERSEDES` 更新，
 `CONFLICT` 新增并记录关联，`UNRELATED` 新增。迁移按 source ID 映射，不做语义合并。
