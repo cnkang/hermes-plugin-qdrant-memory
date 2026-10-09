@@ -358,6 +358,25 @@ def test_resume_restores_recorded_agent_scope(tmp_path, monkeypatch):
     assert run(parser.parse_args(["stats"]), home=tmp_path)["points_count"] == 1
 
 
+def test_export_falls_back_without_hard_links(tmp_path, monkeypatch):
+    """Filesystems without hard links fall back to exclusive create-and-copy."""
+    parser, cfg = prepared_home(tmp_path, monkeypatch)
+    seed(cfg, [(1, payload("alpha fact", Scope("u1", None), "manual", "s1"))])
+
+    def unsupported(*args, **kwargs):
+        """Simulate a filesystem that refuses hard links."""
+        raise OSError("hard links unsupported")
+
+    monkeypatch.setattr("qdrant_memory.inventory.os.link", unsupported)
+    target = tmp_path / "fallback.json"
+    result = run(parser.parse_args(["export", "--output", str(target)]), home=tmp_path)
+    assert result["count"] == 1
+    document = json.loads(target.read_text())
+    assert document["count"] == 1 and document["memories"][0]["memory"] == "alpha fact"
+    with pytest.raises(ExportTargetExistsError):
+        run(parser.parse_args(["export", "--output", str(target)]), home=tmp_path)
+
+
 def test_resume_refuses_mismatched_explicit_scope_flags(tmp_path, monkeypatch):
     """Resuming with explicit scope flags that contradict the intent is refused."""
     parser, cfg = prepared_home(tmp_path, monkeypatch)
