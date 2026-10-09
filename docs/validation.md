@@ -21,13 +21,15 @@ and re-certified by the gates on main at release time, with
 [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752887),
 [six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752957)
 and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752899)
-all green; the `v0.1.0` tag was created from the documentation commit that
-records this certification (`d50f2cc5c4704a9204596e81e4192fa58da5f500`), with
-no functional changes between `112e403c` and that tag. The snapshots below
-retain their original scope.
+all green; the `v0.1.0` certification was recorded in the documentation
+commit `d50f2cc5c4704a9204596e81e4192fa58da5f500`, with no functional changes
+between `112e403c` and that commit. The snapshots below retain their original
+scope.
 
 The project is a limited technical preview. The `v0.1.0` release was published
-on 2026-10-09 from this certification record.
+on 2026-10-09; the re-publication retargets the tag to this record commit and
+includes the post-release changes below, each validated by its own
+pull-request gates.
 
 ## Scoped-deletion intent hardening (post-release, 2026-10-09)
 
@@ -39,9 +41,13 @@ plugin refuses it (`scope_delete_legacy_intent`). An operator resolves it with
 applies only to ambiguous records: agent `*` or absent). Fault-injection
 regressions cover interruption after the intent and fences commit, partial
 multi-scope deletion and resume, resume scope restoration, and both legacy
-resolution paths. The full local suite passes (301 tests, 1 skipped). These
-post-release changes are validated by their own pull-request gates; the
-v0.1.0 certification runs above do not cover them.
+resolution paths. The full local suite passes (301 tests, 1 skipped). The
+re-publication includes these changes in `v0.1.0` after the tag retarget;
+each was validated by its own pull-request gate. The gates on the final main
+head are green:
+[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37943322913),
+[six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37943322889)
+and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37943322869).
 
 ## Post-merge main snapshot (2026-10-09)
 

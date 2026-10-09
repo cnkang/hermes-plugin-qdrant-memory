@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
+
+Limited technical preview; released 2026-10-09; the re-publication retargets
+the `v0.1.0` tag to this record commit.
 
 - Hermes compatibility range: minimum v0.21.5 (v2026.9.24); the required CI
   matrix validates the minimum release and the latest Hermes `main`.
@@ -21,10 +24,6 @@
   dependencies and the GitHub Actions pins. Dependabot pull requests run the
   lint, test and platform jobs; the credentialed scans stay skipped by design
   and re-run on `main` after merge.
-
-## 0.1.0
-
-Limited technical preview; released 2026-10-09 (`v0.1.0`).
 
 - Merged PR #10: durable destination reset intents and crash recovery, scoped
   deletion fences, terminal payload scrubbing, resource cleanup, platform matrix
