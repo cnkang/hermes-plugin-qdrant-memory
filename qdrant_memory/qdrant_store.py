@@ -264,6 +264,35 @@ class QdrantStore:
             wait=True,
         )
 
+    def scopes_for_user(self, user_id):
+        """Count stored memories per agent scope for one user.
+
+        The reserved schema identity point is excluded; a ``None`` key is the
+        no-agent scope.
+        """
+        from qdrant_client import models as m
+
+        filt = m.Filter(
+            must=[m.FieldCondition(key="user_id", match=m.MatchValue(value=user_id))],
+            must_not=[m.HasIdCondition(has_id=[IDENTITY_ID])],
+        )
+        counts = {}
+        offset = None
+        while True:
+            rows, offset = self.client.scroll(
+                self.collection,
+                scroll_filter=filt,
+                limit=128,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for row in rows:
+                agent = (row.payload or {}).get("agent_id")
+                counts[agent] = counts.get(agent, 0) + 1
+            if offset is None:
+                return counts
+
     def count(self, scope=None):
         """Count exact memories, excluding the reserved schema identity point."""
         from qdrant_client import models as m

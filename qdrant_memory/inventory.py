@@ -73,25 +73,13 @@ def export_record(point):
     return record
 
 
-def export_document(points, collection):
-    """Build the portable export envelope accepted by ``migrate mem0``."""
-    records = [export_record(point) for point in points]
-    return {
-        "provider": "qdrant-memory",
-        "format": EXPORT_FORMAT,
-        "version": EXPORT_VERSION,
-        "exported_at": now(),
-        "collection": collection,
-        "count": len(records),
-        "memories": records,
-    }
+def write_export(path, collection, points, force=False):
+    """Stream stored memories to a portable export atomically, owner-only.
 
-
-def write_export(path, document, force=False):
-    """Write an export atomically with owner-only permissions.
-
-    An existing target is refused unless overwrite is explicitly authorized;
-    partial writes never remain visible under the final path.
+    Records are written incrementally so large scopes never materialize a full
+    document in memory. An existing target is refused unless overwrite is
+    explicitly authorized; partial writes never remain visible under the final
+    path. Returns the number of exported records.
     """
     path = Path(path)
     if path.exists() and not force:
@@ -100,13 +88,30 @@ def write_export(path, document, force=False):
         dir=path.parent, prefix=path.name + ".", suffix=".tmp"
     )
     temporary = Path(temporary_name)
+    count = 0
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(document, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
+            handle.write(
+                "{\n"
+                '  "provider": "qdrant-memory",\n'
+                f'  "format": {json.dumps(EXPORT_FORMAT)},\n'
+                f'  "version": {EXPORT_VERSION},\n'
+                f'  "exported_at": {json.dumps(now())},\n'
+                f'  "collection": {json.dumps(collection)},\n'
+                '  "memories": ['
+            )
+            first = True
+            for point in points:
+                record = export_record(point)
+                if not first:
+                    handle.write(",")
+                handle.write("\n    " + json.dumps(record, ensure_ascii=False))
+                first = False
+                count += 1
+            handle.write('\n  ],\n  "count": ' + str(count) + "\n}\n")
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
     os.replace(temporary, path)
     path.chmod(0o600)
-    return path
+    return count

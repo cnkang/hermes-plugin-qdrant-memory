@@ -17,7 +17,6 @@ from .config import (
 from .embedding import build_embedder
 from .inventory import (
     ExportTargetExistsError,
-    export_document,
     memory_view,
     write_export,
 )
@@ -73,6 +72,9 @@ class DeleteConfirmationRequiredError(ValueError):
 
 class ScopeSelectionError(ValueError):
     """Reject scope arguments that cannot identify a user-anchored scope."""
+
+
+ALL_AGENTS = "*"
 
 
 def existing_collection_action(args, collection):
@@ -149,6 +151,11 @@ def register_cli(subparser):
     parser = commands.add_parser("delete-all", help="Durably delete every memory in one scope")
     parser.add_argument("--collection")
     scope_arguments(parser)
+    parser.add_argument(
+        "--all-agents",
+        action="store_true",
+        help="Delete every agent scope of the user, including the no-agent scope",
+    )
     parser.add_argument(
         "--confirm",
         action="store_true",
@@ -321,95 +328,195 @@ def inventory_list(runtime, args):
 
 
 def inventory_export(runtime, args):
-    """Write every stored memory to a portable export accepted by migrate mem0."""
+    """Stream every stored memory to a portable export accepted by migrate mem0."""
     scope = scope_from(args)
-    document = export_document(runtime.store.scroll(scope), runtime.store.collection)
-    path = write_export(args.output, document, force=args.force)
+    count = write_export(
+        args.output, runtime.store.collection, runtime.store.scroll(scope), force=args.force
+    )
     return {
         "collection": runtime.store.collection,
         "scope": scope.as_dict() if scope else None,
-        "count": document["count"],
-        "output": str(path),
+        "count": count,
+        "output": str(args.output),
     }
 
 
 def scoped_delete_all(runtime, args):
-    """Durably delete every memory in one scope with fail-closed recovery.
+    """Durably delete stored memories and pending work for one scope or user.
 
-    The deletion records a durable intent, fences every enumerated point so a
-    prepared write cannot resurrect it, deletes the whole scope in one filtered
-    operation and clears the intent only after the scope is confirmed empty.
+    The deletion records a durable intent, fences every enumerated point and
+    prepared write, invalidates admitted-but-unprocessed turn events for the
+    scope, deletes the scope in filtered operations and clears the intent only
+    after every target scope is confirmed empty. ``--all-agents`` covers every
+    agent scope of a user, including the no-agent scope.
     """
     store, ledger = runtime.store, runtime.ledger
+    all_agents = bool(getattr(args, "all_agents", False))
+    agent = getattr(args, "agent", None)
+    user = getattr(args, "user", None)
+    if all_agents and agent is not None:
+        raise ScopeSelectionError("--all-agents cannot be combined with --agent")
+    if agent is not None and not user:
+        raise ScopeSelectionError("--agent requires --user; scopes are user-anchored")
     pending = pending_scope_deletes(ledger)
-    scope = scope_from(args)
     resumed = False
     if pending:
         if len(pending) > 1:
             raise ScopeDeleteRefusedError()
-        recorded = pending[0]
-        if scope is not None and scope_delete_key(scope) != recorded["scope"]:
+        recorded = json.loads(pending[0]["scope_json"])
+        recorded_all = recorded.get("agent_id") == ALL_AGENTS
+        if user is not None and (
+            recorded.get("user_id") != user
+            or recorded_all != all_agents
+            or (not recorded_all and recorded.get("agent_id") != agent)
+        ):
             raise ScopeDeleteRefusedError()
-        scope = Scope(**json.loads(recorded["scope_json"]))
+        user = recorded.get("user_id")
+        all_agents = recorded_all
         resumed = True
-    elif scope is None:
+    elif user is None:
+        if all_agents:
+            raise ScopeSelectionError("--all-agents requires --user; scopes are user-anchored")
         raise ScopeDeleteRefusedError()
     identity = store.client.retrieve(store.collection, ids=[IDENTITY_ID], with_payload=True)
     if not identity or not identity[0].payload.get("_qdrant_memory_schema"):
         raise CollectionCompatibilityError(
             "Collection has no trusted qdrant-memory schema identity; refusing scoped deletion"
         )
+    intent_value = {"user_id": user, "agent_id": ALL_AGENTS if all_agents else agent}
     result = {
         "collection": store.collection,
-        "scope": scope.as_dict(),
+        "scope": intent_value,
         "resumed": resumed,
     }
+    target_agents = _agents_with_work(store, ledger, user) if all_agents else None
     if args.dry_run:
-        result.update(dry_run=True, would_delete=store.count(scope))
+        agents = target_agents if target_agents is not None else [agent]
+        counts = [
+            {"agent_id": agent_key, "count": store.count(Scope(user, agent_key))}
+            for agent_key in agents
+        ]
+        result.update(
+            dry_run=True,
+            would_delete=sum(item["count"] for item in counts),
+            scopes=counts,
+        )
         return result
     if not args.confirm:
         raise DeleteConfirmationRequiredError()
-    intent_time = begin_scope_delete(ledger, scope)
-    records = list(store.scroll(scope))
-    fenced = set()
-    for point in records:
-        value = point.payload or {}
-        operation_key = ledger.enqueue_operation(
-            str(point.id),
-            "DELETE",
-            {"content_hash": value.get("content_hash", "")},
-            source_id=ledger.delete_fence_source(scope),
-            source_version=intent_time,
-        )
-        ledger.finish("operations", operation_key, "COMMITTED")
-        fenced.add(str(point.id))
-    # Prepared writes whose points are not stored yet must be fenced too;
-    # otherwise a later recovery could replay them and resurrect memories.
-    for status in ("PENDING", "FAILED"):
-        for row in ledger.iter_rows("operations", status):
-            if row["action"] != "UPSERT" or row["point_id"] in fenced:
-                continue
-            try:
-                value = json.loads(row["payload_json"] or "{}")
-            except ValueError:
-                continue
-            if value.get("user_id") != scope.user_id or value.get("agent_id") != scope.agent_id:
-                continue
+    if target_agents is None:
+        target_agents = [agent]
+    intent_time = begin_scope_delete(ledger, intent_value)
+    fenced_total = 0
+    superseded_total = 0
+    for agent_key in target_agents:
+        scope = Scope(user, agent_key)
+        fenced = set()
+        for point in store.scroll(scope):
+            value = point.payload or {}
             operation_key = ledger.enqueue_operation(
-                row["point_id"],
+                str(point.id),
                 "DELETE",
-                {"content_hash": row["content_hash"] or value.get("content_hash", "")},
+                {"content_hash": value.get("content_hash", "")},
                 source_id=ledger.delete_fence_source(scope),
                 source_version=intent_time,
             )
             ledger.finish("operations", operation_key, "COMMITTED")
-            fenced.add(row["point_id"])
-    store.delete_scope(scope)
-    if store.count(scope):
-        raise ScopeDeleteIncompleteError()
-    finish_scope_delete(ledger, scope_delete_key(scope))
-    result.update(deleted=len(records), fenced_operations=len(fenced), ok=True)
+            fenced.add(str(point.id))
+        # Prepared writes whose points are not stored yet must be fenced too;
+        # otherwise a later recovery could replay them and resurrect memories.
+        for status in ("PENDING", "FAILED"):
+            for row in ledger.iter_rows("operations", status):
+                if row["action"] != "UPSERT" or row["point_id"] in fenced:
+                    continue
+                try:
+                    value = json.loads(row["payload_json"] or "{}")
+                except ValueError:
+                    continue
+                if value.get("user_id") != scope.user_id or value.get("agent_id") != scope.agent_id:
+                    continue
+                operation_key = ledger.enqueue_operation(
+                    row["point_id"],
+                    "DELETE",
+                    {"content_hash": row["content_hash"] or value.get("content_hash", "")},
+                    source_id=ledger.delete_fence_source(scope),
+                    source_version=intent_time,
+                )
+                ledger.finish("operations", operation_key, "COMMITTED")
+                fenced.add(row["point_id"])
+        fenced_total += len(fenced)
+        superseded_total += _supersede_scope_events(ledger, scope)
+    deleted_total = 0
+    for agent_key in target_agents:
+        scope = Scope(user, agent_key)
+        before = store.count(scope)
+        store.delete_scope(scope)
+        if store.count(scope):
+            raise ScopeDeleteIncompleteError()
+        deleted_total += before
+    finish_scope_delete(ledger, scope_delete_key(intent_value))
+    result.update(
+        deleted=deleted_total,
+        fenced_operations=fenced_total,
+        superseded_events=superseded_total,
+        ok=True,
+    )
+    if not all_agents:
+        others = store.scopes_for_user(user)
+        others.pop(agent, None)
+        if others:
+            result["other_agent_scopes"] = others
     return result
+
+
+def _agents_with_work(store, ledger, user):
+    """Agent values with stored memories or pending/failed work for one user.
+
+    ``None`` is the no-agent scope; events keep their admitted scope under the
+    payload's ``scope`` key, operations carry it at the payload top level.
+    """
+    agents = set(store.scopes_for_user(user))
+    for status in ("PENDING", "FAILED"):
+        for table in ("operations", "events"):
+            for row in ledger.iter_rows(table, status):
+                try:
+                    value = json.loads(row["payload_json"] or "{}")
+                except ValueError:
+                    continue
+                scope_value = value.get("scope") if table == "events" else value
+                if not isinstance(scope_value, dict):
+                    continue
+                if scope_value.get("user_id") != user:
+                    continue
+                agents.add(scope_value.get("agent_id"))
+    return sorted(agents, key=repr)
+
+
+def _supersede_scope_events(ledger, scope):
+    """Invalidate admitted-but-unprocessed turn events for a deleted scope.
+
+    Events admitted after the deletion are unaffected: the provider cannot
+    start while the deletion intent is pending, and new events can only be
+    admitted once it is cleared.
+    """
+    superseded = 0
+    for status in ("PENDING", "FAILED"):
+        for row in ledger.iter_rows("events", status):
+            try:
+                value = json.loads(row["payload_json"] or "{}")
+            except ValueError:
+                continue
+            scope_value = value.get("scope")
+            if not isinstance(scope_value, dict):
+                continue
+            if (
+                scope_value.get("user_id") != scope.user_id
+                or scope_value.get("agent_id") != scope.agent_id
+            ):
+                continue
+            ledger.finish("events", row["event_id"], "SUPERSEDED")
+            superseded += 1
+    return superseded
 
 
 def run(args, home=None):
@@ -600,8 +707,9 @@ def main(args):
         elif isinstance(exc, ScopeSelectionError):
             error.update(
                 code="scope_selection_error",
-                message="Invalid scope selection: --agent requires --user; memory "
-                "scopes are always user-anchored.",
+                message="Invalid scope selection: --agent requires --user; --all-agents "
+                "cannot be combined with --agent, and memory scopes are always "
+                "user-anchored.",
             )
         elif isinstance(exc, ScopeDeleteRecoveryRequiredError):
             error.update(
