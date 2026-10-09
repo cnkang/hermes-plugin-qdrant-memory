@@ -21,7 +21,10 @@ waits for the test matrix and consumes that artifact, then waits for its quality
 gate. Snyk runs dependency and code scans and monitors main. The required test matrix
 validates the support range endpoints: the minimum supported release v0.21.5
 (v2026.9.24, `f97608f`) and the latest Hermes `main` (a moving ref; each run
-records its checked-out SHA in the run summary). A separately pinned PM prepares
+records its checked-out SHA in the run summary). The latest-main lane
+intentionally tracks the moving upstream ref inside the required matrix: an
+upstream regression can fail the gate until it is fixed upstream, and a rerun of
+the same commit can differ. A separately pinned PM prepares
 dependency environments because
 the minimum release predates `pm.build_env`. Each lane runs a digest-pinned Qdrant
 v1.15.5 service and requires REST/gRPC integration, including restart persistence.

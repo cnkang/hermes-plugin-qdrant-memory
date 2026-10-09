@@ -8,7 +8,7 @@ are merged on top of the snapshots below. The earlier
 
 | Gate | Evidence |
 | --- | --- |
-| CI, including immutable host matrix, Server tests and security scans | [37887162232](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162232) |
+| CI, including host matrix, Server tests and security scans | [37887162232](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162232) |
 | Linux/macOS/Windows × Python 3.11/3.14 | [37887162226](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162226) |
 | Authenticated Cloud integration | [37887162253](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162253) |
 
@@ -36,7 +36,7 @@ are merged on top of the snapshot below. Main
 
 | Gate | Evidence |
 | --- | --- |
-| CI, including immutable host matrix, Server tests and security scans | [37868895051](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895051) |
+| CI, including host matrix, Server tests and security scans | [37868895051](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895051) |
 | Linux/macOS/Windows × Python 3.11/3.14 | [37868895110](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895110) |
 | Authenticated Cloud integration | [37868895002](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895002) |
 
@@ -51,7 +51,7 @@ are merged. Main `32bd4e7abdb3b417cc5b0dd0f793f93db188db3b` passed:
 
 | Gate | Evidence |
 | --- | --- |
-| CI, including immutable host matrix, Server tests and security scans | [37802338914](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338914) |
+| CI, including host matrix, Server tests and security scans | [37802338914](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338914) |
 | Linux/macOS/Windows × Python 3.11/3.14 | [37802339623](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802339623) |
 | Authenticated Cloud integration | [37802338838](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338838) |
 
