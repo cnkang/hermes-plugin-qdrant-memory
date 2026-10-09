@@ -15,6 +15,12 @@ from .config import (
     load_config,
 )
 from .embedding import build_embedder
+from .inventory import (
+    ExportTargetExistsError,
+    export_document,
+    memory_view,
+    write_export,
+)
 from .ledger import Ledger
 from .migration import (
     MigrationIncompleteError,
@@ -28,9 +34,11 @@ from .migration import (
     verify_collection,
     verify_manifest,
 )
+from .models import Scope, now
 from .ownership import WriterBusyError, WriterLease
 from .progress import MigrationProgress, report
 from .qdrant_store import (
+    IDENTITY_ID,
     INDEXES,
     CollectionCompatibilityError,
     CollectionNotInitializedError,
@@ -39,9 +47,16 @@ from .qdrant_store import (
 )
 from .reset import (
     ResetRecoveryRequiredError,
+    ScopeDeleteRecoveryRequiredError,
+    ScopeDeleteRefusedError,
     begin_destination_reset,
+    begin_scope_delete,
+    finish_scope_delete,
     has_pending_reset_file,
+    pending_scope_deletes,
+    pending_scope_deletes_file,
     resume_destination_reset,
+    scope_delete_key,
 )
 from .retry import safe_error
 from .runtime import Runtime
@@ -49,6 +64,14 @@ from .runtime import Runtime
 
 class InitializationChoiceRequiredError(ValueError):
     """Require an explicit existing-collection choice outside a terminal."""
+
+
+class DeleteConfirmationRequiredError(ValueError):
+    """Require explicit confirmation before deleting a whole memory scope."""
+
+
+class ScopeSelectionError(ValueError):
+    """Reject scope arguments that cannot identify a user-anchored scope."""
 
 
 def existing_collection_action(args, collection):
@@ -109,6 +132,40 @@ def register_cli(subparser):
         "--quiet", action="store_true", help="Suppress migration progress on stderr"
     )
     parser.set_defaults(func=main)
+    parser = commands.add_parser("list", help="List stored memories without changing them")
+    parser.add_argument("--collection")
+    scope_arguments(parser)
+    parser.add_argument("--limit", type=int, default=200, help="Maximum memory records to return")
+    parser.set_defaults(func=main)
+    parser = commands.add_parser(
+        "export", help="Write stored memories as portable Mem0-importable JSON"
+    )
+    parser.add_argument("--collection")
+    scope_arguments(parser)
+    parser.add_argument("--output", type=Path, required=True, help="Export file path")
+    parser.add_argument("--force", action="store_true", help="Overwrite an existing export file")
+    parser.set_defaults(func=main)
+    parser = commands.add_parser("delete-all", help="Durably delete every memory in one scope")
+    parser.add_argument("--collection")
+    scope_arguments(parser)
+    parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Authorize deleting every memory in the selected scope",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Report the scope count without deleting"
+    )
+    parser.set_defaults(func=main)
+
+
+def scope_arguments(parser):
+    """Add optional user/agent scope selection shared by inventory commands."""
+    parser.add_argument("--user", help="Memory scope user ID")
+    parser.add_argument(
+        "--agent",
+        help="Memory scope agent ID; omit to select the profile-wide (no agent) scope",
+    )
 
 
 def summary(manifest):
@@ -207,6 +264,12 @@ def execute_command(args, runtime, source, progress=None):
                 progress=progress,
             )
         )
+    if command == "list":
+        return inventory_list(runtime, args)
+    if command == "export":
+        return inventory_export(runtime, args)
+    if command == "delete-all":
+        return scoped_delete_all(runtime, args)
     if command == "verify":
         return verify_target(runtime.store, runtime.ledger)
     if command == "retry":
@@ -214,6 +277,111 @@ def execute_command(args, runtime, source, progress=None):
         runtime.ledger.retry_failed()
         runtime.commit(r["idempotency_key"] for r in runtime.ledger.iter_rows("operations"))
     return diagnostic_status(runtime.store, runtime.ledger, runtime.cfg, command)
+
+
+def scope_from(args):
+    """Build an explicit memory scope from command arguments, if one is selected."""
+    user = getattr(args, "user", None)
+    agent = getattr(args, "agent", None)
+    if agent is not None and not user:
+        raise ScopeSelectionError("--agent requires --user; scopes are user-anchored")
+    if user is None:
+        return None
+    return Scope(user, agent)
+
+
+def inventory_list(runtime, args):
+    """Return a bounded read-only inventory of stored memories and ledger backlog."""
+    scope = scope_from(args)
+    limit = max(int(args.limit), 1)
+    total = runtime.store.count(scope)
+    memories = []
+    for point in runtime.store.scroll(scope):
+        memories.append(memory_view(point))
+        if len(memories) >= limit:
+            break
+    operations = runtime.ledger.stats()["operations"]
+    return {
+        "collection": runtime.store.collection,
+        "scope": scope.as_dict() if scope else None,
+        "count": {
+            "total": total,
+            "returned": len(memories),
+            "truncated": total > len(memories),
+        },
+        "ledger": {
+            "pending_operations": operations.get("PENDING", 0),
+            "failed_operations": operations.get("FAILED", 0),
+        },
+        "memories": memories,
+    }
+
+
+def inventory_export(runtime, args):
+    """Write every stored memory to a portable export accepted by migrate mem0."""
+    scope = scope_from(args)
+    document = export_document(runtime.store.scroll(scope), runtime.store.collection)
+    path = write_export(args.output, document, force=args.force)
+    return {
+        "collection": runtime.store.collection,
+        "scope": scope.as_dict() if scope else None,
+        "count": document["count"],
+        "output": str(path),
+    }
+
+
+def scoped_delete_all(runtime, args):
+    """Durably delete every memory in one scope with fail-closed recovery.
+
+    The deletion records a durable intent, fences every enumerated point so a
+    prepared write cannot resurrect it, deletes the whole scope in one filtered
+    operation and clears the intent only after the scope is confirmed empty.
+    """
+    store, ledger = runtime.store, runtime.ledger
+    pending = pending_scope_deletes(ledger)
+    scope = scope_from(args)
+    resumed = False
+    if pending:
+        if len(pending) > 1:
+            raise ScopeDeleteRefusedError()
+        recorded = pending[0]
+        if scope is not None and scope_delete_key(scope) != recorded["scope"]:
+            raise ScopeDeleteRefusedError()
+        scope = Scope(**json.loads(recorded["scope_json"]))
+        resumed = True
+    elif scope is None:
+        raise ScopeDeleteRefusedError()
+    identity = store.client.retrieve(store.collection, ids=[IDENTITY_ID], with_payload=True)
+    if not identity or not identity[0].payload.get("_qdrant_memory_schema"):
+        raise ScopeDeleteRefusedError()
+    result = {
+        "collection": store.collection,
+        "scope": scope.as_dict(),
+        "resumed": resumed,
+    }
+    if args.dry_run:
+        result.update(dry_run=True, would_delete=store.count(scope))
+        return result
+    if not args.confirm:
+        raise DeleteConfirmationRequiredError()
+    begin_scope_delete(ledger, scope)
+    records = list(store.scroll(scope))
+    for point in records:
+        value = point.payload or {}
+        operation_key = ledger.enqueue_operation(
+            str(point.id),
+            "DELETE",
+            {"content_hash": value.get("content_hash", "")},
+            source_id=ledger.delete_fence_source(scope),
+            source_version=now(),
+        )
+        ledger.finish("operations", operation_key, "COMMITTED")
+    store.delete_scope(scope)
+    if store.count(scope):
+        raise ScopeDeleteRefusedError()
+    finish_scope_delete(ledger, scope_delete_key(scope))
+    result.update(deleted=len(records), ok=True)
+    return result
 
 
 def run(args, home=None):
@@ -263,8 +431,10 @@ def _run(args, home=None, progress=None):
     pending_reset = has_pending_reset_file(home, ledger_namespace(cfg))
     if pending_reset and command != "init":
         raise ResetRecoveryRequiredError()
+    if pending_scope_deletes_file(home, ledger_namespace(cfg)) and command != "delete-all":
+        raise ScopeDeleteRecoveryRequiredError()
     with ExitStack() as resources:
-        if command in {"init", "migrate", "retry"}:
+        if command in {"init", "migrate", "retry", "delete-all"}:
             report(progress, "Acquiring writer lock")
             lease = WriterLease.for_config(home, cfg)
             resources.callback(lease.close)
@@ -288,6 +458,13 @@ def _run(args, home=None, progress=None):
             if not pending_reset:
                 begin_destination_reset(ledger)
             resume_destination_reset(store, ledger)
+        elif command in {"list", "export", "delete-all"}:
+            # Inventory and scoped deletion never embed; they only require the
+            # target collection to exist and stay read-only otherwise.
+            if not store.client.collection_exists(store.collection):
+                raise CollectionNotInitializedError(
+                    "Collection does not exist; run hermes qdrant-memory init"
+                )
         else:
             report(progress, "Initializing target collection and probing embedding")
             store.initialize(create=command in {"init", "migrate"})
@@ -379,6 +556,38 @@ def main(args):
             error.update(
                 code="reset_recovery_required",
                 message="Rerun hermes qdrant-memory init before using this destination.",
+            )
+        elif isinstance(exc, DeleteConfirmationRequiredError):
+            error.update(
+                code="delete_confirmation_required",
+                message="Refusing to delete without explicit confirmation. Rerun "
+                "delete-all with --confirm to delete the selected scope, or with "
+                "--dry-run to preview its count.",
+            )
+        elif isinstance(exc, ScopeSelectionError):
+            error.update(
+                code="scope_selection_error",
+                message="Invalid scope selection: --agent requires --user; memory "
+                "scopes are always user-anchored.",
+            )
+        elif isinstance(exc, ScopeDeleteRecoveryRequiredError):
+            error.update(
+                code="scope_delete_recovery_required",
+                message="An interrupted scoped deletion is pending. Rerun hermes "
+                "qdrant-memory delete-all with --confirm to resume it before using "
+                "this destination.",
+            )
+        elif isinstance(exc, ScopeDeleteRefusedError):
+            error.update(
+                code="scope_delete_refused",
+                message="Scoped deletion refused. A pending scoped deletion must be "
+                "resumed with its recorded scope, --user is required for a new "
+                "scoped deletion, and a completed pass must leave the scope empty.",
+            )
+        elif isinstance(exc, ExportTargetExistsError):
+            error.update(
+                code="export_target_exists",
+                message="Export target already exists; pass --force to overwrite it.",
             )
         elif isinstance(exc, InitializationChoiceRequiredError):
             error.update(

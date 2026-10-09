@@ -254,6 +254,16 @@ class QdrantStore:
             self.collection, points_selector=m.PointIdsList(points=identifiers), wait=True
         )
 
+    def delete_scope(self, scope):
+        """Delete every point in one scope and wait for Qdrant confirmation."""
+        from qdrant_client import models as m
+
+        self.client.delete(
+            self.collection,
+            points_selector=m.FilterSelector(filter=scope_filter(scope)),
+            wait=True,
+        )
+
     def count(self, scope=None):
         """Count exact memories, excluding the reserved schema identity point."""
         from qdrant_client import models as m
