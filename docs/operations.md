@@ -69,6 +69,9 @@ is a portable JSON document accepted by the Mem0 importer for restore into a
 fresh destination (imports re-embed). An export covers stored memories only —
 it does not include the SQLite ledger (pending events, retry history) or
 crash-recovery state; back up the profile home for a full recovery point.
+Publication refuses to clobber atomically (hard-link); a filesystem without
+hard links refuses a non-force export, and `--force` writes without the
+guarantee.
 System prompt text and tool schemas remain
 static through the conversation.
 

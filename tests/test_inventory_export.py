@@ -14,7 +14,7 @@ from qdrant_memory.cli import (
     run,
 )
 from qdrant_memory.config import ledger_namespace, load_config
-from qdrant_memory.inventory import ExportTargetExistsError
+from qdrant_memory.inventory import ExportPublicationUnsupportedError, ExportTargetExistsError
 from qdrant_memory.ledger import Ledger
 from qdrant_memory.models import Scope, payload
 from qdrant_memory.reset import (
@@ -358,8 +358,8 @@ def test_resume_restores_recorded_agent_scope(tmp_path, monkeypatch):
     assert run(parser.parse_args(["stats"]), home=tmp_path)["points_count"] == 1
 
 
-def test_export_falls_back_without_hard_links(tmp_path, monkeypatch):
-    """Filesystems without hard links fall back to exclusive create-and-copy."""
+def test_export_refuses_publication_without_hard_links(tmp_path, monkeypatch):
+    """Filesystems without hard links refuse non-force exports; --force writes."""
     parser, cfg = prepared_home(tmp_path, monkeypatch)
     seed(cfg, [(1, payload("alpha fact", Scope("u1", None), "manual", "s1"))])
 
@@ -369,12 +369,13 @@ def test_export_falls_back_without_hard_links(tmp_path, monkeypatch):
 
     monkeypatch.setattr("qdrant_memory.inventory.os.link", unsupported)
     target = tmp_path / "fallback.json"
-    result = run(parser.parse_args(["export", "--output", str(target)]), home=tmp_path)
-    assert result["count"] == 1
+    with pytest.raises(ExportPublicationUnsupportedError):
+        run(parser.parse_args(["export", "--output", str(target)]), home=tmp_path)
+    assert not target.exists()
+    forced = run(parser.parse_args(["export", "--output", str(target), "--force"]), home=tmp_path)
+    assert forced["count"] == 1
     document = json.loads(target.read_text())
     assert document["count"] == 1 and document["memories"][0]["memory"] == "alpha fact"
-    with pytest.raises(ExportTargetExistsError):
-        run(parser.parse_args(["export", "--output", str(target)]), home=tmp_path)
 
 
 def test_resume_refuses_mismatched_explicit_scope_flags(tmp_path, monkeypatch):
