@@ -401,6 +401,10 @@ def scoped_delete_all(runtime, args):
             if not args.confirm:
                 raise DeleteConfirmationRequiredError()
             if resolve_legacy == "all_agents":
+                if recorded.get("agent_id", "*") != "*":
+                    # A pre-versioned record with a concrete agent is not
+                    # ambiguous: never widen it to an all-agents deletion.
+                    raise ScopeDeleteRefusedError()
                 all_agents, agent = True, None
             else:
                 if "agent_id" not in recorded:
@@ -781,12 +785,7 @@ def main(args):
                 "--dry-run to preview its count.",
             )
         elif isinstance(exc, ScopeSelectionError):
-            error.update(
-                code="scope_selection_error",
-                message="Invalid scope selection: --agent requires --user; --all-agents "
-                "cannot be combined with --agent, and memory scopes are always "
-                "user-anchored.",
-            )
+            error.update(code="scope_selection_error", message=str(exc))
         elif isinstance(exc, ScopeDeleteRecoveryRequiredError):
             error.update(
                 code="scope_delete_recovery_required",

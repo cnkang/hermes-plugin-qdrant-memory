@@ -143,8 +143,8 @@ class ScopeDeleteLegacyIntentError(ValueError):
             "deletion of agent '*' from an all-agents deletion, so automatic "
             "recovery is refused and no data was modified. Resolve it explicitly "
             "with `hermes qdrant-memory delete-all --user <user> "
-            "--resolve-legacy single_agent --confirm` or `--resolve-legacy "
-            "all_agents`."
+            "--resolve-legacy single_agent --confirm`, or with `--resolve-legacy "
+            "all_agents` when the recorded agent is `*` or absent."
         )
 
 
