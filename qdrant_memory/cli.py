@@ -365,14 +365,15 @@ def scoped_delete_all(runtime, args):
             raise ScopeDeleteRefusedError()
         recorded = json.loads(pending[0]["scope_json"])
         recorded_all = recorded.get("agent_id") == ALL_AGENTS
-        if user is not None and (
-            recorded.get("user_id") != user
+        if (user is not None or all_agents) and (
+            (user is not None and recorded.get("user_id") != user)
             or recorded_all != all_agents
-            or (not recorded_all and recorded.get("agent_id") != agent)
+            or (user is not None and not recorded_all and recorded.get("agent_id") != agent)
         ):
             raise ScopeDeleteRefusedError()
         user = recorded.get("user_id")
         all_agents = recorded_all
+        agent = None if recorded_all else recorded.get("agent_id")
         resumed = True
     elif user is None:
         if all_agents:
