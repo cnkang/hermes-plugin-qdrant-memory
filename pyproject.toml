@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77,<83"]
+requires = ["setuptools>=77,<85"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["qdrant-client>=1.15,<2", "httpx>=0.28,<1", "portalocker>=3.2,<4"]
+dependencies = ["qdrant-client>=1.15,<2", "httpx>=0.28,<1", "portalocker>=3.2,<5"]
 
 [project.urls]
 Homepage = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
@@ -22,7 +22,7 @@ Changelog = "https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/main/CHA
 qdrant-memory = "qdrant_memory:register"
 
 [dependency-groups]
-test = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruamel.yaml>=0.18.16,<0.19"]
+test = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruamel.yaml>=0.18.16,<0.20"]
 
 [tool.setuptools.packages.find]
 include = ["qdrant_memory*"]
