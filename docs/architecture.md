@@ -1,7 +1,7 @@
 # Architecture and contracts
 
 The plugin stays outside Hermes core. Directory discovery calls the root
-`register(ctx)`; packaged discovery calls `qdrant_memory.register(ctx)`. Both use
+`register(ctx)`. Packaged discovery calls `qdrant_memory.register(ctx)`. Both use
 the same provider factory. When the discovery collector lacks `llm`, the factory
 creates a named Hermes `PluginContext` and registers extraction's auxiliary task
 there. Model selection, credentials and operator trust remain host-owned.
@@ -24,72 +24,74 @@ there. Model selection, credentials and operator trust remain host-owned.
 ## Turn persistence and ownership
 
 Hermes currently submits `sync_turn` through its in-memory background executor.
-The completed turn is not covered by this plugin's durability guarantee while it is
-waiting in that host queue: abrupt process exit or bounded host shutdown can discard
+This plugin's durability guarantee does not cover the completed turn while it
+waits in that host queue. Abrupt process exit or bounded host shutdown can discard
 a callback that has not started. The plugin boundary begins when Hermes invokes
 `sync_turn` and the provider commits the event to SQLite.
 
 1. The admitted primary-agent turn enters a small synchronous SQLite transaction.
 2. A serial plugin worker receives the persisted event key and caller context.
-3. Extracted candidates are persisted before relation checks and vector writes.
-4. Prepared operation keys are persisted before committing to Qdrant.
+3. The worker persists extracted candidates before relation checks and vector writes.
+4. It persists prepared operation keys before committing to Qdrant.
 5. The ledger acknowledges the mutation only after a `wait=True` write succeeds.
 
 An exit between steps 4 and 5 leaves replayable work. An exit after Qdrant upsert
 but before acknowledgment repeats the same prepared point ID instead of creating
-another logical record. Events can remain FAILED after service or schema errors;
-an explicit retry requeues them. Replay of other pending items continues when one
+another logical record. Events can remain FAILED after service or schema errors.
+An explicit retry requeues them. Replay of other pending items continues when one
 item fails. This recovery guarantee starts at plugin ledger admission and does not
 cover Hermes's earlier in-memory queue. The ledger is not an unlimited guarantee
 against disk failure or loss of the ledger itself.
 
 Provider and CLI mutations share `Runtime.lock`. The worker owns connections after
-successful initialization; shutdown stops new admission and briefly waits for the
+successful initialization. Shutdown stops new admission and briefly waits for the
 drain. If it exceeds the timeout, shutdown raises and pending durable work remains
 replayable. A local OS writer lease prevents another provider/CLI from overlapping
 the retiring worker on the same profile destination. Cleanup holds the runtime lock
 so foreground tool calls cannot race connection closure.
-During failed initialization, created resources are closed immediately.
+During failed initialization, the plugin closes created resources immediately.
 
 The OS lease is local process coordination, not a distributed lock contract. It
 does not establish exclusion across separate profile homes on the same machine or
-writers on other machines, or make shared absolute storage paths safe. Run one writer
-per destination and stop writers across all profiles and hosts
-before mutating maintenance operations.
+writers on other machines, or make shared absolute storage paths safe. Run one
+writer per destination. Stop writers across all profiles and hosts before mutating
+maintenance operations.
 
 ## MemoryProvider callbacks and manifest hooks
 
-Both directory and wheel entry points register a `MemoryProvider`; this plugin does
+Both directory and wheel entry points register a `MemoryProvider`. This plugin does
 not call `PluginContext.register_hook`. Its v2 manifests therefore declare an empty
-generic `provides_hooks` list. Implemented `MemoryProvider` lifecycle and callback
-methods are `is_available`, `unavailable_reason`, `initialize`, `system_prompt_block`,
-`prefetch`, `queue_prefetch`, `sync_turn`, `shutdown`, `on_turn_start`,
-`on_session_end`, `on_session_switch`, `on_pre_compress`, and `on_memory_write`; the
-provider also supplies `get_tool_schemas`, `handle_tool_call`, `get_config_schema`,
-and `save_config`. These provider callbacks are a separate host interface, not
+generic `provides_hooks` list. The implemented `MemoryProvider` lifecycle methods
+are `is_available`, `unavailable_reason`, `initialize`, `system_prompt_block`,
+`prefetch`, `queue_prefetch`, `sync_turn`, and `shutdown`. The session hooks are
+`on_turn_start`, `on_session_end`, `on_session_switch`, `on_pre_compress`, and
+`on_memory_write`. The provider also supplies `get_tool_schemas`,
+`handle_tool_call`, `get_config_schema`, and `save_config`. These provider
+callbacks are a separate host interface, not
 generic plugin event hooks.
 
 The v2 `python_dependencies` metadata repeats the runtime requirements from
 `pyproject.toml` for discovery. Hermes surfaces this field but does not install from
-it; Hermes PM installation continues to use the project dependency declaration.
+it. Hermes PM installation continues to use the project dependency declaration.
 
 ## Scope, cache and prompt invariants
 
-Every retrieval filters `user_id` and `agent_id`; a null agent has an explicit null
+Every retrieval filters `user_id` and `agent_id`. A null agent has an explicit null
 condition. Exact-ID reads check payload scope before update/delete. A tool cannot
 submit a scope override. Non-bot gateway author identity takes precedence for that
 turn. Current-turn memory eligibility is separate from that stored human scope:
 bot and unidentified shared-session turns cannot use it. Explicit authors on
 asynchronously completed human turns retain their own write scope.
-Mixed-author session transcripts are not attributed to the latest author. Bot or
-unidentified participation also disables supplementary transcript extraction;
-the ledger persists that quarantine across restart until an authorized transcript
+The plugin does not attribute mixed-author session transcripts to the latest
+author. Bot or unidentified participation also disables supplementary transcript
+extraction.
+The ledger persists that quarantine across restart until an authorized transcript
 reset. Continuation IDs inherit the parent's scope, author history, active denial,
 and durable quarantine. Checkpoint archival continues with neutral attribution
 and no extraction.
 
 Prefetch runs in the worker. `prefetch()` itself reads only a matching cached value
-or returns an empty string. Each queued search has a generation; session/author
+or returns an empty string. Each queued search has a generation. Session/author
 changes invalidate the generation so late results cannot repopulate stale recall.
 System prompt text and tool schemas remain static throughout the conversation.
 
@@ -97,34 +99,37 @@ System prompt text and tool schemas remain static throughout the conversation.
 
 The collection's reserved point records the embedding fingerprint. Startup probes
 the configured dimension and validates the named `dense` vector and distance.
-Unknown nonempty collections and fingerprint mismatches are refused. Fingerprints
-include model/provider, endpoint, dimensions, metric, instruction prefixes and
-dimension-sending policy; credentials are excluded.
+The plugin refuses unknown nonempty collections and fingerprint mismatches.
+Fingerprints include model/provider, endpoint, dimensions, metric, instruction
+prefixes and dimension-sending policy. The fingerprint excludes credentials.
 
 Point UUIDs include user/agent scope and source identity. Operation keys additionally
 include destination namespace and prepared payload. The destination namespace binds
-the collection to the canonical `backend_destination` identity — a hash of the
-normalized endpoint address (or embedded path), so mode labels and URL aliases
-(e.g. server `https://x` vs. cloud `https://x:443/`) resolve to the same namespace.
-This prevents replay into another endpoint with the same collection name. New committed work supersedes earlier open writes to the
-same point. Migration repair uses a new generation when stale open work exists,
+the collection to the canonical `backend_destination` identity, a hash of the
+normalized endpoint address (or embedded path). Mode labels and URL aliases
+(for example, server `https://x` against cloud `https://x:443/`) resolve to the
+same namespace.
+This prevents replay into another endpoint with the same collection name. New
+committed work supersedes earlier open writes to the same point. Migration repair
+uses a new generation when stale open work exists,
 even if the target already contains the incoming payload.
 
 ## Migration and compatibility boundaries
 
 Migration never semantically merges distinct source IDs. It preserves source metadata,
 re-embeds texts and retains a durable plan with expected IDs and payload hashes.
-Changed source snapshots create new plans; a missing ledger operation is an explicit
+Changed source snapshots create new plans. A missing ledger operation is an explicit
 failure, not a completed migration. Collection counts supplement exact verification.
 `SUPERSEDED` operations are terminal conflicts, not successful writes. Migration
-verification raises a sanitized conflict; resuming an old plan does not authorize
+verification raises a sanitized conflict. Resuming an old plan does not authorize
 restoring memories deleted later. Recovery scans use bounded rowid pages and a finite
-watermark; this limits transient reads, not retained database or manifest size.
+watermark. This limits transient reads, not retained database or manifest size.
 
 Collection clearing commits a destination reset intent before deleting Qdrant data.
 The intent blocks ordinary destination use until `init` completes collection rebuild,
-identity validation and destination ledger cleanup. Interrupted recovery can itself
-be resumed. Other destinations and transcript quarantine remain intact; collection
+identity validation and destination ledger cleanup. An operator can resume
+interrupted recovery itself. Other destinations and transcript quarantine remain
+intact. Collection
 deletion/recreation is recoverable rather than atomic.
 
 v0.1 supports dense retrieval only. Sparse/hybrid retrieval, reranking and recency
