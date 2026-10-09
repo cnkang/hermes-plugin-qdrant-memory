@@ -24,9 +24,9 @@ validates the support range endpoints: the minimum supported release v0.21.5
 records its checked-out SHA in the run summary). The latest-main lane
 intentionally tracks the moving upstream ref inside the required matrix: an
 upstream regression can fail the gate until it is fixed upstream, and a rerun of
-the same commit can differ. A separately pinned PM prepares
-dependency environments because
-the minimum release predates `pm.build_env`. Each lane runs a digest-pinned Qdrant
+the same commit can differ. A separately pinned PM prepares dependency
+environments because the minimum release predates `pm.build_env`. Each lane runs
+a digest-pinned Qdrant
 v1.15.5 service and requires REST/gRPC integration, including restart persistence.
 Ruff is pinned to 0.15.1 in CI and the local
 [pre-commit setup](development.md); lint includes docstrings and import ordering.
@@ -71,45 +71,24 @@ behavior-contract jobs.
 **Optional Qdrant Cloud smoke** runs on pushes to `main` only and supports
 manual dispatch after the workflow reaches the default branch. The job uses the
 `qdrant-cloud` GitHub Environment; configure that Environment to allow deployments
-from `main` only. Store `QDRANT_CLOUD_URL` (HTTPS) and
-`QDRANT_CLOUD_API_KEY` (Database API key with collection creation/deletion access)
-only as secrets in that Environment. Remove any same-named repository-level or
-organization-level secrets. If set, `QDRANT_CLOUD_COLLECTION_PREFIX` is also an
-Environment secret and defaults to `hermes_smoke_`; a random UUID suffix always
-isolates the test from existing collections. It creates and deletes only that
-disposable collection. Credentials are written to a private temporary file,
-never passed in process arguments or printed, and removed at job completion.
+from `main` only. The job reads its credentials from that Environment, creates
+only a disposable collection (isolated by a random UUID suffix), and never
+passes or prints the values: it writes them to a private temporary file and
+removes it at job completion.
 Absent URL/key yields an explicit SKIPPED message. This manual lane is outside the
 required scan gate; a skip does not establish Cloud compatibility. Its integration
 test covers indexes, scope, mutation, migration and reconnection; deployment restart
 remains a Server lane check because Cloud infrastructure is service-owned.
 
-SonarCloud project configuration:
+SonarCloud and Snyk use maintainer-managed repository secrets; contributors do
+not need scanner credentials. Snyk runs dependency and code scans; high or
+critical findings fail the job, and authentication errors also fail.
+`requirements.txt` is the PM-exported runtime lock snapshot.
 
-- Organization key: `cnkang` (matching the account's existing SonarCloud setup).
-- Project key: `cnkang_hermes-plugin-qdrant-memory`.
-- Repository secret: `SONAR_TOKEN` with project analysis permission.
-- Import the repository in SonarCloud and select CI analysis rather than duplicate
-  automatic analysis. [Official GitHub Actions guide](https://docs.sonarsource.com/sonarqube-cloud/advanced-setup/ci-based-analysis/github-actions-for-sonarcloud).
+CodeRabbit reviews pull requests through its GitHub App, configured in
+`.coderabbit.yaml`. Small repositories can require a manual review trigger, and
+a skipped review check is not evidence of a completed code review.
 
-Snyk needs repository secret `SNYK_TOKEN`, and the token's organization must have
-Snyk Open Source and Snyk Code enabled. `requirements.txt` is the PM-exported
-runtime lock snapshot. High/critical dependency or code findings fail the job;
-authentication errors also fail. [Python CLI guide](https://docs.snyk.io/supported-languages/supported-languages-list/python/snyk-cli-for-python).
-
-CodeRabbit runs through its GitHub App on pull requests. Grant the App access to
-this repository in GitHub installation settings. `.coderabbit.yaml` enables
-automatic reviews, including drafts, and review progress checks. It is not a
-GitHub Actions executable and does not need a made-up CI token.
-[Configuration reference](https://docs.coderabbit.ai/reference/configuration).
-
-At onboarding, CodeRabbit reported that repositories with fewer than 10 stars
-require a manual review trigger despite `auto_review.enabled`. A skipped review
-check is not evidence of a completed code review.
-
-Configure secrets through GitHub Settings → Secrets and variables → Actions or
-`gh secret set`; never paste their values into issues, PRs or logs. Missing tokens
-produce explicit CI failures rather than a misleading green scan. External App
-authorization, project import and organization entitlements cannot be inferred
-from committed config files. Confirm actual checks on the PR before making them
-required branch protections.
+Never paste secret values into issues, pull requests or logs. Missing tokens
+produce explicit CI failures rather than a misleading green scan. Confirm actual
+checks on a pull request before making them required branch protections.
