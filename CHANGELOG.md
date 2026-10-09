@@ -19,6 +19,11 @@ Unreleased; no tag or GitHub Release has been published.
   guidance while failed or missing records remain, ahead of any superseded conflict.
 - Provider discovery and registration import without runtime dependencies, so
   `hermes memory setup` works on a fresh home before Hermes prepares them.
+- Memory inventory, export and scoped deletion: read-only `list` with ledger
+  backlog counts, portable `export` in the Mem0-importable shape (re-import
+  with `migrate mem0`), and a durable scoped `delete-all` with reset-style
+  intent, prepared-write fencing, `--dry-run`/`--confirm` and fail-closed
+  recovery.
 - Release and community readiness: data-flow/privacy guidance in the READMEs,
   pinned release installs and release notes, CONTRIBUTING and SECURITY policies,
   issue/pull-request templates, release reports organized under docs/releases,

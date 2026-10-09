@@ -84,6 +84,8 @@ hermes config set memory.provider qdrant-memory
   后台 worker 提取和提交；会话缓存检索。
 - 基于权威 `previous_content` 镜像 builtin memory，支持重试和崩溃恢复。
 - Mem0 JSON/Qdrant 只读迁移，保留来源 ID、支持 dry-run/resume/verify 和增量更新。
+- 只读 `list` 盘点、便携 `export`（Mem0 可导入 JSON）与带写入围栏的持久化
+  作用域 `delete-all`。
 
 与托管式记忆服务不同，记忆数据保存在你自己的 Qdrant 目的地，插件不调用任何外部
 记忆服务。插件私有的 SQLite 账本（待处理操作、去重/重试记录与会话映射）保存在
@@ -128,6 +130,28 @@ hermes qdrant-memory retry
 可在 writer 运行时检查状态。
 `retry` 重试已准备的操作，并让原始失败事件在下次 provider 启动时重新提取。
 维护 embedded 数据库前停止 agent：本地持久化只允许一个 client 进程持有锁。
+
+## 记忆盘点、导出与按作用域删除
+
+```bash
+hermes qdrant-memory list                        # 只读盘点
+hermes qdrant-memory export --output backup.json # 可再导入的便携 JSON
+hermes qdrant-memory delete-all --user alice --confirm
+```
+
+`list` 列出已存记忆的作用域、来源与时间戳，以及该目的地的待处理/失败操作计数
+（`--user`/`--agent` 过滤，`--limit` 限制条数）。`export` 将全部记忆（可限定
+作用域）写出为 Mem0 导入器可接受的便携 JSON，可用
+`hermes qdrant-memory migrate mem0 --source-json backup.json` 恢复到新的目的地
+（导入会重新 embedding；0.1 不支持向量复用）。导出文件仅属主可读，已存在时
+必须显式 `--force` 才覆盖。
+
+`delete-all` 持久删除一个作用域的全部记忆：先写入 reset 风格的删除意图，为
+每个枚举到的 point 登记删除围栏（防止已准备的写入令其复活），以一次过滤删除
+清除该作用域，并在确认作用域为空后才清除意图。`--dry-run` 预览条数；`--confirm`
+授权删除。删除中断会 fail-closed——其他命令返回 `scope_delete_recovery_required`，
+需 `delete-all` 恢复完成后才能继续。删除后新接收的轮次仍可写入新记忆；本操作只
+移除已存记忆和已准备的写入。`list`、`export`、`delete-all` 不访问 embedding 服务。
 
 ## 数据流与隐私
 
