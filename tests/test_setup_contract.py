@@ -1,6 +1,9 @@
 """Run Hermes's actual schema setup wizard in an isolated directory profile."""
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -61,6 +64,60 @@ def test_real_memory_setup_saves_fields_secrets_and_activation(tmp_path, monkeyp
     assert dependencies == ["qdrant-memory"]
     assert load_memory_provider("qdrant-memory").name == "qdrant-memory"
     assert not (tmp_path / "qdrant-memory.json").exists()
+
+
+def test_provider_discovery_needs_no_prepared_runtime_dependencies(tmp_path):
+    """Hermes discovers the provider before its runtime dependencies exist.
+
+    A fresh home runs ``hermes memory setup`` before anything installs the
+    plugin's dependencies; discovery loads the provider package, so the import
+    chain must not require portalocker, qdrant-client or httpx yet.
+    """
+    home = tmp_path / "profile"
+    (home / "plugins").mkdir(parents=True)
+    (home / "plugins" / "qdrant-memory").symlink_to(Path(__file__).resolve().parents[1])
+    (home / "config.yaml").write_text("plugins:\n  isolation: in_process\n")
+    code = """
+import sys
+
+BLOCKED = {"portalocker", "qdrant_client", "httpx"}
+
+
+class _BlockRuntimeDeps:
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0] in BLOCKED:
+            raise ModuleNotFoundError(f"blocked for discovery: {name}")
+        return None
+
+
+sys.meta_path.insert(0, _BlockRuntimeDeps())
+from plugins.memory import load_memory_provider
+
+provider = load_memory_provider("qdrant-memory")
+assert provider is not None, "discovery loaded no provider without runtime deps"
+assert provider.name == "qdrant-memory"
+print("DISCOVERY-OK")
+"""
+    env = dict(os.environ)
+    env["HERMES_HOME"] = str(home)
+    # The runner controls the test process's import path; make the Hermes
+    # checkout explicit so the child can import plugins/agent regardless.
+    import plugins
+
+    host_root = str(Path(plugins.__file__).resolve().parents[1])
+    env["PYTHONPATH"] = os.pathsep.join(
+        part for part in (host_root, env.get("PYTHONPATH", "")) if part
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "DISCOVERY-OK" in result.stdout
 
 
 @pytest.mark.parametrize("has_url,has_key", [(True, True), (True, False), (False, True)])
