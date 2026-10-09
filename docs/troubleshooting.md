@@ -42,7 +42,7 @@ hermes qdrant-memory verify
 ```
 
 Only after recovery and verification succeed, restart the background service if it
-was previously running:
+ran previously:
 
 ```bash
 hermes gateway start
@@ -51,8 +51,8 @@ hermes gateway status
 
 `retry` commits prepared operations but cannot perform trusted LLM extraction from
 raw events in maintenance mode. Start the configured provider again to process those
-events. `verify` validates existing target records and the latest migration manifest;
-it does not rewrite damaged records or create a missing collection.
+events. `verify` validates existing target records and the latest migration manifest.
+It does not rewrite damaged records or create a missing collection.
 
 For migration-specific failure recovery, use the original source and flags:
 
@@ -69,9 +69,8 @@ machine or writers on other machines. Stop all writers targeting that destinatio
 
 ## CI failures
 
-Add SONAR_TOKEN and SNYK_TOKEN as repository Actions secrets, not config or comments.
-The Snyk scan environment must include pip for its Python resolver; CI adds that
-tool through Hermes PM separately from the plugin's runtime requirements.
-Fork scans remain skipped and the required aggregate gate fails deliberately.
+CI adds the Snyk Python resolver tooling through Hermes PM separately from the
+plugin's runtime requirements. Fork scans remain skipped and the required
+aggregate gate fails deliberately.
 CodeRabbit's skipped manual-review status does not certify a code review.
 See [CI services](ci.md) for onboarding and quality-gate behavior.

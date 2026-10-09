@@ -14,19 +14,20 @@ PYTHONPATH=/path/to/hermes-agent \
   --sizes 0 1 100 1000 10000 100000
 ```
 
-Use an environment with the plugin and actual Hermes dependencies; the
-`PYTHONPATH` should locate your isolated Hermes checkout; substitute its local path.
+Use an environment with the plugin and actual Hermes dependencies. The
+`PYTHONPATH` should locate your isolated Hermes checkout. Substitute its local path.
 The script prints environment metadata and one JSON result per size.
 
 Measured environment: macOS 27.0, Apple arm64, Python 3.14.7, SQLite 3.53.1.
 Each operation has 256 ASCII text bytes and a 633-byte serialized synthetic
-payload. Every case uses a disposable `TemporaryDirectory`; it neither loads
+payload. Every case uses a disposable `TemporaryDirectory`. It neither loads
 user configuration nor connects to Qdrant. Fixture admission uses one bulk
 `executemany` transaction to avoid measuring 100,000 independent admissions.
 
 Memory figures are **Python allocation peaks from `tracemalloc`, not RSS**.
-Timing includes tracing overhead. Imports, fixture construction, and garbage
-collection before measurement are excluded. No native SQLite cache, filesystem
+Timing includes tracing overhead. The script excludes imports, fixture
+construction, and garbage
+collection before measurement. No native SQLite cache, filesystem
 cache, Qdrant allocation, embedding allocation, or process RSS guarantee can be
 inferred from these figures.
 
@@ -35,14 +36,14 @@ the **same current `Runtime.recover()`**. Both actual recovery measurements
 execute current commit, delete-fence lookup, metric recording, acknowledgement,
 and logical payload scrubbing, using a constant-memory `FakeStore` that confirms
 writes without network or embeddings. SQLite remains in WAL mode with
-`synchronous=FULL`; per-operation metric and finish transactions are included
-in recovery duration. This isolates reader allocation differences; it is not a
+`synchronous=FULL`. Per-operation metric and finish transactions are included
+in recovery duration. This isolates reader allocation differences. It is not a
 benchmark of the entire historical implementation or real-service throughput.
 
 ## Read allocation and duration
 
 MiB means 1,048,576 bytes. Bounded scans use batches of 128 and a fixed rowid
-watermark. Small-case allocation overhead can exceed list allocation; larger
+watermark. Small-case allocation overhead can exceed list allocation. Larger
 backlogs plateau at about half a MiB instead of increasing with row count.
 
 | Pending operations | Legacy scan peak MiB | Bounded scan peak MiB | Legacy scan seconds | Bounded scan seconds |
@@ -66,7 +67,7 @@ backlogs plateau at about half a MiB instead of increasing with row count.
 | 100,000 | 163.6766 | 0.4964 | 30.675616 | 29.859949 | 7.82 |
 
 At 100,000 operations, the measured recovery allocation peak decreased by
-99.697%. Bounded recovery was about 2.7% faster in this run; a single run does not
+99.697%. Bounded recovery was about 2.7% faster in this run. A single run does not
 establish a speed improvement. Payload size and configured batch size still affect the
 bounded peak. A backlog of maximum-size payloads requires more memory than this
 633-byte fixture even though allocation is bounded by batch size.
@@ -77,7 +78,7 @@ non-COMMITTED operations, and zero retained terminal payloads. Reopening the
 bytes at peak. These fixtures contain no migration manifests: memory required
 by retained, unfinished migration manifests is a separate capacity consideration.
 Ordering, failures, concurrent admission, stop/restart, and isolation are covered
-by behavioral regression tests; this benchmark uses distinct UPSERT points and
+by behavioral regression tests. This benchmark uses distinct UPSERT points and
 does not replace those tests.
 
 ## SQLite query behavior
@@ -92,7 +93,7 @@ Bounded:
 SEARCH operations USING INDEX operations_by_collection_status (collection=? AND status=? AND rowid>? AND rowid<?)
 ```
 
-Both scans use the existing collection/status index; neither plan uses a
+Both scans use the existing collection/status index. Neither plan uses a
 temporary sort. The bounded reader fetches at most 128 rows per query using
 rowid ranges, without OFFSET. It closes its cursor and releases the ledger lock
 before yielding work to the runtime. The fixed upper watermark excludes new
@@ -115,12 +116,12 @@ Recovery scrubbed terminal payloads logically but did not shrink the database.
 In this run the main file remained about 132.1 MiB, with a roughly 132.9 MiB WAL
 before connection close. WAL automatic checkpointing/reuse can retain a large
 file during an active connection. Closing the final connection checkpointed and
-removed its WAL; reopening created fresh SQLite sidecars. These are measured
+removed its WAL. Reopening created fresh SQLite sidecars. These are measured
 filesystem behaviors, not a secure-erasure guarantee.
 
 Terminal operation identities and delete-fence metadata remain necessary for
 idempotency and preventing stale replay. Completed manifests retain migration
-audit/resume metadata; pending/failed payloads remain necessary for recovery.
+audit/resume metadata. Pending/failed payloads remain necessary for recovery.
 This change performs no automatic history deletion or retention compaction.
 Operators should provision and monitor database plus WAL/SHM space, account for
 backups and snapshots, and use the maintenance guidance in
