@@ -117,22 +117,23 @@ merged. Main `79565e755716f3d812b73e550417b5049b9642e6` passed
 and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788044033).
 The following unavailable-service statements apply to the historical local run.
 
-Minimum complete host contract: v2026.9.24
-(`f97608f178d1ffeca59860195ab7da295f7c8e5f`). v2026.9.21 lacks authoritative
-builtin `previous_content`; earlier tags also lack author/context-thread features.
+Minimum supported host release: v0.21.5
+(`f97608f178d1ffeca59860195ab7da295f7c8e5f` = v2026.9.24). Earlier releases were
+probed empirically on 2026-10-09: v0.21.0–v0.21.2 cannot import required host APIs
+(24 test modules fail collection); v0.21.3 fails host-lifecycle contracts; v0.21.4
+lacks profile-scoped secret resolution (`set_secret_scope(profile_home=...)`).
 Local full suites use the minimum tag's native runner on Python 3.11 and pinned
 `4787e4d56fc8d9265d4c7d3c0fe5accee86b4078` on Python 3.14: 19 files,
-104 passed, one optional Cloud skip. CI additionally tests the reviewed upstream
-snapshot `3dadeb9246f4eabeee893b128ab41aa917ce28f7` on both Python versions. This
-immutable snapshot is not automatically updated when Hermes `main` advances. The
-separate weekly/manual latest-Hermes workflow records the exact checked-out SHA, but
-this validation report does not claim a run against a newer upstream commit.
+104 passed, one optional Cloud skip. The required CI matrix validates the minimum
+release and the latest Hermes `main` on both Python versions; each latest-main run
+records its checked-out SHA, so a green run applies to that exact SHA.
 
 Real native setup, checkpoint v2 normalization/compression and session-manager
-paths are exercised. The latest-Hermes workflow also requires a host lifecycle test
+paths are exercised. The weekly/manual tracker also requires a host lifecycle test
 for the `MemoryManager.sync_all()` to provider admission path, with
 `HERMES_QDRANT_REQUIRE_HOST_SYNC=1` so missing host APIs fail instead of silently
-skipping. No run of that new workflow is recorded here; existing evidence does not
+skipping. Tracker runs record their checked-out SHA in the run summary; existing
+evidence does not
 establish that a turn waiting in Hermes's in-memory queue survives a host crash or
 bounded shutdown before `sync_turn` runs. The plugin durability boundary starts at
 its own ledger admission. Setup's dependency installer is stubbed; dependency install

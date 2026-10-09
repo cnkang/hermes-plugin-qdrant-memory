@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Hermes compatibility range: minimum v0.21.5 (v2026.9.24); the required CI
+  matrix validates the minimum release and the latest Hermes `main`.
+
 ## 0.1.0
 
 Limited technical preview; the `v0.1.0` release will be created from this certification record (2026-10-09).

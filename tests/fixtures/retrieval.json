@@ -12,7 +12,7 @@
     {"id": "food", "text": "The user avoids dairy products when choosing meals."},
     {"id": "travel", "text": "The user likes travelling by train rather than taking short domestic flights."},
     {"id": "editor", "text": "The user edits Python source files in Visual Studio Code."},
-    {"id": "host_floor", "text": "The plugin's supported Hermes host floor is release v2026.9.24."},
+    {"id": "host_floor", "text": "The plugin's supported Hermes host floor is release v0.21.5 (v2026.9.24)."},
     {"id": "dependencies", "text": "Runtime dependencies include qdrant-client, httpx, and portalocker."},
     {"id": "delete_scope", "text": "Deleting a memory removes its scoped live Qdrant point but does not erase SQLite event history or backups."},
     {"id": "ledger_retention", "text": "The local event and operation ledger can retain raw turns and prepared memory payloads; pending and failed payloads are needed for recovery."},

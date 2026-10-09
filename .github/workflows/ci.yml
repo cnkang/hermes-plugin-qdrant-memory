@@ -53,10 +53,8 @@ jobs:
         host:
           - name: minimum
             ref: f97608f178d1ffeca59860195ab7da295f7c8e5f
-          - name: pinned
-            ref: 4787e4d56fc8d9265d4c7d3c0fe5accee86b4078
-          - name: current-main
-            ref: 3dadeb9246f4eabeee893b128ab41aa917ce28f7
+          - name: latest-main
+            ref: main
     services:
       qdrant:
         image: qdrant/qdrant@sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863
@@ -75,6 +73,16 @@ jobs:
           repository: NousResearch/hermes-agent
           ref: ${{ matrix.host.ref }}
           path: .host
+      - name: Record tested Hermes revision
+        if: matrix.host.name == 'latest-main'
+        run: |
+          hermes_sha=$(git -C .host rev-parse HEAD)
+          {
+            echo "## Hermes compatibility inputs"
+            echo ""
+            echo "- Hermes ref: main"
+            echo "- Hermes checked-out SHA: $hermes_sha"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Check out fixed dependency manager
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
@@ -111,7 +119,7 @@ jobs:
               --qdrant-test-url=http://127.0.0.1:6333 --qdrant-test-container="$QDRANT_CONTAINER"
           fi
       - name: Build and install wheel through PM
-        if: matrix.host.name != 'current-main'
+        if: matrix.host.name != 'latest-main'
         working-directory: .pm-host
         env:
           HERMES_HOME: ${{ runner.temp }}/wheel-home
@@ -126,7 +134,7 @@ jobs:
           cd "$RUNNER_TEMP"
           PYTHONPATH="$GITHUB_WORKSPACE/.host" "$RUNNER_TEMP/wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/verify_packaged.py"
       - name: Save coverage for SonarCloud
-        if: matrix.python == '3.14' && matrix.host.name == 'pinned'
+        if: matrix.python == '3.14' && matrix.host.name == 'minimum'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: python-coverage
