@@ -43,8 +43,8 @@ fail() { echo "demo step failed: $*" >&2; exit 1; }
 
 command -v hermes >/dev/null || { echo "hermes CLI not found on PATH" >&2; exit 1; }
 MARKER="$DEMO_HOME/.qdrant-demo-home"
-if [ -e "$DEMO_HOME/config.yaml" ] && [ ! -e "$MARKER" ]; then
-  echo "Refusing to modify an existing Hermes home: $DEMO_HOME" >&2
+if [ -e "$DEMO_HOME" ] && [ -n "$(ls -A "$DEMO_HOME" 2>/dev/null)" ] && [ ! -e "$MARKER" ]; then
+  echo "Refusing to modify an existing directory: $DEMO_HOME" >&2
   echo "The demo changes the home it runs in (plugin install, memory.provider)." >&2
   echo "Use a fresh path, or mark this home as a demo home first:" >&2
   echo "  touch \"$MARKER\"" >&2
@@ -139,9 +139,11 @@ ls -la "$HERMES_HOME/qdrant-memory/" 2>/dev/null | head -6 || true
 
 say "Lifecycle — export a portable copy"
 export_file=$(mktemp "${TMPDIR:-/tmp}/qdrant-demo-export.XXXXXX")
+trap 'rm -f "$export_file"' EXIT
 hermes qdrant-memory export --output "$export_file" || fail "qdrant-memory export"
 head -c 420 "$export_file" || true; echo
 rm -f "$export_file"
+trap - EXIT
 
 say "Lifecycle — scoped deletion with verification"
 hermes qdrant-memory delete-all --user hermes-user --agent hermes --confirm || fail "qdrant-memory delete-all"
