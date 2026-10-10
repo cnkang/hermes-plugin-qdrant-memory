@@ -6,6 +6,9 @@
 # waits for the background extraction, recalls the preference in a new
 # session, and walks through export and scoped deletion.
 #
+# The final step deletes the whole demo scope, so the script refuses to run
+# when that scope already holds memories. Use a fresh demo home.
+#
 # Requirements:
 #   - The Hermes CLI (`hermes`) on PATH.
 #   - Ollama running locally, with the embedding model pulled:
@@ -84,6 +87,10 @@ hermes plugins enable qdrant-memory </dev/null || fail "plugins enable"
 hermes config set memory.provider qdrant-memory || fail "config set memory.provider"
 hermes qdrant-memory init --existing use || fail "qdrant-memory init"
 hermes qdrant-memory status || fail "qdrant-memory status"
+pre=$(memories_total)
+if [ "$pre" != "0" ]; then
+  fail "the demo scope (hermes-user/hermes) is not empty in $DEMO_HOME (count: ${pre}); the demo deletes this scope at the end, so it only runs on an empty scope. Use a fresh demo home."
+fi
 
 say "Session 1 — tell Hermes a preference (the plugin stores it automatically)"
 before=$(memories_total)
