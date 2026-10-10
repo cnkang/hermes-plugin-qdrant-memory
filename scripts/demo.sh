@@ -55,7 +55,7 @@ run_chat() {
 }
 
 memories_total() {
-  hermes qdrant-memory list 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['count']['total'])" 2>/dev/null || echo 0
+  hermes qdrant-memory list 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['count']['total'])" 2>/dev/null || echo -1
 }
 
 say "Install the pinned release through the Hermes CLI"
@@ -69,18 +69,20 @@ hermes qdrant-memory status || fail "qdrant-memory status"
 
 say "Session 1 — tell Hermes a preference (the plugin stores it automatically)"
 before=$(memories_total)
+[ "$before" -ge 0 ] || fail "cannot read the memory store"
 run_chat 780 "Please remember: my project codename is ORION-7 and my main deploy node is 10.99.0.2." || fail "session 1 chat"
 
 say "Waiting for the background extraction to land..."
 stored=0
 for i in $(seq 1 60); do
   total=$(memories_total)
-  if [ "${total:-0}" -gt "${before:-0}" ]; then
+  if [ "$total" -gt "$before" ]; then
     stored=$((total - before))
     echo "  ✓ stored ${stored} new memories (total ${total})"
     break
   fi
-  echo "  ... waiting ($((i*10))s)"
+  if [ "$total" -lt 0 ]; then echo "  ... list read failed; retrying ($((i*10))s)"
+  else echo "  ... waiting ($((i*10))s)"; fi
   sleep 10
 done
 [ "$stored" -gt 0 ] || fail "the background extraction stored no new memories within 600s"
@@ -96,10 +98,14 @@ hermes qdrant-memory stats
 ls -la "$HERMES_HOME/qdrant-memory/" 2>/dev/null | head -6
 
 say "Lifecycle — export a portable copy"
-hermes qdrant-memory export --output /tmp/qdrant-demo-export.json || fail "qdrant-memory export"
-head -c 420 /tmp/qdrant-demo-export.json; echo
+export_file=$(mktemp "${TMPDIR:-/tmp}/qdrant-demo-export.XXXXXX")
+hermes qdrant-memory export --output "$export_file" || fail "qdrant-memory export"
+head -c 420 "$export_file"; echo
+rm -f "$export_file"
 
 say "Lifecycle — scoped deletion with verification"
 hermes qdrant-memory delete-all --user hermes-user --agent hermes --confirm || fail "qdrant-memory delete-all"
+remaining=$(memories_total)
+[ "$remaining" = "0" ] || fail "the scope is not empty after deletion (${remaining} memories)"
 hermes qdrant-memory list
 say "Done — the memory is gone and the scope is empty."
