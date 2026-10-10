@@ -26,10 +26,11 @@
 #   Default DEMO_HOME: $HOME/.hermes-qdrant-demo
 #
 # The script drives Hermes non-interactively:
-#   hermes plugins install <url> --ref <sha> --yes-deps
-#       --yes-deps consents to dependency preparation at install time.
-#       Interactive shells can answer the prompt instead; the minimum
-#       supported Hermes prepares dependencies by default.
+#   hermes plugins install <url> --ref <sha> [--yes-deps]
+#       --yes-deps consents to dependency preparation at install time and is
+#       passed only when the CLI supports it. Interactive shells can answer
+#       the prompt instead; the minimum supported Hermes prepares
+#       dependencies by default.
 #   hermes chat -q "<query>" --reasoning none
 #       One-shot session with compact output; the reasoning panel stays
 #       hidden so the demo transcript stays short.
@@ -91,9 +92,13 @@ memories_total() {
 }
 
 say "Install the pinned release through the Hermes CLI"
-echo "  (non-interactive shell: --yes-deps consents to dependency preparation)"
-hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref "$RELEASE_REF" --yes-deps </dev/null || fail "plugins install"
+install_args=(https://github.com/cnkang/hermes-plugin-qdrant-memory --ref "$RELEASE_REF")
+# --yes-deps exists on newer Hermes; older releases prepare dependencies by
+# default and reject the unknown flag.
+if hermes plugins install --help 2>/dev/null | grep -q -- "--yes-deps"; then
+  install_args+=(--yes-deps)
+fi
+hermes plugins install "${install_args[@]}" </dev/null || fail "plugins install"
 hermes plugins enable qdrant-memory </dev/null || fail "plugins enable"
 # The README's interactive flow uses `hermes memory setup` here; the script
 # sets the provider directly instead, which is equivalent for a demo home.
@@ -138,11 +143,12 @@ hermes qdrant-memory stats || true
 ls -la "$HERMES_HOME/qdrant-memory/" 2>/dev/null | head -6 || true
 
 say "Lifecycle — export a portable copy"
-export_file=$(mktemp "${TMPDIR:-/tmp}/qdrant-demo-export.XXXXXX")
-trap 'rm -f "$export_file"' EXIT
-hermes qdrant-memory export --output "$export_file" || fail "qdrant-memory export"
+export_dir=$(mktemp -d "${TMPDIR:-/tmp}/qdrant-demo-export.XXXXXX")
+export_file="$export_dir/export.json"
+trap 'rm -rf "$export_dir"' EXIT
+hermes qdrant-memory export --output "$export_file" --user hermes-user --agent hermes || fail "qdrant-memory export"
 head -c 420 "$export_file" || true; echo
-rm -f "$export_file"
+rm -rf "$export_dir"
 trap - EXIT
 
 say "Lifecycle — scoped deletion with verification"
