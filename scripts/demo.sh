@@ -9,6 +9,10 @@
 # The final step deletes the whole demo scope, so the script refuses to run
 # when that scope already holds memories. Use a fresh demo home.
 #
+# The script marks the demo home it creates (a `.qdrant-demo-home` file) and
+# refuses to modify an existing Hermes home that lacks the marker, because
+# the setup steps change the home (plugin install, memory.provider).
+#
 # Requirements:
 #   - The Hermes CLI (`hermes`) on PATH.
 #   - Ollama running locally, with the embedding model pulled:
@@ -38,7 +42,16 @@ say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$1"; }
 fail() { echo "demo step failed: $*" >&2; exit 1; }
 
 command -v hermes >/dev/null || { echo "hermes CLI not found on PATH" >&2; exit 1; }
+MARKER="$DEMO_HOME/.qdrant-demo-home"
+if [ -e "$DEMO_HOME/config.yaml" ] && [ ! -e "$MARKER" ]; then
+  echo "Refusing to modify an existing Hermes home: $DEMO_HOME" >&2
+  echo "The demo changes the home it runs in (plugin install, memory.provider)." >&2
+  echo "Use a fresh path, or mark this home as a demo home first:" >&2
+  echo "  touch \"$MARKER\"" >&2
+  exit 1
+fi
 mkdir -p "$DEMO_HOME"
+touch "$MARKER"
 if ! grep -q '^model:' "$DEMO_HOME/config.yaml" 2>/dev/null; then
   echo "No model configuration in $DEMO_HOME/config.yaml." >&2
   echo "Start one Hermes session in the demo home and complete the model" >&2
