@@ -1,0 +1,6 @@
+# The demo recording stays in the repository only. It must not increase the
+# download size of the release packages.
+prune assets
+
+# The text demo script is small and ships with the source distribution.
+include scripts/demo.sh
