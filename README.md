@@ -49,7 +49,7 @@ flowchart LR
 
 ## See it in action
 
-![Terminal recording: install the plugin, store a preference, restart, and recall it](https://raw.githubusercontent.com/cnkang/hermes-plugin-qdrant-memory/main/assets/demo.gif)
+![Terminal recording: install the plugin, store a preference, and recall it in a new session](https://raw.githubusercontent.com/cnkang/hermes-plugin-qdrant-memory/main/assets/demo.gif)
 
 The recording shows the full flow on a clean profile. It installs the pinned
 release, teaches a preference, waits for the background extraction, and

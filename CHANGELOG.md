@@ -4,7 +4,7 @@
 
 - Documentation: add a condensed demo recording and a reproducible demo
   script (`scripts/demo.sh`) to both READMEs. The recording stays in the
-  repository; the release packages carry only the text script.
+  repository; the text script ships with the source distribution only.
 
 - Documentation: lead both READMEs with the pinned-release install through the
   Hermes CLI, add a short positioning section, and fix the Chinese install

@@ -42,9 +42,9 @@ flowchart LR
 
 ## 演示
 
-![终端录屏：安装插件、存入偏好、重启并召回](https://raw.githubusercontent.com/cnkang/hermes-plugin-qdrant-memory/main/assets/demo.gif)
+![终端录屏：安装插件、存入偏好、并在新会话中召回](https://raw.githubusercontent.com/cnkang/hermes-plugin-qdrant-memory/main/assets/demo.gif)
 
-录屏展示在干净 profile 上的完整流程：安装钉版本、教一条偏好、等待后台提取、重启并召回。
+录屏展示在干净 profile 上的完整流程：安装钉版本、教一条偏好、等待后台提取、在新会话中召回。
 全部步骤在 embedded 模式下运行；`scripts/demo.sh` 可复现同一流程。
 
 ## 安装与启用
