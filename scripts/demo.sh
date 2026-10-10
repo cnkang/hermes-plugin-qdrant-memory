@@ -79,6 +79,8 @@ echo "  (non-interactive shell: --yes-deps consents to dependency preparation)"
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
   --ref "$RELEASE_REF" --yes-deps </dev/null || fail "plugins install"
 hermes plugins enable qdrant-memory </dev/null || fail "plugins enable"
+# The README's interactive flow uses `hermes memory setup` here; the script
+# sets the provider directly instead, which is equivalent for a demo home.
 hermes config set memory.provider qdrant-memory || fail "config set memory.provider"
 hermes qdrant-memory init --existing use || fail "qdrant-memory init"
 hermes qdrant-memory status || fail "qdrant-memory status"
