@@ -15,6 +15,7 @@
 #
 # Requirements:
 #   - The Hermes CLI (`hermes`) on PATH.
+#   - `python3` on PATH (the script reads the CLI's JSON output).
 #   - Ollama running locally, with the embedding model pulled:
 #       ollama pull qwen3-embedding:4b
 #   - A model configuration in the demo home. When the demo home has none,
@@ -43,6 +44,7 @@ say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$1"; }
 fail() { echo "demo step failed: $*" >&2; exit 1; }
 
 command -v hermes >/dev/null || { echo "hermes CLI not found on PATH" >&2; exit 1; }
+command -v python3 >/dev/null || { echo "python3 not found on PATH" >&2; exit 1; }
 MARKER="$DEMO_HOME/.qdrant-demo-home"
 if [ -e "$DEMO_HOME" ] && [ -n "$(ls -A "$DEMO_HOME" 2>/dev/null)" ] && [ ! -e "$MARKER" ]; then
   echo "Refusing to modify an existing directory: $DEMO_HOME" >&2
