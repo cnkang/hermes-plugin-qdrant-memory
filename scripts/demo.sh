@@ -136,7 +136,9 @@ say "Stored memories — scoped inventory"
 hermes qdrant-memory list --user hermes-user --agent hermes || fail "qdrant-memory list"
 
 say "Session 2 — a fresh session recalls the preference"
-run_chat 600 "Search your durable memory: what is my project codename, and which node do I deploy to?" || fail "session 2 chat"
+recall_out=$(run_chat 600 "Search your durable memory: what is my project codename, and which node do I deploy to?") || fail "session 2 chat"
+printf '%s\n' "$recall_out"
+printf '%s\n' "$recall_out" | grep -q "ORION-7" || fail "the recall did not return the stored codename"
 
 say "Backend — embedded Qdrant, no separate service"
 hermes qdrant-memory stats || true
