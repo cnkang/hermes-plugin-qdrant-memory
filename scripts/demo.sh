@@ -88,7 +88,9 @@ hermes config set memory.provider qdrant-memory || fail "config set memory.provi
 hermes qdrant-memory init --existing use || fail "qdrant-memory init"
 hermes qdrant-memory status || fail "qdrant-memory status"
 pre=$(memories_total)
-if [ "$pre" != "0" ]; then
+if [ "$pre" = "-1" ]; then
+  fail "cannot read the demo scope (hermes-user/hermes) in $DEMO_HOME"
+elif [ "$pre" != "0" ]; then
   fail "the demo scope (hermes-user/hermes) is not empty in $DEMO_HOME (count: ${pre}); the demo deletes this scope at the end, so it only runs on an empty scope. Use a fresh demo home."
 fi
 
@@ -113,7 +115,7 @@ done
 [ "$stored" -gt 0 ] || fail "the background extraction stored no new memories within 600s"
 
 say "Stored memories — scoped inventory"
-hermes qdrant-memory list || fail "qdrant-memory list"
+hermes qdrant-memory list --user hermes-user --agent hermes || fail "qdrant-memory list"
 
 say "Session 2 — a fresh session recalls the preference"
 run_chat 600 "Search your durable memory: what is my project codename, and which node do I deploy to?" || fail "session 2 chat"
@@ -132,5 +134,5 @@ say "Lifecycle — scoped deletion with verification"
 hermes qdrant-memory delete-all --user hermes-user --agent hermes --confirm || fail "qdrant-memory delete-all"
 remaining=$(memories_total)
 [ "$remaining" = "0" ] || fail "the scope is not empty after deletion (${remaining} memories)"
-hermes qdrant-memory list || fail "qdrant-memory list"
+hermes qdrant-memory list --user hermes-user --agent hermes || fail "qdrant-memory list"
 say "Done — the memory is gone and the scope is empty."
