@@ -17,7 +17,7 @@
 # Usage: bash scripts/demo.sh [DEMO_HOME]
 #   Default DEMO_HOME: $HOME/.hermes-qdrant-demo
 
-set -u
+set -euo pipefail
 DEMO_HOME="${1:-$HOME/.hermes-qdrant-demo}"
 RELEASE_REF="d3db971ecfcd9e26caf97908bf4dd093d403f70f"   # v0.1.0 release commit
 export HERMES_HOME="$DEMO_HOME"
@@ -41,13 +41,17 @@ run_chat() {
     gtimeout "$seconds" hermes chat -q "$query" --reasoning none </dev/null
     return $?
   fi
+  set -m
   hermes chat -q "$query" --reasoning none </dev/null &
-  local pid=$! waited=0
+  local pid=$!
+  set +m
+  local waited=0
   while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$seconds" ]; do
     sleep 2; waited=$((waited + 2))
   done
   if kill -0 "$pid" 2>/dev/null; then
-    kill "$pid" 2>/dev/null
+    kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
     echo "chat timed out after ${seconds}s" >&2
     return 124
   fi
@@ -55,7 +59,8 @@ run_chat() {
 }
 
 memories_total() {
-  hermes qdrant-memory list 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['count']['total'])" 2>/dev/null || echo -1
+  hermes qdrant-memory list --user hermes-user --agent hermes 2>/dev/null \
+    | python3 -c "import sys,json;print(json.load(sys.stdin)['count']['total'])" 2>/dev/null || echo -1
 }
 
 say "Install the pinned release through the Hermes CLI"
@@ -94,18 +99,18 @@ say "Session 2 — a fresh session recalls the preference"
 run_chat 600 "Search your durable memory: what is my project codename, and which node do I deploy to?" || fail "session 2 chat"
 
 say "Backend — embedded Qdrant, no separate service"
-hermes qdrant-memory stats
-ls -la "$HERMES_HOME/qdrant-memory/" 2>/dev/null | head -6
+hermes qdrant-memory stats || true
+ls -la "$HERMES_HOME/qdrant-memory/" 2>/dev/null | head -6 || true
 
 say "Lifecycle — export a portable copy"
 export_file=$(mktemp "${TMPDIR:-/tmp}/qdrant-demo-export.XXXXXX")
 hermes qdrant-memory export --output "$export_file" || fail "qdrant-memory export"
-head -c 420 "$export_file"; echo
+head -c 420 "$export_file" || true; echo
 rm -f "$export_file"
 
 say "Lifecycle — scoped deletion with verification"
 hermes qdrant-memory delete-all --user hermes-user --agent hermes --confirm || fail "qdrant-memory delete-all"
 remaining=$(memories_total)
 [ "$remaining" = "0" ] || fail "the scope is not empty after deletion (${remaining} memories)"
-hermes qdrant-memory list
+hermes qdrant-memory list || fail "qdrant-memory list"
 say "Done — the memory is gone and the scope is empty."
