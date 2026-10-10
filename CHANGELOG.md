@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Documentation: align the README install pin with the commit the `v0.1.0`
+  tag points to.
+
 - Documentation: add a condensed demo recording and a reproducible demo
   script (`scripts/demo.sh`) to both READMEs. The recording stays in the
   repository; the text script ships with the source distribution only.

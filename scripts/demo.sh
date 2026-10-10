@@ -39,7 +39,7 @@
 
 set -euo pipefail
 DEMO_HOME="${1:-$HOME/.hermes-qdrant-demo}"
-RELEASE_REF="d3db971ecfcd9e26caf97908bf4dd093d403f70f"   # v0.1.0 release commit
+RELEASE_REF="5babd3e4b4c022aad38a2b6db82cbd5b601f1ef8"   # v0.1.0 release commit
 export HERMES_HOME="$DEMO_HOME"
 say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$1"; }
 fail() { echo "demo step failed: $*" >&2; exit 1; }
