@@ -16,6 +16,8 @@
 # Requirements:
 #   - The Hermes CLI (`hermes`) on PATH.
 #   - `python3` on PATH (the script reads the CLI's JSON output).
+#   - `git` on PATH (the installer clones the plugin; also used to detect an
+#     existing install).
 #   - Ollama running locally, with the embedding model pulled:
 #       ollama pull qwen3-embedding:4b
 #   - A model configuration in the demo home. When the demo home has none,
@@ -97,13 +99,22 @@ memories_total() {
 }
 
 say "Install the pinned release through the Hermes CLI"
-install_args=(https://github.com/cnkang/hermes-plugin-qdrant-memory --ref "$RELEASE_REF")
-# --yes-deps exists on newer Hermes; older releases prepare dependencies by
-# default and reject the unknown flag.
-if hermes plugins install --help 2>/dev/null | grep -q -- "--yes-deps"; then
-  install_args+=(--yes-deps)
+plugin_dir="$DEMO_HOME/plugins/qdrant-memory"
+installed_ref=""
+if [ -d "$plugin_dir" ]; then
+  installed_ref=$(git -C "$plugin_dir" rev-parse HEAD 2>/dev/null || true)
 fi
-hermes plugins install "${install_args[@]}" </dev/null || fail "plugins install"
+if [ "$installed_ref" = "$RELEASE_REF" ]; then
+  echo "  (qdrant-memory is already installed at the release commit)"
+else
+  install_args=(https://github.com/cnkang/hermes-plugin-qdrant-memory --ref "$RELEASE_REF")
+  install_help=$(hermes plugins install --help 2>/dev/null || true)
+  # --yes-deps exists on newer Hermes; older releases prepare dependencies by
+  # default and reject the unknown flag. --force makes retries idempotent.
+  if printf '%s' "$install_help" | grep -q -- "--yes-deps"; then install_args+=(--yes-deps); fi
+  if printf '%s' "$install_help" | grep -q -- "--force"; then install_args+=(--force); fi
+  hermes plugins install "${install_args[@]}" </dev/null || fail "plugins install"
+fi
 hermes plugins enable qdrant-memory </dev/null || fail "plugins enable"
 # The README's interactive flow uses `hermes memory setup` here; the script
 # sets the provider directly instead, which is equivalent for a demo home.
