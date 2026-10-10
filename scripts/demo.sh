@@ -62,11 +62,14 @@ if ! grep -q '^model:' "$DEMO_HOME/config.yaml" 2>/dev/null; then
 fi
 
 # Chat steps get a hard timeout (independent of the extraction wait below):
-# gtimeout when available, a bounded wait otherwise.
+# a timeout command when available (GNU timeout or gtimeout), a bounded wait
+# with a process-group kill otherwise.
 run_chat() {
-  local seconds="$1" query="$2"
-  if command -v gtimeout >/dev/null; then
-    gtimeout "$seconds" hermes chat -q "$query" --reasoning none </dev/null
+  local seconds="$1" query="$2" timeout_cmd=""
+  if command -v timeout >/dev/null 2>&1; then timeout_cmd="timeout"
+  elif command -v gtimeout >/dev/null 2>&1; then timeout_cmd="gtimeout"; fi
+  if [ -n "$timeout_cmd" ]; then
+    "$timeout_cmd" "$seconds" hermes chat -q "$query" --reasoning none </dev/null
     return $?
   fi
   set -m
