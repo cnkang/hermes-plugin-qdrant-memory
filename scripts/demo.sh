@@ -16,6 +16,15 @@
 #
 # Usage: bash scripts/demo.sh [DEMO_HOME]
 #   Default DEMO_HOME: $HOME/.hermes-qdrant-demo
+#
+# The script drives Hermes non-interactively:
+#   hermes plugins install <url> --ref <sha> --yes-deps
+#       --yes-deps consents to dependency preparation at install time.
+#       Interactive shells can answer the prompt instead; the minimum
+#       supported Hermes prepares dependencies by default.
+#   hermes chat -q "<query>" --reasoning none
+#       One-shot session with compact output; the reasoning panel stays
+#       hidden so the demo transcript stays short.
 
 set -euo pipefail
 DEMO_HOME="${1:-$HOME/.hermes-qdrant-demo}"
@@ -34,7 +43,8 @@ if ! grep -q '^model:' "$DEMO_HOME/config.yaml" 2>/dev/null; then
   exit 1
 fi
 
-# Chat steps get a hard timeout: gtimeout when available, a bounded wait otherwise.
+# Chat steps get a hard timeout (independent of the extraction wait below):
+# gtimeout when available, a bounded wait otherwise.
 run_chat() {
   local seconds="$1" query="$2"
   if command -v gtimeout >/dev/null; then
