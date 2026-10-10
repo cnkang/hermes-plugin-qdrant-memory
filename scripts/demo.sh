@@ -11,8 +11,9 @@
 #   - Ollama running locally, with the embedding model pulled:
 #       ollama pull qwen3-embedding:4b
 #   - A model configuration in the demo home. When the demo home has none,
-#     start one Hermes session in it and complete the model setup:
-#       HERMES_HOME=$DEMO_HOME hermes
+#     start one Hermes session in it and complete the model setup, for
+#     example with the default demo home:
+#       HERMES_HOME=~/.hermes-qdrant-demo hermes
 #
 # Usage: bash scripts/demo.sh [DEMO_HOME]
 #   Default DEMO_HOME: $HOME/.hermes-qdrant-demo
@@ -79,7 +80,7 @@ hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
   --ref "$RELEASE_REF" --yes-deps </dev/null || fail "plugins install"
 hermes plugins enable qdrant-memory </dev/null || fail "plugins enable"
 hermes config set memory.provider qdrant-memory || fail "config set memory.provider"
-hermes qdrant-memory init || fail "qdrant-memory init"
+hermes qdrant-memory init --existing use || fail "qdrant-memory init"
 hermes qdrant-memory status || fail "qdrant-memory status"
 
 say "Session 1 — tell Hermes a preference (the plugin stores it automatically)"
