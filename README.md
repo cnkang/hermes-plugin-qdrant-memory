@@ -47,6 +47,15 @@ flowchart LR
 - Not supported in this preview: multi-writer Server/Cloud, hybrid search and
   a web UI.
 
+## See it in action
+
+![Terminal recording: install the plugin, store a preference, restart, and recall it](https://raw.githubusercontent.com/cnkang/hermes-plugin-qdrant-memory/main/assets/demo.gif)
+
+The recording shows the full flow on a clean profile. It installs the pinned
+release, teaches a preference, waits for the background extraction, and
+recalls the preference in a new session. All steps run in embedded mode.
+`scripts/demo.sh` reproduces this flow.
+
 ## Install
 
 Requirements: Python 3.11+, a compatible Hermes installation, and a reachable
