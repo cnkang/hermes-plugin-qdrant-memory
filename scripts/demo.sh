@@ -22,6 +22,7 @@ DEMO_HOME="${1:-$HOME/.hermes-qdrant-demo}"
 RELEASE_REF="d3db971ecfcd9e26caf97908bf4dd093d403f70f"   # v0.1.0 release commit
 export HERMES_HOME="$DEMO_HOME"
 say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$1"; }
+fail() { echo "demo step failed: $*" >&2; exit 1; }
 
 command -v hermes >/dev/null || { echo "hermes CLI not found on PATH" >&2; exit 1; }
 mkdir -p "$DEMO_HOME"
@@ -33,47 +34,72 @@ if ! grep -q '^model:' "$DEMO_HOME/config.yaml" 2>/dev/null; then
   exit 1
 fi
 
-# Chat steps get a hard timeout when GNU coreutils is available.
+# Chat steps get a hard timeout: gtimeout when available, a bounded wait otherwise.
 run_chat() {
-  if command -v gtimeout >/dev/null; then gtimeout "$1" hermes chat -q "$2" --reasoning none </dev/null
-  else hermes chat -q "$2" --reasoning none </dev/null; fi
+  local seconds="$1" query="$2"
+  if command -v gtimeout >/dev/null; then
+    gtimeout "$seconds" hermes chat -q "$query" --reasoning none </dev/null
+    return $?
+  fi
+  hermes chat -q "$query" --reasoning none </dev/null &
+  local pid=$! waited=0
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$seconds" ]; do
+    sleep 2; waited=$((waited + 2))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null
+    echo "chat timed out after ${seconds}s" >&2
+    return 124
+  fi
+  wait "$pid"
+}
+
+memories_total() {
+  hermes qdrant-memory list 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['count']['total'])" 2>/dev/null || echo 0
 }
 
 say "Install the pinned release through the Hermes CLI"
 echo "  (non-interactive shell: --yes-deps consents to dependency preparation)"
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref "$RELEASE_REF" --yes-deps </dev/null
-hermes plugins enable qdrant-memory </dev/null
-hermes config set memory.provider qdrant-memory
-hermes qdrant-memory init
-hermes qdrant-memory status
+  --ref "$RELEASE_REF" --yes-deps </dev/null || fail "plugins install"
+hermes plugins enable qdrant-memory </dev/null || fail "plugins enable"
+hermes config set memory.provider qdrant-memory || fail "config set memory.provider"
+hermes qdrant-memory init || fail "qdrant-memory init"
+hermes qdrant-memory status || fail "qdrant-memory status"
 
 say "Session 1 — tell Hermes a preference (the plugin stores it automatically)"
-run_chat 780 "Please remember: my project codename is ORION-7 and my main deploy node is 10.99.0.2."
+before=$(memories_total)
+run_chat 780 "Please remember: my project codename is ORION-7 and my main deploy node is 10.99.0.2." || fail "session 1 chat"
 
 say "Waiting for the background extraction to land..."
+stored=0
 for i in $(seq 1 60); do
-  total=$(hermes qdrant-memory list 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['count']['total'])" 2>/dev/null || echo 0)
-  if [ "${total:-0}" -gt 0 ]; then echo "  ✓ extraction stored ${total} memories"; break; fi
+  total=$(memories_total)
+  if [ "${total:-0}" -gt "${before:-0}" ]; then
+    stored=$((total - before))
+    echo "  ✓ stored ${stored} new memories (total ${total})"
+    break
+  fi
   echo "  ... waiting ($((i*10))s)"
   sleep 10
 done
+[ "$stored" -gt 0 ] || fail "the background extraction stored no new memories within 600s"
 
 say "Stored memories — scoped inventory"
-hermes qdrant-memory list
+hermes qdrant-memory list || fail "qdrant-memory list"
 
 say "Session 2 — a fresh session recalls the preference"
-run_chat 600 "Search your durable memory: what is my project codename, and which node do I deploy to?"
+run_chat 600 "Search your durable memory: what is my project codename, and which node do I deploy to?" || fail "session 2 chat"
 
 say "Backend — embedded Qdrant, no separate service"
 hermes qdrant-memory stats
 ls -la "$HERMES_HOME/qdrant-memory/" 2>/dev/null | head -6
 
 say "Lifecycle — export a portable copy"
-hermes qdrant-memory export --output /tmp/qdrant-demo-export.json
+hermes qdrant-memory export --output /tmp/qdrant-demo-export.json || fail "qdrant-memory export"
 head -c 420 /tmp/qdrant-demo-export.json; echo
 
 say "Lifecycle — scoped deletion with verification"
-hermes qdrant-memory delete-all --user hermes-user --agent hermes --confirm
+hermes qdrant-memory delete-all --user hermes-user --agent hermes --confirm || fail "qdrant-memory delete-all"
 hermes qdrant-memory list
 say "Done — the memory is gone and the scope is empty."
