@@ -54,10 +54,11 @@ flowchart LR
 
 ![Terminal recording: install the plugin, store a preference, and recall it in a new session](https://raw.githubusercontent.com/cnkang/hermes-plugin-qdrant-memory/main/assets/demo.gif)
 
-The recording shows the full flow on a clean profile. It installs the pinned
-release, teaches a preference, waits for the background extraction, and
-recalls the preference in a new session. All steps run in embedded mode.
-`scripts/demo.sh` reproduces this flow.
+The recording shows the full flow on a clean profile: install from the
+official Hermes Plugin Catalog, teach a preference, wait for the background
+extraction, recall it in a new session, and clean up the demo scope. All steps
+run in embedded mode. `scripts/demo.sh` reproduces the same walkthrough with
+the pinned release.
 
 ## Install
 
