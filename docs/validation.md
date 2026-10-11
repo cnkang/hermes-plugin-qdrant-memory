@@ -8,7 +8,14 @@ pin, dependency preparation, provider registration, embedding probe,
 initialization, real memory writes, cross-session recall, restart recovery,
 update/delete, inventory/export and scoped deletion. See the
 [catalog integration acceptance](validation/catalog-integration-acceptance.md)
-record. The certification snapshots below retain their original scope.
+record. The record landed on `main` as
+`1f58b8534df7eb94d2385bfceb6927b850545031` (PR #31, rebase-merged from
+`a38dd5b`); the merge snapshot passed
+[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568943),
+[the six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568962),
+[CodeQL](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568940)
+and the [authenticated Cloud smoke](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568954).
+The certification snapshots below retain their original scope.
 
 ## Post-merge main snapshot (2026-10-09, PRs #15–#18)
 
