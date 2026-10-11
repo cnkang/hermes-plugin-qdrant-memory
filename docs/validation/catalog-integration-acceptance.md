@@ -41,6 +41,7 @@ fact in a new session?
 | Restart recovery | PASS | Memory survived multiple cold process restarts with the same collection fingerprint; `verify` reports `ok: true`; ledger counts stayed consistent with no duplicated or unexpectedly replayed operations. |
 | Update / delete | PASS | `qdrant_memory_update` replaced a memory's text at its exact ID (same point, new `updated_at`); `qdrant_memory_delete` removed the targeted memory by exact ID; a later session no longer recalled the deleted fact while the other memory stayed intact. |
 | Inventory / export | PASS | `hermes qdrant-memory list` reports scope, provenance and ledger backlog counts; `hermes qdrant-memory export` produced the portable Mem0-importable JSON with the original point UUID, content hash and timestamps preserved. |
+| Scoped deletion | PASS | `delete-all --dry-run` previewed the target (`would_delete: 1`, `mode: single_agent`, scope `hermes-user`/`hermes`); `--confirm` deleted it (`deleted: 1`, `fenced_operations: 1`, `superseded_events: 3`, `ok: true`); afterwards `list` returned an empty scope and `verify` passed with zero records. It was the only stored scope in the run; cross-scope behavior is covered by the repository contract tests and the CI on this change. |
 | Catalog update recognition | PASS | `hermes plugins check-updates` classifies the install as `catalog`, compares the installed revision with the pin, and reports `up to date` while the pin is unchanged; the check is read-only. |
 | README install guidance | PASS (updated by this change) | Before this change the READMEs recommended only URL/tag installs. They now lead with the catalog install and keep the version-locked alternatives. |
 | Upstream catalog page | PASS | `/docs/plugins/qdrant-memory` renders the entry (title, the four declared tools, README from the pinned commit `5ec9cac`, "updates when the author re-pins"); card metadata matches the live catalog JSON. |
@@ -88,8 +89,9 @@ single install never hit this.
 ## Out of scope
 
 Not exercised for this run: live Qdrant Server/Cloud destinations (embedded
-mode only), OS/Python matrices outside CI, and live Mem0 migrations. Existing
-CI lanes cover those; nothing skipped here is recorded as a pass.
+mode only), OS/Python matrices outside CI, and live Mem0-source migrations.
+Existing CI lanes cover the applicable Qdrant lanes, but live Mem0-source
+migrations remain untested. Nothing skipped here is recorded as a pass.
 
 ## Reproduction (abridged)
 
@@ -105,6 +107,8 @@ hermes qdrant-memory status && hermes qdrant-memory doctor
 hermes chat -q "Please remember: my test project codename is ORION-7."
 hermes qdrant-memory list --user hermes-user --agent hermes
 hermes chat -q "Search your durable memory: what is my test project codename?"
+hermes qdrant-memory delete-all --user hermes-user --agent hermes --dry-run
+hermes qdrant-memory delete-all --user hermes-user --agent hermes --confirm
 ```
 
 ## Conclusion
