@@ -19,6 +19,9 @@ Standalone native `MemoryProvider` for Hermes Agent. Hermes performs extraction
 through its trusted `ctx.llm` facade. Qdrant stores named dense vectors and schema-v1
 payloads. No Mem0 SDK, separate LLM SDK, telemetry, or core modifications.
 
+Available in the official [Hermes Plugin Catalog](https://hermes-agent.nousresearch.com/docs/plugins/qdrant-memory)
+as a community-maintained plugin.
+
 ## How it works
 
 ```mermaid
@@ -66,7 +69,24 @@ to serve `qwen3-embedding:4b`.
 
 Choose the **active profile's** home explicitly. Do not reuse another profile's data.
 
-**Recommended: install the pinned release through the Hermes CLI.**
+**Recommended: install from the official Hermes Plugin Catalog.**
+
+```bash
+export HERMES_HOME="/absolute/path/to/your/hermes-profile"
+ollama pull qwen3-embedding:4b
+# Start Ollama if it is not running. Keep its service available.
+hermes plugins install qdrant-memory
+hermes plugins enable qdrant-memory
+hermes memory setup
+hermes config set memory.provider qdrant-memory
+hermes qdrant-memory init
+```
+
+The install resolves the catalog's reviewed commit and prints the entry's declared
+tools, requirements and known issues before it clones anything.
+`hermes plugins enable` prepares the declared dependencies through Hermes PM.
+
+**Version-locked: install the pinned release through the Hermes CLI.**
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
@@ -80,7 +100,7 @@ hermes config set memory.provider qdrant-memory
 hermes qdrant-memory init
 ```
 
-`hermes plugins install` checks out the given ref, and
+For this version-locked form, `hermes plugins install` checks out the given ref, and
 `hermes plugins enable` prepares the declared dependencies through Hermes PM.
 `--ref` takes a full 40-character commit SHA; the
 [releases page](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)

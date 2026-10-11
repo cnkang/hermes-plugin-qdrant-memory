@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Documentation: lead both READMEs with the official Hermes Plugin Catalog
+  install (`hermes plugins install qdrant-memory`); the pinned-URL and tag
+  installs remain as the version-locked alternatives. The entry is listed as
+  community-maintained.
+- Documentation: add the catalog integration acceptance record
+  ([catalog-integration-acceptance.md](docs/validation/catalog-integration-acceptance.md))
+  for the fresh-profile end-to-end run.
+
 - Documentation: align the README install pin with the commit the `v0.1.0`
   tag points to.
 
