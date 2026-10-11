@@ -1,5 +1,15 @@
 # Validation evidence
 
+## Catalog integration acceptance (2026-10-11)
+
+The official Hermes Plugin Catalog installation path was accepted end to end on
+a fresh isolated profile: discovery and install by catalog name at the reviewed
+pin, dependency preparation, provider registration, embedding probe,
+initialization, real memory writes, cross-session recall, restart recovery,
+update/delete, inventory/export and scoped deletion. See the
+[catalog integration acceptance](validation/catalog-integration-acceptance.md)
+record. The certification snapshots below retain their original scope.
+
 ## Post-merge main snapshot (2026-10-09, PRs #15–#18)
 
 PRs #15–[#17](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/17)
