@@ -16,6 +16,8 @@
 以 Qdrant named dense vector 保存向量和 schema-v1 payload。无需 Mem0 SDK 或
 独立 LLM SDK，不修改 Hermes 核心，不发送插件遥测。
 
+已收录于官方 [Hermes Plugin Catalog](https://hermes-agent.nousresearch.com/docs/plugins/qdrant-memory)（社区维护插件，community-maintained）。
+
 ## 工作原理
 
 ```mermaid
@@ -55,7 +57,23 @@ flowchart LR
 
 明确选择当前 profile 的 home，不要复用其他 profile 的数据。
 
-**推荐：通过 Hermes CLI 安装固定版本。**
+**推荐：通过官方 Hermes Plugin Catalog 安装。**
+
+```bash
+export HERMES_HOME="/absolute/path/to/your/hermes-profile"
+ollama pull qwen3-embedding:4b
+# 如果 Ollama 尚未运行，先启动服务，并保持服务可用。
+hermes plugins install qdrant-memory
+hermes plugins enable qdrant-memory
+hermes memory setup
+hermes config set memory.provider qdrant-memory
+hermes qdrant-memory init
+```
+
+安装使用 Catalog 审核过的固定提交，并在克隆前先展示该条目的声明工具、版本要求与已知限制；
+`hermes plugins enable` 通过 Hermes PM 准备声明的依赖。
+
+**锁定版本：通过 Hermes CLI 安装固定版本。**
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
@@ -69,7 +87,7 @@ hermes config set memory.provider qdrant-memory
 hermes qdrant-memory init
 ```
 
-`hermes plugins install` 会检出指定 ref，`hermes plugins enable` 通过 Hermes PM
+此方式下，`hermes plugins install` 会检出指定 ref，`hermes plugins enable` 通过 Hermes PM
 准备声明的依赖；`--ref` 需要完整 40 位 commit SHA（tag 不被接受），发布提交见
 [releases 页面](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)。
 不要向 Hermes 管理的环境直接 pip install。省略 `--ref` 即跟随 `main`（开发线）。
