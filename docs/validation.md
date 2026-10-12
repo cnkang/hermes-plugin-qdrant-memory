@@ -4,6 +4,34 @@ The additive host-independent CLI and MCP interface is documented in
 [standalone setup](standalone.md), including its separate profile, operator-secret
 resolution, fixed scope and no-Hermes acceptance requirements.
 
+## Standalone and MCP source preview (2026-10-12)
+
+PR #33 merged as `8fd42572738b15a1abcad62aeecd0de9b1877e3a`. The initially
+reviewed head of this documentation PR,
+`efe1c943e01c9f22213908365a01d4a8711d47e2`, is its direct child. This PR changes
+only documentation and `CHANGELOG.md`; the standalone runtime sources are
+unchanged, but the full trees differ. The merged source snapshot adds explicit
+CLI/MCP operations while retaining Hermes provider/lifecycle integration. It is
+not the v0.1.0 release or the catalog's reviewed release pin.
+
+| Gate | Merged-snapshot evidence |
+|---|---|
+| Host contracts, Server tests, Snyk and Sonar gate | [38225834759](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834759) |
+| 27 standalone CLI/public API/official MCP contracts, three OSes × Python 3.11/3.14, zero skips | [38225834720](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834720) |
+| Existing platform compatibility | [38225834663](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834663) |
+| Python and Actions CodeQL | [38225834614](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834614) |
+| Companion skill: standalone/Pi/shared-scope acceptance and distribution | [38225872373](https://github.com/cnkang/skills/actions/runs/38225872373) |
+
+Local backend validation passed 326 tests; a freshly built Python 3.11 wheel
+passed all 27 standalone contracts. Codex CLI 0.160.0, OpenCode 2.0.24 and Pi
+1.1.0 were tested with disposable profiles and deterministic localhost
+embeddings. The [MCP guide](mcp.md#evidence-and-limits) distinguishes each host's
+verified boundary from protocol compatibility and live model behavior.
+Shared/private scope E2E uses sequential MCP clients, not concurrent writers.
+See [security](security.md) and the Sonar issue review records for the trusted
+profile/directory assumptions behind the path-finding triage. No quality rule
+or threshold was excluded. Historical release certification follows below.
+
 ## Catalog integration acceptance (2026-10-11)
 
 The official Hermes Plugin Catalog installation path was accepted end to end on
@@ -35,7 +63,7 @@ are merged on top of the snapshots below. The earlier
 
 PR #17 delivered the memory inventory/export/scoped-deletion commands
 (issue #15); PR #16 delivered the release/community readiness set. The
-**current certified revision** is `112e403c414f90905325322bab135493a0b03b85`
+**certified revision for that snapshot** was `112e403c414f90905325322bab135493a0b03b85`
 (2026-10-09): the scoped-deletion
 hardening in the follow-up finalization PR (#18) is validated on its own head
 and re-certified by the gates on main at release time, with

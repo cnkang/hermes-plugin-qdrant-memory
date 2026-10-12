@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml)
 [![Platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml)
+[![Standalone CLI and MCP](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/standalone.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/standalone.yml)
 [![CodeQL](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/codeql.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/codeql.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -51,6 +52,12 @@ flowchart LR
 记忆操作及维护/迁移；自动提取与预取仍由 Hermes 生命周期驱动。
 配置和使用边界见[独立运行指南](docs/standalone.md)，跨 agent 的安装与使用
 说明见通用的 [qdrant-memory skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)。
+
+可选 MCP 服务提供四个固定作用域的工具：`qdrant_memory_search`、
+`qdrant_memory_add`、`qdrant_memory_update` 和 `qdrant_memory_delete`。
+兼容客户端以本地 stdio 子进程启动服务，发现并调用工具；维护和迁移仍通过
+操作员 CLI 完成。[MCP 能力与接入指南](docs/mcp.md)列明配置、共享记忆边界
+和实际验证过的 agent。目前这是已验证的源码预览，v0.1.0 发布包不包含 MCP 入口。
 
 ## 演示
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Document MCP as an additional compatibility interface for the Hermes memory
+  plugin: four explicit tools, source-preview installation, client validation
+  and sequential sharing limits. Record the tested merged snapshot separately
+  from historical v0.1.0/catalog certification.
+
 - Contain explicit standalone migration/export file arguments within the trusted
   invocation working directory before service or file content access, including
   symlink resolution; preserve Hermes operator CLI behavior.
