@@ -45,12 +45,16 @@ configuration before retrying.
 
 Builtin replace/remove mirror the exact `metadata.previous_content`, scoped by
 target and author. Older hosts without that authoritative value skip destructive
-mirroring. Session end/compression provides supplementary extraction. Every turn
+mirroring. Session end/compression provides supplementary extraction only when
+complete single-author history matches the current scope; see [security](security.md).
+Every turn
 whose `sync_turn` callback reaches the provider follows the plugin's durable write
 path. Checkpoint API v2 synchronously commits
 filtered user/assistant evidence before compression; disk failures propagate and
 prevent acknowledged checkpoints. Mixed-author evidence is archived without
-automatic extraction. Reset clears the target session's author history and turn
+automatic extraction. Unknown historical attribution after restart or a failed
+author callback also disables supplementary extraction. Reset establishes fresh
+author history for the target session and clears its turn
 counter; rewind preserves conservative attribution history and long-term memory.
 An explicit memory delete keeps a scope-bound content-hash tombstone in the ledger
 so older admitted events cannot recreate the same content under a different point
@@ -106,7 +110,7 @@ a stopped backup and the active database/WAL. Resolve service failures, then
 retry explicitly. SQLite may reuse freed pages without reducing file size. A
 stopped, consistent backup and SQLite VACUUM can reclaim free pages, but neither
 securely erases old backups nor safely authorizes deletion of retained rows.
-Never remove WAL/SHM files from a live database. See the acceptance report for
+Never remove WAL/SHM files from a live database. See the [recovery benchmark](recovery-benchmark.md) for
 measured sizes and memory.
 
 Stop the agent and every embedded maintenance client before you copy state. Back up

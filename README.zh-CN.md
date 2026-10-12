@@ -404,9 +404,10 @@ PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate.py
 ```
 
 评估使用临时 embedded 数据库和 UTF-8 JSON；自定义数据集包含带 `id`/`text` 的
-`memories`，以及带 `query`/`relevant_ids` 的 `queries`。12-topic 合成 pilot 只用于
-回归基线，不代表生产召回质量。当前默认 fixture 已扩展为 24 条带标签的查询，
-覆盖中文、英文、混合语言和 hard-negative 场景；后续实测见最终审查报告。
+`memories`，以及带 `query`/`relevant_ids` 的 `queries`。
+[最初的 12 条查询记录](docs/retrieval-baseline.json)是历史合成回归基线，
+不代表生产召回质量。当前默认 fixture 已扩展为 24 条带标签的查询，
+覆盖中文、英文、混合语言和 hard-negative 场景；请运行当前 fixture 获取最新测量。
 重放与账本存储的独立合成测量见[恢复基准](docs/recovery-benchmark.md)（英文）。
 
 提交前运行 Ruff lint 和格式检查，并按[开发指南](docs/development.md)（英文）

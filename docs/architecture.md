@@ -15,7 +15,7 @@ there. Model selection, credentials and operator trust remain host-owned.
 | --- | --- |
 | provider | Lifecycle hooks, profile/session/author scope, serial worker and recall cache |
 | runtime | Durable preparation, ordered mutations, replay and relation decisions |
-| ledger | Private SQLite event/operation state, manifests and bounded metrics |
+| ledger | Private SQLite event/operation state, manifests, session author provenance and bounded metrics |
 | qdrant_store | Named dense collection, pipeline identity, scoped query and exact-ID access |
 | embedding | HTTP pipeline adapters, response-order and vector validation |
 | extraction / dedupe | Host LLM extraction and factual relation adjudication |
@@ -88,8 +88,11 @@ asynchronously completed human turns retain their own write scope.
 The plugin does not attribute mixed-author session transcripts to the latest
 author. Bot or unidentified participation also disables supplementary transcript
 extraction.
-The ledger persists that quarantine across restart until an authorized transcript
-reset. Continuation IDs inherit the parent's scope, author history, active denial,
+The ledger persists author provenance and quarantine. After restart or a failed
+author callback, historical attribution is incomplete, so aggregate extraction
+remains disabled until an authorized fresh transcript reset. Explicitly
+attributed per-turn writes remain available. Continuation IDs inherit the parent's
+scope, author history, active denial,
 and durable quarantine. Checkpoint archival continues with neutral attribution
 and no extraction.
 
