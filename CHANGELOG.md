@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Contain explicit standalone migration/export file arguments within the trusted
+  invocation working directory before service or file content access, including
+  symlink resolution; preserve Hermes operator CLI behavior.
+- Exercise standalone Python APIs and official in-process MCP protocol boundaries
+  alongside installed subprocess acceptance, and simplify maintenance setup while
+  preserving readiness, recovery and reverse-order resource cleanup.
+
 - Add host-independent profile/runtime construction, scoped JSON CLI CRUD and
   an optional official-SDK local stdio MCP adapter sharing the durable backend
   with Hermes. Preserve distribution/provider discovery and Hermes CLI behavior.

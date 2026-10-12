@@ -609,123 +609,162 @@ def run(args, home=None, *, config_loader=None, secret_reader=None):
     return _run(args, home, config_loader=config_loader, secret_reader=secret_reader)
 
 
-def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=None):
-    """Run a command with profile-scoped configuration and owned service resources.
-
-    Dry runs validate records without opening a target collection or ledger.
-    Other commands close their store, ledger and embedder before returning.
-    Configuration, service and verification errors propagate to the CLI boundary.
-    """
-    home = Path(home or active_home())
+def _command_config(args, home, config_loader, progress):
+    """Resolve operator collection/size overrides before initializing services."""
     overrides = {}
     collection = getattr(args, "target_collection", None) or getattr(args, "collection", None)
     if collection:
         overrides["qdrant"] = {"collection": collection}
     if getattr(args, "oversize", None):
         overrides["limits"] = {"oversize_policy": args.oversize}
-    command = args.qdrant_command
     report(progress, "Loading configuration")
-    cfg = (config_loader or load_config)(home, overrides, resolve_secrets=command != "status")
-    if command == "status":
-        # Availability/status is local-only and does not probe external services.
-        return local_status(cfg, home)
-    records = None
-    source_type = source_identifier = checksum = None
-    if command == "migrate":
-        report(progress, "Reading source")
-        records, source_type, source_identifier, checksum = migration_source(args, cfg, home)
-        report(progress, "Source loaded", len(records), len(records))
-        if args.dry_run:
-            report(progress, "Validating source", 0, len(records))
-            planned = plan(records, cfg, progress=progress)
-            report(progress, "Dry run complete", len(planned), len(planned))
-            return {
-                "dry_run": True,
-                "source_unique_count": len(planned),
-                "target_collection": cfg["qdrant"]["collection"],
-                "target_ids": list(planned),
-            }
-    pending_reset = has_pending_reset_file(home, ledger_namespace(cfg))
+    return (config_loader or load_config)(
+        home, overrides, resolve_secrets=args.qdrant_command != "status"
+    )
+
+
+def _migration_input(args, cfg, home, progress):
+    """Read the explicitly selected operator source without opening the destination."""
+    if args.qdrant_command != "migrate":
+        return (None, None, None, None)
+    report(progress, "Reading source")
+    source = migration_source(args, cfg, home)
+    report(progress, "Source loaded", len(source[0]), len(source[0]))
+    return source
+
+
+def _migration_preview(records, cfg, progress):
+    """Validate source records while keeping dry-run destination storage untouched."""
+    report(progress, "Validating source", 0, len(records))
+    planned = plan(records, cfg, progress=progress)
+    report(progress, "Dry run complete", len(planned), len(planned))
+    return {
+        "dry_run": True,
+        "source_unique_count": len(planned),
+        "target_collection": cfg["qdrant"]["collection"],
+        "target_ids": list(planned),
+    }
+
+
+def _check_recovery(home, cfg, command):
+    """Require the matching operator command for pending destructive intents."""
+    namespace = ledger_namespace(cfg)
+    pending_reset = has_pending_reset_file(home, namespace)
     if pending_reset and command != "init":
         raise ResetRecoveryRequiredError()
-    pending_intents = pending_scope_deletes_file(home, ledger_namespace(cfg))
+    pending_intents = pending_scope_deletes_file(home, namespace)
     if pending_intents and command != "delete-all":
         raise _pending_intent_error(pending_intents)
+    return pending_reset
+
+
+def _open_embedder(command, cfg, resources, progress, secret_reader):
+    """Keep inventory/deletion independent of the embedding service."""
+    if command in {"list", "export", "delete-all"}:
+        return None
+    report(progress, "Initializing embedding client")
+    if secret_reader is None:
+        embedder = build_embedder(None, cfg)
+    else:
+        embedder = build_embedder(None, cfg, secret_reader=secret_reader)
+    if hasattr(embedder, "close"):
+        resources.callback(embedder.close)
+    return embedder
+
+
+def _initialize_target(args, store, home, cfg, pending_reset, resources, progress):
+    """Initialize or explicitly reuse/reset a target and own its destination ledger."""
+    command = args.qdrant_command
+    action = "create"
+    ledger = None
+    if command == "init" and pending_reset:
+        # A prior explicit clear remains authorized until its durable intent clears.
+        action = "clear"
+    elif command == "init" and store.client.collection_exists(store.collection):
+        action = existing_collection_action(args, store.collection)
+    if action == "clear":
+        ledger = Ledger(home, ledger_namespace(cfg))
+        resources.callback(ledger.close)
+        if not pending_reset:
+            begin_destination_reset(ledger)
+        resume_destination_reset(store, ledger)
+    elif command in {"list", "export", "delete-all"}:
+        if not store.client.collection_exists(store.collection):
+            raise CollectionNotInitializedError(
+                "Collection does not exist; run hermes qdrant-memory init"
+            )
+    else:
+        report(progress, "Initializing target collection and probing embedding")
+        store.initialize(create=command in {"init", "migrate"})
+    if ledger is None:
+        ledger = Ledger(home, ledger_namespace(cfg))
+        resources.callback(ledger.close)
+    return ledger, action
+
+
+def _init_result(result, store, action):
+    """Include payload verification in initialization readiness without hiding failures."""
+    result.update(collection=store.collection, action=action)
+    verification = verify_collection(store)
+    result["payload_verification"] = {
+        "ok": verification["ok"],
+        "checked": verification["checked"],
+        "invalid_count": len(verification["invalid_ids"]),
+    }
+    result["ok"] = result["ok"] and verification["ok"]
+    if not verification["ok"]:
+        result["message"] = (
+            "Collection contains incompatible memory payloads or vectors. "
+            "Choose another collection or explicitly clear and rebuild it."
+        )
+
+
+def _report_migration_result(result, progress):
+    """Report incomplete or superseded migration outcomes distinctly."""
+    if result["processed"] != result["source_unique_count"]:
+        stage = "Migration incomplete; rerun with --resume --retry-failed"
+    elif result.get("superseded"):
+        stage = (
+            "Migration completed with superseded records; inspect manifest before a fresh import"
+        )
+    else:
+        stage = "Migration complete"
+    report(progress, stage, result["processed"], result["source_unique_count"])
+
+
+def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=None):
+    """Run maintenance with validated settings and reverse-order resource cleanup.
+
+    Dry runs validate records without opening a target collection or ledger.
+    Configuration, service and verification errors propagate to the CLI boundary.
+    """
+    home = Path(home or active_home())
+    command = args.qdrant_command
+    cfg = _command_config(args, home, config_loader, progress)
+    if command == "status":
+        return local_status(cfg, home)
+    source = _migration_input(args, cfg, home, progress)
+    if command == "migrate" and args.dry_run:
+        return _migration_preview(source[0], cfg, progress)
+    pending_reset = _check_recovery(home, cfg, command)
     with ExitStack() as resources:
         if command in {"init", "migrate", "retry", "delete-all"}:
             report(progress, "Acquiring writer lock")
             lease = WriterLease.for_config(home, cfg)
             resources.callback(lease.close)
-        if command in {"list", "export", "delete-all"}:
-            # Inventory and scoped deletion never embed; they must work even
-            # when the embedding service is unavailable or misconfigured.
-            embedder = None
-        else:
-            report(progress, "Initializing embedding client")
-            embedder = (
-                build_embedder(None, cfg)
-                if secret_reader is None
-                else build_embedder(None, cfg, secret_reader=secret_reader)
-            )
-            if hasattr(embedder, "close"):
-                resources.callback(embedder.close)
+        embedder = _open_embedder(command, cfg, resources, progress, secret_reader)
         report(progress, "Connecting to target")
         store = QdrantStore(build_client(cfg), cfg, embedder)
         resources.callback(store.close)
-        action = "create"
-        ledger = None
-        if command == "init" and pending_reset:
-            # A prior explicit clear remains authorized until its durable intent clears.
-            action = "clear"
-        elif command == "init" and store.client.collection_exists(store.collection):
-            action = existing_collection_action(args, store.collection)
-        if action == "clear":
-            ledger = Ledger(home, ledger_namespace(cfg))
-            resources.callback(ledger.close)
-            if not pending_reset:
-                begin_destination_reset(ledger)
-            resume_destination_reset(store, ledger)
-        elif command in {"list", "export", "delete-all"}:
-            # Inventory and scoped deletion never embed; they only require the
-            # target collection to exist and stay read-only otherwise.
-            if not store.client.collection_exists(store.collection):
-                raise CollectionNotInitializedError(
-                    "Collection does not exist; run hermes qdrant-memory init"
-                )
-        else:
-            report(progress, "Initializing target collection and probing embedding")
-            store.initialize(create=command in {"init", "migrate"})
-        if ledger is None:
-            ledger = Ledger(home, ledger_namespace(cfg))
-            resources.callback(ledger.close)
-        runtime = Runtime(cfg, store, ledger)
-        result = execute_command(
-            args, runtime, (records, source_type, source_identifier, checksum), progress
+        ledger, action = _initialize_target(
+            args, store, home, cfg, pending_reset, resources, progress
         )
+        result = execute_command(args, Runtime(cfg, store, ledger), source, progress)
         if command == "init":
-            result.update(collection=store.collection, action=action)
-            verification = verify_collection(store)
-            result["payload_verification"] = {
-                "ok": verification["ok"],
-                "checked": verification["checked"],
-                "invalid_count": len(verification["invalid_ids"]),
-            }
-            result["ok"] = result["ok"] and verification["ok"]
-            if not verification["ok"]:
-                result["message"] = (
-                    "Collection contains incompatible memory payloads or vectors. "
-                    "Choose another collection or explicitly clear and rebuild it."
-                )
+            _init_result(result, store, action)
         report(progress, "Closing resources")
     if command == "migrate":
-        stage = (
-            "Migration incomplete; rerun with --resume --retry-failed"
-            if result["processed"] != result["source_unique_count"]
-            else "Migration completed with superseded records; inspect manifest before a fresh import"
-            if result.get("superseded")
-            else "Migration complete"
-        )
-        report(progress, stage, result["processed"], result["source_unique_count"])
+        _report_migration_result(result, progress)
     return result
 
 
