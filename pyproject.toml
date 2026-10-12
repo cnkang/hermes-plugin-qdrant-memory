@@ -5,12 +5,18 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hermes-plugin-qdrant-memory"
 version = "0.1.0"
-description = "Standalone durable Qdrant memory provider for Hermes Agent"
+description = "Durable Qdrant memory for Hermes, standalone CLI and local MCP"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = ["qdrant-client>=1.15,<2", "httpx>=0.28,<1", "portalocker>=3.2,<4"]
+
+[project.scripts]
+qdrant-memory = "qdrant_memory.standalone:main"
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.30,<2"]
 
 [project.urls]
 Homepage = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
@@ -22,7 +28,7 @@ Changelog = "https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/main/CHA
 qdrant-memory = "qdrant_memory:register"
 
 [dependency-groups]
-test = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruamel.yaml>=0.18.16,<0.20"]
+test = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruamel.yaml>=0.18.16,<0.20", "mcp>=1.30,<2"]
 
 [tool.setuptools.packages.find]
 include = ["qdrant_memory*"]

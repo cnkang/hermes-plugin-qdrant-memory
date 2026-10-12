@@ -1,5 +1,8 @@
 # Security
 
+See [standalone CLI and MCP](standalone.md) for the additive host-independent
+interface, shared durable core, fixed operator scope and its validation boundary.
+
 Terminal identity rows and delete fences are deliberately retained. Do not prune
 them or completed migration manifests to reduce replay memory: they preserve
 deletion intent, idempotency and resume evidence. Logical payload scrubbing is not

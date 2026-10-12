@@ -1,5 +1,9 @@
 # Development and local checks
 
+The additive host-independent CLI and MCP interface is documented in
+[standalone setup](standalone.md), including its separate profile, operator-secret
+resolution, fixed scope and no-Hermes acceptance requirements.
+
 Use the Hermes host and its dependency manager described in the README. From
 the host checkout, build the same isolated Ruff environment used by CI:
 

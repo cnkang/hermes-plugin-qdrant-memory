@@ -99,7 +99,8 @@ jobs:
           python -m pm.build_env --source "$GITHUB_WORKSPACE/.host" --export-requirements "$RUNNER_TEMP/host-test-requirements.txt"
           python -c 'import tomllib; from pathlib import Path; p = tomllib.loads(Path("../pyproject.toml").read_text()); print("\n".join(p["project"]["dependencies"] + p["dependency-groups"]["test"]))' >> "$RUNNER_TEMP/host-test-requirements.txt"
           python -m pm.build_env --out "$GITHUB_WORKSPACE/.test-env" \
-            --requirements "$RUNNER_TEMP/host-test-requirements.txt"
+            --requirements "$RUNNER_TEMP/host-test-requirements.txt" \
+            --requirement "hermes-plugin-qdrant-memory[mcp] @ file://$GITHUB_WORKSPACE"
       - name: Run canonical host test runner
         working-directory: .host
         env:
