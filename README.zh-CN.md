@@ -12,18 +12,12 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-独立的 Hermes 原生 `MemoryProvider`：通过 Hermes 的可信 `ctx.llm` 提取记忆，
+为 Hermes Agent 提供长期记忆的原生插件，以 `MemoryProvider` 接入：
+通过 Hermes 的可信 `ctx.llm` 提取记忆，
 以 Qdrant named dense vector 保存向量和 schema-v1 payload。无需 Mem0 SDK 或
 独立 LLM SDK，不修改 Hermes 核心，不发送插件遥测。
 
 已收录于官方 [Hermes Plugin Catalog](https://hermes-agent.nousresearch.com/docs/plugins/qdrant-memory)（社区维护插件，community-maintained）。
-
-## 不安装 Hermes 使用
-
-尚未发布的独立接口提供 `qdrant-memory --home PATH`：可执行固定作用域的 JSON
-增删改查及现有维护/迁移命令，并通过可选 `mcp` 依赖提供本地 stdio MCP。
-独立入口与 Hermes 插件共用持久化核心；现有 Hermes 接口继续兼容。
-安装、配置、命令及边界见[独立运行指南](docs/standalone.md)。
 
 ## 工作原理
 
@@ -48,6 +42,15 @@ flowchart LR
 - 数据位置取决于目的地：记忆提取使用 Hermes 配置的 LLM，向量化使用配置的
   embedding 服务，两者都可能是远程服务。见[数据流与隐私](#数据流与隐私)。
 - 本预览版不支持：多写入者 Server/Cloud、hybrid 检索与 Web UI。
+
+## 额外兼容其他 agent
+
+本插件主要为 Hermes Agent 提供持久化记忆集成。作为额外能力，共享后端也能
+通过尚未发布的 `qdrant-memory --home PATH` JSON CLI 和可选的本地 stdio MCP
+为其他 agent 提供服务，无需安装 Hermes。这些接口支持显式、固定作用域的
+记忆操作及维护/迁移；自动提取与预取仍由 Hermes 生命周期驱动。
+配置和使用边界见[独立运行指南](docs/standalone.md)，跨 agent 的安装与使用
+说明见通用的 [qdrant-memory skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)。
 
 ## 演示
 
