@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import sysconfig
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -108,7 +109,7 @@ def profile(tmp_path):
 def command(profile, *args, ok=True):
     """Exercise the installed console entry point from a foreign working directory."""
     home, env = profile
-    executable = Path(sys.executable).parent / (
+    executable = Path(sysconfig.get_path("scripts")) / (
         "qdrant-memory.exe" if os.name == "nt" else "qdrant-memory"
     )
     result = subprocess.run(
