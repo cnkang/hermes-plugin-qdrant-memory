@@ -202,7 +202,15 @@ def validate_search_scope(cfg):
         raise ValueError("agent_id must be a string or null")
 
 
-def load_config(home, overrides=None, resolve_secrets=True):
+def load_config(
+    home,
+    overrides=None,
+    resolve_secrets=True,
+    *,
+    secret_reader=None,
+    json_reader=None,
+    defaults=None,
+):
     """Load profile settings, merge defaults/overrides and resolve scoped secrets.
 
     Behavior comes from qdrant-memory.json. Secret resolution can be disabled for
@@ -211,25 +219,28 @@ def load_config(home, overrides=None, resolve_secrets=True):
     """
     home = Path(home).expanduser().resolve()
     path = home / "qdrant-memory.json"
-    from utils import read_json_or_empty
+    if json_reader is None:
+        from utils import read_json_or_empty
 
-    values = read_json_or_empty(path) if path.exists() else {}
+        json_reader = read_json_or_empty
+    values = json_reader(path) if path.exists() else {}
     if not isinstance(values, dict):
         raise ValueError("Plugin configuration must be an object")
-    cfg = merge(merge(DEFAULTS, values), overrides or {})
+    cfg = merge(merge(defaults or DEFAULTS, values), overrides or {})
     validate(cfg)
     q = cfg["qdrant"]
     storage = Path(q.get("path") or "qdrant-memory/qdrant").expanduser()
     q["path"] = str((storage if storage.is_absolute() else home / storage).resolve())
     if resolve_secrets:
-        resolve_qdrant_secrets(q)
+        resolve_qdrant_secrets(q, secret_reader=secret_reader)
     return cfg
 
 
-def resolve_qdrant_secrets(q):
+def resolve_qdrant_secrets(q, *, secret_reader=None):
     """Resolve Qdrant endpoint and API key precedence in the active profile scope."""
-    q["url"] = q.get("url") or secret(q["url_env"])
-    q["api_key"] = q.get("api_key") or secret(q["api_key_env"])
+    reader = secret if secret_reader is None else secret_reader
+    q["url"] = q.get("url") or reader(q["url_env"])
+    q["api_key"] = q.get("api_key") or reader(q["api_key_env"])
     if q["mode"] != "embedded":
         q["url"] = q["url"] or ("http://127.0.0.1:6333" if q["mode"] == "server" else None)
         validate_url(q["url"], cloud=q["mode"] == "cloud", api_key=q["api_key"])

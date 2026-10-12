@@ -1,5 +1,9 @@
 # Validation evidence
 
+The additive host-independent CLI and MCP interface is documented in
+[standalone setup](standalone.md), including its separate profile, operator-secret
+resolution, fixed scope and no-Hermes acceptance requirements.
+
 ## Catalog integration acceptance (2026-10-11)
 
 The official Hermes Plugin Catalog installation path was accepted end to end on

@@ -55,6 +55,7 @@ jobs:
           requirements = Path(os.environ["RUNNER_TEMP"]) / "host-test-requirements.txt"
           project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
           entries = project["project"]["dependencies"] + project["dependency-groups"]["test"]
+          entries.append(f"hermes-plugin-qdrant-memory[mcp] @ {root.as_uri()}")
           requirements.write_text(
               requirements.read_text(encoding="utf-8").rstrip() + "\n" + "\n".join(entries) + "\n",
               encoding="utf-8",

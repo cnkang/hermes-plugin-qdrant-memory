@@ -1,5 +1,8 @@
 # Operations
 
+See [standalone CLI and MCP](standalone.md) for the additive host-independent
+interface, shared durable core, fixed operator scope and its validation boundary.
+
 Run `status` for local configuration. Run `doctor` for collection, pipeline and
 index readiness. Run `stats` for the exact memory count and ledger status counts.
 Run `verify` for payload, vector and latest migration integrity. A private schema

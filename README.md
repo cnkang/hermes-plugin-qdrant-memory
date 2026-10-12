@@ -22,6 +22,14 @@ payloads. No Mem0 SDK, separate LLM SDK, telemetry, or core modifications.
 Available in the official [Hermes Plugin Catalog](https://hermes-agent.nousresearch.com/docs/plugins/qdrant-memory)
 as a community-maintained plugin.
 
+## Without Hermes
+
+The unreleased standalone interface adds `qdrant-memory --home PATH` for scoped
+JSON CRUD and existing maintenance/migration commands, plus local stdio MCP
+through the optional `mcp` extra. It uses the same durable core as the Hermes
+provider. See [standalone setup and boundaries](docs/standalone.md) for installation,
+configuration and exact commands. Existing Hermes integration remains supported.
+
 ## How it works
 
 ```mermaid

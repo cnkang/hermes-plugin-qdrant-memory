@@ -38,11 +38,12 @@ def validate_vectors(vectors, count, dimensions):
 class HTTPEmbeddingProvider:
     """Adapt Ollama and OpenAI-compatible HTTP APIs to one strict embedding contract."""
 
-    def __init__(self, cfg, client=None):
+    def __init__(self, cfg, client=None, *, secret_reader=None):
         """Bind the pipeline identity and create or accept an owned HTTP client."""
         import httpx
 
-        key = cfg.get("api_key") or secret(cfg.get("api_key_env", "EMBEDDING_API_KEY"))
+        reader = secret if secret_reader is None else secret_reader
+        key = cfg.get("api_key") or reader(cfg.get("api_key_env", "EMBEDDING_API_KEY"))
         validate_url(cfg["base_url"], api_key=key)
         self.cfg = cfg
         self.dimensions = int(cfg["dimensions"])
@@ -98,7 +99,7 @@ class HTTPEmbeddingProvider:
         self.client.close()
 
 
-def build_embedder(ctx, cfg):
+def build_embedder(ctx, cfg, *, secret_reader=None):
     """Use a compatible host facade or the explicit HTTP fallback."""
     if cfg["embedding"]["mode"] == "inherit":
         host = getattr(ctx, "embedding", None)
@@ -110,4 +111,4 @@ def build_embedder(ctx, cfg):
             ):
                 raise ValueError("Host embedding facade does not satisfy the plugin contract")
             return host
-    return HTTPEmbeddingProvider(embedding_config(cfg))
+    return HTTPEmbeddingProvider(embedding_config(cfg), secret_reader=secret_reader)

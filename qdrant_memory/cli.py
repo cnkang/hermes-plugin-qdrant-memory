@@ -174,6 +174,7 @@ def register_cli(subparser):
         "--dry-run", action="store_true", help="Report the scope count without deleting"
     )
     parser.set_defaults(func=main)
+    return commands
 
 
 def scope_arguments(parser):
@@ -598,15 +599,17 @@ def _pending_intent_error(intents):
     return ScopeDeleteRecoveryRequiredError()
 
 
-def run(args, home=None):
+def run(args, home=None, *, config_loader=None, secret_reader=None):
     """Run maintenance, with live stderr diagnostics for migrations only."""
     if args.qdrant_command == "migrate":
         with MigrationProgress(quiet=getattr(args, "quiet", False)) as progress:
-            return _run(args, home, progress)
-    return _run(args, home)
+            return _run(
+                args, home, progress, config_loader=config_loader, secret_reader=secret_reader
+            )
+    return _run(args, home, config_loader=config_loader, secret_reader=secret_reader)
 
 
-def _run(args, home=None, progress=None):
+def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=None):
     """Run a command with profile-scoped configuration and owned service resources.
 
     Dry runs validate records without opening a target collection or ledger.
@@ -622,7 +625,7 @@ def _run(args, home=None, progress=None):
         overrides["limits"] = {"oversize_policy": args.oversize}
     command = args.qdrant_command
     report(progress, "Loading configuration")
-    cfg = load_config(home, overrides, resolve_secrets=command != "status")
+    cfg = (config_loader or load_config)(home, overrides, resolve_secrets=command != "status")
     if command == "status":
         # Availability/status is local-only and does not probe external services.
         return local_status(cfg, home)
@@ -659,7 +662,11 @@ def _run(args, home=None, progress=None):
             embedder = None
         else:
             report(progress, "Initializing embedding client")
-            embedder = build_embedder(None, cfg)
+            embedder = (
+                build_embedder(None, cfg)
+                if secret_reader is None
+                else build_embedder(None, cfg, secret_reader=secret_reader)
+            )
             if hasattr(embedder, "close"):
                 resources.callback(embedder.close)
         report(progress, "Connecting to target")

@@ -18,6 +18,13 @@
 
 已收录于官方 [Hermes Plugin Catalog](https://hermes-agent.nousresearch.com/docs/plugins/qdrant-memory)（社区维护插件，community-maintained）。
 
+## 不安装 Hermes 使用
+
+尚未发布的独立接口提供 `qdrant-memory --home PATH`：可执行固定作用域的 JSON
+增删改查及现有维护/迁移命令，并通过可选 `mcp` 依赖提供本地 stdio MCP。
+独立入口与 Hermes 插件共用持久化核心；现有 Hermes 接口继续兼容。
+安装、配置、命令及边界见[独立运行指南](docs/standalone.md)。
+
 ## 工作原理
 
 ```mermaid

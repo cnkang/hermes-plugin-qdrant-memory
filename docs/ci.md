@@ -1,5 +1,8 @@
 # CI services
 
+See [standalone CLI and MCP](standalone.md) for the additive host-independent
+interface, shared durable core, fixed operator scope and its validation boundary.
+
 Candidate validation must name the plugin SHA and actual test execution. A green
 optional Cloud workflow with missing credentials is SKIPPED, not Cloud validation.
 The `qdrant-cloud` environment currently allows only `main`; keep this restriction.

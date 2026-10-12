@@ -1,5 +1,9 @@
 # Configuration
 
+The additive host-independent CLI and MCP interface is documented in
+[standalone setup](standalone.md), including its separate profile, operator-secret
+resolution, fixed scope and no-Hermes acceptance requirements.
+
 The active profile's `qdrant-memory.json` holds behavior configuration. Its `.env`
 holds secrets. The plugin never reads `mem0.json` at runtime. Missing settings
 take the defaults declared in `qdrant_memory/config.py`. The plugin keeps unknown

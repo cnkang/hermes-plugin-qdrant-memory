@@ -22,6 +22,12 @@ serve `qwen3-embedding:4b` for the live embedding paths.
    directly. [docs/development.md](docs/development.md) documents the exact
    invocation, including the disposable Qdrant Server container flags.
 
+For standalone changes, install the reviewed checkout with `python -m pip install
+'.[mcp]' pytest` in an isolated environment and run
+`python -m pytest -q tests/standalone`. This acceptance suite needs no Hermes
+checkout or live model; it uses real embedded storage and a localhost fixture.
+The standalone CI matrix requires Linux/macOS/Windows on Python 3.11 and 3.14.
+
 ## Checks that must pass
 
 Every pull request must pass the same gates CI enforces:
