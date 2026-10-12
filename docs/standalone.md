@@ -84,7 +84,12 @@ segments before reading content or contacting storage. Invoke the command from
 an explicitly authorized source/export directory (for example, `cd /path/to`)
 to import sources outside the profile. The working directory is chosen by the
 trusted operator/host launcher; it must not be derived from an untrusted file
-argument. Default profile configuration and `mem0.json` remain trusted profile
+argument. This is argument containment, not an operating-system sandbox. The
+operator-selected directory tree must be trusted against concurrent hostile
+filesystem changes: canonicalization does not hold a file descriptor open or
+prevent a different process replacing a validated file/directory with a symlink
+before access. Enforce an external filesystem sandbox when that stronger threat
+model is required. Default profile configuration and `mem0.json` remain trusted profile
 inputs; legacy `hermes qdrant-memory` filesystem behavior is unchanged.
 For noninteractive reuse,
 pass `init --existing use`; `--existing clear` durably clears the entire target.

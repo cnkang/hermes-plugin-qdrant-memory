@@ -92,3 +92,48 @@ overwrites the scope only on `reset=True` or an explicit `user_id`, and a brand-
 without a parent still falls back to the default scope. Migration preserves source
 scopes, including null agent identity. Tools cannot supply a scope override. Recalled text is
 untrusted data and never becomes executable plugin instructions.
+
+
+## Standalone file argument containment and S8707 review
+
+The standalone CLI treats explicit `--source-json`, `--source-config` and
+`--output` values as untrusted arguments. `standalone.main` calls
+`validate_operator_paths` before `cli.run`: it canonicalizes the selected paths
+and the operator invocation directory, checks full path containment (including
+parent traversal and existing symlink targets), and passes canonical Paths to
+maintenance. The trusted root comes from the invocation directory, not the
+argument. The operator/host launcher must choose that directory intentionally.
+
+Sonar rule `pythonsecurity:S8707` reports the checksum read in
+`cli.migration_source`. That shared sink and unrestricted operator-file behavior
+already existed in baseline commit `79dc6603ff5553d3e96af2a8033a1d0afa8f94ab`.
+Legacy `hermes qdrant-memory` and direct Python maintenance callers retain their
+trusted-operator contract; arbitrary external source paths are intentional there.
+The new standalone CLI reaches that sink through the containment check. Its MCP
+adapter calls only the shared four CRUD tools, rejects additional arguments, and
+has no migration, source-file or export route. A report on the shared read alone
+does not establish that an untrusted standalone argument can bypass its entry
+validation. The residual report for that guarded standalone flow is triaged as a
+false positive under the trusted-directory threat model below. This decision is
+specific to S8707's shared checksum sink; no rule or quality threshold is excluded.
+
+Executable evidence is in `tests/standalone/test_public_api.py`:
+
+- `test_cli_path_escape_refused_before_content_or_storage_io` rejects outside-cwd
+  JSON/config/export paths before invoking maintenance or creating profile state.
+- `test_canonical_path_containment_and_authorized_external_profile_source` rejects
+  existing symlink/parent escapes and allows outside-profile migration from an
+  operator-authorized source directory.
+- `test_official_inprocess_client_scoped_tools_and_path_denial` runs the official
+  MCP client/server protocol and rejects migration tools and filesystem arguments.
+
+The directory tree is assumed trusted against concurrent hostile mutation.
+Canonicalization provides argument containment, not descriptor confinement or
+an operating-system sandbox. Replacing a checked file/directory with an outside
+symlink after validation can race a later read or write. Rechecking immediately
+before access only narrows that race; it does not eliminate it. A hostile shared
+filesystem requires a stronger external sandbox or descriptor-based policy, and
+this review makes no claim of protection for that threat model. The supported
+legacy operator paths and this filesystem assumption must be considered when
+triaging the residual static finding; blanket filesystem-safety claims are not
+justified.

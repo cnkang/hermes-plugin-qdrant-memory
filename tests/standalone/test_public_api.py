@@ -121,9 +121,12 @@ def test_public_startup_guards_release_owned_resources(profile, intent):
     else:
         ledger.enqueue_event({"session_id": "raw-host", "user": "trusted host only"})
     ledger.close()
-    with pytest.raises((RuntimeError, ValueError)):
-        with open_runtime(home):
-            pytest.fail("Startup admitted tools before recovery")
+    startup = open_runtime(home)
+    try:
+        with pytest.raises((RuntimeError, ValueError)):
+            startup.__enter__()
+    finally:
+        startup.__exit__(None, None, None)
     lease = WriterLease.for_config(home, cfg)
     lease.close()
 
@@ -154,9 +157,12 @@ def test_recovery_failure_closes_store_embedder_and_lease(profile, monkeypatch):
         return embedder
 
     monkeypatch.setattr(standalone, "build_embedder", tracked_embedder)
-    with pytest.raises(RuntimeError, match="require recovery"):
-        with open_runtime(home):
-            pytest.fail("Recovery failure admitted new tools")
+    startup = open_runtime(home)
+    try:
+        with pytest.raises(RuntimeError, match="require recovery"):
+            startup.__enter__()
+    finally:
+        startup.__exit__(None, None, None)
     assert embedders[0].client.is_closed
     lease = WriterLease.for_config(home, cfg)
     lease.close()
@@ -356,7 +362,10 @@ def test_destructive_intent_admitted_during_lease_acquisition_is_rechecked(
         "build_embedder",
         lambda *args, **kwargs: pytest.fail("Post-lease guard opened embedding service"),
     )
-    with pytest.raises((RuntimeError, ValueError)):
-        with open_runtime(home):
-            pytest.fail("Raced intent admitted tools")
+    startup = open_runtime(home)
+    try:
+        with pytest.raises((RuntimeError, ValueError)):
+            startup.__enter__()
+    finally:
+        startup.__exit__(None, None, None)
     assert held[0].file.closed
