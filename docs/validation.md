@@ -6,10 +6,13 @@ resolution, fixed scope and no-Hermes acceptance requirements.
 
 ## Standalone and MCP source preview (2026-10-12)
 
-PR #33 merged as `8fd42572738b15a1abcad62aeecd0de9b1877e3a`. Its tree matches
-the reviewed PR head. This source snapshot adds explicit CLI/MCP operations
-while retaining Hermes provider/lifecycle integration. It is not the v0.1.0
-release or the catalog's reviewed release pin.
+PR #33 merged as `8fd42572738b15a1abcad62aeecd0de9b1877e3a`. The initially
+reviewed head of this documentation PR,
+`efe1c943e01c9f22213908365a01d4a8711d47e2`, is its direct child. This PR changes
+only documentation and `CHANGELOG.md`; the standalone runtime sources are
+unchanged, but the full trees differ. The merged source snapshot adds explicit
+CLI/MCP operations while retaining Hermes provider/lifecycle integration. It is
+not the v0.1.0 release or the catalog's reviewed release pin.
 
 | Gate | Merged-snapshot evidence |
 |---|---|
