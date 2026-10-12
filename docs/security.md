@@ -1,151 +1,123 @@
-# Security
+# Security and deployment boundaries
 
-See [standalone CLI and MCP](standalone.md) for the additive host-independent
-interface, shared durable core, fixed operator scope and its validation boundary.
+This guide covers the Hermes memory plugin and its optional standalone CLI/MCP
+interfaces. For vulnerability reporting, see [Security Policy](../SECURITY.md).
+For configuration and recovery, see [configuration](configuration.md),
+[operations](operations.md) and [standalone setup](standalone.md).
 
-Terminal identity rows and delete fences are deliberately retained. Do not prune
-them or completed migration manifests to reduce replay memory: they preserve
-deletion intent, idempotency and resume evidence. Logical payload scrubbing is not
-secure erase. The deployment must enforce encryption and backup expiry.
+## Credentials and network access
 
-The plugin resolves credentials through Hermes's profile-aware `get_secret()`. Explicit
-Qdrant JSON credentials have higher precedence for compatibility. LLM credentials
-never enter this plugin: extraction and relation calls use `PluginContext.llm`.
-Provider/model overrides require the operator's Hermes trust grants.
+The Hermes plugin resolves credentials through the host's profile-aware
+`get_secret()`. Explicit Qdrant JSON credentials take precedence for compatibility;
+protect configuration files containing them. Extraction and relation requests use
+Hermes's `PluginContext.llm`, and model/provider overrides require the operator's
+Hermes trust grants. The standalone runtime uses its own operator-configured
+profile and embedding credentials; it does not require Hermes.
 
-Use `bws run --project-id ... -- hermes` for Bitwarden injection. BWS and shell
-environment values are indistinguishable inside a process. Configure the launcher
-to fill only missing variables if that distinction matters. This plugin does not
-shell out to BWS or read a vault. It introduces no behavior environment variables.
+Use a Qdrant **Database API Key** limited to the destination collection's required
+permissions. Give migration credentials read-only source access where possible,
+and revoke temporary credentials after verification. Use HTTPS for Qdrant Cloud
+and rotate keys. Endpoint URLs must not contain inline credentials, query strings
+or fragments. See [Qdrant security guidance](https://qdrant.tech/documentation/security/).
 
-Use a Qdrant **Database API Key**, scoped to the target collection's read/write
-permissions. A migration key may temporarily have read-only source access. Revoke
-it after verification. Use HTTPS for Cloud and rotate expiring keys. See
-[Qdrant security guidance](https://qdrant.tech/documentation/security/). The
-credentialed Cloud smoke workflow runs only on pushes to `main` and manual
-dispatch, never on `codex/**` branch pushes. Manual dispatch can select a ref;
-protect the `qdrant-cloud` environment with appropriate branch restrictions and
-approval requirements before enabling its credentials.
+Secrets can be injected by a launcher such as
+`bws run --project-id ... -- hermes`. The plugin does not invoke Bitwarden or read
+a vault. Injected values and existing shell environment values are indistinguishable
+inside the process; the launcher controls their precedence.
 
-On POSIX systems, state directories use mode 0700, and SQLite state and saved config
-use mode 0600. Windows uses inherited filesystem ACLs; Python's `chmod` mode bits do
-not establish an equivalent private ACL. Operators must protect the Hermes profile
-directory with an appropriate Windows ACL.
-The durable ledger can contain raw conversation events and prepared memory payloads.
-It logically scrubs committed event bodies and committed/superseded operation bodies,
-except operations still needed by an incomplete migration manifest. Identity/status
-rows and manifests remain. Session author provenance and unattributed-history
-quarantine also remain across restart and destination reset; only an explicit host
-transcript reset clears their history. Pending/failed payloads remain for recovery. Ledger rows
-and manifests have no time-based expiry. Deleting a Qdrant point does not clear its
-ledger identity or pending/failed work. A scoped content-hash tombstone prevents an
-older admitted event from recreating the exact deleted content under a different point
-ID. A later event may explicitly add it again. Scoped deletions record
-explicit versioned intents. A literal agent id `*` and an all-agents deletion
-are never conflated. An ambiguous pre-versioned intent is refused, not
-guessed. Treat `state.db`, WAL/SHM sidecars, snapshots
-and backups as sensitive conversation data. A destination reset clears current rows
-but is not secure erasure from SQLite pages/WAL or copied backups. The plugin never
-logs or persists API keys and response bodies as errors. It reports only the
-exception type and retryability.
+For CI deployments using Cloud credentials, restrict the `qdrant-cloud`
+environment to approved refs and require approval where appropriate. The optional
+Cloud workflow runs on `main` pushes and manual dispatch; manual dispatch can
+select another ref. Workflow triggers alone do not protect credentials.
 
-Whole-transcript supplementary extraction requires proven single-author history
-whose principal matches the current scope. After provider restart, a failed author
-callback, or previously unseen history, earlier messages cannot be certified from
-the latest turn alone: session-end extraction is
-skipped and pre-compression evidence is archived under a neutral scope without
-extraction until the host explicitly starts/resets a fresh transcript. Explicitly
-attributed per-turn writes remain available. Author provenance is private metadata
-in the ledger and has no time-based expiry.
-The plugin refuses endpoint URLs that contain inline credentials, query strings or
-fragments.
+## Private storage and retention
 
-Turn durability begins when Hermes invokes the provider callback and the provider
-commits the event to the plugin ledger. Hermes currently submits `sync_turn` via
-an in-memory
-background queue, so a host crash or bounded shutdown may lose a not-yet-admitted
-callback. The plugin's restart replay covers work already admitted to its ledger.
+On POSIX systems, state directories use mode 0700, and SQLite state and saved
+configuration use mode 0600. Windows relies on inherited filesystem ACLs; protect
+the profile with a private Windows ACL. Protect `state.db`, its WAL/SHM sidecars,
+configuration, snapshots and backups as sensitive data.
 
-Checkpoint v2 archives host-filtered direct user/assistant evidence in that same
-private ledger. The plugin retains mixed-author evidence without attributing
-extraction to the latest speaker. A multi-author checkpoint stores a non-attributed `__mixed__`
-scope marker with a null agent identity instead of any one speaker's scope, while a
-single-author checkpoint keeps that author's real scope. A local OS lease excludes
-simultaneous cooperating processes for one profile destination, including a retiring
-worker. Lease files are local to `HERMES_HOME`. Different profile homes on the same
-machine do not share the lease even when they target the same remote collection.
-Deploy only one writer per destination across all profiles and hosts. It is not
-distributed coordination and does not make explicitly shared absolute storage paths safe.
-Stop all writers across hosts before maintenance.
+The ledger may contain raw conversations and prepared memory payloads. Committed
+event bodies and committed/superseded operation bodies are logically scrubbed,
+except operations needed by an incomplete migration. Pending/failed payloads
+remain available for recovery. Identity/status rows, deletion fences, migration
+manifests, author provenance and history quarantine have no time-based expiry.
+Do not manually prune these records: recovery relies on them.
 
-Every recall and exact-ID tool operation enforces user/agent scope. A gateway
-author takes precedence for their turn. Bot turns cannot recall or invoke personal
-memory tools, including bots without an author ID. An unidentified turn in a session
-with gateway author history also fails closed. Ordinary CLI turns without author
-metadata retain their configured profile scope. Bot and non-primary turns do not
-automatically write memories. The plugin ignores builtin notifications during a
-blocked turn. Completed human turns carrying an explicit author can still persist if
-delivered asynchronously after a bot transition.
+Deleting a Qdrant point or resetting a destination does not securely erase SQLite
+pages, WAL files or copied backups. Use storage encryption and a backup retention
+policy appropriate to the data. Error reporting includes exception type and
+retryability rather than API keys or remote response bodies.
 
-Bot or unidentified shared-session participation quarantines supplementary
-session-end/checkpoint extraction, even after a human resumes. Checkpoints remain
-durably archived under the neutral `__mixed__`/null-agent scope without extraction.
-The private ledger persists the quarantine, and it survives provider restart and
-session rewind. Compression and branch continuations inherit the parent's scope,
-author history, active denial, and durable quarantine. An explicit transcript reset
-clears it once the current turn is authorized. Bot transitions invalidate cached
-and in-flight recall generations.
-The plugin does not automatically remove existing memories created before this
-protection.
+## Identity, scope and shared sessions
 
-Switching back to a known session without a
-`user_id` preserves that session's previously recorded author scope. The plugin
-overwrites the scope only on `reset=True` or an explicit `user_id`, and a brand-new session
-without a parent still falls back to the default scope. Migration preserves source
-scopes, including null agent identity. Tools cannot supply a scope override. Recalled text is
-untrusted data and never becomes executable plugin instructions.
+Recall and exact-ID memory tools enforce their configured user/agent scope.
+Hermes gateway authors take precedence for their turns. Bot turns cannot recall
+or use personal memory tools, including bots without an author ID. Unidentified
+turns in a session with gateway author history also fail closed. Ordinary CLI
+turns without author metadata keep their configured profile scope.
 
+Bot and non-primary turns do not automatically create memories. A completed human
+turn with a captured explicit author can still be persisted when delivered
+asynchronously after a bot transition. Bot transitions invalidate cached and
+in-flight recall.
 
-## Standalone file argument containment and S8707 review
+Whole-transcript supplementary extraction requires complete single-author
+history matching the current scope. After restart, a failed author callback or
+previously unseen history, session-end extraction is skipped and pre-compression
+evidence is archived without extraction until the host explicitly starts or
+resets a fresh transcript. Explicitly attributed per-turn writes remain available.
 
-The standalone CLI treats explicit `--source-json`, `--source-config` and
-`--output` values as untrusted arguments. `standalone.main` calls
-`validate_operator_paths` before `cli.run`: it canonicalizes the selected paths
-and the operator invocation directory, checks full path containment (including
-parent traversal and existing symlink targets), and passes canonical Paths to
-maintenance. The trusted root comes from the invocation directory, not the
-argument. The operator/host launcher must choose that directory intentionally.
+Bot or unidentified participation also quarantines supplementary extraction.
+Author history and quarantine persist across restarts and rewinds; compression
+and branch continuations inherit them. An explicit authorized transcript reset
+establishes fresh history. Unattributed checkpoints use a neutral `__mixed__`
+user marker and null agent identity. These protections do not automatically
+remove memories created by earlier versions.
 
-Sonar rule `pythonsecurity:S8707` reports the checksum read in
-`cli.migration_source`. That shared sink and unrestricted operator-file behavior
-already existed in baseline commit `79dc6603ff5553d3e96af2a8033a1d0afa8f94ab`.
-Legacy `hermes qdrant-memory` and direct Python maintenance callers retain their
-trusted-operator contract; arbitrary external source paths are intentional there.
-The new standalone CLI reaches that sink through the containment check. Its MCP
-adapter calls only the shared four CRUD tools, rejects additional arguments, and
-has no migration, source-file or export route. A report on the shared read alone
-does not establish that an untrusted standalone argument can bypass its entry
-validation. The residual report for that guarded standalone flow is triaged as a
-false positive under the trusted-directory threat model below. This decision is
-specific to S8707's shared checksum sink; no rule or quality threshold is excluded.
+Returning to a known session without a new `user_id` preserves its recorded
+scope. An explicit user identity or reset can replace it; a new unrelated session
+uses the default scope. Migration preserves source scopes, including null agent
+identity. Native memory tools and MCP tool arguments cannot override scope.
+The operator CLI can select maintenance scopes, so grant it only to trusted
+operators. Treat recalled text as untrusted data, not agent instructions.
 
-Executable evidence is in `tests/standalone/test_public_api.py`:
+## Durability and writer ownership
 
-- `test_cli_path_escape_refused_before_content_or_storage_io` rejects outside-cwd
-  JSON/config/export paths before invoking maintenance or creating profile state.
-- `test_canonical_path_containment_and_authorized_external_profile_source` rejects
-  existing symlink/parent escapes and allows outside-profile migration from an
-  operator-authorized source directory.
-- `test_official_inprocess_client_scoped_tools_and_path_denial` runs the official
-  MCP client/server protocol and rejects migration tools and filesystem arguments.
+Turn durability begins when the provider commits the callback's event to its
+ledger. Hermes submits `sync_turn` through an in-memory background queue; a host
+crash or bounded shutdown can lose a callback that has not reached the ledger.
+Restart replay covers admitted work. Pre-compression checkpoints durably archive
+host-filtered direct user/assistant evidence before compression.
 
-The directory tree is assumed trusted against concurrent hostile mutation.
-Canonicalization provides argument containment, not descriptor confinement or
-an operating-system sandbox. Replacing a checked file/directory with an outside
-symlink after validation can race a later read or write. Rechecking immediately
-before access only narrows that race; it does not eliminate it. A hostile shared
-filesystem requires a stronger external sandbox or descriptor-based policy, and
-this review makes no claim of protection for that threat model. The supported
-legacy operator paths and this filesystem assumption must be considered when
-triaging the residual static finding; blanket filesystem-safety claims are not
-justified.
+The local OS lease excludes cooperating writers sharing one profile destination,
+including a retiring worker. Different profile homes do not share that lease,
+even if they target the same collection. Run only one writer per destination
+across all profiles and hosts, and stop all writers before maintenance. The lease
+does not provide distributed coordination or make shared absolute storage paths
+safe.
+
+Scoped deletion preserves fences and explicit versioned deletion intents so that
+older admitted work cannot recreate deleted content. A later event can explicitly
+add it again. A literal agent ID `*` is distinct from an all-agents deletion.
+Ambiguous legacy intents require explicit operator resolution; see
+[operations](operations.md).
+
+## Filesystem access and MCP limits
+
+The standalone CLI confines explicit `--source-json`, `--source-config` and
+`--output` paths to the invocation directory after resolving parent traversal
+and existing symlinks. Choose that working directory intentionally and keep its
+contents under trusted control. Legacy `hermes qdrant-memory` and direct Python
+maintenance calls retain trusted-operator file access, including external paths.
+
+Path validation is not an OS sandbox and does not prevent concurrent filesystem
+mutation. For untrusted shared directories, use an external sandbox or an
+equivalent filesystem access policy. Do not allow another process to replace
+files or directories during maintenance.
+
+The optional MCP server runs over local stdio and exposes only scoped search,
+add, update and delete. It has no migration, source-file or export tools and
+rejects additional tool arguments. Its profile, credentials and identity are
+chosen by the operator launching it. See the [MCP guide](mcp.md) for connection
+and shared-memory boundaries.

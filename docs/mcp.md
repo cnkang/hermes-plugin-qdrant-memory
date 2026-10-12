@@ -82,8 +82,8 @@ This preview does not provide a concurrent multi-agent shared service.
 
 ## Evidence and limits
 
-The [validation record](validation.md#standalone-and-mcp-source-preview-2026-10-12)
-links the tested merged snapshot: 27 standalone contracts across Linux, macOS
+The [validation record](validation.md#source-preview-validation-2026-10-12)
+links the tested source revision: 27 standalone contracts across Linux, macOS
 and Windows with Python 3.11/3.14, including real CLI subprocesses and official
 MCP clients. The companion skill also has isolated local Codex CLI, OpenCode
 and Pi integration checks and shared/private scope E2E.

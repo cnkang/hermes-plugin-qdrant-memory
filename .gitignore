@@ -1,4 +1,7 @@
 .env
+.env.*
+!.env.example
+!.env.*.example
 .venv/
 .hermes-test-env/
 .test-env/
@@ -20,3 +23,11 @@ qdrant-memory.json
 .agents/
 IDEA.md
 .vscode/
+
+# Local machine metadata and validation output
+.DS_Store
+reports/
+*.log
+
+# Internal release preparation records; public notes live in docs/releases/v*.md
+docs/releases/PRE_RELEASE_*.md

@@ -1,280 +1,113 @@
-# Validation evidence
+# Validation and compatibility
 
-The additive host-independent CLI and MCP interface is documented in
-[standalone setup](standalone.md), including its separate profile, operator-secret
-resolution, fixed scope and no-Hermes acceptance requirements.
+This page records reproducible checks and the revisions to which they apply.
+For installation, see the [README](../README.md); for supported deployment
+boundaries, see [security](security.md) and [standalone setup](standalone.md).
+A passing result for one revision does not certify later changes, every agent
+model, or a production deployment.
 
-## Standalone and MCP source preview (2026-10-12)
+## Source-preview validation (2026-10-12)
 
-PR #33 merged as `8fd42572738b15a1abcad62aeecd0de9b1877e3a`. The initially
-reviewed head of this documentation PR,
-`efe1c943e01c9f22213908365a01d4a8711d47e2`, is its direct child. This PR changes
-only documentation and `CHANGELOG.md`; the standalone runtime sources are
-unchanged, but the full trees differ. The merged source snapshot adds explicit
-CLI/MCP operations while retaining Hermes provider/lifecycle integration. It is
-not the v0.1.0 release or the catalog's reviewed release pin.
+Runtime revision `2f4150bd14fa004f84511ad534b189e088c694b8`, submitted in
+[PR #35](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/35), includes
+durable transcript-author isolation and the standalone CLI/MCP interfaces.
+These interfaces are a source preview; they are not included in the published
+v0.1.0 release or its Hermes catalog pin.
 
-| Gate | Merged-snapshot evidence |
-|---|---|
-| Host contracts, Server tests, Snyk and Sonar gate | [38225834759](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834759) |
-| 27 standalone CLI/public API/official MCP contracts, three OSes × Python 3.11/3.14, zero skips | [38225834720](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834720) |
-| Existing platform compatibility | [38225834663](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834663) |
-| Python and Actions CodeQL | [38225834614](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834614) |
-| Companion skill: standalone/Pi/shared-scope acceptance and distribution | [38225872373](https://github.com/cnkang/skills/actions/runs/38225872373) |
+| Check | Verified boundary | Public result |
+| --- | --- | --- |
+| Backend CI | Minimum supported Hermes and latest upstream `main`, Python 3.11/3.14, behavior contracts, disposable Qdrant Server, Ruff, Snyk and SonarCloud | [CI run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38264152648) |
+| Platform compatibility | Linux/macOS/Windows × Python 3.11/3.14, embedded storage and Hermes lifecycle | [Platform run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38264152705) |
+| Standalone CLI/MCP | Installed JSON CLI, public API and official MCP protocol contracts without Hermes, across the same OS/Python matrix | [Standalone run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38264152730) |
+| Code scanning | Python and GitHub Actions CodeQL | [CodeQL run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38264152715) |
+| Companion skill | Package distribution, Hermes E2E, Pi loading, standalone CLI/MCP and fresh runtime installation | [Skills run](https://github.com/cnkang/skills/actions/runs/38264236539) |
 
-Local backend validation passed 326 tests; a freshly built Python 3.11 wheel
-passed all 27 standalone contracts. Codex CLI 0.160.0, OpenCode 2.0.24 and Pi
-1.1.0 were tested with disposable profiles and deterministic localhost
-embeddings. The [MCP guide](mcp.md#evidence-and-limits) distinguishes each host's
-verified boundary from protocol compatibility and live model behavior.
-Shared/private scope E2E uses sequential MCP clients, not concurrent writers.
-See [security](security.md) and the Sonar issue review records for the trusted
-profile/directory assumptions behind the path-finding triage. No quality rule
-or threshold was excluded. Historical release certification follows below.
+The local backend suite passed 342 tests using an isolated profile and
+deterministic embedding/LLM fixtures. Regression coverage includes mixed authors,
+restarts, branch/reset transitions and failed author-record writes. A fresh
+`npx skills@1.7.0` installation from GitHub at skills revision
+`acbce68b925a8f735986d15b15fb701099533a16` installed this backend revision,
+verified its package provenance, and passed CLI initialization/diagnostics/write
+and official MCP discovery/search/delete.
 
-## Catalog integration acceptance (2026-10-11)
+These tests do not use personal memory collections or paid model calls. The
+fresh installation test uses localhost embeddings. CLI/MCP scope sharing is
+tested with sequential clients; it does not establish concurrent-writer support.
+See the [MCP compatibility guide](mcp.md#evidence-and-limits) for agent-specific
+registration, discovery and tool-call boundaries.
 
-The official Hermes Plugin Catalog installation path was accepted end to end on
-a fresh isolated profile: discovery and install by catalog name at the reviewed
-pin, dependency preparation, provider registration, embedding probe,
-initialization, real memory writes, cross-session recall, restart recovery,
-update/delete, inventory/export and scoped deletion. See the
-[catalog integration acceptance](validation/catalog-integration-acceptance.md)
-record. The record landed on `main` as
-`1f58b8534df7eb94d2385bfceb6927b850545031` (PR #31, rebase-merged from
-`a38dd5b`); the merge snapshot passed
+## Initial standalone snapshot (2026-10-12)
+
+The initial standalone implementation in
+[PR #33](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/33) merged as
+`8fd42572738b15a1abcad62aeecd0de9b1877e3a`. The initially reviewed head of the
+subsequent [documentation PR #34](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/34),
+`efe1c943e01c9f22213908365a01d4a8711d47e2`, is its direct child. That update
+changed only documentation and `CHANGELOG.md`: standalone runtime sources were
+unchanged, while the complete trees differed.
+
+That implementation passed 326 local backend tests and 27 standalone contracts
+in a fresh Python 3.11 wheel installation. Recorded CI results include
+[backend CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834759),
+[standalone compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834720),
+[platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834663)
+and [CodeQL](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38225834614).
+Local acceptance used Codex CLI 0.160.0, OpenCode 2.0.24 and Pi 1.1.0 with
+disposable profiles. These results establish the documented interface boundaries,
+not unrestricted live-model compatibility.
+
+## Hermes catalog installation (2026-10-11)
+
+The official Hermes Plugin Catalog pin
+`5ec9cac094e5e9dc80e1cd25b241bcec44019d5b` was tested on a fresh profile with
+embedded Qdrant and local Ollama. Discovery, installation by catalog name,
+dependency preparation, provider registration, initialization, real memory
+writes, cross-session recall, restart recovery, update/delete, inventory/export
+and scoped deletion passed. See the
+[catalog acceptance record](validation/catalog-integration-acceptance.md) for
+versions, provider limitations and reproduction steps.
+
+That record was merged in [PR #31](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/31)
+at `1f58b8534df7eb94d2385bfceb6927b850545031`, with passing
 [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568943),
-[the six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568962),
-[CodeQL](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568940)
-and the [authenticated Cloud smoke](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568954).
-The certification snapshots below retain their original scope.
+[platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568962)
+and [authenticated Cloud smoke](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568954).
+Catalog installation uses its own immutable pin; newer default-branch
+documentation and source-preview features do not change that pinned version.
 
-## Post-merge main snapshot (2026-10-09, PRs #15–#18)
+## Published release and live acceptance
 
-PRs #15–[#17](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/17)
-are merged on top of the snapshots below. The earlier
-`ff5712d318f48054da3443598f58f6793d610514` snapshot passed:
-
-| Gate | Evidence |
-| --- | --- |
-| CI, including host matrix, Server tests and security scans | [37887162232](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162232) |
-| Linux/macOS/Windows × Python 3.11/3.14 | [37887162226](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162226) |
-| Authenticated Cloud integration | [37887162253](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37887162253) |
-
-PR #17 delivered the memory inventory/export/scoped-deletion commands
-(issue #15); PR #16 delivered the release/community readiness set. The
-**certified revision for that snapshot** was `112e403c414f90905325322bab135493a0b03b85`
-(2026-10-09): the scoped-deletion
-hardening in the follow-up finalization PR (#18) is validated on its own head
-and re-certified by the gates on main at release time, with
+The [v0.1.0 release notes](releases/v0.1.0.md) describe the Hermes technical
+preview and its support limits. Recorded release validation includes
 [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752887),
-[six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752957)
+[six OS/Python jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752957)
 and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37896752899)
-all green; the `v0.1.0` certification was recorded in the documentation
-commit `d50f2cc5c4704a9204596e81e4192fa58da5f500`, with no functional changes
-between `112e403c` and that commit. The snapshots below retain their original
-scope.
-
-The project is a limited technical preview. The `v0.1.0` release was published
-on 2026-10-09; the re-publication retargets the tag to this record commit and
-includes the post-release changes below, each validated by its own
-pull-request gates.
-
-## Scoped-deletion intent hardening (post-release, 2026-10-09)
-
-Scoped deletion intents are versioned and explicit. The plugin records
-`single_agent` and `all_agents` modes, and a literal agent id `*` is an
-ordinary scope. A pre-versioned intent cannot show the difference, so the
-plugin refuses it (`scope_delete_legacy_intent`). An operator resolves it with
-`delete-all --resolve-legacy single_agent|all_agents` (the all-agents option
-applies only to ambiguous records: agent `*` or absent). Fault-injection
-regressions cover interruption after the intent and fences commit, partial
-multi-scope deletion and resume, resume scope restoration, and both legacy
-resolution paths. The full local suite passes (301 tests, 1 skipped). The
-re-publication includes these changes in `v0.1.0` after the tag retarget;
-each was validated by its own pull-request gate. The gates on the final main
-head are green:
+at `112e403c414f90905325322bab135493a0b03b85`. Post-release scoped-deletion
+validation also passed
 [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37943322913),
-[six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37943322889)
-and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37943322869).
+[platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37943322889)
+and [Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37943322869).
 
-## Post-merge main snapshot (2026-10-09)
+A live Quick Start on 2026-10-09 used a fresh macOS arm64 profile and local Ollama
+embeddings. It passed installation, conversation extraction, cross-session
+recall, update/delete and restart verification. Slow local chat models exceeded
+the default auxiliary-call timeout; the [troubleshooting guide](troubleshooting.md)
+explains timeout configuration and retry. This was one deployment, not a
+production capacity benchmark.
 
-PRs #13 and [#14](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/14)
-are merged on top of the snapshot below. Main
-`f6a2e97f9cd16c4aed3ba2590bfcf36176ee5e29` passed:
+## Reproducing checks and interpreting results
 
-| Gate | Evidence |
-| --- | --- |
-| CI, including host matrix, Server tests and security scans | [37868895051](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895051) |
-| Linux/macOS/Windows × Python 3.11/3.14 | [37868895110](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895110) |
-| Authenticated Cloud integration | [37868895002](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37868895002) |
+Use [development setup](development.md) for the host runner, isolated dependency
+environments, lint and local tests, and [CI services](ci.md) for required matrices
+and scanner configuration. Each latest-Hermes job records its actual upstream
+SHA because upstream `main` can change between runs.
 
-PR #14 makes verify mode report `migration_incomplete` ahead of superseded
-conflicts; PR #13 synchronized this documentation with the merged state. The
-snapshot below (2026-10-08) retains its original scope.
+Authenticated Cloud smoke is optional and explicitly skips when credentials are
+absent. Such a skip does not validate Cloud behavior. Automated review checks
+that report skipping are likewise not completed code reviews. Test execution,
+not configuration alone, establishes the reported boundary.
 
-## Post-merge main snapshot (2026-10-08)
-
-PRs #10, #11 and [#12](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/12)
-are merged. Main `32bd4e7abdb3b417cc5b0dd0f793f93db188db3b` passed:
-
-| Gate | Evidence |
-| --- | --- |
-| CI, including host matrix, Server tests and security scans | [37802338914](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338914) |
-| Linux/macOS/Windows × Python 3.11/3.14 | [37802339623](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802339623) |
-| Authenticated Cloud integration | [37802338838](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37802338838) |
-
-The Cloud job's `Exercise authenticated Cloud` step executed successfully; this was
-not a missing-credentials skip. The earlier candidate branch rejection is historical.
-The main-only environment restriction remains intact. These results certify the
-named code snapshot, not later documentation commits or future Hermes revisions.
-
-The project is a limited technical preview. A live Quick Start
-drill on 2026-10-09 exercised the full user flow on a fresh home (see the drill
-record below). Synthetic retrieval and recovery measurements still do not
-establish production quality or capacity. See the
-[final pre-release review](releases/PRE_RELEASE_FINAL_REVIEW.md) for historical local
-results, exact upstream Hermes revisions and support limits, and the
-[recovery benchmark](recovery-benchmark.md) for the separate storage/replay evidence.
-
-The sections below retain earlier evidence with their original scope.
-
-## Live Quick Start drill (2026-10-09)
-
-A fresh isolated home (custom `HERMES_HOME`, no development shims) installed the
-provider from the public repository and ran against local Ollama on a macOS arm64
-host (24 GB). Flow: install → configuration → conversations → automatic
-extraction → cross-session recall → update → delete → restart.
-
-| Step | Result |
-| --- | --- |
-| Fresh home, clone, `hermes memory setup`, `hermes qdrant-memory init` | PASS — dependencies prepared through Hermes PM; embedded collection created; embedding probe OK (`qwen3-embedding:4b`, 2560 dimensions) |
-| Conversation writes via the agent tools | PASS — add/search/update/delete all committed in the ledger |
-| Automatic turn extraction | PASS — the pending backlog drained: events and operations committed, dedupe recorded ADD and SKIP decisions |
-| Cross-session recall | PASS — new sessions returned the taught facts from stored memory |
-| Update | PASS — the codename entries were rewritten with the new value and the old one marked obsolete |
-| Delete | PASS — the targeted memory was removed, stayed gone on re-check, and the committed event bodies were scrubbed to empty payloads |
-| Restart and consistency | PASS — `verify` reports `ok: true` (exact count, zero invalid IDs); sessions after restarts recalled the surviving facts |
-
-Drill findings and response:
-
-- **Fixed in this release**: provider discovery imported `portalocker` at module
-  load, so a home whose dependencies were not yet prepared reported “provider
-  not found” during `hermes memory setup`. The import is now lazy and covered by
-  a regression test.
-- **Documented**: extraction and relation checks run as Hermes auxiliary calls
-  (30 s per-task default). Slow local models should raise
-  `auxiliary.qdrant_memory_extraction.timeout` and requeue timed-out work with
-  `hermes qdrant-memory retry`.
-- **Environment notes**: a 27B local chat model plus local embeddings exceeds
-  comfortable VRAM on a 24 GB host (Ollama evicted runners under concurrent
-  load); the interaction phase finished on a hosted model through the same local
-  Ollama daemon. Local-model turns took 8–11 minutes each; hosted-model turns
-  took seconds. Extraction produced near-duplicate variants below the dedupe
-  review threshold — consistent with the conservative similarity design; tidying
-  them is part of the deferred memory inventory/export work.
-
-The deterministic CI gates above remain the release's hard evidence; this drill
-evidences installability and the user-facing flows on one real machine.
-
-## Recorded rereview snapshot (2026-10-06)
-
-This section records the earlier snapshot only. PRs #10 and #11 subsequently
-merged. Main `79565e755716f3d812b73e550417b5049b9642e6` passed
-[CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788043978),
-[all six platform jobs](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788044014),
-and [authenticated Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/37788044033).
-The following unavailable-service statements apply to the historical local run.
-
-Minimum supported host release: v0.21.5
-(`f97608f178d1ffeca59860195ab7da295f7c8e5f` = v2026.9.24). Earlier releases were
-probed empirically on 2026-10-09: v0.21.0–v0.21.2 cannot import required host APIs
-(24 test modules fail collection); v0.21.3 fails host-lifecycle contracts; v0.21.4
-lacks profile-scoped secret resolution (`set_secret_scope(profile_home=...)`).
-Local full suites (2026-10-06 snapshot runs) used the minimum tag's native runner
-on Python 3.11 and the fixed supported-range host
-`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078` on Python 3.14: 19 files,
-104 passed, one optional Cloud skip. Those runs do not validate the moving `main`.
-The current required CI matrix validates the minimum release and the latest Hermes
-`main` on both Python versions; each latest-main run records its checked-out SHA, so
-a green run applies only to that exact SHA.
-
-Real native setup, checkpoint v2 normalization/compression and session-manager
-paths are exercised. The weekly/manual tracker also requires a host lifecycle test
-for the `MemoryManager.sync_all()` to provider admission path, with
-`HERMES_QDRANT_REQUIRE_HOST_SYNC=1` so missing host APIs fail instead of silently
-skipping. Tracker runs record their checked-out SHA in the run summary; existing
-evidence does not
-establish that a turn waiting in Hermes's in-memory queue survives a host crash or
-bounded shutdown before `sync_turn` runs. The plugin durability boundary starts at
-its own ledger admission. Setup's dependency installer is stubbed; dependency install
-is validated separately through PM. Tests use temporary homes and deterministic
-embedding/LLM fixtures. Slow LLM, Qdrant and foreground tools cover bounded drain,
-retained ownership, cleanup and restart recovery. In-flight I/O is not forcibly
-cancelled. The test ruamel.yaml range accommodates both host declarations.
-
-Live Docker Qdrant v1.15.5 passes REST/gRPC collection/identity/index creation,
-scope and null-agent filtering, exact-ID authorization, add/search/update/delete,
-process restart/reconnect, migration and vector/payload verification. Actual remote
-legacy collections remain unchanged by source reads. The image digest is
-`sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863`.
-Pass `--qdrant-test-url` and `--qdrant-test-container` after the runner's explicit
-`--`; arbitrary environment variables are cleared. Run serially during restarts.
-
-A built wheel installed into an independent PM environment passes site-packages
-imports, entry point, package resources, schema persistence and real CLI discovery
-outside the checkout. Directory discovery is also tested. Ruff lint/format,
-actionlint, PM lock checks and staged-snapshot hooks are required for delivery.
-Check authenticated SonarCloud/Snyk and external review results on the delivered
-SHA; configuration alone is not evidence.
-
-Cloud was not available locally. The separate **Optional Qdrant Cloud
-smoke** uses Actions URL/key/prefix secrets on repository pushes or manual dispatch
-and a disposable collection. Missing
-credentials explicitly skip; a skip does not establish Cloud compatibility. See
-[CI setup](ci.md). The earlier Ollama synthetic pilot below was not rerun in this
-review and is not a production retrieval claim.
-
-## Historical initial implementation evidence
-
-Validated on 2026-10-06 against Hermes commit
-`4787e4d56fc8d9265d4c7d3c0fe5accee86b4078`.
-
-- Canonical Hermes `scripts/run_tests.sh`: 64 tests passed across 10 files with
-  two independent file workers.
-- Tests use real Hermes imports and isolated temporary profile directories.
-- Persistent embedded Qdrant survived process termination after embedded upsert
-  but before ledger acknowledgment; replay retained one deterministic point.
-- Migration tests preserve 1,000 source IDs and detect incorrect same-count
-  target records. No user memories were migrated during development.
-- Actual directory-provider discovery and CLI maintenance commands passed.
-- Ruff 0.15.1 lint (including docstrings/imports), formatting and GitHub Actions
-  actionlint passed. All 239 Python definitions have docstrings.
-- The local pre-commit hook passed on the staged repository and rejected an
-  undefined-name probe in an isolated alternate Git index.
-- Live Ollama `qwen3-embedding:4b` produced 2,560-dimensional vectors. The
-  synthetic 12-query pilot achieved Recall@10 and MRR of 1.0; warmed search
-  p95 was 119.23 ms. See [recorded pilot](retrieval-baseline.json). This small
-  fixture is a regression baseline, not a production retrieval claim.
-- Server and Cloud client configuration are contract-tested; authenticated
-  remote Qdrant endpoints were not available for live integration tests.
-
-Reproduce the retrieval pilot from an environment containing Hermes and this
-plugin with `python scripts/evaluate.py`. It uses a temporary embedded database
-and the local Ollama service, never the user's configured collection.
-
-CI runs the behavior suite on Linux/Python 3.11 and 3.14. SonarCloud and Snyk
-workflows require service credentials; CodeRabbit requires GitHub App access.
-See [service onboarding](ci.md). Committed configuration alone does not prove
-that external services are authorized or that their checks passed.
-
-On commit `389e5d172631df14c12ec20cafe053c8614591dc`, both GitHub push and PR
-workflows completed successfully: Python 3.11/3.14, SonarCloud, Snyk dependency/code
-scans and the required aggregate gate. Snyk's resolver needs pip in its disposable
-scan environment; CI provisions it through Hermes PM. CodeRabbit's separate App
-check reported manual-review skipping, not a completed review of that commit.
-
-Docstrings cover every Python module/class/function/method, including test helpers.
-Documentation coverage is checked by parsing definitions; behavior is validated
-separately by the canonical runner rather than source-reading implementation tests.
+Retrieval and recovery measurements are separate synthetic checks. See the
+[retrieval baseline](retrieval-baseline.json) and
+[recovery benchmark](recovery-benchmark.md) for fixture sizes, measured revisions
+and limitations. They do not establish production retrieval quality or capacity.
