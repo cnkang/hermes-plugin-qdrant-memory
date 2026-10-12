@@ -462,9 +462,10 @@ PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate.py
 It uses a temporary embedded collection and UTF-8 JSON dataset. A custom dataset
 contains `memories` objects with `id`/`text`, and `queries` with `query`/`relevant_ids`.
 The default fixture now contains 24 labeled queries, including Chinese, English,
-mixed-language and hard-negative cases. The original 12-query recording and later
-24-query measurements in the final review are synthetic regression baselines,
-not production recall claims. See the [recovery benchmark](docs/recovery-benchmark.md)
+mixed-language and hard-negative cases. The
+[original 12-query recording](docs/retrieval-baseline.json) is a historical
+synthetic regression baseline; rerun the current fixture for current measurements.
+These fixtures do not establish production recall quality. See the [recovery benchmark](docs/recovery-benchmark.md)
 for a separate synthetic replay and retained-storage measurement.
 
 CI runs tests, SonarCloud quality gates and Snyk dependency/code scans.
