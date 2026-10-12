@@ -1,6 +1,5 @@
 """Exercise checkpoint and session lifecycle through the actual Hermes manager."""
 
-import json
 import sqlite3
 from types import SimpleNamespace
 
@@ -19,6 +18,7 @@ from .test_provider import provider
 def test_checkpoint_commits_normalized_evidence_and_propagates_failure(tmp_path, monkeypatch):
     """Host compression sees a committed checkpoint and blocks on disk failure."""
     p = provider(tmp_path)
+    captured = capture_committed_event_payloads(monkeypatch, p.ledger)
     manager = MemoryManager()
     manager.add_provider(p)
     agent = SimpleNamespace(_memory_manager=manager)
@@ -35,13 +35,12 @@ def test_checkpoint_commits_normalized_evidence_and_propagates_failure(tmp_path,
     try:
         assert manager.supports_pre_compress_checkpoint()
         _pre_compress_memory_context(agent, messages, True)
-        with sqlite3.connect(tmp_path / "qdrant-memory/state.db") as db:
-            event = json.loads(db.execute("SELECT payload_json FROM events").fetchone()[0])
+        assert p.wait_idle()
+        event = captured[-1]
         assert event["evidence"] == [
             {"role": "user", "content": "cats preferred"},
             {"role": "assistant", "content": "ack"},
         ]
-        assert p.wait_idle()
 
         def disk_failure(value):
             """Simulate a failed durable commit before a lossy rewrite."""
