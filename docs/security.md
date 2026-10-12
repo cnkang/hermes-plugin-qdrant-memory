@@ -23,8 +23,9 @@ permissions. A migration key may temporarily have read-only source access. Revok
 it after verification. Use HTTPS for Cloud and rotate expiring keys. See
 [Qdrant security guidance](https://qdrant.tech/documentation/security/). The
 credentialed Cloud smoke workflow runs only on pushes to `main` and manual
-dispatch, never on `codex/**` branch pushes. This protects repository Cloud
-secrets from arbitrary branch code.
+dispatch, never on `codex/**` branch pushes. Manual dispatch can select a ref;
+protect the `qdrant-cloud` environment with appropriate branch restrictions and
+approval requirements before enabling its credentials.
 
 On POSIX systems, state directories use mode 0700, and SQLite state and saved config
 use mode 0600. Windows uses inherited filesystem ACLs; Python's `chmod` mode bits do
@@ -33,7 +34,9 @@ directory with an appropriate Windows ACL.
 The durable ledger can contain raw conversation events and prepared memory payloads.
 It logically scrubs committed event bodies and committed/superseded operation bodies,
 except operations still needed by an incomplete migration manifest. Identity/status
-rows and manifests remain. Pending/failed payloads remain for recovery. Ledger rows
+rows and manifests remain. Session author provenance and unattributed-history
+quarantine also remain across restart and destination reset; only an explicit host
+transcript reset clears their history. Pending/failed payloads remain for recovery. Ledger rows
 and manifests have no time-based expiry. Deleting a Qdrant point does not clear its
 ledger identity or pending/failed work. A scoped content-hash tombstone prevents an
 older admitted event from recreating the exact deleted content under a different point
@@ -45,6 +48,15 @@ and backups as sensitive conversation data. A destination reset clears current r
 but is not secure erasure from SQLite pages/WAL or copied backups. The plugin never
 logs or persists API keys and response bodies as errors. It reports only the
 exception type and retryability.
+
+Whole-transcript supplementary extraction requires proven single-author history
+whose principal matches the current scope. After provider restart, a failed author
+callback, or previously unseen history, earlier messages cannot be certified from
+the latest turn alone: session-end extraction is
+skipped and pre-compression evidence is archived under a neutral scope without
+extraction until the host explicitly starts/resets a fresh transcript. Explicitly
+attributed per-turn writes remain available. Author provenance is private metadata
+in the ledger and has no time-based expiry.
 The plugin refuses endpoint URLs that contain inline credentials, query strings or
 fragments.
 

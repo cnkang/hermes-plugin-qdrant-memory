@@ -66,6 +66,10 @@ class Ledger:
                 name TEXT, value INTEGER, collection TEXT, PRIMARY KEY(name,collection));
             CREATE TABLE IF NOT EXISTS unattributed_sessions (
                 session_id TEXT, collection TEXT, PRIMARY KEY(session_id,collection));
+            CREATE TABLE IF NOT EXISTS session_provenance (
+                session_id TEXT, collection TEXT, authors_json TEXT NOT NULL,
+                explicit_author INTEGER NOT NULL, history_known INTEGER NOT NULL,
+                PRIMARY KEY(session_id,collection));
         """)
         self._resumable_operation_keys = self._load_resumable_operation_keys()
         with self.lock, self.db:
@@ -74,7 +78,7 @@ class Ledger:
     def clear_destination(self):
         """Forget only this destination's work so cleared memories cannot replay.
 
-        Transcript provenance quarantine remains in place across collection resets.
+        Transcript authorship and quarantine remain in place across collection resets.
         """
         with self.lock, self.db:
             for table in ("events", "operations", "manifests", "metrics", "counters"):
@@ -105,6 +109,98 @@ class Ledger:
                     "DELETE FROM unattributed_sessions WHERE session_id=? AND collection=?",
                     (session_id, self.collection),
                 )
+
+    def session_provenance(self, session_id=None):
+        """Load durable transcript attribution, independently of replay payloads."""
+        with self.lock:
+            return {
+                row["session_id"]: {
+                    "authors": set(json.loads(row["authors_json"])),
+                    "explicit_author": bool(row["explicit_author"]),
+                    "history_known": bool(row["history_known"]),
+                }
+                for row in self.db.execute(
+                    "SELECT * FROM session_provenance WHERE collection=?"
+                    + (" AND session_id=?" if session_id is not None else ""),
+                    (self.collection, session_id) if session_id is not None else (self.collection,),
+                )
+            }
+
+    def _save_session_provenance(self, session_id, value):
+        """Save attribution within the caller's locked transaction."""
+        self.db.execute(
+            "INSERT OR REPLACE INTO session_provenance VALUES(?,?,?,?,?)",
+            (
+                session_id,
+                self.collection,
+                json.dumps(sorted(value["authors"])),
+                int(value["explicit_author"]),
+                int(value["history_known"]),
+            ),
+        )
+        return value
+
+    def invalidate_transcript_history(self):
+        """Require fresh host reset evidence after a provider ownership change.
+
+        The host may retain messages despite a failed callback or process interruption,
+        so durable observed authors alone cannot certify complete resumed history.
+        """
+        with self.lock, self.db:
+            self.db.execute(
+                "UPDATE session_provenance SET history_known=0 WHERE collection=?",
+                (self.collection,),
+            )
+
+    def record_session_author(self, session_id, user_id, explicit=False, *, history_known=None):
+        """Persist an observed principal without certifying unobserved history."""
+        with self.lock, self.db:
+            value = self.session_provenance(session_id).get(
+                session_id, {"authors": set(), "explicit_author": False, "history_known": False}
+            )
+            value["authors"].add(user_id)
+            value["explicit_author"] |= explicit
+            if history_known is not None:
+                value["history_known"] &= history_known
+            return self._save_session_provenance(session_id, value)
+
+    def reset_session_provenance(self, session_id, user_id, clear_quarantine=False):
+        """Trust a fresh transcript only after the host explicitly discards history."""
+        with self.lock, self.db:
+            if clear_quarantine:
+                self.db.execute(
+                    "DELETE FROM unattributed_sessions WHERE session_id=? AND collection=?",
+                    (session_id, self.collection),
+                )
+            return self._save_session_provenance(
+                session_id,
+                {"authors": {user_id}, "explicit_author": False, "history_known": True},
+            )
+
+    def inherit_session_provenance(self, session_id, parent, *, history_known=None):
+        """Durably union continuation history without upgrading unknown provenance."""
+        with self.lock, self.db:
+            source = self.session_provenance(parent).get(
+                parent, {"authors": set(), "explicit_author": False, "history_known": False}
+            )
+            target = self.session_provenance(session_id).get(session_id)
+            value = {
+                "authors": source["authors"] | (target["authors"] if target else set()),
+                "explicit_author": source["explicit_author"]
+                or bool(target and target["explicit_author"]),
+                "history_known": source["history_known"]
+                and (target["history_known"] if target else True)
+                and (history_known if history_known is not None else True),
+            }
+            if self.db.execute(
+                "SELECT 1 FROM unattributed_sessions WHERE session_id=? AND collection=?",
+                (parent, self.collection),
+            ).fetchone():
+                self.db.execute(
+                    "INSERT OR IGNORE INTO unattributed_sessions VALUES(?,?)",
+                    (session_id, self.collection),
+                )
+            return self._save_session_provenance(session_id, value)
 
     def enqueue_event(self, value):
         """Persist an immutable event once and return its deterministic key."""

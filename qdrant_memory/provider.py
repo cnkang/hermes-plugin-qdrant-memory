@@ -49,6 +49,7 @@ class QdrantMemoryProvider(MemoryProvider):
         self._jobs = deque()
         self._cache, self._scopes, self._turns, self._generations = {}, {}, {}, {}
         self._authors = {}
+        self._provenance = {}
         self._blocked_sessions = set()
         self._unattributed_sessions = set()
         self._accepting = False
@@ -140,6 +141,9 @@ class QdrantMemoryProvider(MemoryProvider):
                 store.initialize()
             self._unattributed_sessions = self.ledger.unattributed_sessions()
             self._blocked_sessions.update(self._unattributed_sessions)
+            self.ledger.invalidate_transcript_history()
+            self._provenance = self.ledger.session_provenance()
+            self._authors = {key: value["authors"] for key, value in self._provenance.items()}
             self.runtime = Runtime(
                 self.cfg,
                 self.store,
@@ -239,7 +243,7 @@ class QdrantMemoryProvider(MemoryProvider):
                 not author
                 and (
                     kwargs.get("author_name")
-                    or self._authors.get(session)
+                    or self._provenance.get(session, {}).get("explicit_author")
                     or session in self._unattributed_sessions
                 )
             )
@@ -251,20 +255,65 @@ class QdrantMemoryProvider(MemoryProvider):
                     self.ledger.set_session_unattributed(session)
                     self._unattributed_sessions.add(session)
                 return
-            self._blocked_sessions.discard(session)
             if author and not kwargs.get("author_is_bot"):
                 scope = Scope(str(author), self.default_scope.agent_id)
-                self._authors.setdefault(session, set()).add(str(author))
+                self._remember_author(session, scope.user_id, explicit=True)
                 if self._scopes.get(session) != scope:
                     self._cache.pop(session, None)
                     self._generations[session] = self._generations.get(session, 0) + 1
                 self._scopes[session] = scope
+            else:
+                self._remember_author(
+                    session, self._scopes.get(session, self.default_scope).user_id
+                )
+            self._blocked_sessions.discard(session)
+
+    def _remember_author(self, session, user_id, explicit=False):
+        """Persist attribution before admission; a failed write revokes active recall."""
+        try:
+            value = self.ledger.record_session_author(
+                session,
+                user_id,
+                explicit,
+                history_known=self._provenance.get(session, {}).get("history_known", False),
+            )
+        except Exception:
+            if session in self._provenance:
+                self._provenance[session]["history_known"] = False
+            self._blocked_sessions.add(session)
+            self._cache.pop(session, None)
+            self._generations[session] = self._generations.get(session, 0) + 1
+            raise
+        self._provenance[session] = value
+        self._authors[session] = value["authors"]
+
+    def _transcript_scope(self, session_id=None):
+        """Authorize aggregate extraction only from a proven single-principal history."""
+        session = self.session_id if session_id is None else session_id
+        value = self._provenance.get(session)
+        if (
+            not value
+            or not value["history_known"]
+            or len(value["authors"]) != 1
+            or session in self._unattributed_sessions
+            or session in self._blocked_sessions
+        ):
+            return None
+        scope = self._scope(session)
+        return scope if value["authors"] == {scope.user_id} else None
 
     def _event(self, value):
         """Persist a small immutable event transaction before enqueueing expensive work."""
         with self._condition:
             if not self._accepting:
                 raise RuntimeError("Provider is shut down")
+            if value["kind"] in {"session_end", "checkpoint"}:
+                scope = self._transcript_scope(value["session_id"])
+                if value["kind"] == "session_end" and scope is None:
+                    return
+                value["scope"] = (scope or Scope("__mixed__", None)).as_dict()
+                if value["kind"] == "checkpoint":
+                    value["extract"] = self._primary and scope is not None
             key = self.ledger.enqueue_event(value)
             # The event ID itself is stored only after hashing the immutable turn.
             row = self.ledger.row("events", key)
@@ -289,12 +338,14 @@ class QdrantMemoryProvider(MemoryProvider):
         with self._condition:
             if not turn_author and session in self._blocked_sessions:
                 return
+            scope = self._scope(session, turn_author)
+            self._remember_author(session, scope.user_id, explicit=turn_author is not None)
         self._event(
             {
                 "kind": "turn",
                 "source": "conversation",
                 "session_id": session,
-                "scope": self._scope(session, turn_author).as_dict(),
+                "scope": scope.as_dict(),
                 "user": user_content,
                 "assistant": assistant_content,
                 "turn_number": self._turns.get(session),
@@ -341,17 +392,43 @@ class QdrantMemoryProvider(MemoryProvider):
         """
         with self._condition:
             parent = kwargs.get("parent_session_id")
-            if parent and parent != new_session_id and not kwargs.get("reset"):
+            reset = kwargs.get("reset")
+            continuation = parent and parent != new_session_id and not reset
+            try:
+                if reset:
+                    value = self.ledger.reset_session_provenance(
+                        new_session_id,
+                        str(kwargs.get("user_id") or self.default_scope.user_id),
+                        clear_quarantine=new_session_id not in self._blocked_sessions,
+                    )
+                elif continuation:
+                    value = self.ledger.inherit_session_provenance(
+                        new_session_id,
+                        parent,
+                        history_known=self._provenance.get(parent, {}).get("history_known", False)
+                        and self._provenance.get(new_session_id, {"history_known": True})[
+                            "history_known"
+                        ],
+                    )
+            except Exception:
+                for session in (self.session_id, new_session_id):
+                    if session in self._provenance:
+                        self._provenance[session]["history_known"] = False
+                self._blocked_sessions.update((self.session_id, new_session_id))
+                self._cache.clear()
+                for session in self._generations:
+                    self._generations[session] += 1
+                raise
+            if reset or continuation:
+                self._provenance[new_session_id] = value
+                self._authors[new_session_id] = value["authors"]
+            if continuation:
                 self._scopes.setdefault(
                     new_session_id, self._scopes.get(parent, self.default_scope)
-                )
-                self._authors.setdefault(new_session_id, set()).update(
-                    self._authors.get(parent, set())
                 )
                 if parent in self._blocked_sessions:
                     self._blocked_sessions.add(new_session_id)
                 if parent in self._unattributed_sessions:
-                    self.ledger.set_session_unattributed(new_session_id)
                     self._unattributed_sessions.add(new_session_id)
             self.session_id = new_session_id
             user_id = kwargs.get("user_id")
@@ -363,31 +440,22 @@ class QdrantMemoryProvider(MemoryProvider):
             else:
                 self._scopes.setdefault(new_session_id, self.default_scope)
             if kwargs.get("reset"):
-                self._authors.pop(new_session_id, None)
                 self._turns.pop(new_session_id, None)
                 # Reset discards transcript history, but cannot authorize an active bot.
                 if new_session_id not in self._blocked_sessions:
-                    self.ledger.set_session_unattributed(new_session_id, False)
                     self._unattributed_sessions.discard(new_session_id)
             self._cache.clear()
             for session in self._generations:
                 self._generations[session] += 1
 
     def on_session_end(self, messages):
-        """Persist supplementary user messages only for a single-author transcript."""
-        # A group transcript cannot safely be attributed to its most recent author.
-        if (
-            self._primary
-            and messages
-            and self.session_id not in self._unattributed_sessions
-            and len(self._authors.get(self.session_id, set())) <= 1
-        ):
+        """Persist supplementary messages only for a proven single-author transcript."""
+        if self._primary and messages:
             self._event(
                 {
                     "kind": "session_end",
                     "source": "session_end",
                     "session_id": self.session_id,
-                    "scope": self._scope(self.session_id).as_dict(),
                     "assistant": "",
                     "user": "\n".join(
                         str(m.get("content", "")) for m in messages if m.get("role") == "user"
@@ -398,26 +466,15 @@ class QdrantMemoryProvider(MemoryProvider):
     def on_pre_compress(self, messages, *, require_checkpoint=False):
         """Commit host-normalized direct evidence before permitting lossy compression.
 
-        Mixed-author checkpoints use a neutral scope marker so the archived evidence
-        is never attributed to a single participant.
+        Mixed or unknown history uses a neutral scope marker so archived evidence
+        is never attributed to the latest participant without provenance.
         """
-        multi_author = (
-            self.session_id in self._unattributed_sessions
-            or len(self._authors.get(self.session_id, set())) > 1
-        )
-        scope = (
-            Scope(user_id="__mixed__", agent_id=None)
-            if multi_author
-            else self._scope(self.session_id)
-        )
         self._event(
             {
                 "kind": "checkpoint",
                 "source": "pre_compress",
                 "session_id": self.session_id,
-                "scope": scope.as_dict(),
                 "evidence": messages,
-                "extract": self._primary and not multi_author,
                 "user": "\n".join(
                     str(m.get("content", "")) for m in messages if m.get("role") == "user"
                 ),
