@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Persist transcript author provenance across restart and continuation. Fail closed
+  on unknown or mixed history before supplementary extraction, retain provenance
+  across destination reset, and preserve explicitly attributed per-turn writes.
+  Deny recall if durable author or session-transition admission fails.
+
 - Document MCP as an additional compatibility interface for the Hermes memory
   plugin: four explicit tools, source-preview installation, client validation
   and sequential sharing limits. Record the tested merged snapshot separately

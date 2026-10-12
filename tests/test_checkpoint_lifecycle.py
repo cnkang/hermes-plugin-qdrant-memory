@@ -121,7 +121,7 @@ def test_host_switch_clears_transients_and_preserves_durable_memory(tmp_path, mo
         assert p.prefetch("cats") == ""
         assert p.store.count() == 1
         if mode in {"new", "reset"}:
-            assert p._authors.get(target, set()) == set()
+            assert p._authors[target] == {"alice"}
             assert target not in p._turns
         else:
             assert p._authors[target] == {"alice", "bob"}
