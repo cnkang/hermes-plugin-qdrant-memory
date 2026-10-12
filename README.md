@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml)
 [![Platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml)
+[![Standalone CLI and MCP](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/standalone.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/standalone.yml)
 [![CodeQL](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/codeql.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/codeql.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -62,6 +63,14 @@ remain Hermes lifecycle features. See [standalone setup](docs/standalone.md) for
 configuration and boundaries, and the agent-neutral
 [qdrant-memory skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)
 for multi-agent installation and usage guidance.
+
+The optional MCP server exposes four scoped tools: `qdrant_memory_search`,
+`qdrant_memory_add`, `qdrant_memory_update` and `qdrant_memory_delete`. Compatible
+clients launch it as a local stdio process and discover/call those tools;
+maintenance and migration use the operator CLI. See the
+[MCP capabilities and connection guide](docs/mcp.md) for setup, shared-memory
+boundaries and the verified agent matrix. This is a tested source preview;
+the published v0.1.0 plugin release does not include the MCP entrypoint.
 
 ## See it in action
 

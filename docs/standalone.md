@@ -114,6 +114,9 @@ does not process or change those event rows.
 
 ## Local stdio MCP
 
+See [MCP capabilities and connection](mcp.md) for the four-tool surface, a
+source-preview installation, client verification and the tested agent matrix.
+
 Initialize the chosen profile first, then configure a client to launch:
 
 ```text
