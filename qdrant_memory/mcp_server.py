@@ -7,42 +7,50 @@ from .standalone import call_tool, open_runtime
 from .tools import schemas
 
 
-def serve(home):
-    """Hold the shared writer lease throughout one local stdio server session."""
+def create_server(runtime):
+    """Bind the four fixed-scope tools to an official SDK server instance."""
     import anyio
     from mcp.server import Server
-    from mcp.server.stdio import stdio_server
     from mcp.types import CallToolResult, TextContent, Tool
 
     server = Server("qdrant-memory")
+
+    @server.list_tools()
+    async def list_tools():
+        """Advertise only the shared explicit-memory schemas."""
+        return [
+            Tool(name=item["name"], description=item["description"], inputSchema=item["parameters"])
+            for item in schemas()
+        ]
+
+    @server.call_tool(validate_input=False)
+    async def invoke(name, arguments):
+        """Validate and dispatch without echoing sensitive invalid arguments."""
+        try:
+            result = await anyio.to_thread.run_sync(lambda: call_tool(runtime, name, arguments))
+            return CallToolResult(
+                content=[TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
+                isError=False,
+            )
+        except Exception as exc:
+            return CallToolResult(
+                content=[TextContent(type="text", text=json.dumps({"error": safe_error(exc)}))],
+                isError=True,
+            )
+
+    return server
+
+
+def serve(home):
+    """Hold the shared writer lease throughout one local stdio server session."""
+    import anyio
+    from mcp.server.stdio import stdio_server
+
     with open_runtime(home) as runtime:
-
-        @server.list_tools()
-        async def list_tools():
-            return [
-                Tool(
-                    name=item["name"],
-                    description=item["description"],
-                    inputSchema=item["parameters"],
-                )
-                for item in schemas()
-            ]
-
-        @server.call_tool(validate_input=False)
-        async def invoke(name, arguments):
-            try:
-                result = await anyio.to_thread.run_sync(lambda: call_tool(runtime, name, arguments))
-                return CallToolResult(
-                    content=[TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
-                    isError=False,
-                )
-            except Exception as exc:
-                return CallToolResult(
-                    content=[TextContent(type="text", text=json.dumps({"error": safe_error(exc)}))],
-                    isError=True,
-                )
+        server = create_server(runtime)
 
         async def run():
+            """Run the SDK protocol loop until the local stdio session ends."""
             async with stdio_server() as (read, write):
                 await server.run(read, write, server.create_initialization_options())
 

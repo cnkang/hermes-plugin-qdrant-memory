@@ -77,11 +77,21 @@ operations without automatic lifecycle extraction or a host LLM dependency.
 All existing maintenance/migration grammar is available, including `status`,
 `init`, `stats`, `doctor`, `verify`, `retry`, `list`, `export`, `delete-all` and
 `migrate mem0`. These commands are trusted operator operations and retain their
-scope-selection/confirmation/export-overwrite rules. For noninteractive reuse,
+scope-selection/confirmation/export-overwrite rules. The new standalone CLI
+contains explicit `--source-json`, `--source-config` and `--output` paths within
+the operator invocation working directory, resolving symlinks and parent
+segments before reading content or contacting storage. Invoke the command from
+an explicitly authorized source/export directory (for example, `cd /path/to`)
+to import sources outside the profile. The working directory is chosen by the
+trusted operator/host launcher; it must not be derived from an untrusted file
+argument. Default profile configuration and `mem0.json` remain trusted profile
+inputs; legacy `hermes qdrant-memory` filesystem behavior is unchanged.
+For noninteractive reuse,
 pass `init --existing use`; `--existing clear` durably clears the entire target.
 See [migration](migration-from-mem0.md) for re-embedding, manifests and resume rules.
 
 ```bash
+cd /path/to # Authorize this source/export directory explicitly
 qdrant-memory --home /path/to/profile migrate mem0 --source-json /path/to/memories.json --dry-run
 qdrant-memory --home /path/to/profile migrate mem0 --source-json /path/to/memories.json --verify
 qdrant-memory --home /path/to/profile list --user my-user --agent my-agent
@@ -125,7 +135,9 @@ profiles at the same remote collection and assume simultaneous writes are safe.
 
 ## Validation boundary
 
-`tests/standalone` exercises installed CLI subprocesses, real embedded Qdrant,
+`tests/standalone` preserves eight installed CLI/MCP subprocess contracts and
+also exercises public Python APIs plus official in-process MCP protocol clients
+for schema/path refusal and startup/cleanup failures. It uses real embedded Qdrant,
 a deterministic localhost embedding HTTP service, durable scoped CRUD/restart,
 foreign-ID refusal, invalid-config side-effect prevention, writer exclusion,
 reset/deletion recovery, migration/export boundaries and official MCP client

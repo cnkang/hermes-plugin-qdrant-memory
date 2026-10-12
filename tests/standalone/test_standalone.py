@@ -250,7 +250,7 @@ def test_official_mcp_client(profile):
             args=["-m", "qdrant_memory.standalone", "--home", str(home), "mcp"],
             env=env,
         )
-        async with stdio_client(parameters) as (read, write):
+        async with stdio_client(parameters, errlog=sys.stderr) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = (await session.list_tools()).tools

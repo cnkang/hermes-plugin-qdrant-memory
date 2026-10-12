@@ -123,6 +123,28 @@ def call_tool(runtime, name, arguments):
     return dispatch(runtime, name, arguments, scope, "standalone")
 
 
+class OperatorPathOutsideRootError(ValueError):
+    """Reject explicit CLI file paths outside the operator invocation directory."""
+
+
+def validate_operator_paths(args):
+    """Contain explicit maintenance file arguments within the trusted invocation cwd.
+
+    Resolve both symlinks and parent segments before any file content or service
+    access. Home/storage paths and default profile files remain trusted profile
+    configuration; this boundary applies only to explicit source/export options.
+    """
+    root = Path.cwd().resolve()
+    for key in ("source_json", "source_config", "output"):
+        value = getattr(args, key, None)
+        if value is None:
+            continue
+        path = Path(value).expanduser().resolve()
+        if not path.is_relative_to(root):
+            raise OperatorPathOutsideRootError()
+        setattr(args, key, path)
+
+
 def parser():
     """Extend the Hermes maintenance grammar with scoped tools and stdio MCP."""
     result = argparse.ArgumentParser(prog="qdrant-memory")
@@ -160,10 +182,13 @@ def main(argv=None):
                 }
                 result = call_tool(runtime, definition["name"], arguments)
         else:
+            validate_operator_paths(args)
             result = cli.run(
                 args, args.home, config_loader=load_standalone_config, secret_reader=os.environ.get
             )
-        return (0 if result.get("ok", True) else 1) if cli.print_json(result) else 1
+        if not cli.print_json(result):
+            return 1
+        return 0 if result.get("ok", True) else 1
     except Exception as exc:
         error = safe_error(exc)
         # Error text from services/configuration may contain credentials. Keep the
