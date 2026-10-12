@@ -41,14 +41,14 @@ fact in a new session?
 | Restart recovery | PASS | Memory survived multiple cold process restarts with the same collection fingerprint; `verify` reports `ok: true`; ledger counts stayed consistent with no duplicated or unexpectedly replayed operations. |
 | Update / delete | PASS | `qdrant_memory_update` replaced a memory's text at its exact ID (same point, new `updated_at`); `qdrant_memory_delete` removed the targeted memory by exact ID; a later session no longer recalled the deleted fact while the other memory stayed intact. |
 | Inventory / export | PASS | `hermes qdrant-memory list` reports scope, provenance and ledger backlog counts; `hermes qdrant-memory export` produced the portable Mem0-importable JSON with the original point UUID, content hash and timestamps preserved. |
-| Scoped deletion | PASS | `delete-all --dry-run` previewed the target (`would_delete: 1`, `mode: single_agent`, scope `hermes-user`/`hermes`); `--confirm` deleted it (`deleted: 1`, `fenced_operations: 1`, `superseded_events: 3`, `ok: true`); afterwards `list` returned an empty scope and `verify` passed with zero records. It was the only stored scope in the run; cross-scope behavior is covered by the repository contract tests and the CI on this change. |
+| Scoped deletion | PASS | `delete-all --dry-run` previewed the target (`would_delete: 1`, `mode: single_agent`, scope `hermes-user`/`hermes`); `--confirm` deleted it (`deleted: 1`, `fenced_operations: 1`, `superseded_events: 3`, `ok: true`); afterwards `list` returned an empty scope and `verify` passed with zero records. It was the only stored scope in this run; cross-scope behavior is covered separately by repository contract tests. |
 | Catalog update recognition | PASS | `hermes plugins check-updates` classifies the install as `catalog`, compares the installed revision with the pin, and reports `up to date` while the pin is unchanged; the check is read-only. |
-| README install guidance | PASS (updated by this change) | Before this change the READMEs recommended only URL/tag installs. They now lead with the catalog install and keep the version-locked alternatives. |
+| README install guidance | PASS | The READMEs describe catalog installation and version-locked alternatives. |
 | Upstream catalog page | PASS | `/docs/plugins/qdrant-memory` renders the entry (title, the four declared tools, README from the pinned commit `5ec9cac`, "updates when the author re-pins"); card metadata matches the live catalog JSON. |
 
-## Observations (non-blocking)
+## Observed operational limitations
 
-### P3 — provider interaction with structured extraction
+### Provider compatibility with structured extraction
 
 During the run, the configured provider intermittently rejected
 structured-output requests. Hermes retries without the `response_format` field
@@ -58,8 +58,7 @@ completed (latency samples and dedupe decisions were recorded). In three cases
 an unrecognized 400 reached the plugin as a non-retryable `BadRequestError`;
 the affected events stayed `FAILED` with their bodies retained,
 `hermes qdrant-memory retry` requeued them, and the final `delete-all` fenced
-them as `SUPERSEDED`. The same error class appears in pre-existing ledgers of
-this project. Core user flows were unaffected throughout.
+them as `SUPERSEDED`. Core user flows remained available during the run.
 
 - Repro: run sessions against a provider that rejects `response_format`
   json_schema; watch `hermes qdrant-memory stats` (`events.FAILED`) and the
@@ -67,10 +66,10 @@ this project. Core user flows were unaffected throughout.
 - Impact: occasional lost automatic extraction; nothing is written
   incorrectly and no duplicates appear. Manual `retry` recovers pending work,
   or route extraction to a compatible model (`llm.mode: task` or `override`).
-- Follow-up: none required for the plugin; see
+- Guidance: see
   [troubleshooting](../troubleshooting.md) and [operations](../operations.md).
 
-### P3 — PM workspace edge on repeated installs (host behavior)
+### Repeated installation into multiple Hermes profiles
 
 Installing the same plugin into multiple Hermes homes on one machine can leave
 two same-named plugin-source checkouts inside one PM workspace; the second
@@ -84,7 +83,8 @@ single install never hit this.
   retry the affected install.
 - Impact: host-side PM state, not plugin-specific; recoverable; no data
   affected.
-- Follow-up: none required here.
+- Recovery: retry `hermes plugins enable qdrant-memory`, then run
+  `hermes plugins doctor qdrant-memory` to confirm the installation.
 
 ## Out of scope
 
@@ -119,6 +119,6 @@ delete, inventory, export and scoped deletion — passed end to end on a fresh
 profile. The known limitations are the preview scope already documented in the
 READMEs and the provider-dependent extraction retry noted above.
 
-To surface the catalog-first onboarding on the catalog page itself, a follow-up
-upstream catalog SHA-bump after this change merges would be required
-(`/docs/plugins/qdrant-memory` renders the README from the pinned commit).
+The upstream catalog page renders the README from its pinned plugin commit.
+Documentation updates in this repository appear there only after the catalog
+pin is updated; check the catalog's current revision when comparing instructions.

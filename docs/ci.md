@@ -5,8 +5,10 @@ interface, shared durable core, fixed operator scope and its validation boundary
 
 Candidate validation must name the plugin SHA and actual test execution. A green
 optional Cloud workflow with missing credentials is SKIPPED, not Cloud validation.
-The `qdrant-cloud` environment currently allows only `main`; keep this restriction.
-Branch rejection is a release gate, not permission to weaken secret protection.
+Configure the `qdrant-cloud` environment with approved-ref restrictions and
+appropriate approval requirements. Manual dispatch can select another ref;
+workflow triggers alone do not protect credentials. Keep credential access
+restricted when testing a release candidate.
 The compatibility matrix combines an immutable minimum reference with the moving
 latest `main`; the weekly tracker adds the host sync-boundary checks.
 Merged main `112e403c` passed CI, the platform matrix and executed authenticated
@@ -14,7 +16,7 @@ Cloud integration after the finalization PR #18 merged. The earlier `ff5712d`,
 `f6a2e97` and `32bd4e7`
 snapshots remain in the validation record.
 See [validation evidence](validation.md) for exact-SHA run links and the
-[acceptance report](releases/PRE_RELEASE_FINAL_REVIEW.md) for support limits.
+[release notes](releases/v0.1.0.md) for the published release's support limits.
 
 Ruff lint/format, the Python 3.11 and 3.14 behavior-contract jobs, and the separate
 Snyk dependency and code jobs run
