@@ -15,20 +15,13 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Standalone native `MemoryProvider` for Hermes Agent. Hermes performs extraction
+Native long-term memory plugin for Hermes Agent, implemented as a `MemoryProvider`.
+Hermes performs extraction
 through its trusted `ctx.llm` facade. Qdrant stores named dense vectors and schema-v1
 payloads. No Mem0 SDK, separate LLM SDK, telemetry, or core modifications.
 
 Available in the official [Hermes Plugin Catalog](https://hermes-agent.nousresearch.com/docs/plugins/qdrant-memory)
 as a community-maintained plugin.
-
-## Without Hermes
-
-The unreleased standalone interface adds `qdrant-memory --home PATH` for scoped
-JSON CRUD and existing maintenance/migration commands, plus local stdio MCP
-through the optional `mcp` extra. It uses the same durable core as the Hermes
-provider. See [standalone setup and boundaries](docs/standalone.md) for installation,
-configuration and exact commands. Existing Hermes integration remains supported.
 
 ## How it works
 
@@ -57,6 +50,18 @@ flowchart LR
   be remote. See [Data flow and privacy](#data-flow-and-privacy).
 - Not supported in this preview: multi-writer Server/Cloud, hybrid search and
   a web UI.
+
+## Additional compatibility with other agents
+
+The plugin primarily provides Hermes Agent's durable memory integration. As an
+additional capability, its shared backend can serve other agents through the
+unreleased `qdrant-memory --home PATH` JSON CLI and optional local stdio MCP
+interface, without requiring Hermes. These interfaces support explicit scoped
+memory operations and maintenance/migration; automatic extraction and prefetch
+remain Hermes lifecycle features. See [standalone setup](docs/standalone.md) for
+configuration and boundaries, and the agent-neutral
+[qdrant-memory skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)
+for multi-agent installation and usage guidance.
 
 ## See it in action
 
