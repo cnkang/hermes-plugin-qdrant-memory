@@ -67,7 +67,7 @@ flowchart LR
 The plugin primarily provides Hermes Agent's durable memory integration. As an
 additional capability, its shared backend can serve other agents through the
 Runtime's `qdrant-memory --home PATH` JSON CLI and optional local stdio MCP
-interface, without requiring Hermes. These interfaces support explicit scoped
+interface. Standalone use does not require Hermes. These interfaces support explicit scoped
 memory operations and maintenance/migration. Automatic extraction and prefetch
 remain Hermes lifecycle features. See [standalone setup](docs/standalone.md) for
 configuration and boundaries, and the agent-neutral
@@ -86,9 +86,10 @@ The published v0.1.0 plugin release does not include the MCP entrypoint.
 
 ![Terminal recording: install the plugin, store a preference, and recall it in a new session](https://raw.githubusercontent.com/cnkang/hermes-plugin-qdrant-memory/main/assets/demo.gif)
 
-The recording shows the full flow on a clean profile: install from the
-official Hermes Plugin Catalog, teach a preference, wait for the background
-extraction, recall it in a new session, and clean up the demo scope. All steps
+The recording shows the full flow on a clean profile. It installs from the
+official Hermes Plugin Catalog, teaches a preference, and waits for the
+background extraction. Then it recalls the preference in a new session and
+cleans up the demo scope. All steps
 run in embedded mode. `scripts/demo.sh` reproduces the same walkthrough with
 the pinned release.
 

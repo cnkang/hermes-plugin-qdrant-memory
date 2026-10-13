@@ -7,8 +7,8 @@ merged 2026-10-10, catalog pin `5ec9cac094e5e9dc80e1cd25b241bcec44019d5b`).
 
 Run: 2026-10-11, on a fresh isolated profile with embedded Qdrant and local
 Ollama. The acceptance question: can a first-time user find the plugin in the
-catalog, install it by name, configure and initialize it, and recall a stored
-fact in a new session?
+catalog and install it by name? Can the user configure it, initialize it, and
+recall a stored fact in a new session?
 
 ## Test environment
 
@@ -53,7 +53,7 @@ fact in a new session?
 During the run, the configured provider intermittently rejected
 structured-output requests. Hermes retries without the `response_format` field
 and remembers the per-route rejection ("does not accept response_format
-json_schema; sending without it"), and most extraction and relation calls
+json_schema; sending without it"). Most extraction and relation calls
 completed (latency samples and dedupe decisions were recorded). In three cases
 an unrecognized 400 reached the plugin as a non-retryable `BadRequestError`.
 The affected events stayed `FAILED` with their bodies retained.

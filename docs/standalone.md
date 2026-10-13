@@ -93,7 +93,7 @@ to import sources outside the profile. The working directory is chosen by the
 trusted operator/host launcher. It must not be derived from an untrusted file
 argument. This is argument containment, not an operating-system sandbox. The
 operator-selected directory tree must be trusted against concurrent hostile
-filesystem changes: canonicalization does not hold a file descriptor open or
+filesystem changes. Canonicalization does not hold a file descriptor open or
 prevent a different process replacing a validated file/directory with a symlink
 before access. Enforce an external filesystem sandbox when that stronger threat
 model is required. Default profile configuration and `mem0.json` remain trusted profile
