@@ -6,6 +6,33 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
+## Runtime 0.2.1 candidate checks (2026-10-13)
+
+Behavioral candidate `b7b42799f29ee3ba83b91aa4f7cec3b30cc4dd21` in
+[PR #37](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/37) passed:
+
+- Local Python 3.14.7: 355 tests with minimum Hermes v0.21.5
+  (`f97608f178d1ffeca59860195ab7da295f7c8e5f`) and 355 with latest main
+  (`63d0b94120027d487c9a5235b9ec64b696af1b26`), zero skips. Local vectors and
+  LLM responses are deterministic fixtures, not live model certification.
+- Fresh Python 3.11.15 wheel and Python 3.14.0 sdist: 30 standalone tests each,
+  zero skips, real installed CLI/public API/official stdio MCP, no Hermes.
+- [Behavior/security CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38363304389):
+  minimum/latest Hermes × Python 3.11/3.14, 357 passing tests and one secret-gated
+  Cloud skip per lane. Disposable Docker Qdrant HTTP/gRPC Server contracts ran.
+- [Three-platform contracts](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38363172850),
+  [standalone matrix](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38363172820),
+  [wheel/sdist packaging](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38363304369)
+  and [CodeQL](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38363304404).
+
+The new regressions first failed on all three no-LLM entrypoints before the
+fix. Explicit writes retain distinct texts at cosine 0.92, 0.97 and 1.0; exact
+canonical duplicates skip only within scope. Automatic factual relations pass.
+Schema/IDs/ledger/migration code remains unchanged. No personal data or paid LLM
+was used; local Docker was unavailable, and Cloud was not executed for this patch.
+Later documentation commits require their own current CI checks. Public PyPI
+0.2.1 installation and catalog upgrade acceptance remain post-approval steps.
+
 ## Source-preview validation (2026-10-12)
 
 The following sections are historical evidence for their stated revisions.

@@ -28,6 +28,8 @@
 `qdrant-memory` 是 CLI，`mcp` 是服务子命令，standalone 不需要 Hermes。
 见[安装与快速开始](docs/standalone.md)，MCP 用户也可选择
 [metadata-only 分发包](https://github.com/cnkang/qdrant-memory-mcp)。
+正式发行见 [Runtime PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/)
+和 [MCP 分发 PyPI](https://pypi.org/project/qdrant-memory-mcp/)。
 Hermes 原生插件使用下文官方安装机制；授权升级前，验证相同 profile、collection 和 embedding pipeline。
 
 ```mermaid
