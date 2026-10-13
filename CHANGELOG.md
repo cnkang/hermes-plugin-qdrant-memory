@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.0 (release candidate; not yet published)
+
+- Prepare the first PyPI Runtime release with the existing standalone CLI and
+  optional MCP extra. Add wheel/sdist acceptance and GitHub OIDC publishing;
+  preserve Hermes discovery, data schema, deterministic IDs and ledger semantics.
+
 - Publish a deployment-focused security guide and concise compatibility evidence.
   Keep internal pre-release preparation records outside the published source tree;
   retain public release notes and immutable validation references.
