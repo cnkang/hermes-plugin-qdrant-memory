@@ -47,7 +47,7 @@ flowchart LR
 ## 额外兼容其他 agent
 
 本插件主要为 Hermes Agent 提供持久化记忆集成。作为额外能力，共享后端也能
-通过尚未发布的 `qdrant-memory --home PATH` JSON CLI 和可选的本地 stdio MCP
+通过 Runtime 0.2.0 的 `qdrant-memory --home PATH` JSON CLI 和可选的本地 stdio MCP
 为其他 agent 提供服务，无需安装 Hermes。这些接口支持显式、固定作用域的
 记忆操作及维护/迁移；自动提取与预取仍由 Hermes 生命周期驱动。
 配置和使用边界见[独立运行指南](docs/standalone.md)，跨 agent 的安装与使用

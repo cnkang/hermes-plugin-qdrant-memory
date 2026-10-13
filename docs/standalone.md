@@ -1,15 +1,14 @@
 # Standalone CLI and MCP
 
 The repository now supplies a host-independent runtime alongside its Hermes
-plugin. These additions are unreleased: install from the reviewed checkout (or
-an explicit reviewed Git commit) until a release containing them is published.
+plugin. Runtime 0.2.0 includes these standalone interfaces and the optional MCP extra.
 The distribution name remains `hermes-plugin-qdrant-memory`; existing Hermes
 plugin discovery and `hermes qdrant-memory` grammar are compatible.
 
 ```bash
 python3 -m venv .venv
 # POSIX; on Windows use .venv\Scripts\python.exe and the Scripts command directory.
-.venv/bin/python -m pip install '.[mcp]'
+.venv/bin/python -m pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.0'
 .venv/bin/qdrant-memory --help
 ```
 
@@ -115,7 +114,7 @@ does not process or change those event rows.
 ## Local stdio MCP
 
 See [MCP capabilities and connection](mcp.md) for the four-tool surface, a
-source-preview installation, client verification and the tested agent matrix.
+versioned installation, client verification and the tested agent matrix.
 
 Initialize the chosen profile first, then configure a client to launch:
 

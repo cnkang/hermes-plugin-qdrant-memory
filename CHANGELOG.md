@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.2.0 (release candidate; not yet published)
+## 0.2.0
 
 - Prepare the first PyPI Runtime release with the existing standalone CLI and
   optional MCP extra. Add wheel/sdist acceptance and GitHub OIDC publishing;
