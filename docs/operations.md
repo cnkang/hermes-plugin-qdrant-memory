@@ -56,16 +56,16 @@ automatic extraction. Unknown historical attribution after restart or a failed
 author callback also disables supplementary extraction. Reset establishes fresh
 author history for the target session and clears its turn
 counter. Rewind preserves conservative attribution history and long-term memory.
-An explicit memory delete keeps a scope-bound content-hash tombstone in the ledger
-so older admitted events cannot recreate the same content under a different point
+An explicit memory delete keeps a scope-bound content-hash tombstone in the ledger.
+Older admitted events cannot recreate the same content under a different point
 ID. A later newly admitted event may intentionally add it again. The tombstone
 contains a hash, not the deleted text, and remains until destination reset.
-A scoped `delete-all` reuses that fence family: it records a durable deletion
-intent, commits a scope-bound tombstone for every enumerated point and for every
-prepared write in the scope (including writes whose points were never stored),
-invalidates admitted-but-unprocessed turn events for the scope, deletes the
-scope in one filtered operation and clears the intent only after the scope is
-empty. A scope is one (user, agent) pair. `--all-agents` covers every agent
+A scoped `delete-all` reuses that fence family. It records a durable deletion
+intent and commits a scope-bound tombstone for every enumerated point.
+Tombstones also cover prepared writes in the scope, including writes whose
+points were never stored. It invalidates admitted-but-unprocessed turn events
+for the scope and deletes the scope in one filtered operation. The intent
+clears only after the scope is empty. A scope is one (user, agent) pair. `--all-agents` covers every agent
 scope of the user, and a strict run reports `other_agent_scopes` when other
 agent scopes still hold memories. A literal `*` is an ordinary agent id and
 never selects all agents. A pre-versioned intent cannot show whether `*` is a

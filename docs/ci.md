@@ -24,9 +24,9 @@ independently in parallel. Both Python versions run files serially because remot
 tests restart their disposable server. Python 3.14 collects coverage. SonarCloud
 waits for the test matrix and consumes that artifact, then waits for its quality
 gate. Snyk runs dependency and code scans and monitors main. The required test matrix
-validates the support range endpoints: the minimum supported release v0.21.5
-(v2026.9.24, `f97608f`) and the latest Hermes `main` (a moving ref, and each run
-records its checked-out SHA in the run summary). The latest-main lane
+validates the support range endpoints. It covers the minimum supported release
+v0.21.5 (v2026.9.24, `f97608f`) and the latest Hermes `main`. The `main` ref
+moves, and each run records its checked-out SHA in the run summary. The latest-main lane
 intentionally tracks the moving upstream ref inside the required matrix: an
 upstream regression can fail the gate until it is fixed upstream, and a rerun of
 the same commit can differ. A separately pinned PM prepares dependency
@@ -36,7 +36,7 @@ v1.15.5 service and requires REST/gRPC integration, including restart persistenc
 Ruff is pinned to 0.15.1 in CI and the local
 [pre-commit setup](development.md). Lint includes docstrings and import ordering.
 Actions use immutable SHA pins. Authenticated scans run on same-repository PRs,
-pushes to `main` and other repository branches, and manual workflow dispatches.
+pushes to `main` and repository development branches, and manual workflow dispatches.
 The credentialed Cloud smoke lane is narrower: it runs only on `main` pushes
 (plus manual dispatch) because branch pushes receive repository secrets.
 Fork PRs run
@@ -45,7 +45,7 @@ A missing required token fails a scanner job only when that job is scheduled.
 The `Required security scan gate` runs with `always()` and fails for any failed,
 cancelled or skipped prerequisite (lint, tests, SonarCloud and both Snyk jobs), including
 safely skipped fork scans. Dependabot pull requests are the one deliberate
-exception: they run lint, tests and the platform matrix, the credentialed
+exception. They run lint, tests and the platform matrix. Their credentialed
 scanner jobs are skipped because Dependabot runs cannot read repository
 secrets, and the gate accepts exactly those skips for `dependabot[bot]`. The
 credentialed scans run on the resulting push to `main` after merge. Make this

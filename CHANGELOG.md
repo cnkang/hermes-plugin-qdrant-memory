@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.2.1 (release candidate)
+## 0.2.1
 
 - Separate explicit writes from automatic factual relation adjudication. CLI,
   MCP and Hermes add deduplicate canonical text within scope without an LLM.

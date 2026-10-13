@@ -1,8 +1,8 @@
 # Standalone CLI and MCP
 
 The repository now supplies a host-independent runtime alongside its Hermes
-plugin. Runtime 0.2.0 published these interfaces. 0.2.1 fixes similar explicit writes.
-The following pinned installation is for use after 0.2.1 publication.
+plugin. Runtime 0.2.0 published these interfaces. 0.2.1 fixes explicit writes
+of highly similar texts. The following pinned installation uses 0.2.1.
 The distribution name remains `hermes-plugin-qdrant-memory`. Existing Hermes
 plugin discovery and `hermes qdrant-memory` grammar are compatible.
 

@@ -6,9 +6,9 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
-## Runtime 0.2.1 candidate checks (2026-10-13)
+## Runtime 0.2.1 checks (2026-10-13)
 
-Behavioral candidate `b7b42799f29ee3ba83b91aa4f7cec3b30cc4dd21` in
+Behavioral checks on revision `b7b42799f29ee3ba83b91aa4f7cec3b30cc4dd21` in
 [PR #37](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/37) passed:
 
 - Local Python 3.14.7: 355 tests with minimum Hermes v0.21.5
@@ -29,17 +29,17 @@ The new regressions first failed on all three no-LLM entrypoints before the
 fix. Explicit writes retain distinct texts at cosine 0.92, 0.97 and 1.0. Exact
 canonical duplicates skip only within scope. Automatic factual relations pass.
 Schema/IDs/ledger/migration code remains unchanged. No personal data or paid LLM
-was used. Local Docker was unavailable, and Cloud was not executed for this patch.
+was used. Local Docker was unavailable, and Cloud was not executed for these checks.
 Later documentation commits require their own current CI checks. Public PyPI
-0.2.1 installation and catalog upgrade acceptance remain post-approval steps.
+0.2.1 installation and catalog upgrade acceptance run in separate release steps.
 
 ## Source-preview validation (2026-10-12)
 
 The following sections are historical evidence for their stated revisions.
 Runtime 0.2.0 subsequently published standalone CLI/MCP on PyPI. The 0.2.1
-candidate adds explicit-write regressions in `tests/test_explicit_dedupe.py` and
+release adds explicit-write regressions in `tests/test_explicit_dedupe.py` and
 `tests/standalone/test_explicit_writes.py`. Run the current CI and package
-acceptance before certifying this candidate. See [0.2.1 notes](releases/0.2.1.md).
+acceptance before certifying a revision. See [0.2.1 notes](releases/0.2.1.md).
 
 Runtime revision `2f4150bd14fa004f84511ad534b189e088c694b8`, submitted in
 [PR #35](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/35), includes

@@ -114,9 +114,9 @@ hermes qdrant-memory delete-all --user hermes-user --agent hermes --confirm
 ## Conclusion
 
 **READY WITH KNOWN LIMITATIONS.** The official catalog installation and the core
-memory lifecycle (write, cross-session recall, restart recovery, update,
-delete, inventory, export and scoped deletion) passed end to end on a fresh
-profile. The known limitations are the preview scope already documented in the
+memory lifecycle passed end to end on a fresh profile. It covers write,
+cross-session recall, restart recovery, update, delete, inventory, export and
+scoped deletion. The known limitations are the preview scope already documented in the
 READMEs and the provider-dependent extraction retry noted above.
 
 The upstream catalog page renders the README from its pinned plugin commit.
