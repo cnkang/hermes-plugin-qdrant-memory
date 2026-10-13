@@ -136,9 +136,8 @@ and scanner configuration. Each latest-Hermes job records its actual upstream
 SHA because upstream `main` can change between runs.
 
 Authenticated Cloud smoke is optional and explicitly skips when credentials are
-absent. Such a skip does not validate Cloud behavior. Automated review checks
-that report skipping are likewise not completed code reviews. Test execution,
-not configuration alone, establishes the reported boundary.
+absent. Such a skip does not validate Cloud behavior. Test execution, not
+configuration alone, establishes the reported boundary.
 
 Retrieval and recovery measurements are separate synthetic checks. See the
 [retrieval baseline](retrieval-baseline.json) and
