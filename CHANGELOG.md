@@ -5,7 +5,7 @@
 ## 0.2.1
 
 - Separate explicit writes from automatic factual relation adjudication. CLI,
-  MCP and Hermes add deduplicate canonical text within scope without an LLM.
+  MCP and Hermes deduplicate canonical text within scope without an LLM.
   Different texts are saved even at cosine similarity 1.0. Automatic extraction
   retains SAME/SUPERSEDES/CONFLICT/UNRELATED behavior.
 - Clarify PyPI Runtime, metadata-only MCP distribution and catalog versions.
