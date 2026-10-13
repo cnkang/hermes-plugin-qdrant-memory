@@ -1,0 +1,31 @@
+name: Runtime packaging
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  packaging:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'build>=1.2,<2' 'twine>=6,<7' 'pytest>=8,<10'
+      - run: python -m build
+      - run: python -m twine check --strict dist/*
+      - name: Verify fresh wheel installation and no-Hermes protocol
+        run: |
+          python -m venv .wheel-env
+          .wheel-env/bin/python -m pip install "$(find dist -name '*.whl')[mcp]" 'pytest>=8,<10'
+          .wheel-env/bin/python -I -m pytest --import-mode=importlib -q tests/standalone
+      - name: Verify fresh sdist installation and no-Hermes protocol
+        run: |
+          python -m venv .sdist-env
+          .sdist-env/bin/python -m pip install "$(find dist -name '*.tar.gz')[mcp]" 'pytest>=8,<10'
+          .sdist-env/bin/python -I -m pytest --import-mode=importlib -q tests/standalone

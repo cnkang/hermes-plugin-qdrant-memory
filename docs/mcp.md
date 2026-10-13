@@ -23,18 +23,17 @@ operations. There is no HTTP/SSE listener or remote authentication service.
 
 ## Connect a client
 
-The MCP interface is a **source preview**. The published v0.1.0 release and its
-Hermes catalog installation do not supply this new entrypoint. Use a reviewed
-source revision with the `mcp` extra; the tested merged snapshot is
-`8fd42572738b15a1abcad62aeecd0de9b1877e3a`:
+Runtime **0.2.0** includes the MCP interface. The older v0.1.0 release and its
+Hermes catalog installation do not supply this new entrypoint. Install the
+versioned Runtime with the optional `mcp` extra:
 
 ```bash
 python3 -m venv /private/path/qdrant-env
 /private/path/qdrant-env/bin/python -m pip install \
-  'hermes-plugin-qdrant-memory[mcp] @ git+https://github.com/cnkang/hermes-plugin-qdrant-memory.git@8fd42572738b15a1abcad62aeecd0de9b1877e3a'
+  'hermes-plugin-qdrant-memory[mcp]==0.2.0'
 ```
 
-Use Python 3.11+ and Git. On Windows, use the environment's `Scripts` executables.
+Use Python 3.11+. On Windows, use the environment's `Scripts` executables.
 Configure a private profile and reachable embedding service using
 [standalone setup](standalone.md#profile-configuration), then run:
 

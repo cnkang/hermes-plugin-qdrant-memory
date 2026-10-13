@@ -83,7 +83,7 @@ jobs:
           cd .pm-host
           python -m pm.build_env --out "$GITHUB_WORKSPACE/.test-env" \
             --requirements "$RUNNER_TEMP/upstream-host-requirements.txt" \
-            --requirement "hermes-plugin-qdrant-memory @ file://$RUNNER_TEMP/plugin-wheel/hermes_plugin_qdrant_memory-0.1.0-py3-none-any.whl"
+            --requirement "hermes-plugin-qdrant-memory @ file://$(find "$RUNNER_TEMP/plugin-wheel" -name 'hermes_plugin_qdrant_memory-*.whl' -print -quit)"
       - name: Install plugin distribution and verify its entry point
         working-directory: ${{ runner.temp }}
         run: |

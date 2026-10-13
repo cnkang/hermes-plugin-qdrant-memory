@@ -56,7 +56,7 @@ flowchart LR
 
 The plugin primarily provides Hermes Agent's durable memory integration. As an
 additional capability, its shared backend can serve other agents through the
-unreleased `qdrant-memory --home PATH` JSON CLI and optional local stdio MCP
+Runtime 0.2.0's `qdrant-memory --home PATH` JSON CLI and optional local stdio MCP
 interface, without requiring Hermes. These interfaces support explicit scoped
 memory operations and maintenance/migration; automatic extraction and prefetch
 remain Hermes lifecycle features. See [standalone setup](docs/standalone.md) for
