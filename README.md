@@ -120,14 +120,17 @@ The install resolves the catalog's reviewed commit and prints the entry's declar
 tools, requirements and known issues before it clones anything.
 `hermes plugins enable` prepares the declared dependencies through Hermes PM.
 
-**Version-locked: install the pinned release through the Hermes CLI.**
+**Version-locked: install the verified Runtime 0.2.1 source through the Hermes CLI.**
+
+This immutable source revision includes the explicit-write fix. It does not
+depend on a PyPI release or a catalog update.
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # Start Ollama if it is not running. Keep its service available.
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref 5babd3e4b4c022aad38a2b6db82cbd5b601f1ef8   # v0.1.0 release commit
+  --ref 8929693fcccd1efa91bfa062145e35d2369ca9cc   # verified Runtime 0.2.1 source
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
@@ -141,7 +144,10 @@ For this version-locked form, `hermes plugins install` checks out the given ref,
 lists the release commits. Do not pip-install into a managed Hermes
 environment. Omit `--ref` to track `main`, the development line.
 
-**Alternative: clone the release tag manually.**
+**Historical release: clone a published tag manually.**
+
+The v0.1.0 tag below predates the standalone interfaces and the explicit-write
+fix. Use the pinned source above for Runtime 0.2.1.
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
