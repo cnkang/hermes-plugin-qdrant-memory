@@ -1,14 +1,15 @@
 # Standalone CLI and MCP
 
 The repository now supplies a host-independent runtime alongside its Hermes
-plugin. Runtime 0.2.0 includes these standalone interfaces and the optional MCP extra.
+plugin. Runtime 0.2.0 published these interfaces; 0.2.1 fixes similar explicit writes.
+The following pinned installation is for use after 0.2.1 publication.
 The distribution name remains `hermes-plugin-qdrant-memory`; existing Hermes
 plugin discovery and `hermes qdrant-memory` grammar are compatible.
 
 ```bash
 python3 -m venv .venv
 # POSIX; on Windows use .venv\Scripts\python.exe and the Scripts command directory.
-.venv/bin/python -m pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.0'
+.venv/bin/python -m pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.1'
 .venv/bin/qdrant-memory --help
 ```
 
@@ -55,6 +56,13 @@ keys never fall through to Hermes. API-key transport validation remains active.
 Keep credentials out of config examples, skills, prompts and committed files.
 
 ## Scoped explicit operations
+
+Explicit add uses exact canonical-text hash deduplication within the configured
+scope, without an LLM. Different texts remain separate even at similarity 1.0.
+Hermes automatic extraction retains factual relation adjudication. Exact-ID
+update remains an authorized replacement. Existing schema, IDs and fingerprints
+are compatible; no migration is needed. Do not change the embedding pipeline
+or collection during an upgrade. Use Hermes's native installer for its plugin.
 
 ```bash
 qdrant-memory --home /path/to/profile status

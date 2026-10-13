@@ -43,6 +43,10 @@ def profile(tmp_path):
                         return
             vectors = []
             for text in body["input"]:
+                if text.startswith("similarity-fixture:"):
+                    # Distinct synthetic facts deliberately share a unit vector.
+                    vectors.append([1.0, 0.0, 0.0])
+                    continue
                 values = hashlib.sha256(text.encode()).digest()[:3]
                 vectors.append([value / 255 + 0.01 for value in values])
             result = {

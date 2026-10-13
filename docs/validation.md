@@ -8,6 +8,12 @@ model, or a production deployment.
 
 ## Source-preview validation (2026-10-12)
 
+The following sections are historical evidence for their stated revisions.
+Runtime 0.2.0 subsequently published standalone CLI/MCP on PyPI. The 0.2.1
+candidate adds explicit-write regressions in `tests/test_explicit_dedupe.py` and
+`tests/standalone/test_explicit_writes.py`; run the current CI and package
+acceptance before certifying this candidate. See [0.2.1 notes](releases/0.2.1.md).
+
 Runtime revision `2f4150bd14fa004f84511ad534b189e088c694b8`, submitted in
 [PR #35](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/35), includes
 durable transcript-author isolation and the standalone CLI/MCP interfaces.

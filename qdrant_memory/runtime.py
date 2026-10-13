@@ -5,7 +5,7 @@ import time
 from itertools import islice
 from threading import RLock
 
-from .dedupe import decide
+from .dedupe import decide, decide_explicit
 from .models import Scope, content_hash, enforce_limits, now, payload, point_id
 from .progress import report
 from .retry import run_with_retry
@@ -163,11 +163,9 @@ class Runtime:
         return failures
 
     def add(self, text, scope, source="manual_tool", session_id="", **fields):
-        """Add or reconcile a scoped fact through hash and factual relation review."""
+        """Save an explicit scoped fact with deterministic exact-text deduplication."""
         with self.lock:
-            action, identifier, relation = decide(
-                text, scope, self.store, self.extractor, self.cfg["dedupe"]
-            )
+            action, identifier, relation = decide_explicit(text, scope, self.store)
             self.decisions[action] += 1
             self.ledger.increment(action)
             if action == "SKIP":

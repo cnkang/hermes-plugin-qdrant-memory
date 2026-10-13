@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.2.1 (release candidate)
+
+- Separate explicit writes from automatic factual relation adjudication. CLI,
+  MCP and Hermes add deduplicate canonical text within scope without an LLM;
+  different texts are saved even at cosine similarity 1.0. Automatic extraction
+  retains SAME/SUPERSEDES/CONFLICT/UNRELATED behavior.
+- Clarify PyPI Runtime, metadata-only MCP distribution and catalog versions;
+  add public release notes and active-version consistency coverage.
+- Preserve schema-v1, deterministic IDs, embedding fingerprint and durable
+  ledger/migration contracts. No data migration or new runtime dependency.
+
 ## 0.2.0
 
 - Prepare the first PyPI Runtime release with the existing standalone CLI and

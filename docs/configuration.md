@@ -1,5 +1,11 @@
 # Configuration
 
+Runtime 0.2.1 preserves configuration, schema-v1, deterministic IDs and embedding
+fingerprints. Explicit CLI/MCP/Hermes add deduplicates canonical text within scope
+without LLM adjudication. Similarity settings continue to govern automatic
+Hermes extraction only. Upgrades must retain the same profile, collection and
+embedding pipeline; incompatible dimensions/fingerprints fail closed.
+
 The additive host-independent CLI and MCP interface is documented in
 [standalone setup](standalone.md), including its separate profile, operator-secret
 resolution, fixed scope and no-Hermes acceptance requirements.

@@ -7,9 +7,10 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **v0.1.0 —— 有限技术预览（limited technical preview）。** 为 Hermes Agent 带来持久、私有的长期记忆：
-> 对话内容会沉淀为你自有 Qdrant 存储中的可检索记忆，召回、更新与按作用域删除均由你掌控。
-> 预览版要求每个目的地仅一个写入者，并遵循文档中的持久化边界。当前认证见[验证记录](docs/validation.md)。
+> **Runtime 0.2.1 发布候选。** 公网 PyPI Runtime 0.2.0 已包含独立 CLI/MCP；
+> 本开发分支准备显式写入修复，MCP 分发 0.1.1 将固定依赖 0.2.1，均待正式发布。
+> Hermes Plugin Catalog 使用独立审核的不可变 pin，PyPI 发布不代表 Catalog 升级。
+> 每个目的地仍只支持一个写入者。见[发行说明](docs/releases/0.2.1.md)与[验证记录](docs/validation.md)。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -21,6 +22,13 @@
 已收录于官方 [Hermes Plugin Catalog](https://hermes-agent.nousresearch.com/docs/plugins/qdrant-memory)（社区维护插件，community-maintained）。
 
 ## 工作原理
+
+非 Hermes 用户在 0.2.1 正式发布后，可在独立 Python 3.11+ 环境中执行
+`pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.1'`；仅 CLI 可省略 `[mcp]`。
+`qdrant-memory` 是 CLI，`mcp` 是服务子命令，standalone 不需要 Hermes。
+见[安装与快速开始](docs/standalone.md)，MCP 用户也可选择
+[metadata-only 分发包](https://github.com/cnkang/qdrant-memory-mcp)。
+Hermes 原生插件使用下文官方安装机制；授权升级前，验证相同 profile、collection 和 embedding pipeline。
 
 ```mermaid
 flowchart LR
@@ -47,7 +55,7 @@ flowchart LR
 ## 额外兼容其他 agent
 
 本插件主要为 Hermes Agent 提供持久化记忆集成。作为额外能力，共享后端也能
-通过 Runtime 0.2.0 的 `qdrant-memory --home PATH` JSON CLI 和可选的本地 stdio MCP
+通过 Runtime 的 `qdrant-memory --home PATH` JSON CLI 和可选的本地 stdio MCP
 为其他 agent 提供服务，无需安装 Hermes。这些接口支持显式、固定作用域的
 记忆操作及维护/迁移；自动提取与预取仍由 Hermes 生命周期驱动。
 配置和使用边界见[独立运行指南](docs/standalone.md)，跨 agent 的安装与使用
@@ -57,7 +65,7 @@ flowchart LR
 `qdrant_memory_add`、`qdrant_memory_update` 和 `qdrant_memory_delete`。
 兼容客户端以本地 stdio 子进程启动服务，发现并调用工具；维护和迁移仍通过
 操作员 CLI 完成。[MCP 能力与接入指南](docs/mcp.md)列明配置、共享记忆边界
-和实际验证过的 agent。目前这是已验证的源码预览，v0.1.0 发布包不包含 MCP 入口。
+和实际验证过的 agent。Runtime 0.2.0 已通过 PyPI 发布这些接口；旧 v0.1.0 不包含 MCP 入口。
 
 ## 演示
 
@@ -171,6 +179,8 @@ hermes config set memory.provider qdrant-memory
 本地 Hermes home，请与 Qdrant 数据一并保留和备份。从 Mem0 的迁移是单向的，
 0.1 不支持向量复用或 hybrid 检索。
 
+显式 add 仅在同一 scope 内对 canonical text 精确去重，不调用 LLM；不同文本即使
+高度相似也分别保存。update 仅替换已授权的精确 ID。Hermes 自动提取时，
 相似度仅用于筛选需要复核的候选。事实关系 `SAME` 才跳过，`SUPERSEDES` 更新，
 `CONFLICT` 新增并记录关联，`UNRELATED` 新增。迁移按 source ID 映射，不做语义合并。
 

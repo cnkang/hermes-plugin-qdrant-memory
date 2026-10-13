@@ -7,12 +7,12 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **v0.1.0 — limited technical preview.** Give Hermes Agent durable, private
-> long-term memory: your conversations become searchable memories in your own
-> Qdrant store, with recall, update and scoped deletion under your control.
-> The preview supports one writer per destination, with the documented
-> durability limits. See the [validation record](docs/validation.md) for the
-> current certification.
+> **Runtime 0.2.1 release candidate.** Public PyPI Runtime 0.2.0 includes the
+> standalone CLI/MCP; this development branch prepares the explicit-write fix.
+> MCP distribution 0.1.1 pins Runtime 0.2.1 and is also awaiting publication.
+> The Hermes Plugin Catalog has its own reviewed immutable pin; a PyPI release
+> does not upgrade it. One writer per destination remains required.
+> See [release notes](docs/releases/0.2.1.md) and [validation](docs/validation.md).
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -25,6 +25,14 @@ Available in the official [Hermes Plugin Catalog](https://hermes-agent.nousresea
 as a community-maintained plugin.
 
 ## How it works
+
+For non-Hermes users, install after 0.2.1 publication in a private Python 3.11+
+environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.1'` (omit `[mcp]`
+for CLI only). `qdrant-memory` is the CLI and `mcp` is its server subcommand;
+standalone does not require Hermes. See [setup and quick start](docs/standalone.md).
+MCP-focused agents may instead use the [metadata-only distribution](https://github.com/cnkang/qdrant-memory-mcp).
+For native Hermes use its official plugin installation mechanism below. Before
+an authorized upgrade, verify the same profile, collection and embedding pipeline.
 
 ```mermaid
 flowchart LR
@@ -56,7 +64,7 @@ flowchart LR
 
 The plugin primarily provides Hermes Agent's durable memory integration. As an
 additional capability, its shared backend can serve other agents through the
-Runtime 0.2.0's `qdrant-memory --home PATH` JSON CLI and optional local stdio MCP
+Runtime's `qdrant-memory --home PATH` JSON CLI and optional local stdio MCP
 interface, without requiring Hermes. These interfaces support explicit scoped
 memory operations and maintenance/migration; automatic extraction and prefetch
 remain Hermes lifecycle features. See [standalone setup](docs/standalone.md) for
@@ -69,7 +77,7 @@ The optional MCP server exposes four scoped tools: `qdrant_memory_search`,
 clients launch it as a local stdio process and discover/call those tools;
 maintenance and migration use the operator CLI. See the
 [MCP capabilities and connection guide](docs/mcp.md) for setup, shared-memory
-boundaries and the verified agent matrix. This is a tested source preview;
+boundaries and the verified agent matrix. Runtime 0.2.0 published these interfaces;
 the published v0.1.0 plugin release does not include the MCP entrypoint.
 
 ## See it in action
@@ -204,7 +212,10 @@ mappings) stays in the local Hermes home. Back up that home together with your
 Qdrant data. Migration from Mem0 is one-way, and version 0.1 has no vector
 reuse or hybrid retrieval.
 
-Similarity is a candidate-selection signal, not proof that two facts are identical.
+Explicit add deduplicates only canonical text in the same scope and never calls
+an LLM. Different texts are saved regardless of similarity; update replaces only
+the authorized exact ID. For automatic Hermes extraction,
+similarity is a candidate-selection signal, not proof that two facts are identical.
 `SAME` skips, `SUPERSEDES` updates, `CONFLICT` creates a linked record, and
 `UNRELATED` adds a record. Migration uses source IDs instead of semantic merging.
 

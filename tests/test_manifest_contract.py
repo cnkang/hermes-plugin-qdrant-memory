@@ -17,6 +17,13 @@ def test_manifests_declare_v2_metadata_and_match_runtime_dependencies():
 
     assert manifests[0] == manifests[1]
     manifest = manifests[0]
+    from qdrant_memory.version import VERSION
+
+    assert str(manifest["version"]) == project["version"] == VERSION
+    for name in ("README.md", "README.zh-CN.md", "docs/standalone.md", "docs/mcp.md"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert f"hermes-plugin-qdrant-memory[mcp]=={VERSION}" in text
+        assert "hermes-plugin-qdrant-memory[mcp]==0.2.0" not in text
     assert manifest["manifest_version"] == 2
     assert manifest["author"] == "Kang Liu"
     assert manifest["license"] == "MIT"
