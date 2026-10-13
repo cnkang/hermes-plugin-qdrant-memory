@@ -2,7 +2,7 @@
 
 Status: **PASS** for the six measured sizes and synthetic correctness assertions.
 Executed on 2026-10-08 against the committed release-hardening core at
-`c77718edce269898db6b47088489c204cd38b234`; `git rev-parse HEAD` confirmed this
+`c77718edce269898db6b47088489c204cd38b234`. A `git rev-parse HEAD` check confirmed this
 revision immediately before the run. These are local measurements of this
 commit, not historical-main results or evidence of remote CI completion.
 

@@ -25,7 +25,7 @@ serve `qwen3-embedding:4b` for the live embedding paths.
 For standalone changes, install the reviewed checkout with `python -m pip install
 '.[mcp]' pytest` in an isolated environment and run
 `python -m pytest -q tests/standalone`. This acceptance suite needs no Hermes
-checkout or live model; it uses real embedded storage and a localhost fixture.
+checkout or live model. It uses real embedded storage and a localhost fixture.
 The standalone CI matrix requires Linux/macOS/Windows on Python 3.11 and 3.14.
 
 ## Checks that must pass
@@ -54,7 +54,7 @@ it so a staged snapshot cannot hide a lint error.
   `chore:`).
 - Update `CHANGELOG.md` for user-visible behavior changes.
 - Update the docs in the same PR when behavior, commands or configuration change.
-- Add a regression test for bug fixes; keep tests deterministic and isolated
+- Add a regression test for bug fixes. Keep tests deterministic and isolated
   (no live network beyond the documented disposable services).
 
 ## Reporting security issues

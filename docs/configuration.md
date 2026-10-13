@@ -4,7 +4,7 @@ Runtime 0.2.1 preserves configuration, schema-v1, deterministic IDs and embeddin
 fingerprints. Explicit CLI/MCP/Hermes add deduplicates canonical text within scope
 without LLM adjudication. Similarity settings continue to govern automatic
 Hermes extraction only. Upgrades must retain the same profile, collection and
-embedding pipeline; incompatible dimensions/fingerprints fail closed.
+embedding pipeline. Incompatible dimensions/fingerprints fail closed.
 
 The additive host-independent CLI and MCP interface is documented in
 [standalone setup](standalone.md), including its separate profile, operator-secret
@@ -142,12 +142,12 @@ These plugin settings do not bypass Hermes trust grants or contain LLM credentia
 | Setting | Default | Contract |
 | --- | --- | --- |
 | qdrant.collection | hermes_qdrant_memory | A separate plugin-managed collection with named dense vectors |
-| qdrant.path | Active home/qdrant-memory/qdrant | Relative paths resolve against active home; keep distinct across profiles |
-| scope.user_id / agent_id | hermes-user / hermes | Explicit gateway authors take precedence for their turns; agent may be null |
+| qdrant.path | Active home/qdrant-memory/qdrant | Relative paths resolve against active home. Keep distinct across profiles |
+| scope.user_id / agent_id | hermes-user / hermes | Explicit gateway authors take precedence for their turns. The agent may be null |
 | search.top_k / candidate_k | 8 / 24 | Candidate count must be at least result count |
 | write.max_attempts | 5 | Total attempt budget, not five retries after the first attempt |
-| write.shutdown_timeout_seconds | 5 | Drain deadline; timeout raises and retains writer ownership until in-flight I/O exits |
-| limits.max_text_bytes | 65536 | UTF-8 text size; optional explicit text truncation |
+| write.shutdown_timeout_seconds | 5 | Drain deadline. A timeout raises and retains writer ownership until in-flight I/O exits |
+| limits.max_text_bytes | 65536 | UTF-8 text size. Optional explicit text truncation |
 | limits.max_metadata_bytes | 32768 | Metadata oversize is always rejected |
 | limits.max_payload_bytes | 131072 | Full payload oversize is always rejected |
 

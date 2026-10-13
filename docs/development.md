@@ -42,10 +42,10 @@ See the README for dependency setup and [validation](validation.md) for evidence
 
 Use serial file execution for the disposable Server REST/gRPC tests: they restart
 their shared test container. Supply `--qdrant-test-url` and `--qdrant-test-container`
-after the runner's explicit `--`; the host runner clears arbitrary environment
+after the runner's explicit `--`. The host runner clears arbitrary environment
 variables. The required CI host matrix validates the minimum supported release and
 the latest Hermes `main` (each run records the moving ref's checked-out SHA).
-Linux/macOS/Windows compatibility has a separate six-job matrix; see
+Linux/macOS/Windows compatibility has a separate six-job matrix. See
 [CI services](ci.md).
 
 The current retrieval fixture contains 24 labeled queries. `scripts/evaluate.py`

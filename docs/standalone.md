@@ -1,9 +1,9 @@
 # Standalone CLI and MCP
 
 The repository now supplies a host-independent runtime alongside its Hermes
-plugin. Runtime 0.2.0 published these interfaces; 0.2.1 fixes similar explicit writes.
+plugin. Runtime 0.2.0 published these interfaces. 0.2.1 fixes similar explicit writes.
 The following pinned installation is for use after 0.2.1 publication.
-The distribution name remains `hermes-plugin-qdrant-memory`; existing Hermes
+The distribution name remains `hermes-plugin-qdrant-memory`. Existing Hermes
 plugin discovery and `hermes qdrant-memory` grammar are compatible.
 
 ```bash
@@ -15,7 +15,7 @@ python3 -m venv .venv
 
 `mcp` is an optional extra using the official Python MCP SDK (`>=1.30,<2`). The
 ordinary CLI needs only the base dependencies. Installation is an operator
-action; loading a skill does not install the runtime or alter host settings.
+action. Loading a skill does not install the runtime or alter host settings.
 
 ## Profile configuration
 
@@ -23,7 +23,7 @@ action; loading a skill does not install the runtime or alter host settings.
 `qdrant-memory/state.db`, writer leases and embedded storage. The default is
 `~/.qdrant-memory`, independent of `HERMES_HOME`, Hermes profiles and Hermes
 secrets. Configuration uses the same schema and validation as the plugin.
-Missing config uses defaults; malformed JSON fails closed. Validation runs
+Missing config uses defaults. Malformed JSON fails closed. Validation runs
 before creating storage or contacting a service.
 
 Create the directory and this configuration yourself, choosing the identity
@@ -48,7 +48,7 @@ service with the named model already installed:
 
 Defaults use `local-user` and the no-agent scope (`agent_id: null`). Relative
 Qdrant paths resolve against the home. `server`/`cloud` and `openai-compatible`
-embedding settings remain supported; see [configuration](configuration.md).
+embedding settings remain supported. See [configuration](configuration.md).
 Only the trusted operator environment resolves `QDRANT_URL`, `QDRANT_API_KEY`
 and `EMBEDDING_API_KEY` (or configured `*_env` names). Python callers may inject
 `secret_reader` into `load_standalone_config` or `open_runtime`. Empty/unset
@@ -61,7 +61,7 @@ Explicit add uses exact canonical-text hash deduplication within the configured
 scope, without an LLM. Different texts remain separate even at similarity 1.0.
 Hermes automatic extraction retains factual relation adjudication. Exact-ID
 update remains an authorized replacement. Existing schema, IDs and fingerprints
-are compatible; no migration is needed. Do not change the embedding pipeline
+are compatible. No migration is needed. Do not change the embedding pipeline
 or collection during an upgrade. Use Hermes's native installer for its plugin.
 
 ```bash
@@ -78,7 +78,7 @@ Success results are JSON on stdout. Failures return nonzero, sanitized JSON on
 stdout and diagnostics on stderr. Exact IDs confer no authorization: update and
 delete refuse memories outside the configured user/agent scope. Search/add/
 update/delete expose no identity override flags. Hermes retains its own caller
-scope and automatic extraction/prefetch hooks; standalone supplies explicit
+scope and automatic extraction/prefetch hooks. Standalone supplies explicit
 operations without automatic lifecycle extraction or a host LLM dependency.
 
 All existing maintenance/migration grammar is available, including `status`,
@@ -90,16 +90,16 @@ the operator invocation working directory, resolving symlinks and parent
 segments before reading content or contacting storage. Invoke the command from
 an explicitly authorized source/export directory (for example, `cd /path/to`)
 to import sources outside the profile. The working directory is chosen by the
-trusted operator/host launcher; it must not be derived from an untrusted file
+trusted operator/host launcher. It must not be derived from an untrusted file
 argument. This is argument containment, not an operating-system sandbox. The
 operator-selected directory tree must be trusted against concurrent hostile
 filesystem changes: canonicalization does not hold a file descriptor open or
 prevent a different process replacing a validated file/directory with a symlink
 before access. Enforce an external filesystem sandbox when that stronger threat
 model is required. Default profile configuration and `mem0.json` remain trusted profile
-inputs; legacy `hermes qdrant-memory` filesystem behavior is unchanged.
+inputs. Legacy `hermes qdrant-memory` filesystem behavior is unchanged.
 For noninteractive reuse,
-pass `init --existing use`; `--existing clear` durably clears the entire target.
+pass `init --existing use`. `--existing clear` durably clears the entire target.
 See [migration](migration-from-mem0.md) for re-embedding, manifests and resume rules.
 
 ```bash
@@ -115,7 +115,7 @@ The runtime shares `Runtime`, `QdrantStore`, `Ledger`, `WriterLease`, durable
 mutation retries, IDs, payload schema and pipeline fingerprints with Hermes.
 Interrupted reset or scope deletion blocks tools until operator maintenance
 resumes the recorded operation. Startup replays admitted mutation operations
-before admitting new tools; failed replay blocks startup. Pending or failed raw Hermes turn events block every standalone tool startup
+before admitting new tools. Failed replay blocks startup. Pending or failed raw Hermes turn events block every standalone tool startup
 until Hermes recovers them through its trusted extraction context. Standalone
 does not process or change those event rows.
 
@@ -133,10 +133,10 @@ args: ["--home", "/absolute/path/to/profile", "mcp"]
 
 This serves only `qdrant_memory_search`, `qdrant_memory_add`,
 `qdrant_memory_update` and `qdrant_memory_delete` with the existing schemas.
-The process scope comes from operator-controlled configuration; arguments,
+The process scope comes from operator-controlled configuration. Arguments,
 MCP `clientInfo` and model text cannot select another identity. No migration,
 bulk deletion or reset tool is exposed. Stdout carries MCP protocol only.
-Tool failures use sanitized error results; startup failures use stderr and a
+Tool failures use sanitized error results. Startup failures use stderr and a
 nonzero process exit. This is a local subprocess interface, not a network
 server or authentication service.
 
@@ -145,7 +145,7 @@ Hermes providers and another MCP process must not overlap in the same home and
 destination. Read/search CLI sessions also acquire the lease so embedded
 storage and recovery are coordinated. Separate homes or machines do not share
 a distributed lock. Reusing a Hermes destination requires explicit matching
-scope/home/ledger and a compatible embedding fingerprint; do not point unrelated
+scope/home/ledger and a compatible embedding fingerprint. Do not point unrelated
 profiles at the same remote collection and assume simultaneous writes are safe.
 
 ## Validation boundary
@@ -159,5 +159,5 @@ reset/deletion recovery, migration/export boundaries and official MCP client
 initialize/list/call. Subprocesses actively forbid Hermes imports and discard
 Hermes environment settings. The required standalone workflow runs this suite
 on Linux, macOS and Windows with Python 3.11 and 3.14 without a Hermes checkout.
-CI results determine platform certification; configuring any MCP client is
+CI results determine platform certification. Configuring any MCP client is
 protocol compatibility, not proof that every host/model behaves equivalently.

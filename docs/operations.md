@@ -46,34 +46,34 @@ configuration before retrying.
 Builtin replace/remove mirror the exact `metadata.previous_content`, scoped by
 target and author. Older hosts without that authoritative value skip destructive
 mirroring. Session end/compression provides supplementary extraction only when
-complete single-author history matches the current scope; see [security](security.md).
+complete single-author history matches the current scope. See [security](security.md).
 Every turn
 whose `sync_turn` callback reaches the provider follows the plugin's durable write
 path. Checkpoint API v2 synchronously commits
-filtered user/assistant evidence before compression; disk failures propagate and
+filtered user/assistant evidence before compression. Disk failures propagate and
 prevent acknowledged checkpoints. Mixed-author evidence is archived without
 automatic extraction. Unknown historical attribution after restart or a failed
 author callback also disables supplementary extraction. Reset establishes fresh
 author history for the target session and clears its turn
-counter; rewind preserves conservative attribution history and long-term memory.
+counter. Rewind preserves conservative attribution history and long-term memory.
 An explicit memory delete keeps a scope-bound content-hash tombstone in the ledger
 so older admitted events cannot recreate the same content under a different point
-ID; a later newly admitted event may intentionally add it again. The tombstone
+ID. A later newly admitted event may intentionally add it again. The tombstone
 contains a hash, not the deleted text, and remains until destination reset.
 A scoped `delete-all` reuses that fence family: it records a durable deletion
 intent, commits a scope-bound tombstone for every enumerated point and for every
 prepared write in the scope (including writes whose points were never stored),
 invalidates admitted-but-unprocessed turn events for the scope, deletes the
 scope in one filtered operation and clears the intent only after the scope is
-empty. A scope is one (user, agent) pair; `--all-agents` covers every agent
+empty. A scope is one (user, agent) pair. `--all-agents` covers every agent
 scope of the user, and a strict run reports `other_agent_scopes` when other
 agent scopes still hold memories. A literal `*` is an ordinary agent id and
 never selects all agents. A pre-versioned intent cannot show whether `*` is a
 single agent or all agents. The plugin refuses it
 (`scope_delete_legacy_intent`). Resolve it with
 `--resolve-legacy single_agent`, or with `--resolve-legacy all_agents` when the
-recorded agent is `*` or absent. Fence rows are durable tombstones — one per
-fenced identity, retained until destination reset — and repeated resumes of the
+recorded agent is `*` or absent. Fence rows are durable tombstones (one per
+fenced identity, retained until destination reset). Repeated resumes of the
 same interrupted deletion reuse identical rows instead of accumulating
 duplicates. An interrupted scoped deletion fails closed: other destination
 commands and provider startup report `scope_delete_recovery_required` until

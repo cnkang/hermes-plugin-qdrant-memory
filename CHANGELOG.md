@@ -5,23 +5,23 @@
 ## 0.2.1 (release candidate)
 
 - Separate explicit writes from automatic factual relation adjudication. CLI,
-  MCP and Hermes add deduplicate canonical text within scope without an LLM;
-  different texts are saved even at cosine similarity 1.0. Automatic extraction
+  MCP and Hermes add deduplicate canonical text within scope without an LLM.
+  Different texts are saved even at cosine similarity 1.0. Automatic extraction
   retains SAME/SUPERSEDES/CONFLICT/UNRELATED behavior.
-- Clarify PyPI Runtime, metadata-only MCP distribution and catalog versions;
-  add public release notes and active-version consistency coverage.
+- Clarify PyPI Runtime, metadata-only MCP distribution and catalog versions.
+  Add public release notes and active-version consistency coverage.
 - Preserve schema-v1, deterministic IDs, embedding fingerprint and durable
   ledger/migration contracts. No data migration or new runtime dependency.
 
 ## 0.2.0
 
 - Prepare the first PyPI Runtime release with the existing standalone CLI and
-  optional MCP extra. Add wheel/sdist acceptance and GitHub OIDC publishing;
-  preserve Hermes discovery, data schema, deterministic IDs and ledger semantics.
+  optional MCP extra. Add wheel/sdist acceptance and GitHub OIDC publishing.
+  Preserve Hermes discovery, data schema, deterministic IDs and ledger semantics.
 
 - Publish a deployment-focused security guide and concise compatibility evidence.
-  Keep internal pre-release preparation records outside the published source tree;
-  retain public release notes and immutable validation references.
+  Keep internal pre-release preparation records outside the published source tree.
+  Retain public release notes and immutable validation references.
 
 - Persist transcript author provenance across restart and continuation. Fail closed
   on unknown or mixed history before supplementary extraction, retain provenance
@@ -35,7 +35,7 @@
 
 - Contain explicit standalone migration/export file arguments within the trusted
   invocation working directory before service or file content access, including
-  symlink resolution; preserve Hermes operator CLI behavior.
+  symlink resolution. Preserve Hermes operator CLI behavior.
 - Exercise standalone Python APIs and official in-process MCP protocol boundaries
   alongside installed subprocess acceptance, and simplify maintenance setup while
   preserving readiness, recovery and reverse-order resource cleanup.
@@ -47,7 +47,7 @@
   Linux/macOS/Windows standalone compatibility matrix.
 
 - Documentation: lead both READMEs with the official Hermes Plugin Catalog
-  install (`hermes plugins install qdrant-memory`); the pinned-URL and tag
+  install (`hermes plugins install qdrant-memory`). The pinned-URL and tag
   installs remain as the version-locked alternatives. The entry is listed as
   community-maintained.
 - Documentation: add the catalog integration acceptance record
@@ -59,7 +59,7 @@
 
 - Documentation: add a condensed demo recording and a reproducible demo
   script (`scripts/demo.sh`) to both READMEs. The recording stays in the
-  repository; the text script ships with the source distribution only.
+  repository. The text script ships with the source distribution only.
 
 - Documentation: lead both READMEs with the pinned-release install through the
   Hermes CLI, add a short positioning section, and fix the Chinese install
@@ -70,10 +70,10 @@
 
 ## 0.1.0
 
-Limited technical preview; released 2026-10-09; the re-publication retargets
+Limited technical preview. Released 2026-10-09. The re-publication retargets
 the `v0.1.0` tag to this record commit.
 
-- Hermes compatibility range: minimum v0.21.5 (v2026.9.24); the required CI
+- Hermes compatibility range: minimum v0.21.5 (v2026.9.24). The required CI
   matrix validates the minimum release and the latest Hermes `main`.
 - Scoped deletion intents are versioned and explicit. A literal agent id `*`
   is an ordinary scope and never selects all agents. A pre-versioned intent is
@@ -86,11 +86,11 @@ the `v0.1.0` tag to this record commit.
   without widening the recorded scope set.
 - CI: add a CodeQL workflow that analyzes the Python sources and the GitHub
   Actions workflows with the `security-extended` query suite on pushes to
-  `main`, on pull requests and on a weekly schedule; results appear as
+  `main`, on pull requests and on a weekly schedule. Results appear as
   code-scanning alerts.
 - CI: enable grouped weekly Dependabot version updates for the Python
   dependencies and the GitHub Actions pins. Dependabot pull requests run the
-  lint, test and platform jobs; the credentialed scans stay skipped by design
+  lint, test and platform jobs. The credentialed scans stay skipped by design
   and re-run on `main` after merge.
 
 - Merged PR #10: durable destination reset intents and crash recovery, scoped
