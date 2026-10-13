@@ -7,9 +7,9 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.2.1 release candidate.** Public PyPI Runtime 0.2.0 includes the
-> standalone CLI/MCP. This development branch prepares the explicit-write fix.
-> MCP distribution 0.1.1 pins Runtime 0.2.1 and is also awaiting publication.
+> **Runtime 0.2.1.** Public PyPI Runtime 0.2.0 includes the
+> standalone CLI/MCP. Runtime 0.2.1 fixes explicit writes of distinct, highly
+> similar texts. MCP distribution 0.1.1 pins Runtime 0.2.1.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.
 > See [release notes](docs/releases/0.2.1.md) and [validation](docs/validation.md).
@@ -26,7 +26,7 @@ as a community-maintained plugin.
 
 ## How it works
 
-For non-Hermes users, install after 0.2.1 publication in a private Python 3.11+
+For non-Hermes users, install in a private Python 3.11+
 environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.1'` (omit `[mcp]`
 for CLI only). `qdrant-memory` is the CLI and `mcp` is its server subcommand.
 Standalone does not require Hermes. See [setup and quick start](docs/standalone.md).

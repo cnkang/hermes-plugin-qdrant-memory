@@ -24,7 +24,7 @@ operations. There is no HTTP/SSE listener or remote authentication service.
 ## Connect a client
 
 Runtime **0.2.0** published the MCP interface. **0.2.1** fixes explicit writes
-of similar texts without an LLM. Install the following after publication.
+of highly similar texts without an LLM. Use the following pinned installation.
 The older v0.1.0 release and its
 Hermes catalog installation do not supply this new entrypoint. Install the
 versioned Runtime with the optional `mcp` extra:

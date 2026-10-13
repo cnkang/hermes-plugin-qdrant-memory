@@ -7,8 +7,8 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.2.1 发布候选。** 公网 PyPI Runtime 0.2.0 已包含独立 CLI/MCP；
-> 本开发分支准备显式写入修复，MCP 分发 0.1.1 将固定依赖 0.2.1，均待正式发布。
+> **Runtime 0.2.1。** 公网 PyPI Runtime 0.2.0 已包含独立 CLI/MCP；
+> Runtime 0.2.1 修复高度相似文本的显式写入，MCP 分发 0.1.1 固定依赖 0.2.1。
 > Hermes Plugin Catalog 使用独立审核的不可变 pin，PyPI 发布不代表 Catalog 升级。
 > 每个目的地仍只支持一个写入者。见[发行说明](docs/releases/0.2.1.md)与[验证记录](docs/validation.md)。
 
@@ -23,7 +23,7 @@
 
 ## 工作原理
 
-非 Hermes 用户在 0.2.1 正式发布后，可在独立 Python 3.11+ 环境中执行
+非 Hermes 用户可在独立 Python 3.11+ 环境中执行
 `pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.1'`；仅 CLI 可省略 `[mcp]`。
 `qdrant-memory` 是 CLI，`mcp` 是服务子命令，standalone 不需要 Hermes。
 见[安装与快速开始](docs/standalone.md)，MCP 用户也可选择
