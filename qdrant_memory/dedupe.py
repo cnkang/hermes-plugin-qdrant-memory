@@ -3,6 +3,14 @@
 from .models import content_hash
 
 
+def decide_explicit(text, scope, store):
+    """Deduplicate authorized explicit writes only by canonical hash in scope."""
+    exact = store.lookup_hash(scope, content_hash(text))
+    if exact:
+        return "SKIP", str(exact.id), {}
+    return "ADD", None, {}
+
+
 def decide(text, scope, store, extractor, cfg):
     """Return ADD, UPDATE or SKIP after scoped hash and factual relation checks.
 

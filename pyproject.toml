@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-plugin-qdrant-memory"
-version = "0.2.0"
+version = "0.2.1"
 description = "Durable Qdrant memory for Hermes, standalone CLI and local MCP"
 readme = "README.md"
 license = "MIT"
@@ -23,6 +23,8 @@ Homepage = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 Repository = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 Issues = "https://github.com/cnkang/hermes-plugin-qdrant-memory/issues"
 Changelog = "https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/main/CHANGELOG.md"
+MCP = "https://github.com/cnkang/qdrant-memory-mcp"
+Skill = "https://github.com/cnkang/skills/tree/main/qdrant-memory"
 
 [project.entry-points."hermes_agent.memory_providers"]
 qdrant-memory = "qdrant_memory:register"
