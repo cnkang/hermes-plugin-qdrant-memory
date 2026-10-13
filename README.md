@@ -7,9 +7,8 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.2.1.** Public PyPI Runtime 0.2.0 includes the
-> standalone CLI/MCP. Runtime 0.2.1 fixes explicit writes of distinct, highly
-> similar texts. MCP distribution 0.1.1 pins Runtime 0.2.1.
+> **Runtime 0.2.1** provides the standalone CLI/MCP and fixes explicit writes of
+> distinct, highly similar texts. MCP distribution 0.1.1 pins Runtime 0.2.1.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.
 > See [release notes](docs/releases/0.2.1.md) and [validation](docs/validation.md).
