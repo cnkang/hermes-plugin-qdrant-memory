@@ -10,13 +10,13 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["qdrant-client>=1.15,<2", "httpx>=0.28,<1", "portalocker>=3.2,<4"]
+dependencies = ["qdrant-client>=1.15,<2", "httpx>=0.28,<1", "portalocker>=3.2,<5"]
 
 [project.scripts]
 qdrant-memory = "qdrant_memory.standalone:main"
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.30,<2"]
+mcp = ["mcp>=1.30,<3"]
 
 [project.urls]
 Homepage = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
@@ -30,7 +30,7 @@ Skill = "https://github.com/cnkang/skills/tree/main/qdrant-memory"
 qdrant-memory = "qdrant_memory:register"
 
 [dependency-groups]
-test = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruamel.yaml>=0.18.16,<0.20", "mcp>=1.30,<2"]
+test = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruamel.yaml>=0.18.16,<0.20", "mcp>=1.30,<3"]
 
 [tool.setuptools.packages.find]
 include = ["qdrant_memory*"]
