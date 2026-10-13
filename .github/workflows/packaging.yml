@@ -23,9 +23,9 @@ jobs:
         run: |
           python -m venv .wheel-env
           .wheel-env/bin/python -m pip install "$(find dist -name '*.whl')[mcp]" 'pytest>=8,<10'
-          .wheel-env/bin/python -m pytest -q tests/standalone
+          .wheel-env/bin/python -I -m pytest --import-mode=importlib -q tests/standalone
       - name: Verify fresh sdist installation and no-Hermes protocol
         run: |
           python -m venv .sdist-env
           .sdist-env/bin/python -m pip install "$(find dist -name '*.tar.gz')[mcp]" 'pytest>=8,<10'
-          .sdist-env/bin/python -m pytest -q tests/standalone
+          .sdist-env/bin/python -I -m pytest --import-mode=importlib -q tests/standalone

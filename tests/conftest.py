@@ -1,12 +1,29 @@
 """Tests import the actual Hermes host, never fake its provider ABC."""
 
 import sys
+import sysconfig
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+if not sys.flags.isolated:
+    sys.path.insert(0, str(ROOT))
+
+
+def pytest_sessionstart(session):
+    """Require isolated acceptance to exercise the installed distribution."""
+    if sys.flags.isolated:
+        import qdrant_memory
+
+        origin = Path(qdrant_memory.__file__).resolve()
+        installed_roots = {
+            Path(sysconfig.get_path(key)).resolve() for key in ("purelib", "platlib")
+        }
+        if not any(origin.is_relative_to(root) for root in installed_roots):
+            raise pytest.UsageError(
+                "Isolated acceptance must import qdrant_memory from installed site-packages"
+            )
 
 
 def pytest_addoption(parser):

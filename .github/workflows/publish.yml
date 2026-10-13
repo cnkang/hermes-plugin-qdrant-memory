@@ -31,11 +31,11 @@ jobs:
       - name: Test installed wheel without Hermes
         run: |
           python -m pip install "$(find dist -name '*.whl')[mcp]"
-          python -m pytest -q tests/standalone
+          python -I -m pytest --import-mode=importlib -q tests/standalone
       - name: Test installed sdist without Hermes
         run: |
           python -m pip install --force-reinstall "$(find dist -name '*.tar.gz')[mcp]"
-          python -m pytest -q tests/standalone
+          python -I -m pytest --import-mode=importlib -q tests/standalone
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: runtime-distributions
