@@ -8,9 +8,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 > **Runtime 0.2.1 release candidate.** Public PyPI Runtime 0.2.0 includes the
-> standalone CLI/MCP; this development branch prepares the explicit-write fix.
+> standalone CLI/MCP. This development branch prepares the explicit-write fix.
 > MCP distribution 0.1.1 pins Runtime 0.2.1 and is also awaiting publication.
-> The Hermes Plugin Catalog has its own reviewed immutable pin; a PyPI release
+> The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.
 > See [release notes](docs/releases/0.2.1.md) and [validation](docs/validation.md).
 
@@ -28,8 +28,8 @@ as a community-maintained plugin.
 
 For non-Hermes users, install after 0.2.1 publication in a private Python 3.11+
 environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.1'` (omit `[mcp]`
-for CLI only). `qdrant-memory` is the CLI and `mcp` is its server subcommand;
-standalone does not require Hermes. See [setup and quick start](docs/standalone.md).
+for CLI only). `qdrant-memory` is the CLI and `mcp` is its server subcommand.
+Standalone does not require Hermes. See [setup and quick start](docs/standalone.md).
 MCP-focused agents may instead use the [metadata-only distribution](https://github.com/cnkang/qdrant-memory-mcp).
 Public releases: [Runtime on PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/)
 and [MCP distribution on PyPI](https://pypi.org/project/qdrant-memory-mcp/).
@@ -57,7 +57,7 @@ flowchart LR
 - A fully local setup works: embedded Qdrant and local Ollama keep the data
   on your machine.
 - Data locality follows the destination. Extraction uses the LLM configured
-  in Hermes, and embedding uses the configured embedding service; either can
+  in Hermes, and embedding uses the configured embedding service. Either can
   be remote. See [Data flow and privacy](#data-flow-and-privacy).
 - Not supported in this preview: multi-writer Server/Cloud, hybrid search and
   a web UI.
@@ -68,7 +68,7 @@ The plugin primarily provides Hermes Agent's durable memory integration. As an
 additional capability, its shared backend can serve other agents through the
 Runtime's `qdrant-memory --home PATH` JSON CLI and optional local stdio MCP
 interface, without requiring Hermes. These interfaces support explicit scoped
-memory operations and maintenance/migration; automatic extraction and prefetch
+memory operations and maintenance/migration. Automatic extraction and prefetch
 remain Hermes lifecycle features. See [standalone setup](docs/standalone.md) for
 configuration and boundaries, and the agent-neutral
 [qdrant-memory skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)
@@ -76,11 +76,11 @@ for multi-agent installation and usage guidance.
 
 The optional MCP server exposes four scoped tools: `qdrant_memory_search`,
 `qdrant_memory_add`, `qdrant_memory_update` and `qdrant_memory_delete`. Compatible
-clients launch it as a local stdio process and discover/call those tools;
-maintenance and migration use the operator CLI. See the
+clients launch it as a local stdio process and discover/call those tools.
+Maintenance and migration use the operator CLI. See the
 [MCP capabilities and connection guide](docs/mcp.md) for setup, shared-memory
-boundaries and the verified agent matrix. Runtime 0.2.0 published these interfaces;
-the published v0.1.0 plugin release does not include the MCP entrypoint.
+boundaries and the verified agent matrix. Runtime 0.2.0 published these interfaces.
+The published v0.1.0 plugin release does not include the MCP entrypoint.
 
 ## See it in action
 
@@ -135,7 +135,7 @@ hermes qdrant-memory init
 
 For this version-locked form, `hermes plugins install` checks out the given ref, and
 `hermes plugins enable` prepares the declared dependencies through Hermes PM.
-`--ref` takes a full 40-character commit SHA; the
+`--ref` takes a full 40-character commit SHA. The
 [releases page](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)
 lists the release commits. Do not pip-install into a managed Hermes
 environment. Omit `--ref` to track `main`, the development line.
@@ -169,7 +169,7 @@ import and registration. For development installs, see
 [development setup](docs/development.md).
 
 The release notes, supported Hermes/Python versions and the current
-limitations live in [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md);
+limitations live in [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md).
 `main` stays the development line.
 
 For local development, symlink the repository into a disposable profile:
@@ -215,7 +215,7 @@ Qdrant data. Migration from Mem0 is one-way, and version 0.1 has no vector
 reuse or hybrid retrieval.
 
 Explicit add deduplicates only canonical text in the same scope and never calls
-an LLM. Different texts are saved regardless of similarity; update replaces only
+an LLM. Different texts are saved regardless of similarity. Update replaces only
 the authorized exact ID. For automatic Hermes extraction,
 similarity is a candidate-selection signal, not proof that two facts are identical.
 `SAME` skips, `SUPERSEDES` updates, `CONFLICT` creates a linked record, and
@@ -299,7 +299,7 @@ default profile scope uses an agent (`hermes`). Pass `--agent hermes` to
 target it, or `--all-agents` to delete every agent scope of the user. Without
 `--all-agents`, the result reports `other_agent_scopes` when other agent
 scopes still hold memories. A literal `*` is an ordinary agent id, not a
-wildcard. `--dry-run` previews the per-scope counts;
+wildcard. `--dry-run` previews the per-scope counts.
 `--confirm` authorizes deletion. An interrupted deletion fails closed: other
 commands and provider startup return `scope_delete_recovery_required` until
 `delete-all --confirm` resumes it. Deletion intents are versioned and explicit.
@@ -307,8 +307,8 @@ A pre-versioned intent cannot show whether `*` is a single agent or all agents,
 so the plugin refuses it (`scope_delete_legacy_intent`). Resolve it with
 `--resolve-legacy single_agent`, or with `--resolve-legacy all_agents` when the
 record's agent is `*` or absent. Turns admitted after the deletion can still
-add new memories; everything admitted before it — stored memories, prepared
-writes and unprocessed turn events — is removed or invalidated. `list`,
+add new memories. Everything admitted before it, including stored memories, prepared
+writes and unprocessed turn events, is removed or invalidated. `list`,
 `export` and `delete-all` do not require the embedding service.
 
 ## Data flow and privacy
@@ -319,10 +319,10 @@ carries and where it can go:
 | Component | Carries | Destination |
 | --- | --- | --- |
 | Chat / agent turns | Your conversation | The model configured for the Hermes session |
-| Memory extraction (`llm.mode: inherit`) | The turn's user and assistant text | The same session model — with a cloud model, turn text reaches that cloud |
-| Relation checks | The candidate memory and the similar stored memory | Same routing as extraction; runs only when similarity selects a review candidate |
+| Memory extraction (`llm.mode: inherit`) | The turn's user and assistant text | The same session model. With a cloud model, turn text reaches that cloud |
+| Relation checks | The candidate memory and the similar stored memory | Same routing as extraction. It runs only when similarity selects a review candidate |
 | Embeddings (`embedding`) | Memory and search text | Ollama by default, or your OpenAI-compatible endpoint |
-| Storage (`qdrant`) | Memory payloads and provenance; the ledger stays local | Embedded local path, self-hosted server, or Qdrant Cloud |
+| Storage (`qdrant`) | Memory payloads and provenance. The ledger stays local | Embedded local path, self-hosted server, or Qdrant Cloud |
 
 Three common deployments:
 
@@ -477,7 +477,7 @@ contains `memories` objects with `id`/`text`, and `queries` with `query`/`releva
 The default fixture now contains 24 labeled queries, including Chinese, English,
 mixed-language and hard-negative cases. The
 [original 12-query recording](docs/retrieval-baseline.json) is a historical
-synthetic regression baseline; rerun the current fixture for current measurements.
+synthetic regression baseline. Rerun the current fixture for current measurements.
 These fixtures do not establish production recall quality. See the [recovery benchmark](docs/recovery-benchmark.md)
 for a separate synthetic replay and retained-storage measurement.
 

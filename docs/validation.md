@@ -1,7 +1,7 @@
 # Validation and compatibility
 
 This page records reproducible checks and the revisions to which they apply.
-For installation, see the [README](../README.md); for supported deployment
+For installation, see the [README](../README.md). For supported deployment
 boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
@@ -26,10 +26,10 @@ Behavioral candidate `b7b42799f29ee3ba83b91aa4f7cec3b30cc4dd21` in
   and [CodeQL](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38363304404).
 
 The new regressions first failed on all three no-LLM entrypoints before the
-fix. Explicit writes retain distinct texts at cosine 0.92, 0.97 and 1.0; exact
+fix. Explicit writes retain distinct texts at cosine 0.92, 0.97 and 1.0. Exact
 canonical duplicates skip only within scope. Automatic factual relations pass.
 Schema/IDs/ledger/migration code remains unchanged. No personal data or paid LLM
-was used; local Docker was unavailable, and Cloud was not executed for this patch.
+was used. Local Docker was unavailable, and Cloud was not executed for this patch.
 Later documentation commits require their own current CI checks. Public PyPI
 0.2.1 installation and catalog upgrade acceptance remain post-approval steps.
 
@@ -38,13 +38,13 @@ Later documentation commits require their own current CI checks. Public PyPI
 The following sections are historical evidence for their stated revisions.
 Runtime 0.2.0 subsequently published standalone CLI/MCP on PyPI. The 0.2.1
 candidate adds explicit-write regressions in `tests/test_explicit_dedupe.py` and
-`tests/standalone/test_explicit_writes.py`; run the current CI and package
+`tests/standalone/test_explicit_writes.py`. Run the current CI and package
 acceptance before certifying this candidate. See [0.2.1 notes](releases/0.2.1.md).
 
 Runtime revision `2f4150bd14fa004f84511ad534b189e088c694b8`, submitted in
 [PR #35](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/35), includes
 durable transcript-author isolation and the standalone CLI/MCP interfaces.
-These interfaces are a source preview; they are not included in the published
+These interfaces are a source preview. They are not included in the published
 v0.1.0 release or its Hermes catalog pin.
 
 | Check | Verified boundary | Public result |
@@ -65,7 +65,7 @@ and official MCP discovery/search/delete.
 
 These tests do not use personal memory collections or paid model calls. The
 fresh installation test uses localhost embeddings. CLI/MCP scope sharing is
-tested with sequential clients; it does not establish concurrent-writer support.
+tested with sequential clients. It does not establish concurrent-writer support.
 See the [MCP compatibility guide](mcp.md#evidence-and-limits) for agent-specific
 registration, discovery and tool-call boundaries.
 
@@ -105,7 +105,7 @@ at `1f58b8534df7eb94d2385bfceb6927b850545031`, with passing
 [CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568943),
 [platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568962)
 and [authenticated Cloud smoke](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38112568954).
-Catalog installation uses its own immutable pin; newer default-branch
+Catalog installation uses its own immutable pin. Newer default-branch
 documentation and source-preview features do not change that pinned version.
 
 ## Published release and live acceptance
@@ -124,7 +124,7 @@ and [Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/ac
 A live Quick Start on 2026-10-09 used a fresh macOS arm64 profile and local Ollama
 embeddings. It passed installation, conversation extraction, cross-session
 recall, update/delete and restart verification. Slow local chat models exceeded
-the default auxiliary-call timeout; the [troubleshooting guide](troubleshooting.md)
+the default auxiliary-call timeout. The [troubleshooting guide](troubleshooting.md)
 explains timeout configuration and retry. This was one deployment, not a
 production capacity benchmark.
 

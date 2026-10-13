@@ -8,11 +8,11 @@ For configuration and recovery, see [configuration](configuration.md),
 ## Credentials and network access
 
 The Hermes plugin resolves credentials through the host's profile-aware
-`get_secret()`. Explicit Qdrant JSON credentials take precedence for compatibility;
-protect configuration files containing them. Extraction and relation requests use
+`get_secret()`. Explicit Qdrant JSON credentials take precedence for compatibility.
+Protect configuration files containing them. Extraction and relation requests use
 Hermes's `PluginContext.llm`, and model/provider overrides require the operator's
 Hermes trust grants. The standalone runtime uses its own operator-configured
-profile and embedding credentials; it does not require Hermes.
+profile and embedding credentials. It does not require Hermes.
 
 Use a Qdrant **Database API Key** limited to the destination collection's required
 permissions. Give migration credentials read-only source access where possible,
@@ -23,17 +23,17 @@ or fragments. See [Qdrant security guidance](https://qdrant.tech/documentation/s
 Secrets can be injected by a launcher such as
 `bws run --project-id ... -- hermes`. The plugin does not invoke Bitwarden or read
 a vault. Injected values and existing shell environment values are indistinguishable
-inside the process; the launcher controls their precedence.
+inside the process. The launcher controls their precedence.
 
 For CI deployments using Cloud credentials, restrict the `qdrant-cloud`
 environment to approved refs and require approval where appropriate. The optional
-Cloud workflow runs on `main` pushes and manual dispatch; manual dispatch can
+Cloud workflow runs on `main` pushes and manual dispatch. A manual dispatch can
 select another ref. Workflow triggers alone do not protect credentials.
 
 ## Private storage and retention
 
 On POSIX systems, state directories use mode 0700, and SQLite state and saved
-configuration use mode 0600. Windows relies on inherited filesystem ACLs; protect
+configuration use mode 0600. Windows relies on inherited filesystem ACLs. Protect
 the profile with a private Windows ACL. Protect `state.db`, its WAL/SHM sidecars,
 configuration, snapshots and backups as sensitive data.
 
@@ -69,14 +69,14 @@ evidence is archived without extraction until the host explicitly starts or
 resets a fresh transcript. Explicitly attributed per-turn writes remain available.
 
 Bot or unidentified participation also quarantines supplementary extraction.
-Author history and quarantine persist across restarts and rewinds; compression
+Author history and quarantine persist across restarts and rewinds. Compression
 and branch continuations inherit them. An explicit authorized transcript reset
 establishes fresh history. Unattributed checkpoints use a neutral `__mixed__`
 user marker and null agent identity. These protections do not automatically
 remove memories created by earlier versions.
 
 Returning to a known session without a new `user_id` preserves its recorded
-scope. An explicit user identity or reset can replace it; a new unrelated session
+scope. An explicit user identity or reset can replace it. A new unrelated session
 uses the default scope. Migration preserves source scopes, including null agent
 identity. Native memory tools and MCP tool arguments cannot override scope.
 The operator CLI can select maintenance scopes, so grant it only to trusted
@@ -85,7 +85,7 @@ operators. Treat recalled text as untrusted data, not agent instructions.
 ## Durability and writer ownership
 
 Turn durability begins when the provider commits the callback's event to its
-ledger. Hermes submits `sync_turn` through an in-memory background queue; a host
+ledger. Hermes submits `sync_turn` through an in-memory background queue. A host
 crash or bounded shutdown can lose a callback that has not reached the ledger.
 Restart replay covers admitted work. Pre-compression checkpoints durably archive
 host-filtered direct user/assistant evidence before compression.
@@ -100,7 +100,7 @@ safe.
 Scoped deletion preserves fences and explicit versioned deletion intents so that
 older admitted work cannot recreate deleted content. A later event can explicitly
 add it again. A literal agent ID `*` is distinct from an all-agents deletion.
-Ambiguous legacy intents require explicit operator resolution; see
+Ambiguous legacy intents require explicit operator resolution. See
 [operations](operations.md).
 
 ## Filesystem access and MCP limits

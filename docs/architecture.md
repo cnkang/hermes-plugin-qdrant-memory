@@ -140,8 +140,8 @@ deletion/recreation is recoverable rather than atomic.
 
 v0.1 supports dense retrieval only. Sparse/hybrid retrieval, reranking and recency
 weighting are future work. Host embedding inheritance is feature-detected and requires
-an explicit fallback. The minimum supported Hermes release is v0.21.5 (v2026.9.24);
-earlier tags lack required authoritative builtin replacement metadata. Live Server REST/gRPC
+an explicit fallback. The minimum supported Hermes release is v0.21.5 (v2026.9.24).
+Earlier tags lack required authoritative builtin replacement metadata. Live Server REST/gRPC
 tests and optional authenticated Cloud tests remain separate validation lanes.
 Required compatibility CI validates the minimum supported release and the latest
 Hermes `main`, recording the checked-out `main` SHA in each run summary. The
