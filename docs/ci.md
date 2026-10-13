@@ -8,7 +8,7 @@ optional Cloud workflow with missing credentials is SKIPPED, not Cloud validatio
 Configure the `qdrant-cloud` environment with approved-ref restrictions and
 appropriate approval requirements. Manual dispatch can select another ref.
 Workflow triggers alone do not protect credentials. Keep credential access
-restricted when testing a release candidate.
+restricted when testing a release.
 The compatibility matrix combines an immutable minimum reference with the moving
 latest `main`. The weekly tracker adds the host sync-boundary checks.
 Merged main `112e403c` passed CI, the platform matrix and executed authenticated
@@ -38,7 +38,8 @@ Ruff is pinned to 0.15.1 in CI and the local
 Actions use immutable SHA pins. Authenticated scans run on same-repository PRs,
 pushes to `main` and repository development branches, and manual workflow dispatches.
 The credentialed Cloud smoke lane is narrower: it runs only on `main` pushes
-(plus manual dispatch) because branch pushes receive repository secrets.
+(plus manual dispatch). Branch pushes receive repository secrets, so the lane
+excludes them.
 Fork PRs run
 tests without scanner credentials. Their scanner jobs are skipped by conditions.
 A missing required token fails a scanner job only when that job is scheduled.
