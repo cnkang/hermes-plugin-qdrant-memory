@@ -31,6 +31,8 @@ environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.1'` (omit `[mcp
 for CLI only). `qdrant-memory` is the CLI and `mcp` is its server subcommand;
 standalone does not require Hermes. See [setup and quick start](docs/standalone.md).
 MCP-focused agents may instead use the [metadata-only distribution](https://github.com/cnkang/qdrant-memory-mcp).
+Public releases: [Runtime on PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/)
+and [MCP distribution on PyPI](https://pypi.org/project/qdrant-memory-mcp/).
 For native Hermes use its official plugin installation mechanism below. Before
 an authorized upgrade, verify the same profile, collection and embedding pipeline.
 
