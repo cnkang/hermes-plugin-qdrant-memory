@@ -27,7 +27,7 @@ gate. Snyk runs dependency and code scans and monitors main. The required test m
 validates the support range endpoints. It covers the minimum supported release
 v0.21.5 (v2026.9.24, `f97608f`) and the latest Hermes `main`. The `main` ref
 moves, and each run records its checked-out SHA in the run summary. The latest-main lane
-intentionally tracks the moving upstream ref inside the required matrix: an
+intentionally tracks the moving upstream ref inside the required matrix. An
 upstream regression can fail the gate until it is fixed upstream, and a rerun of
 the same commit can differ. A separately pinned PM prepares dependency
 environments because the minimum release predates `pm.build_env`. Each lane runs
@@ -78,8 +78,8 @@ secrets.
 ## Latest Hermes tracking
 
 `.github/workflows/upstream-compat.yml` runs weekly and through manual dispatch. It
-checks out the current Hermes `main`, records the actual checked-out Hermes SHA and
-plugin SHA in the run summary, then uses the host's canonical test runner for
+checks out the current Hermes `main` and records the checked-out Hermes SHA and
+plugin SHA in the run summary. It then uses the host's canonical test runner for
 directory discovery/CLI, setup, checkpoint/session lifecycle, shutdown, provider and
 recovery contracts on Python 3.11 and 3.14. A separate direct pytest step checks the
 host `MemoryManager.sync_all()` admission and shutdown boundary with
@@ -103,9 +103,9 @@ behavior-contract jobs.
 **Optional Qdrant Cloud smoke** runs on pushes to `main` only and supports
 manual dispatch after the workflow reaches the default branch. The job uses the
 `qdrant-cloud` GitHub Environment. Configure that Environment to allow deployments
-from `main` only. The job reads its credentials from that Environment, creates
-only a disposable collection (isolated by a random UUID suffix), and never
-passes or prints the values: it writes them to a private temporary file and
+from `main` only. The job reads its credentials from that Environment. It creates
+only a disposable collection (isolated by a random UUID suffix) and never
+passes or prints the values. It writes them to a private temporary file and
 removes it at job completion.
 Absent URL/key yields an explicit SKIPPED message. This manual lane is outside the
 required scan gate. A skip does not establish Cloud compatibility. Its integration

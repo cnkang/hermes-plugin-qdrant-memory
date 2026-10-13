@@ -64,7 +64,7 @@ in-flight recall.
 
 Whole-transcript supplementary extraction requires complete single-author
 history matching the current scope. After restart, a failed author callback or
-previously unseen history, session-end extraction is skipped and pre-compression
+previously unseen history skips session-end extraction. Pre-compression
 evidence is archived without extraction until the host explicitly starts or
 resets a fresh transcript. Explicitly attributed per-turn writes remain available.
 
