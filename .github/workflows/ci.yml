@@ -131,7 +131,7 @@ jobs:
           "$RUNNER_TEMP/wheel-build-env/bin/python" -c 'import os, setuptools.build_meta as b; b.build_wheel(os.environ["RUNNER_TEMP"] + "/plugin-wheel")'
           cd .pm-host
           python -m pm.build_env --out "$RUNNER_TEMP/wheel-env" --requirements "$RUNNER_TEMP/host-test-requirements.txt" \
-            --requirement "hermes-plugin-qdrant-memory @ file://$RUNNER_TEMP/plugin-wheel/hermes_plugin_qdrant_memory-0.1.0-py3-none-any.whl"
+            --requirement "hermes-plugin-qdrant-memory @ file://$(find "$RUNNER_TEMP/plugin-wheel" -name 'hermes_plugin_qdrant_memory-*.whl' -print -quit)"
           cd "$RUNNER_TEMP"
           PYTHONPATH="$GITHUB_WORKSPACE/.host" "$RUNNER_TEMP/wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/verify_packaged.py"
       - name: Save coverage for SonarCloud
