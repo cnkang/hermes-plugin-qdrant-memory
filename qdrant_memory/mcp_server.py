@@ -15,6 +15,8 @@ def create_server(runtime):
 
     async def list_tools():
         """Advertise only the shared explicit-memory schemas."""
+        # Both SDKs require an async handler; allow cancellation before building schemas.
+        await anyio.lowlevel.checkpoint()
         return [
             Tool(name=item["name"], description=item["description"], inputSchema=item["parameters"])
             for item in schemas()
