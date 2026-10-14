@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.2.2
+
+- Support MCP Python SDK 1.x and 2.x through their respective server handler
+  APIs. Keep the four scoped tools, validation and sanitized errors consistent.
+- Expand the optional MCP dependency to `mcp>=1.30,<3`. Preserve the Qdrant
+  client's compatible `httpx` dependency and exercise both SDK majors in CI.
+- Preserve storage schema, scope, explicit-write semantics and recovery behavior.
+  No data migration is required.
+
 ## 0.2.1
 
 - Separate explicit writes from automatic factual relation adjudication. CLI,

@@ -7,11 +7,12 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.2.1** provides the standalone CLI/MCP and fixes explicit writes of
-> distinct, highly similar texts. MCP distribution 0.1.1 pins Runtime 0.2.1.
+> **Runtime 0.2.2** supports MCP Python SDK 1.x and 2.x for the standalone
+> CLI/MCP. MCP distribution 0.1.2 pins Runtime 0.2.2. Explicit writes retain
+> canonical-text deduplication without an LLM.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.
-> See [release notes](docs/releases/0.2.1.md) and [validation](docs/validation.md).
+> See [release notes](docs/releases/0.2.2.md) and [validation](docs/validation.md).
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -26,7 +27,7 @@ as a community-maintained plugin.
 ## How it works
 
 For non-Hermes users, install in a private Python 3.11+
-environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.1'` (omit `[mcp]`
+environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.2'` (omit `[mcp]`
 for CLI only). `qdrant-memory` is the CLI and `mcp` is its server subcommand.
 Standalone does not require Hermes. See [setup and quick start](docs/standalone.md).
 MCP-focused agents may instead use the [metadata-only distribution](https://github.com/cnkang/qdrant-memory-mcp).
@@ -119,9 +120,10 @@ The install resolves the catalog's reviewed commit and prints the entry's declar
 tools, requirements and known issues before it clones anything.
 `hermes plugins enable` prepares the declared dependencies through Hermes PM.
 
-**Version-locked: install the verified Runtime 0.2.1 source through the Hermes CLI.**
+**Version-locked: install the verified Runtime 0.2.2 source through the Hermes CLI.**
 
-This immutable source revision includes the explicit-write fix. It does not
+This immutable source revision includes MCP SDK 1.x/2.x support and the
+explicit-write fix. It does not
 depend on a PyPI release or a catalog update.
 
 ```bash
@@ -129,7 +131,7 @@ export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # Start Ollama if it is not running. Keep its service available.
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref 8929693fcccd1efa91bfa062145e35d2369ca9cc   # verified Runtime 0.2.1 source
+  --ref 2fd43ad2259bd98d039394b8b714e5e89b5ab3a8   # verified Runtime 0.2.2 source
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
@@ -146,7 +148,7 @@ environment. Omit `--ref` to track `main`, the development line.
 **Historical release: clone a published tag manually.**
 
 The v0.1.0 tag below predates the standalone interfaces and the explicit-write
-fix. Use the pinned source above for Runtime 0.2.1.
+fix. Use the pinned source above for Runtime 0.2.2.
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
