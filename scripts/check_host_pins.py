@@ -57,7 +57,7 @@ def applicable(requirement: Requirement) -> bool:
 
 
 def group_specs(document: dict, name: str, seen: frozenset, *, required: bool = False) -> list:
-    """The dependency strings of one dependency group, including nested groups."""
+    """The (spec, declaring group) pairs of one dependency group, including nested groups."""
     groups = document.get("dependency-groups") or {}
     if name not in groups:
         if required:

@@ -52,9 +52,7 @@ jobs:
         python: ['3.11', '3.14']
         host:
           - name: minimum
-            ref: f97608f178d1ffeca59860195ab7da295f7c8e5f
           - name: latest-main
-            ref: main
     services:
       qdrant:
         image: qdrant/qdrant@sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863
@@ -66,12 +64,21 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: ${{ matrix.python }}
-      - name: Check out tested Hermes host
+      - name: Check out minimum Hermes host
+        if: matrix.host.name == 'minimum'
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
           persist-credentials: false
           repository: NousResearch/hermes-agent
-          ref: ${{ matrix.host.ref }}
+          ref: f97608f178d1ffeca59860195ab7da295f7c8e5f
+          path: .host
+      - name: Check out latest Hermes host
+        if: matrix.host.name == 'latest-main'
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+          repository: NousResearch/hermes-agent
+          ref: main
           path: .host
       - name: Record tested Hermes revision
         if: matrix.host.name == 'latest-main'
