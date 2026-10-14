@@ -177,7 +177,24 @@ def test_recovery_failure_closes_store_embedder_and_lease(profile, monkeypatch):
 
 def test_official_inprocess_client_scoped_tools_and_path_denial(profile):
     """Real SDK memory transport reaches production handlers and rejects file arguments."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from contextlib import asynccontextmanager
+
+    import anyio
+    from mcp import ClientSession
+    from mcp.shared.memory import create_client_server_memory_streams
+
+    @asynccontextmanager
+    async def connected_client(server):
+        """Run both real SDK loops using the memory transport shared by 1.x and 2.x."""
+        async with create_client_server_memory_streams() as (client_streams, server_streams):
+            async with anyio.create_task_group() as tasks:
+                tasks.start_soon(
+                    server.run, *server_streams, server.create_initialization_options()
+                )
+                async with ClientSession(*client_streams) as client:
+                    await client.initialize()
+                    yield client
+                await client_streams[1].aclose()
 
     command(profile, "init")
     with open_runtime(profile[0]) as runtime:
@@ -185,20 +202,20 @@ def test_official_inprocess_client_scoped_tools_and_path_denial(profile):
 
         async def check():
             """Exercise initialization, shared tool schemas, CRUD and sanitized errors."""
-            async with create_connected_server_and_client_session(server) as client:
+            async with connected_client(server) as client:
                 tools = (await client.list_tools()).tools
                 assert len(tools) == 4
                 result = await client.call_tool("qdrant_memory_add", {"text": "SDK memory fact"})
                 identifier = json.loads(result.content[0].text)["id"]
-                assert not result.isError
+                assert not result.model_dump(by_alias=True)["isError"]
                 assert not (
                     await client.call_tool("qdrant_memory_search", {"query": "SDK memory fact"})
-                ).isError
+                ).model_dump(by_alias=True)["isError"]
                 assert not (
                     await client.call_tool(
                         "qdrant_memory_update", {"id": identifier, "text": "SDK update"}
                     )
-                ).isError
+                ).model_dump(by_alias=True)["isError"]
                 for name, arguments in [
                     ("qdrant_memory_migrate", {"source_json": "/private/source.json"}),
                     ("qdrant_memory_add", {"text": "bad", "source_json": "/private/source.json"}),
@@ -206,12 +223,12 @@ def test_official_inprocess_client_scoped_tools_and_path_denial(profile):
                     ("qdrant_memory_add", {"text": {"secret": "must-not-echo"}}),
                 ]:
                     result = await client.call_tool(name, arguments)
-                    assert result.isError
+                    assert result.model_dump(by_alias=True)["isError"]
                     assert "private/source.json" not in result.content[0].text
                     assert "must-not-echo" not in result.content[0].text
                 assert not (
                     await client.call_tool("qdrant_memory_delete", {"id": identifier})
-                ).isError
+                ).model_dump(by_alias=True)["isError"]
 
         asyncio.run(check())
 
@@ -321,7 +338,7 @@ def test_public_mcp_main_uses_official_protocol_and_closes_session(profile, monk
                         result = await session.call_tool(
                             "qdrant_memory_add", {"text": "Entry boundary fact"}
                         )
-                        assert not result.isError
+                        assert not result.model_dump(by_alias=True)["isError"]
                     await client_streams[1].aclose()
 
                 tasks.start_soon(client)
