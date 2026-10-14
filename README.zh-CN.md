@@ -7,10 +7,11 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.2.1** 提供独立 CLI/MCP，并修复不同但高度相似文本的显式写入。
-> MCP 分发 0.1.1 固定依赖 Runtime 0.2.1。
-> Hermes Plugin Catalog 使用独立审核的不可变 pin，PyPI 发布不代表 Catalog 升级。
-> 每个目的地仍只支持一个写入者。见[发行说明](docs/releases/0.2.1.md)与[验证记录](docs/validation.md)。
+> **Runtime 0.2.2** 支持独立 CLI/MCP 的 MCP Python SDK 1.x 和 2.x。
+> MCP 发行包 0.1.2 固定依赖 Runtime 0.2.2；显式写入继续按规范化文本去重，
+> 不调用 LLM。Hermes Plugin Catalog 使用独立审核的固定版本，PyPI 发布不会
+> 自动升级目录。每个目标仍只允许一个写入者。
+> 参见[发布说明](docs/releases/0.2.2.zh-CN.md)和[验证记录](docs/validation.md)。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -24,7 +25,7 @@
 ## 工作原理
 
 非 Hermes 用户可在独立 Python 3.11+ 环境中执行
-`pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.1'`；仅 CLI 可省略 `[mcp]`。
+`pip install 'hermes-plugin-qdrant-memory[mcp]==0.2.2'`；仅 CLI 可省略 `[mcp]`。
 `qdrant-memory` 是 CLI，`mcp` 是服务子命令，standalone 不需要 Hermes。
 见[安装与快速开始](docs/standalone.md)，MCP 用户也可选择
 [metadata-only 分发包](https://github.com/cnkang/qdrant-memory-mcp)。
@@ -101,9 +102,10 @@ hermes qdrant-memory init
 安装使用 Catalog 审核过的固定提交，并在克隆前先展示该条目的声明工具、版本要求与已知限制；
 `hermes plugins enable` 通过 Hermes PM 准备声明的依赖。
 
-**锁定版本：通过 Hermes CLI 安装已验证的 Runtime 0.2.1 源码。**
+**先前验证的源码：通过 Hermes CLI 安装 Runtime 0.2.1。**
 
-此不可变源码提交包含显式写入修复，不依赖 PyPI 发布或 Catalog 更新。
+此较早的不可变源码提交包含显式写入修复，但不包含 MCP SDK 2.x 支持。
+独立 MCP 用户请使用上方 Runtime 0.2.2 安装方式；源码安装不依赖 PyPI 发布或 Catalog 更新。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
