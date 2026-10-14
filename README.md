@@ -131,7 +131,7 @@ export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # Start Ollama if it is not running. Keep its service available.
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref 2fd43ad2259bd98d039394b8b714e5e89b5ab3a8   # verified Runtime 0.2.2 source
+  --ref c85d2bce788b117dddd854bb124971f7de8e564c   # verified Runtime 0.2.2 source
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
