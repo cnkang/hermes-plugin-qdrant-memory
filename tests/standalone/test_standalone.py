@@ -264,38 +264,47 @@ def test_official_mcp_client(profile):
                     "qdrant_memory_update",
                     "qdrant_memory_delete",
                 }
-                assert all(tool.inputSchema["additionalProperties"] is False for tool in tools)
+                assert all(
+                    tool.model_dump(by_alias=True)["inputSchema"]["additionalProperties"] is False
+                    for tool in tools
+                )
                 added = await session.call_tool("qdrant_memory_add", {"text": "MCP durable fact"})
-                assert not added.isError
+                assert not added.model_dump(by_alias=True)["isError"]
                 memory_id = json.loads(added.content[0].text)["id"]
                 assert not (
                     await session.call_tool("qdrant_memory_search", {"query": "MCP durable fact"})
-                ).isError
+                ).model_dump(by_alias=True)["isError"]
                 assert not (
                     await session.call_tool(
                         "qdrant_memory_update", {"id": memory_id, "text": "MCP replacement"}
                     )
-                ).isError
+                ).model_dump(by_alias=True)["isError"]
                 assert (
                     await session.call_tool(
                         "qdrant_memory_add", {"text": "bad", "user_id": "foreign"}
                     )
-                ).isError
+                ).model_dump(by_alias=True)["isError"]
                 assert (
                     await session.call_tool(
                         "qdrant_memory_update",
                         {"id": "00000000-0000-0000-0000-000000000001", "text": "bad"},
                     )
-                ).isError
-                assert (await session.call_tool("qdrant_memory_delete", {"id": foreign_id})).isError
+                ).model_dump(by_alias=True)["isError"]
+                assert (
+                    await session.call_tool("qdrant_memory_delete", {"id": foreign_id})
+                ).model_dump(by_alias=True)["isError"]
                 malformed = await session.call_tool("qdrant_memory_add", {"text": 123})
-                assert malformed.isError
+                assert malformed.model_dump(by_alias=True)["isError"]
                 assert "123" not in malformed.content[0].text
-                assert (await session.call_tool("qdrant_memory_add", {})).isError
-                assert (await session.call_tool("qdrant_memory_delete_all", {})).isError
+                assert (await session.call_tool("qdrant_memory_add", {})).model_dump(by_alias=True)[
+                    "isError"
+                ]
+                assert (await session.call_tool("qdrant_memory_delete_all", {})).model_dump(
+                    by_alias=True
+                )["isError"]
                 assert not (
                     await session.call_tool("qdrant_memory_delete", {"id": memory_id})
-                ).isError
+                ).model_dump(by_alias=True)["isError"]
                 assert (
                     command(profile, "add", "--text", "busy", ok=False)["error"]["type"]
                     == "WriterBusyError"

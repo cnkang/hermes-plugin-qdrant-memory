@@ -11,11 +11,8 @@ def create_server(runtime):
     """Bind the four fixed-scope tools to an official SDK server instance."""
     import anyio
     from mcp.server import Server
-    from mcp.types import CallToolResult, TextContent, Tool
+    from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
-    server = Server("qdrant-memory")
-
-    @server.list_tools()
     async def list_tools():
         """Advertise only the shared explicit-memory schemas."""
         return [
@@ -23,7 +20,6 @@ def create_server(runtime):
             for item in schemas()
         ]
 
-    @server.call_tool(validate_input=False)
     async def invoke(name, arguments):
         """Validate and dispatch without echoing sensitive invalid arguments."""
         try:
@@ -38,7 +34,22 @@ def create_server(runtime):
                 isError=True,
             )
 
-    return server
+    if hasattr(Server, "list_tools"):
+        # SDK 1.x registers handlers with decorators.
+        server = Server("qdrant-memory")
+        server.list_tools()(list_tools)
+        server.call_tool(validate_input=False)(invoke)
+        return server
+
+    async def on_list_tools(context, params):
+        """Adapt SDK 2.x request handlers to the shared tool catalogue."""
+        return ListToolsResult(tools=await list_tools())
+
+    async def on_call_tool(context, params):
+        """Keep validation and sanitized tool errors identical across SDK versions."""
+        return await invoke(params.name, params.arguments)
+
+    return Server("qdrant-memory", on_list_tools=on_list_tools, on_call_tool=on_call_tool)
 
 
 def serve(home):

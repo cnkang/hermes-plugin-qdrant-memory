@@ -15,7 +15,8 @@ explicit memory operations.
 | `qdrant_memory_delete` | exact `id` | Delete a memory after checking its existing scope. |
 
 The server supports MCP initialization, tool discovery and tool calls through
-the official Python SDK over local **stdio**. Tools use the same store, embedding
+the official Python SDK over local **stdio**. Both SDK 1.x (>=1.30) and 2.x are
+supported and tested independently. Tools use the same store, embedding
 pipeline, ledger, retry/recovery rules and writer lease as the Hermes plugin.
 Only these four tools are advertised. No resources or prompts are advertised.
 Maintenance, export, migration, reset and bulk deletion remain operator CLI

@@ -96,13 +96,13 @@ def test_explicit_official_stdio_sdk_similarity(profile):
                 ids = []
                 for text in (FIRST, SECOND):
                     result = await client.call_tool("qdrant_memory_add", {"text": text})
-                    assert not result.isError, result.content
+                    assert not result.model_dump(by_alias=True)["isError"], result.content
                     value = json.loads(result.content[0].text)
                     assert value["action"] == "ADD"
                     ids.append(value["id"])
                 assert len(set(ids)) == 2
                 result = await client.call_tool("qdrant_memory_add", {"text": FIRST})
-                assert not result.isError
+                assert not result.model_dump(by_alias=True)["isError"]
                 assert json.loads(result.content[0].text) == {"action": "SKIP", "id": ids[0]}
 
     asyncio.run(check())
