@@ -132,3 +132,49 @@ def test_inconsistent_host_pins_fail(tmp_path):
     result = run(host, plugin)
     assert result.returncode == 1
     assert "inconsistent" in result.stderr
+
+
+def test_combined_emit_and_print_mode(tmp_path):
+    """Combined mode prints only the requirement line to stdout."""
+    host = write(tmp_path, "host", HOST)
+    plugin = write(tmp_path, "plugin", PLUGIN_OK)
+    output = tmp_path / "pins.txt"
+    result = run(host, plugin, "--emit-requirements", str(output), "--print-plugin-requirement")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().startswith("hermes-plugin-example[mcp] @ file://")
+    assert "\n" not in result.stdout.strip()
+    assert "wrote" in result.stderr
+    assert "OK" in result.stderr
+
+
+def test_missing_include_group_fails(tmp_path):
+    """An include-group entry that names a missing group fails."""
+    host_text = HOST.replace(
+        'dev = ["mcp==2.0.0"]', 'dev = ["mcp==2.0.0", {include-group = "missing"}]'
+    )
+    host = write(tmp_path, "host", host_text)
+    plugin = write(tmp_path, "plugin", PLUGIN_OK)
+    result = run(host, plugin)
+    assert result.returncode != 0
+    assert "missing" in result.stderr
+
+
+def test_normalized_exact_pins_pass(tmp_path):
+    """Equivalent exact pins written differently are not inconsistent."""
+    host_text = HOST.replace('dev = ["mcp==2.0.0"]', 'dev = ["mcp==2.0"]')
+    host = write(tmp_path, "host", host_text)
+    plugin = write(tmp_path, "plugin", PLUGIN_OK)
+    result = run(host, plugin)
+    assert result.returncode == 0, result.stderr
+
+
+def test_include_group_origin_is_declaring_group(tmp_path):
+    """Nested include-group entries keep their declaring group as the origin."""
+    host_text = HOST.replace(
+        'dev = ["mcp==2.0.0"]', 'dev = [{include-group = "base"}]\nbase = ["mcp==1.0"]'
+    )
+    host = write(tmp_path, "host", host_text)
+    plugin = write(tmp_path, "plugin", PLUGIN_OK)
+    result = run(host, plugin)
+    assert result.returncode == 1
+    assert "dependency-groups.base" in result.stderr

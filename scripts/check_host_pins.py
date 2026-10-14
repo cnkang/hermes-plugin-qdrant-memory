@@ -56,21 +56,25 @@ def applicable(requirement: Requirement) -> bool:
     return requirement.marker.evaluate()
 
 
-def group_specs(document: dict, name: str, seen: frozenset) -> list:
+def group_specs(document: dict, name: str, seen: frozenset, *, required: bool = False) -> list:
     """The dependency strings of one dependency group, including nested groups."""
     groups = document.get("dependency-groups") or {}
-    specs = groups.get(name)
-    if not isinstance(specs, list):
+    if name not in groups:
+        if required:
+            raise SystemExit(f"dependency group '{name}' is included but not defined")
         return []
+    specs = groups[name]
+    if not isinstance(specs, list):
+        raise SystemExit(f"dependency group '{name}' is not a list")
     collected = []
     for entry in specs:
         if isinstance(entry, str):
-            collected.append(entry)
+            collected.append((entry, name))
         elif isinstance(entry, dict) and "include-group" in entry:
             target = entry["include-group"]
             if target in seen:
                 raise SystemExit(f"dependency group cycle in {name}: {target} repeats")
-            collected.extend(group_specs(document, target, seen | {name}))
+            collected.extend(group_specs(document, target, seen | {name}, required=True))
     return collected
 
 
@@ -98,7 +102,8 @@ def collect_host_pins(host: Path) -> dict:
     for name, specs in sorted((project.get("optional-dependencies") or {}).items()):
         add(specs, f"optional-dependencies.{name}")
     for name in sorted(document.get("dependency-groups") or {}):
-        add(group_specs(document, name, frozenset()), f"dependency-groups.{name}")
+        for spec, origin in group_specs(document, name, frozenset()):
+            add([spec], f"dependency-groups.{origin}")
     return pins
 
 
@@ -117,6 +122,8 @@ def collect_plugin_specifiers(plugin: Path) -> dict:
                 continue
             requirement = parse_requirement(spec, origin)
             if requirement.url:
+                continue
+            if not applicable(requirement):
                 continue
             name = canonicalize_name(requirement.name)
             required.setdefault(name, []).append((requirement.specifier, origin))
@@ -150,9 +157,10 @@ def version_literals(specifier_set: SpecifierSet) -> list:
 
 def successor(version: Version) -> Version | None:
     """A version just above the given one; None when it cannot be constructed."""
+    epoch = f"{version.epoch}!" if version.epoch else ""
     base = ".".join(str(part) for part in version.release)
     try:
-        return Version(f"{base}.1")
+        return Version(f"{epoch}{base}.1")
     except InvalidVersion:
         return None
 
@@ -262,7 +270,11 @@ def main() -> int:
         for requirement, origin in host_pins.get(name, []):
             for specifier in requirement.specifier:
                 if specifier.operator == "==" and "*" not in specifier.version:
-                    versions.setdefault(specifier.version, []).append(origin)
+                    try:
+                        version = Version(specifier.version)
+                    except InvalidVersion:
+                        continue
+                    versions.setdefault(version, []).append(origin)
         if len(versions) > 1:
             detail = "; ".join(
                 f"{version} ({', '.join(origins)})" for version, origins in sorted(versions.items())
