@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Reconcile the tested Hermes host's dependency pins with this plugin's specifiers.
 
 The dependency manager resolves this plugin inside the host workspace. Every
