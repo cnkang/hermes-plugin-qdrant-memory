@@ -113,12 +113,31 @@ jobs:
             scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 1 --file-retries 0 -- \
               --tb=short --cov=qdrant_memory --cov-report= --cov-append \
               --qdrant-test-url=http://127.0.0.1:6333 --qdrant-test-container="$QDRANT_CONTAINER"
-            cd "$GITHUB_WORKSPACE"
-            "$HERMES_PYTHON" -m coverage xml --data-file=.host/.coverage -o coverage.xml
           else
             scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 1 --file-retries 0 -- --tb=short \
               --qdrant-test-url=http://127.0.0.1:6333 --qdrant-test-container="$QDRANT_CONTAINER"
           fi
+      - name: Include both MCP SDK majors in the coverage report
+        if: matrix.python == '3.14' && matrix.host.name == 'minimum'
+        working-directory: .pm-host
+        env:
+          HERMES_HOME: ${{ runner.temp }}/mcp-coverage-home
+          HERMES_RUNTIME_DIR: ${{ runner.temp }}/mcp-coverage-runtime
+        run: |
+          for sdk in 1 2; do
+            upper=$((sdk + 1))
+            python -m pm.build_env --out "$RUNNER_TEMP/mcp-coverage-$sdk" \
+              --requirement "hermes-plugin-qdrant-memory[mcp] @ file://$GITHUB_WORKSPACE" \
+              --requirement "mcp>=$sdk,<$upper" \
+              --requirement 'pytest>=8,<10' --requirement 'pytest-cov>=6,<8'
+            cd "$GITHUB_WORKSPACE"
+            COVERAGE_FILE="$GITHUB_WORKSPACE/.host/.coverage" \
+              "$RUNNER_TEMP/mcp-coverage-$sdk/bin/python" -m pytest -q tests/standalone \
+              --cov=qdrant_memory --cov-report= --cov-append
+            cd .pm-host
+          done
+          cd "$GITHUB_WORKSPACE"
+          .test-env/bin/python -m coverage xml --data-file=.host/.coverage -o coverage.xml
       - name: Build and install wheel through PM
         if: matrix.host.name != 'latest-main'
         working-directory: .pm-host
