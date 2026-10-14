@@ -59,3 +59,25 @@ PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/benchmark_recovery
 
 This script also uses temporary data. See the [recorded recovery benchmark](recovery-benchmark.md)
 for the measured revision, allocation boundaries and retained-history limits.
+
+## Release closeout
+
+A version-locked pin in the READMEs or the demo script must match the commit
+that the release tag points to. A commit cannot contain its own SHA. Update
+these pins after tagging, in a single closeout commit.
+
+1. Create the release tag on the merged release commit.
+2. Read the tag target: `git rev-parse 'vX.Y.Z^{commit}'`
+3. Update the `--ref` lines in both READMEs and `RELEASE_REF` in
+   `scripts/demo.sh` to that commit. Add the changelog entry.
+4. Check that all pins show the same commit:
+   `grep -rn 'ref [0-9a-f]\{40\}' README.md README.zh-CN.md scripts/demo.sh`
+5. Merge the closeout commit.
+
+Do not write a new pin before the tag exists. A guessed value will not match
+the tag target. Pins in other repositories follow the same rule: update them
+only after the tag exists.
+
+Release order across the related repositories: this Runtime first, then the
+MCP distribution (`qdrant-memory-mcp`), then the skill update in
+`cnkang/skills`. The upstream Hermes catalog re-pin can follow later.
