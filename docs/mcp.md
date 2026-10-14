@@ -25,7 +25,8 @@ operations. There is no HTTP/SSE listener or remote authentication service.
 ## Connect a client
 
 Runtime **0.2.0** published the MCP interface. **0.2.1** fixes explicit writes
-of highly similar texts without an LLM. Use the following pinned installation.
+of highly similar texts without an LLM. **0.2.2** supports SDK 1.x and 2.x.
+Use the following pinned installation.
 The older v0.1.0 release and its
 Hermes catalog installation do not supply this new entrypoint. Install the
 versioned Runtime with the optional `mcp` extra:
@@ -33,7 +34,7 @@ versioned Runtime with the optional `mcp` extra:
 ```bash
 python3 -m venv /private/path/qdrant-env
 /private/path/qdrant-env/bin/python -m pip install \
-  'hermes-plugin-qdrant-memory[mcp]==0.2.1'
+  'hermes-plugin-qdrant-memory[mcp]==0.2.2'
 ```
 
 Use Python 3.11+. On Windows, use the environment's `Scripts` executables.

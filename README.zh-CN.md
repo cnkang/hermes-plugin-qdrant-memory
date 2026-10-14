@@ -102,17 +102,17 @@ hermes qdrant-memory init
 安装使用 Catalog 审核过的固定提交，并在克隆前先展示该条目的声明工具、版本要求与已知限制；
 `hermes plugins enable` 通过 Hermes PM 准备声明的依赖。
 
-**先前验证的源码：通过 Hermes CLI 安装 Runtime 0.2.1。**
+**锁定版本：通过 Hermes CLI 安装已验证的 Runtime 0.2.2 源码。**
 
-此较早的不可变源码提交包含显式写入修复，但不包含 MCP SDK 2.x 支持。
-独立 MCP 用户请使用上方 Runtime 0.2.2 安装方式；源码安装不依赖 PyPI 发布或 Catalog 更新。
+此不可变源码提交包含 MCP SDK 1.x/2.x 支持和显式写入修复，
+不依赖 PyPI 发布或 Catalog 更新。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # 如果 Ollama 尚未运行，先启动服务，并保持服务可用。
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref 8929693fcccd1efa91bfa062145e35d2369ca9cc   # 已验证的 Runtime 0.2.1 源码
+  --ref 2fd43ad2259bd98d039394b8b714e5e89b5ab3a8   # 已验证的 Runtime 0.2.2 源码
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
@@ -126,7 +126,7 @@ hermes qdrant-memory init
 
 **历史发行版本：手动克隆已发布的 tag。**
 
-下方 v0.1.0 tag 不包含独立接口及显式写入修复。安装 Runtime 0.2.1 请使用上方固定源码提交。
+下方 v0.1.0 tag 不包含独立接口及显式写入修复。安装 Runtime 0.2.2 请使用上方固定源码提交。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"

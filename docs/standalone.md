@@ -1,8 +1,9 @@
 # Standalone CLI and MCP
 
 The repository now supplies a host-independent runtime alongside its Hermes
-plugin. Runtime 0.2.0 published these interfaces. 0.2.2 fixes explicit writes
-of highly similar texts. The following pinned installation uses 0.2.2.
+plugin. Runtime 0.2.0 published these interfaces. Runtime 0.2.1 fixes explicit
+writes of highly similar texts; 0.2.2 adds MCP SDK 1.x/2.x compatibility.
+The following pinned installation uses 0.2.2.
 The distribution name remains `hermes-plugin-qdrant-memory`. Existing Hermes
 plugin discovery and `hermes qdrant-memory` grammar are compatible.
 
@@ -13,7 +14,7 @@ python3 -m venv .venv
 .venv/bin/qdrant-memory --help
 ```
 
-`mcp` is an optional extra using the official Python MCP SDK (`>=1.30,<2`). The
+`mcp` is an optional extra using the official Python MCP SDK (`>=1.30,<3`). The
 ordinary CLI needs only the base dependencies. Installation is an operator
 action. Loading a skill does not install the runtime or alter host settings.
 
