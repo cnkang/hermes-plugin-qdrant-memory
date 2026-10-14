@@ -7,16 +7,18 @@ from pathlib import Path
 import pytest
 from ruamel.yaml import YAML
 
-CASES = [("success", "success", "success", "success", "success", 0)] + [
-    tuple(result if position == failed else "success" for position in range(5)) + (1,)
-    for failed in range(5)
+CASES = [("success", "success", "success", "success", "success", "success", 0)] + [
+    tuple(result if position == failed else "success" for position in range(6)) + (1,)
+    for failed in range(6)
     for result in ("failure", "skipped", "cancelled")
 ]
 
 
-@pytest.mark.parametrize("lint,tests,sonar,snyk,snyk_code,expected", CASES)
+@pytest.mark.parametrize("lint,tests,mcp,sonar,snyk,snyk_code,expected", CASES)
 @pytest.mark.skipif(os.name == "nt", reason="The checked workflow step is POSIX Bash.")
-def test_required_gate_executes_actual_workflow_step(lint, tests, sonar, snyk, snyk_code, expected):
+def test_required_gate_executes_actual_workflow_step(
+    lint, tests, mcp, sonar, snyk, snyk_code, expected
+):
     """Verify required gate executes actual workflow step."""
     workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text(
         encoding="utf-8"
@@ -28,6 +30,7 @@ def test_required_gate_executes_actual_workflow_step(lint, tests, sonar, snyk, s
             **os.environ,
             "LINT_RESULT": lint,
             "TEST_RESULT": tests,
+            "MCP_RESULT": mcp,
             "SONAR_RESULT": sonar,
             "SNYK_RESULT": snyk,
             "SNYK_CODE_RESULT": snyk_code,

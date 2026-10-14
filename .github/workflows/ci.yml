@@ -113,31 +113,12 @@ jobs:
             scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 1 --file-retries 0 -- \
               --tb=short --cov=qdrant_memory --cov-report= --cov-append \
               --qdrant-test-url=http://127.0.0.1:6333 --qdrant-test-container="$QDRANT_CONTAINER"
+            cd "$GITHUB_WORKSPACE"
+            "$HERMES_PYTHON" -m coverage xml --data-file=.host/.coverage -o coverage.xml
           else
             scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 1 --file-retries 0 -- --tb=short \
               --qdrant-test-url=http://127.0.0.1:6333 --qdrant-test-container="$QDRANT_CONTAINER"
           fi
-      - name: Include both MCP SDK majors in the coverage report
-        if: matrix.python == '3.14' && matrix.host.name == 'minimum'
-        working-directory: .pm-host
-        env:
-          HERMES_HOME: ${{ runner.temp }}/mcp-coverage-home
-          HERMES_RUNTIME_DIR: ${{ runner.temp }}/mcp-coverage-runtime
-        run: |
-          for sdk in 1 2; do
-            upper=$((sdk + 1))
-            python -m pm.build_env --out "$RUNNER_TEMP/mcp-coverage-$sdk" \
-              --requirement "hermes-plugin-qdrant-memory[mcp] @ file://$GITHUB_WORKSPACE" \
-              --requirement "mcp>=$sdk,<$upper" \
-              --requirement 'pytest>=8,<10' --requirement 'pytest-cov>=6,<8'
-            cd "$GITHUB_WORKSPACE"
-            COVERAGE_FILE="$GITHUB_WORKSPACE/.host/.coverage" \
-              "$RUNNER_TEMP/mcp-coverage-$sdk/bin/python" -m pytest -q tests/standalone \
-              --cov=qdrant_memory --cov-report= --cov-append
-            cd .pm-host
-          done
-          cd "$GITHUB_WORKSPACE"
-          .test-env/bin/python -m coverage xml --data-file=.host/.coverage -o coverage.xml
       - name: Build and install wheel through PM
         if: matrix.host.name != 'latest-main'
         working-directory: .pm-host
@@ -161,9 +142,55 @@ jobs:
           path: coverage.xml
           if-no-files-found: error
 
+  mcp-coverage:
+    name: MCP SDK 1.x and 2.x protocol coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.14'
+      - name: Check out fixed dependency manager
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+          repository: NousResearch/hermes-agent
+          ref: 4787e4d56fc8d9265d4c7d3c0fe5accee86b4078
+          path: .pm-host
+      - name: Collect both SDK branches in isolated environments
+        working-directory: .pm-host
+        env:
+          HERMES_HOME: ${{ runner.temp }}/mcp-coverage-home
+          HERMES_RUNTIME_DIR: ${{ runner.temp }}/mcp-coverage-runtime
+        run: |
+          for sdk in 1 2; do
+            upper=$((sdk + 1))
+            python -m pm.build_env --out "$RUNNER_TEMP/mcp-coverage-$sdk" \
+              --requirement "hermes-plugin-qdrant-memory[mcp] @ file://$GITHUB_WORKSPACE" \
+              --requirement "mcp>=$sdk,<$upper" \
+              --requirement 'pytest>=8,<10' --requirement 'pytest-cov>=6,<8'
+            cd "$GITHUB_WORKSPACE"
+            COVERAGE_FILE="$GITHUB_WORKSPACE/.coverage-mcp" \
+              "$RUNNER_TEMP/mcp-coverage-$sdk/bin/python" -m pytest -q tests/standalone \
+              --cov=qdrant_memory --cov-report= --cov-append
+            cd .pm-host
+          done
+          cd "$GITHUB_WORKSPACE"
+          "$RUNNER_TEMP/mcp-coverage-2/bin/python" -m coverage xml \
+            --data-file=.coverage-mcp -o coverage-mcp.xml
+      - name: Save MCP protocol coverage for SonarCloud
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: mcp-coverage
+          path: coverage-mcp.xml
+          if-no-files-found: error
+
   sonarcloud:
     name: SonarCloud quality gate
-    needs: tests
+    needs: [tests, mcp-coverage]
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -175,6 +202,9 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: python-coverage
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: mcp-coverage
       - name: Require SonarCloud credentials
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -281,7 +311,7 @@ jobs:
 
   scan-gate:
     name: Required security scan gate
-    needs: [lint, tests, sonarcloud, snyk, snyk-code]
+    needs: [lint, tests, mcp-coverage, sonarcloud, snyk, snyk-code]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -290,13 +320,14 @@ jobs:
         env:
           LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.tests.result }}
+          MCP_RESULT: ${{ needs.mcp-coverage.result }}
           SONAR_RESULT: ${{ needs.sonarcloud.result }}
           SNYK_RESULT: ${{ needs.snyk.result }}
           SNYK_CODE_RESULT: ${{ needs.snyk-code.result }}
           DEPENDABOT: ${{ github.event_name == 'pull_request' && github.actor == 'dependabot[bot]' }}
         run: |
-          if [ "$LINT_RESULT" != success ] || [ "$TEST_RESULT" != success ]; then
-            echo "::error::Required checks did not succeed: lint=$LINT_RESULT tests=$TEST_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
+          if [ "$LINT_RESULT" != success ] || [ "$TEST_RESULT" != success ] || [ "$MCP_RESULT" != success ]; then
+            echo "::error::Required checks did not succeed: lint=$LINT_RESULT tests=$TEST_RESULT mcp=$MCP_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
             exit 1
           fi
           if [ "$DEPENDABOT" = "true" ]; then
