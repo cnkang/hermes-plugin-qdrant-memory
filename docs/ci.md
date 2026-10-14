@@ -91,6 +91,18 @@ the `MemoryManager.sync_all()` boundary checks on top of the required latest-mai
 lane. A green historical run applies only to the exact Hermes SHA printed in that
 run summary.
 
+## Host pin compatibility
+
+The **Host pin compatibility** job reconciles every dependency pin the tested
+Hermes hosts declare, including optional extras and dependency groups, with
+this plugin's dependency specifiers on the minimum and latest host checkouts.
+It then co-resolves the host pins for shared packages together with the
+plugin's optional extras through the pinned dependency builder. A pin outside
+the plugin's range, or a resolution that cannot satisfy both sides, fails the
+job. This mirrors the dependency manager's install-time co-resolution of the
+plugin inside the host workspace. The required security scan gate includes
+this job.
+
 ## Platform compatibility
 
 `.github/workflows/platform-compat.yml` runs the local behavior and host lifecycle

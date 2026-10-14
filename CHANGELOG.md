@@ -4,6 +4,10 @@
 
 - Documentation: align the README install pins and the demo script with the
   commit the `v0.2.2` tag points to.
+- CI: add a host pin compatibility job. It reconciles the plugin's dependency
+  specifiers with the tested Hermes hosts' pins, including optional extras and
+  dependency groups, and co-resolves the shared pins through the pinned
+  dependency builder.
 
 ## 0.2.2
 
