@@ -8,6 +8,7 @@
 .coverage-env/
 .scan-env/
 .lint-env/
+.min-env/
 .ruff_cache/
 .host/
 .coverage*
@@ -31,3 +32,23 @@ reports/
 
 # Internal release preparation records; public notes live in docs/releases/v*.md
 docs/releases/PRE_RELEASE_*.md
+
+# Local leftovers: editor settings, patch files, extra caches, tool output and probe/scratch directories
+.idea/
+venv/
+*.py[cod]
+.mypy_cache/
+htmlcov/
+*.orig
+*.rej
+*.bak
+*.tmp
+*.swp
+*.swo
+*.cast
+._*
+Thumbs.db
+.code-review-graph/
+__pyprobe__/
+.scratch/
+scratch/
