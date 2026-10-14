@@ -98,3 +98,37 @@ def test_plugin_requirement_includes_extras(tmp_path):
     result = run(host, plugin, "--print-plugin-requirement")
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip().startswith("hermes-plugin-example[mcp] @ file://")
+
+
+def test_wildcard_host_pin_passes(tmp_path):
+    """A wildcard host pin inside the plugin's range passes."""
+    host = write(tmp_path, "host", HOST.replace('"mcp==2.0.0"', '"mcp==2.*"'))
+    plugin = write(tmp_path, "plugin", PLUGIN_OK)
+    result = run(host, plugin)
+    assert result.returncode == 0, result.stderr
+
+
+def test_wildcard_host_pin_conflict_fails(tmp_path):
+    """A wildcard host pin outside the plugin's range fails."""
+    host = write(tmp_path, "host", HOST.replace('"mcp==2.0.0"', '"mcp==3.*"'))
+    plugin = write(tmp_path, "plugin", PLUGIN_OK)
+    result = run(host, plugin)
+    assert result.returncode == 1
+    assert "mcp" in result.stderr
+
+
+def test_overlapping_ranges_pass(tmp_path):
+    """Ranges that overlap between boundary literals pass."""
+    host = write(tmp_path, "host", HOST.replace('"mcp==2.0.0"', '"mcp>1,<2"'))
+    plugin = write(tmp_path, "plugin", PLUGIN_OK.replace("mcp>=1.30,<3", "mcp>=1,<=2"))
+    result = run(host, plugin)
+    assert result.returncode == 0, result.stderr
+
+
+def test_inconsistent_host_pins_fail(tmp_path):
+    """Two different exact host pins for one package fail with a clear message."""
+    host = write(tmp_path, "host", HOST.replace('dev = ["mcp==2.0.0"]', 'dev = ["mcp==2.1.0"]'))
+    plugin = write(tmp_path, "plugin", PLUGIN_OK)
+    result = run(host, plugin)
+    assert result.returncode == 1
+    assert "inconsistent" in result.stderr

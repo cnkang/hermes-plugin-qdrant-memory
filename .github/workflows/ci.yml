@@ -189,32 +189,34 @@ jobs:
           if-no-files-found: error
 
   host-pins:
-    name: Host pin compatibility
+    name: Host pin compatibility (${{ matrix.host.name }}, Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.14']
+        host:
+          - name: minimum
+            ref: f97608f178d1ffeca59860195ab7da295f7c8e5f
+          - name: latest-main
+            ref: main
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: '3.14'
+          python-version: ${{ matrix.python }}
       - name: Install reconciliation tooling
         run: python -m pip install 'packaging>=24,<27'
-      - name: Check out minimum Hermes host
+      - name: Check out Hermes host
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
           persist-credentials: false
           repository: NousResearch/hermes-agent
-          ref: f97608f178d1ffeca59860195ab7da295f7c8e5f
-          path: .host-minimum
-      - name: Check out latest Hermes host
-        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
-        with:
-          persist-credentials: false
-          repository: NousResearch/hermes-agent
-          ref: main
-          path: .host-latest-main
+          ref: ${{ matrix.host.ref }}
+          path: .host
       - name: Check out fixed dependency manager
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
@@ -222,21 +224,21 @@ jobs:
           repository: NousResearch/hermes-agent
           ref: 4787e4d56fc8d9265d4c7d3c0fe5accee86b4078
           path: .pm-host
+      - name: Record host revision
+        run: |
+          echo "host-pins ${{ matrix.host.name }}: $(git -C .host rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - name: Reconcile host pins and co-resolve shared pins
         working-directory: .pm-host
         env:
           HERMES_HOME: ${{ runner.temp }}/hermes-pins-home
           HERMES_RUNTIME_DIR: ${{ runner.temp }}/hermes-pins-runtime
         run: |
-          for host in minimum latest-main; do
-            python "$GITHUB_WORKSPACE/scripts/check_host_pins.py" --host "$GITHUB_WORKSPACE/.host-$host"
-            python "$GITHUB_WORKSPACE/scripts/check_host_pins.py" --host "$GITHUB_WORKSPACE/.host-$host" \
-              --emit-requirements "$RUNNER_TEMP/host-pins-$host.txt"
-            plugin_requirement=$(python "$GITHUB_WORKSPACE/scripts/check_host_pins.py" \
-              --host "$GITHUB_WORKSPACE/.host-$host" --print-plugin-requirement)
-            python -m pm.build_env --out "$RUNNER_TEMP/pin-check-$host" \
-              --requirements "$RUNNER_TEMP/host-pins-$host.txt" --requirement "$plugin_requirement"
-          done
+          plugin_requirement=$(python "$GITHUB_WORKSPACE/scripts/check_host_pins.py" \
+            --host "$GITHUB_WORKSPACE/.host" \
+            --emit-requirements "$RUNNER_TEMP/host-pins.txt" \
+            --print-plugin-requirement)
+          python -m pm.build_env --out "$RUNNER_TEMP/pin-check" \
+            --requirements "$RUNNER_TEMP/host-pins.txt" --requirement "$plugin_requirement"
 
   sonarcloud:
     name: SonarCloud quality gate

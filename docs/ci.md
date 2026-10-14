@@ -44,7 +44,7 @@ Fork PRs run
 tests without scanner credentials. Their scanner jobs are skipped by conditions.
 A missing required token fails a scanner job only when that job is scheduled.
 The `Required security scan gate` runs with `always()` and fails for any failed,
-cancelled or skipped prerequisite (lint, tests, SonarCloud and both Snyk jobs), including
+cancelled or skipped prerequisite (lint, tests, MCP protocol coverage, host pin compatibility, SonarCloud and both Snyk jobs), including
 safely skipped fork scans. Dependabot pull requests are the one deliberate
 exception. They run lint, tests and the platform matrix. Their credentialed
 scanner jobs are skipped because Dependabot runs cannot read repository
@@ -93,15 +93,16 @@ run summary.
 
 ## Host pin compatibility
 
-The **Host pin compatibility** job reconciles every dependency pin the tested
-Hermes hosts declare, including optional extras and dependency groups, with
-this plugin's dependency specifiers on the minimum and latest host checkouts.
-It then co-resolves the host pins for shared packages together with the
-plugin's optional extras through the pinned dependency builder. A pin outside
-the plugin's range, or a resolution that cannot satisfy both sides, fails the
-job. This mirrors the dependency manager's install-time co-resolution of the
-plugin inside the host workspace. The required security scan gate includes
-this job.
+The **Host pin compatibility** job reconciles every host pin for a package
+this plugin also requires, including pins in optional extras and dependency
+groups, with the plugin's dependency specifiers on the minimum and latest host
+checkouts. It runs under Python 3.11 and 3.14 and records each resolved host
+revision in the run summary. It then co-resolves the host pins for shared
+packages together with the plugin's optional extras through the pinned
+dependency builder. A pin outside the plugin's range, or a resolution that
+cannot satisfy both sides, fails the job. This mirrors the dependency manager's
+install-time co-resolution of the plugin inside the host workspace. The
+required security scan gate includes this job.
 
 ## Platform compatibility
 
