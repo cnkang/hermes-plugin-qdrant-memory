@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Documentation: align the README install pins and the demo script with the
+  commit the `v0.2.2` tag points to.
+
 ## 0.2.2
 
 - Support MCP Python SDK 1.x and 2.x through their respective server handler
