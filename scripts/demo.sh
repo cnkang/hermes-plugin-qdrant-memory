@@ -123,6 +123,9 @@ elif [ "$pre" != "0" ]; then
 fi
 
 say "Session 1 — tell Hermes a preference (the plugin stores it automatically)"
+# Stop any gateway left by an earlier run so the session starts cleanly and the
+# inventory reads are not blocked by a stale writer lease.
+hermes gateway stop >/dev/null 2>&1 || true
 before=$(memories_total)
 [ "$before" -ge 0 ] || fail "cannot read the memory store"
 run_chat 780 "Please remember: my project codename is ORION-7 and my main deploy node is 192.0.2.10." || fail "session 1 chat"
@@ -157,9 +160,12 @@ say "Session 2 — a fresh session recalls the preference"
 # bounded number of times and show the successful answer.
 recall_out=""
 for attempt in 1 2 3; do
+  # Release the previous attempt's gateway before starting a new session.
+  hermes gateway stop >/dev/null 2>&1 || true
+  sleep 3
   recall_out=$(run_chat 600 "Search your durable memory: what is my project codename, and which node do I deploy to?") || fail "session 2 chat"
   printf '%s\n' "$recall_out" | grep -q "ORION-7" && break
-  echo "  ... the recall answer missed the codename; retrying (attempt $((attempt + 1)))"
+  [ "$attempt" -lt 3 ] && echo "  ... the recall answer missed the codename; retrying (attempt $((attempt + 1)))"
 done
 printf '%s\n' "$recall_out"
 printf '%s\n' "$recall_out" | grep -q "ORION-7" || fail "the recall did not return the stored codename"
