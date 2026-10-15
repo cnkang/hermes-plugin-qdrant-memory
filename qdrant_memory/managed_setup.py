@@ -7,7 +7,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from .config import DEFAULTS, merge, validate
+from .config import DEFAULTS, merge, validate, validate_url
 from .private_paths import checked_absolute_path
 
 
@@ -64,6 +64,11 @@ def _service_settings(args):
         }
     if not args.model or args.dimensions is None or not args.base_url:
         raise ValueError("Remote embedding requires model, dimensions and a service endpoint")
+    # Mirror the runtime's key-aware transport check so an endpoint that would
+    # fail at first use is refused during setup instead.
+    api_key = os.environ.get(args.embedding_api_key_env or "EMBEDDING_API_KEY")
+    if api_key:
+        validate_url(args.base_url, api_key=api_key)
     return {"model": args.model, "dimensions": args.dimensions, "base_url": args.base_url}
 
 
@@ -96,10 +101,21 @@ def _claim_profile(home, cfg, owner):
     marker = home / ".setup-owner.json"
     path = home / "qdrant-memory.json"
     if marker.exists() or marker.is_symlink():
-        if _read(marker) != owner:
-            if path.exists() or path.is_symlink():
+        existing = _read(marker)
+        if existing != owner:
+            ours = (
+                isinstance(existing, dict)
+                and existing.get("owner") == "qdrant-memory-setup"
+                and existing.get("schema") == 1
+            )
+            if (
+                not ours
+                or path.exists()
+                or path.is_symlink()
+                or any(entry.name != marker.name for entry in home.iterdir())
+            ):
                 raise ManagedProfileConflictError("Setup cannot change an owned profile's settings")
-            # A failed first attempt leaves only the marker; a corrected request may retry.
+            # A failed first attempt leaves only its marker; a corrected request may retry.
             _write_new(marker, owner, replace=True)
         if (path.exists() or path.is_symlink()) and _read(path) != cfg:
             raise ManagedProfileConflictError("Profile settings have changed")
