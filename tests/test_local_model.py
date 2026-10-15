@@ -86,7 +86,7 @@ def test_parallel_preparation_respects_ownership(tmp_path, model_source):
     """A competing preparation cannot bypass the provisioning lock."""
     module, _, requests = model_source
     with portalocker.Lock(tmp_path / ".prepare.lock", mode="a", timeout=0):
-        with pytest.raises(portalocker.exceptions.LockException):
+        with pytest.raises(module.LocalModelNotPreparedError, match="already in progress"):
             module.prepare_model(tmp_path)
     assert requests == []
 

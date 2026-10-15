@@ -175,3 +175,30 @@ def test_cpu_setup_requires_dependencies_before_creating_or_downloading(
     assert standalone.main(argv) == 1
     assert not home.exists()
     assert "LocalEmbeddingUnavailableError" in capsys.readouterr().out
+
+
+def test_setup_retries_a_failed_claim_with_corrected_settings(tmp_path, service, capsys):
+    """A failed first attempt leaves only its marker; corrected settings may retry."""
+    home = tmp_path / "new-profile"
+    home.mkdir()
+    (home / ".setup-owner.json").write_text(
+        json.dumps({"owner": "qdrant-memory-setup", "schema": 1, "configuration_sha256": "stale"}),
+        encoding="utf-8",
+    )
+    argv = arguments(tmp_path, service)
+    assert standalone.main(argv) == 0
+    assert (home / "qdrant-memory.json").exists()
+    assert json.loads((home / ".setup-owner.json").read_text())["configuration_sha256"] != "stale"
+
+
+def test_setup_reports_a_running_concurrent_setup(tmp_path, service, capsys):
+    """A competing setup fails with a bounded conflict instead of a raw lock error."""
+    import portalocker
+
+    argv = arguments(tmp_path, service)
+    lock = tmp_path / ".new-profile.setup.lock"
+    with portalocker.Lock(lock, mode="a", timeout=0):
+        assert standalone.main(argv) == 1
+    output = capsys.readouterr().out
+    assert "ManagedProfileConflictError" in output
+    assert "LockException" not in output

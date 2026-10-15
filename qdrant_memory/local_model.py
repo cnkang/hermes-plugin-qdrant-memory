@@ -184,19 +184,25 @@ def prepare_model(cache_dir=None):
     lock_path = root / ".prepare.lock"
     if lock_path.is_symlink():
         raise LocalModelIntegrityError("Unsafe model preparation lock")
-    with portalocker.Lock(lock_path, mode="a", timeout=0):
+    lock = portalocker.Lock(lock_path, mode="a", timeout=0)
+    try:
+        lock.acquire()
+    except portalocker.exceptions.LockException as exc:
+        raise LocalModelNotPreparedError("Model preparation is already in progress") from exc
+    try:
         target = _target(root)
         if target.exists() or target.is_symlink():
             return verify_model(root)
         staging = Path(tempfile.mkdtemp(prefix=".prepare-", dir=root))
         try:
-            deadline = time.monotonic() + 300
             with httpx.Client(
                 timeout=httpx.Timeout(30, connect=10),
                 follow_redirects=True,
                 event_hooks={"request": [_require_https]},
             ) as client:
                 for name, expected in ARTIFACTS.items():
+                    # Give each artifact its own window so a slow earlier file cannot starve the rest.
+                    deadline = time.monotonic() + 300
                     _download(client, staging / name, name, expected, deadline)
             with (staging / "ready.json").open("x", encoding="utf-8") as marker:
                 json.dump({"pipeline": pipeline_identity()}, marker)
@@ -210,5 +216,7 @@ def prepare_model(cache_dir=None):
         finally:
             # Never remove a completed model, profile, collection or ledger.
             if staging.exists():
-                shutil.rmtree(staging)
-        return verify_model(root)
+                shutil.rmtree(staging, ignore_errors=True)
+    finally:
+        lock.release()
+    return verify_model(root)
