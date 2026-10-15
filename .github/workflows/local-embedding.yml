@@ -47,7 +47,7 @@ jobs:
         run: >-
           python -c "import xml.etree.ElementTree as E; r=E.parse('local-model.xml');
           s=r.findall('.//testsuite');
-          assert sum(int(x.get('tests',0)) for x in s)>=2;
+          assert sum(int(x.get('tests',0)) for x in s)>=3;
           assert sum(int(x.get('skipped',0)) for x in s)==0"
       - name: Save public acceptance results
         if: always()
