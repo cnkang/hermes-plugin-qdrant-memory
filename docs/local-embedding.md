@@ -1,7 +1,7 @@
 # Optional local CPU embedding and guided setup
 
 These commands ship with Runtime 0.3.0. Published Runtime 0.2.2 and MCP
-distribution 0.1.3 predate them; those packages keep their existing
+distribution 0.1.3 predate them. Those packages keep their existing
 configuration workflow.
 
 ## Choose your embedding provider

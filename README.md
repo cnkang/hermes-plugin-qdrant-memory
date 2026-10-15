@@ -8,10 +8,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 > **Runtime 0.3.0** adds optional offline CPU embedding and trusted setup
-> commands to the standalone CLI/MCP, with MCP Python SDK 1.x and 2.x support.
+> commands to the standalone CLI/MCP. It supports MCP Python SDK 1.x and 2.x.
 > Explicit writes retain canonical-text deduplication without an LLM.
-> MCP distribution 0.1.3 pins Runtime 0.2.2; the Runtime 0.3.0 update follows in
-> the MCP repository.
+> MCP distribution 0.1.3 pins Runtime 0.2.2. The Runtime 0.3.0 update follows
+> in the MCP repository.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.
 > See [release notes](docs/releases/0.3.0.md) and [validation](docs/validation.md).
