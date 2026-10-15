@@ -5,9 +5,9 @@
 - Add optional, explicitly selected CPU embeddings with revision-pinned model
   artifacts, SHA-256 verification, offline startup and rejection of input beyond
   the model's 128-token limit. Ollama and OpenAI-compatible defaults/identities
-  remain unchanged; the CPU dependency set is an optional `local` extra.
+  remain unchanged. The CPU dependency set is an optional `local` extra.
   Model preparation syncs artifact/marker contents before publication and syncs
-  directory metadata on POSIX; sync failures do not publish partial caches.
+  directory metadata on POSIX. Sync failures do not publish partial caches.
 - Add trusted `prepare-model` and `setup` CLI commands. Setup requires an
   embedding choice, initializes only a new private embedded profile, preserves
   writer ownership/recovery and refuses configuration changes on repeat calls.
