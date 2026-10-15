@@ -106,8 +106,8 @@ def _claim_profile(home, cfg, owner):
     elif any(home.iterdir()):
         raise ManagedProfileConflictError("Setup cannot adopt an existing profile")
     else:
-        os.chmod(home, 0o700)
         _write_new(marker, owner)
+    os.chmod(home, 0o700)
     return path
 
 
