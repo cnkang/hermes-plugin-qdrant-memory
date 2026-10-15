@@ -39,31 +39,39 @@ def _write_new(path, value):
         Path(temporary).unlink(missing_ok=True)
 
 
-def configuration(args):
-    """Build non-secret settings only for the explicitly selected provider."""
-    provider = args.embedding_provider
-    emb = {"mode": "plugin", "provider": provider, "distance": "Cosine"}
-    if provider == "fastembed":
-        from .local_model import DIMENSIONS, MODEL_NAME
+def _cpu_settings(args):
+    """Accept only settings belonging to the explicitly selected CPU pipeline."""
+    from .local_model import DIMENSIONS, MODEL_NAME
 
-        emb.update(
-            model=MODEL_NAME if args.model is None else args.model,
-            dimensions=DIMENSIONS if args.dimensions is None else args.dimensions,
-        )
-        if args.model_cache_dir is not None:
-            emb["model_cache_dir"] = str(args.model_cache_dir)
-        if args.base_url is not None:
-            raise ValueError("CPU embedding does not use a service endpoint")
-    elif provider == "ollama":
-        emb.update(
+    if args.base_url is not None:
+        raise ValueError("CPU embedding does not use a service endpoint")
+    settings = {
+        "model": MODEL_NAME if args.model is None else args.model,
+        "dimensions": DIMENSIONS if args.dimensions is None else args.dimensions,
+    }
+    if args.model_cache_dir is not None:
+        settings["model_cache_dir"] = str(args.model_cache_dir)
+    return settings
+
+
+def _service_settings(args):
+    """Keep existing Ollama defaults and require explicit remote service settings."""
+    if args.embedding_provider == "ollama":
+        return dict(
             model="qwen3-embedding:4b" if args.model is None else args.model,
             dimensions=2560 if args.dimensions is None else args.dimensions,
             base_url=args.base_url or "http://127.0.0.1:11434",
         )
-    else:
-        if not args.model or args.dimensions is None or not args.base_url:
-            raise ValueError("Remote embedding requires model, dimensions and HTTPS endpoint")
-        emb.update(model=args.model, dimensions=args.dimensions, base_url=args.base_url)
+    if not args.model or args.dimensions is None or not args.base_url:
+        raise ValueError("Remote embedding requires model, dimensions and HTTPS endpoint")
+    return dict(model=args.model, dimensions=args.dimensions, base_url=args.base_url)
+
+
+def configuration(args):
+    """Build non-secret settings only for the explicitly selected provider."""
+    provider = args.embedding_provider
+    emb = {"mode": "plugin", "provider": provider, "distance": "Cosine"}
+    emb.update(_cpu_settings(args) if provider == "fastembed" else _service_settings(args))
     if not emb["model"]:
         raise ValueError("An embedding model is required")
     if provider != "fastembed":
@@ -78,6 +86,25 @@ def configuration(args):
     }
     validate(merge(DEFAULTS, cfg))
     return cfg
+
+
+def _claim_profile(home, cfg, owner):
+    """Create or validate ownership while the caller holds the provisioning lock."""
+    if home.is_symlink():
+        raise ManagedProfileConflictError("Unsafe profile destination")
+    home.mkdir(mode=0o700, exist_ok=True)
+    marker = home / ".setup-owner.json"
+    path = home / "qdrant-memory.json"
+    if marker.exists() or marker.is_symlink():
+        if _read(marker) != owner:
+            raise ManagedProfileConflictError("Setup cannot change an owned profile's settings")
+        if (path.exists() or path.is_symlink()) and _read(path) != cfg:
+            raise ManagedProfileConflictError("Profile settings have changed")
+    elif any(home.iterdir()):
+        raise ManagedProfileConflictError("Setup cannot adopt an existing profile")
+    else:
+        _write_new(marker, owner)
+    return path
 
 
 def setup_profile(args):
@@ -110,21 +137,7 @@ def setup_profile(args):
     digest = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()
     owner = {"owner": "qdrant-memory-setup", "schema": 1, "configuration_sha256": digest}
     with portalocker.Lock(lock, mode="a", timeout=0):
-        if home.is_symlink():
-            raise ManagedProfileConflictError("Unsafe profile destination")
-        home.mkdir(mode=0o700, exist_ok=True)
-        marker = home / ".setup-owner.json"
-        path = home / "qdrant-memory.json"
-        if marker.exists() or marker.is_symlink():
-            if _read(marker) != owner:
-                raise ManagedProfileConflictError("Setup cannot change an owned profile's settings")
-            if path.exists() or path.is_symlink():
-                if _read(path) != cfg:
-                    raise ManagedProfileConflictError("Profile settings have changed")
-        elif any(home.iterdir()):
-            raise ManagedProfileConflictError("Setup cannot adopt an existing profile")
-        else:
-            _write_new(marker, owner)
+        path = _claim_profile(home, cfg, owner)
         if cfg["embedding"]["provider"] == "fastembed":
             from .local_model import prepare_model
 

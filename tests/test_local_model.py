@@ -132,6 +132,8 @@ def test_manifest_contains_only_flat_nonexecutable_immutable_artifacts():
     assert local_model.DOWNLOAD_BYTES == sum(size for _, size in local_model.ARTIFACTS.values())
     for name, (digest, size) in local_model.ARTIFACTS.items():
         assert Path(name).name == name
-        assert "/" not in name and "\\" not in name
+        assert "/" not in name
+        assert "\\" not in name
         assert name.endswith((".json", ".onnx"))
-        assert len(digest) == 64 and size > 0
+        assert len(digest) == 64
+        assert size > 0
