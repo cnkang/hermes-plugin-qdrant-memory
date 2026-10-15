@@ -152,7 +152,21 @@ def _download(client, path, name, expected, deadline):
                 if received > expected[1] or time.monotonic() > deadline:
                     raise LocalModelIntegrityError("Model download exceeded its size or time limit")
                 stream.write(block)
+            stream.flush()
+            os.fsync(stream.fileno())
     _check_artifact(path, expected)
+
+
+def _sync_directory(path):
+    """Persist directory metadata where Python exposes directory synchronization."""
+    if sys.platform == "win32":
+        # Python cannot fsync a Windows directory handle; regular files are synced.
+        return
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def prepare_model(cache_dir=None):
@@ -184,12 +198,15 @@ def prepare_model(cache_dir=None):
             ) as client:
                 for name, expected in ARTIFACTS.items():
                     _download(client, staging / name, name, expected, deadline)
-            (staging / "ready.json").write_text(
-                json.dumps({"pipeline": pipeline_identity()}), encoding="utf-8"
-            )
+            with (staging / "ready.json").open("x", encoding="utf-8") as marker:
+                json.dump({"pipeline": pipeline_identity()}, marker)
+                marker.flush()
+                os.fsync(marker.fileno())
+            _sync_directory(staging)
             if target.exists() or target.is_symlink():
                 raise LocalModelIntegrityError("Model destination changed during preparation")
             staging.rename(target)
+            _sync_directory(root)
         finally:
             # Never remove a completed model, profile, collection or ledger.
             if staging.exists():
