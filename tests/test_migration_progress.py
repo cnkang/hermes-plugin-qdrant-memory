@@ -89,11 +89,14 @@ def test_blocked_batch_reports_waiting_and_stops_thread(tmp_path, monkeypatch):
         def write(self, value):
             """Capture output and release the simulated blocked service."""
             result = super().write(value)
-            if "waiting, no progress" in value:
+            if "Embedding and writing pending records 0/1; waiting, no progress" in value:
                 waiting.set()
             return result
 
     stream = Stream()
+    # A slower runner may emit a heartbeat before it reaches the write phase.
+    stream.write("Validating source 0/1; waiting, no progress for 1s\n")
+    assert not waiting.is_set()
     original = rt.store.upsert
 
     def blocked(records):
