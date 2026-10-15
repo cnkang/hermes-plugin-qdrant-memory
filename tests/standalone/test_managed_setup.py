@@ -202,3 +202,16 @@ def test_setup_reports_a_running_concurrent_setup(tmp_path, service, capsys):
     output = capsys.readouterr().out
     assert "ManagedProfileConflictError" in output
     assert "LockException" not in output
+
+
+@pytest.mark.parametrize("provider", ["ollama", "openai-compatible"])
+def test_setup_refuses_plaintext_remote_with_a_configured_key(
+    tmp_path, service, capsys, monkeypatch, provider
+):
+    """Mirror the runtime's key-aware transport check during setup."""
+    monkeypatch.setenv("SETUP_TEST_KEY", "secret")
+    argv = arguments(tmp_path, service, provider)
+    argv[argv.index("--base-url") + 1] = "http://remote.example.com:11434"
+    argv += ["--embedding-api-key-env", "SETUP_TEST_KEY"]
+    assert standalone.main(argv) == 1
+    assert "ValueError" in capsys.readouterr().out

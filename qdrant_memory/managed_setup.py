@@ -64,11 +64,6 @@ def _service_settings(args):
         }
     if not args.model or args.dimensions is None or not args.base_url:
         raise ValueError("Remote embedding requires model, dimensions and a service endpoint")
-    # Mirror the runtime's key-aware transport check so an endpoint that would
-    # fail at first use is refused during setup instead.
-    api_key = os.environ.get(args.embedding_api_key_env or "EMBEDDING_API_KEY")
-    if api_key:
-        validate_url(args.base_url, api_key=api_key)
     return {"model": args.model, "dimensions": args.dimensions, "base_url": args.base_url}
 
 
@@ -83,6 +78,12 @@ def configuration(args):
         if args.model_cache_dir is not None:
             raise ValueError("A model cache applies only to explicitly selected CPU embedding")
         emb["api_key_env"] = args.embedding_api_key_env
+        # Mirror the runtime's key-aware transport check for both service
+        # providers, so an endpoint that would fail at first use is refused
+        # during setup instead.
+        api_key = os.environ.get(args.embedding_api_key_env or "EMBEDDING_API_KEY")
+        if api_key:
+            validate_url(emb["base_url"], api_key=api_key)
     cfg = {
         "schema_version": 1,
         "scope": {"user_id": args.user_id, "agent_id": args.agent_id},
@@ -112,16 +113,21 @@ def _claim_profile(home, cfg, owner):
                 not ours
                 or path.exists()
                 or path.is_symlink()
-                or any(entry.name != marker.name for entry in home.iterdir())
+                or any(
+                    entry.name != marker.name and not entry.name.startswith(".setup-")
+                    for entry in home.iterdir()
+                )
             ):
                 raise ManagedProfileConflictError("Setup cannot change an owned profile's settings")
             # A failed first attempt leaves only its marker; a corrected request may retry.
+            os.chmod(home, 0o700)
             _write_new(marker, owner, replace=True)
         if (path.exists() or path.is_symlink()) and _read(path) != cfg:
             raise ManagedProfileConflictError("Profile settings have changed")
     elif any(home.iterdir()):
         raise ManagedProfileConflictError("Setup cannot adopt an existing profile")
     else:
+        os.chmod(home, 0o700)
         _write_new(marker, owner)
     os.chmod(home, 0o700)
     return path
