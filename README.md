@@ -91,8 +91,8 @@ The published v0.1.0 plugin release does not include the MCP entrypoint.
 
 ![Terminal recording: install the plugin, store a preference, and recall it in a new session](https://raw.githubusercontent.com/cnkang/hermes-plugin-qdrant-memory/main/assets/demo.gif)
 
-The recording shows the full flow on a clean profile. It installs from the
-official Hermes Plugin Catalog, teaches a preference, and waits for the
+The recording shows the full flow on a clean profile. It installs the
+verified pinned Runtime source, teaches a preference, and waits for the
 background extraction. Then it recalls the preference in a new session and
 cleans up the demo scope. All steps
 run in embedded mode. `scripts/demo.sh` reproduces the same walkthrough with

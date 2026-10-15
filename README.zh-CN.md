@@ -78,7 +78,7 @@ flowchart LR
 
 ![终端录屏：安装插件、存入偏好、并在新会话中召回](https://raw.githubusercontent.com/cnkang/hermes-plugin-qdrant-memory/main/assets/demo.gif)
 
-录屏展示在干净 profile 上的完整流程：从官方 Hermes Plugin Catalog 安装、教一条偏好、
+录屏展示在干净 profile 上的完整流程：安装已验证的固定版本源码、教一条偏好、
 等待后台提取、在新会话中召回，并清理演示作用域。全部步骤在 embedded 模式下运行；
 `scripts/demo.sh` 以固定版本复现同一流程。
 
