@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add optional, explicitly selected CPU embeddings with revision-pinned model
+  artifacts, SHA-256 verification, offline startup and rejection of input beyond
+  the model's 128-token limit. Ollama and OpenAI-compatible defaults/identities
+  remain unchanged; the CPU dependency set is an optional `local` extra.
+- Add trusted `prepare-model` and `setup` CLI commands. Setup requires an
+  embedding choice, initializes only a new private embedded profile, preserves
+  writer ownership/recovery and refuses configuration changes on repeat calls.
+  The four conversational MCP tools and existing storage format are unchanged.
 - Documentation: align the README install pins and the demo script with the
   commit the `v0.2.2` tag points to.
 - CI: add a host pin compatibility job. It reconciles the plugin's dependency

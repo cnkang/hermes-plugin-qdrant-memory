@@ -43,7 +43,7 @@ jobs:
         run: >-
           python -c "import xml.etree.ElementTree as E; r=E.parse('standalone-results.xml');
           s=r.findall('.//testsuite');
-          assert sum(int(x.get('tests',0)) for x in s)>=27;
+          assert sum(int(x.get('tests',0)) for x in s)>=37;
           assert sum(int(x.get('skipped',0)) for x in s)==0"
 
       - name: Save standalone acceptance results
