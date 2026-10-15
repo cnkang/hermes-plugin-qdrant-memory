@@ -48,7 +48,7 @@ class LocalModelNotPreparedError(RuntimeError):
     """Require explicit model preparation before starting a memory session."""
 
 
-class LocalModelPreparationBusyError(LocalModelNotPreparedError):
+class LocalModelPreparationBusyError(RuntimeError):
     """Another process holds the model preparation lock; wait for it and retry."""
 
 
