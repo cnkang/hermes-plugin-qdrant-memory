@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from .models import digest, now
@@ -44,7 +45,7 @@ def has_pending_reset_file(home, collection):
     path = Path(home) / "qdrant-memory" / "state.db"
     if not path.is_file():
         return False
-    with sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as db:
         exists = db.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
             (RESET_INTENTS_TABLE,),
@@ -239,7 +240,7 @@ def pending_scope_deletes_file(home, collection):
     path = Path(home) / "qdrant-memory" / "state.db"
     if not path.is_file():
         return []
-    with sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as db:
         if not _scope_deletes_table_exists(db):
             return []
         return [
