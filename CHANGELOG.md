@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - Add optional, explicitly selected CPU embeddings with revision-pinned model
   artifacts, SHA-256 verification, offline startup and rejection of input beyond
