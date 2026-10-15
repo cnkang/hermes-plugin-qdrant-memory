@@ -10,6 +10,8 @@
   embedding choice, initializes only a new private embedded profile, preserves
   writer ownership/recovery and refuses configuration changes on repeat calls.
   The four conversational MCP tools and existing storage format are unchanged.
+- Close read-only recovery-inspection SQLite connections on success, early
+  return and query failure, without relying on garbage collection.
 - Documentation: align the README install pins and the demo script with the
   commit the `v0.2.2` tag points to.
 - CI: add a host pin compatibility job. It reconciles the plugin's dependency
