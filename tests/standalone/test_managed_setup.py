@@ -200,7 +200,7 @@ def test_setup_reports_a_running_concurrent_setup(tmp_path, service, capsys):
     with portalocker.Lock(lock, mode="a", timeout=0):
         assert standalone.main(argv) == 1
     output = capsys.readouterr().out
-    assert "ManagedProfileConflictError" in output
+    assert "ManagedProfileBusyError" in output
     assert "LockException" not in output
 
 
@@ -229,3 +229,54 @@ def test_setup_reclaims_a_marker_with_stale_temporary_files(tmp_path, service, c
     argv = arguments(tmp_path, service)
     assert standalone.main(argv) == 0
     assert (home / "qdrant-memory.json").exists()
+
+
+def test_setup_refuses_conflicts_before_cpu_preparation(tmp_path, service, monkeypatch, capsys):
+    """An occupied profile is refused before any model download starts."""
+    from qdrant_memory import local_embedding, local_model
+
+    monkeypatch.setattr(local_embedding, "require_local_dependencies", lambda: None)
+    monkeypatch.setattr(
+        local_model, "prepare_model", lambda *a, **k: pytest.fail("must not prepare")
+    )
+    home = tmp_path / "new-profile"
+    home.mkdir()
+    (home / "existing-memory.txt").write_text("keep")
+    argv = [
+        "setup",
+        "--profile",
+        str(home),
+        "--embedding-provider",
+        "fastembed",
+        "--model-cache-dir",
+        str(tmp_path / "cache"),
+        "--agent-id",
+        "test-agent",
+    ]
+    assert standalone.main(argv) == 1
+    assert "ManagedProfileConflictError" in capsys.readouterr().out
+    assert (home / "existing-memory.txt").read_text() == "keep"
+
+
+def test_setup_refuses_a_model_cache_inside_the_profile(tmp_path, service, monkeypatch, capsys):
+    """A model cache inside the profile would block its own claim."""
+    from qdrant_memory import local_embedding, local_model
+
+    monkeypatch.setattr(local_embedding, "require_local_dependencies", lambda: None)
+    monkeypatch.setattr(
+        local_model, "prepare_model", lambda *a, **k: pytest.fail("must not prepare")
+    )
+    home = tmp_path / "new-profile"
+    argv = [
+        "setup",
+        "--profile",
+        str(home),
+        "--embedding-provider",
+        "fastembed",
+        "--model-cache-dir",
+        str(home / "cache"),
+        "--agent-id",
+        "test-agent",
+    ]
+    assert standalone.main(argv) == 1
+    assert "ValueError" in capsys.readouterr().out
