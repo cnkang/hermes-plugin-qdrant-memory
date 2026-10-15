@@ -52,7 +52,7 @@ def load_standalone_config(home, overrides=None, resolve_secrets=True, *, secret
         json_reader=lambda path: json.loads(path.read_text(encoding="utf-8")),
         defaults=STANDALONE_DEFAULTS,
     )
-    if resolve_secrets:
+    if resolve_secrets and embedding_config(cfg)["provider"] != "fastembed":
         emb = embedding_config(cfg)
         key = emb.get("api_key") or reader(emb.get("api_key_env", "EMBEDDING_API_KEY"))
         validate_url(emb["base_url"], api_key=key)
@@ -156,6 +156,24 @@ def parser():
         for key in definition["parameters"]["properties"]:
             command.add_argument("--" + key, required=key in definition["parameters"]["required"])
     commands.add_parser("mcp", help="Serve fixed-scope memory tools over local stdio MCP")
+    prepare = commands.add_parser(
+        "prepare-model", help="Explicitly download and verify the optional CPU model"
+    )
+    prepare.add_argument("--cache-dir", type=Path)
+    setup = commands.add_parser(
+        "setup", help="Initialize a new private embedded profile with an explicit embedding choice"
+    )
+    setup.add_argument("--profile", type=Path, required=True)
+    setup.add_argument(
+        "--embedding-provider", choices=["ollama", "openai-compatible", "fastembed"], required=True
+    )
+    setup.add_argument("--model")
+    setup.add_argument("--dimensions", type=int)
+    setup.add_argument("--base-url")
+    setup.add_argument("--model-cache-dir", type=Path)
+    setup.add_argument("--embedding-api-key-env", default="EMBEDDING_API_KEY")
+    setup.add_argument("--user-id", default="local-user")
+    setup.add_argument("--agent-id")
     return result
 
 
@@ -168,7 +186,22 @@ def main(argv=None):
 
             serve(args.home)
             return 0
-        if args.qdrant_command in {"search", "add", "update", "delete"}:
+        if args.qdrant_command == "prepare-model":
+            from .local_model import DIMENSIONS, MODEL_NAME, prepare_model
+
+            prepared = prepare_model(args.cache_dir)
+            result = {
+                "ok": True,
+                "ready": True,
+                "model": MODEL_NAME,
+                "dimensions": DIMENSIONS,
+                "model_directory": str(prepared),
+            }
+        elif args.qdrant_command == "setup":
+            from .managed_setup import setup_profile
+
+            result = setup_profile(args)
+        elif args.qdrant_command in {"search", "add", "update", "delete"}:
             with open_runtime(args.home) as runtime:
                 definition = next(
                     item

@@ -4,3 +4,5 @@ prune assets
 
 # The text demo script is small and ships with the source distribution.
 include scripts/demo.sh
+include docs/local-embedding.md
+recursive-include tests *.py

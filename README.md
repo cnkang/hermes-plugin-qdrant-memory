@@ -16,6 +16,10 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+Source development: [optional CPU embedding and guided setup](docs/local-embedding.md)
+adds explicit provider selection without changing Ollama or cloud configurations.
+These additions are not included in the published 0.2.2 package.
+
 Native long-term memory plugin for Hermes Agent, implemented as a `MemoryProvider`.
 Hermes performs extraction
 through its trusted `ctx.llm` facade. Qdrant stores named dense vectors and schema-v1

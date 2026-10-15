@@ -139,9 +139,14 @@ def validate_embedding(cfg):
     if cfg["embedding"]["mode"] == "inherit" and not cfg["embedding"].get("inherit_fallback"):
         raise ValueError("Embedding inheritance requires an explicit fallback")
     emb = embedding_config(cfg)
-    if emb["provider"] not in {"ollama", "openai-compatible"}:
+    if emb["provider"] not in {"ollama", "openai-compatible", "fastembed"}:
         raise ValueError("Unsupported embedding provider")
-    validate_url(emb["base_url"], api_key=emb.get("api_key"))
+    if emb["provider"] == "fastembed":
+        from .local_model import validate_local_config
+
+        validate_local_config(emb)
+    else:
+        validate_url(emb["base_url"], api_key=emb.get("api_key"))
     if emb["distance"] not in {"Cosine", "Dot", "Euclid"}:
         raise ValueError("Unsupported distance metric")
     return emb
@@ -272,7 +277,13 @@ def fingerprint(emb):
         "send_dimensions",
     )
     values = {k: emb.get(k) for k in keys}
-    if isinstance(values["base_url"], str):
+    if emb.get("provider") == "fastembed":
+        from .local_model import pipeline_identity
+
+        values.pop("base_url")
+        values.pop("send_dimensions")
+        values["local_pipeline"] = pipeline_identity()
+    if isinstance(values.get("base_url"), str):
         values["base_url"] = values["base_url"].rstrip("/")
     return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
 

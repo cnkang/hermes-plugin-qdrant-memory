@@ -15,6 +15,10 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+源码开发版本新增[可选 CPU Embedding 与引导初始化](docs/local-embedding.md)，
+必须明确选择 provider，不会强制替换已有 Ollama 或云端配置。
+这些新增能力尚未包含在已发布的 0.2.2 包中。
+
 为 Hermes Agent 提供长期记忆的原生插件，以 `MemoryProvider` 接入：
 通过 Hermes 的可信 `ctx.llm` 提取记忆，
 以 Qdrant named dense vector 保存向量和 schema-v1 payload。无需 Mem0 SDK 或

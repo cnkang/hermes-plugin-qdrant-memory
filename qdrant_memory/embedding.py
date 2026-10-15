@@ -111,4 +111,9 @@ def build_embedder(ctx, cfg, *, secret_reader=None):
             ):
                 raise ValueError("Host embedding facade does not satisfy the plugin contract")
             return host
-    return HTTPEmbeddingProvider(embedding_config(cfg), secret_reader=secret_reader)
+    selected = embedding_config(cfg)
+    if selected["provider"] == "fastembed":
+        from .local_embedding import LocalEmbeddingProvider
+
+        return LocalEmbeddingProvider(selected)
+    return HTTPEmbeddingProvider(selected, secret_reader=secret_reader)
