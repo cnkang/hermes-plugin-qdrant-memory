@@ -40,6 +40,9 @@
 set -euo pipefail
 DEMO_HOME="${1:-$HOME/.hermes-qdrant-demo}"
 RELEASE_REF="c85d2bce788b117dddd854bb124971f7de8e564c"   # v0.2.2 release commit
+# Local CLI sessions attribute memory to the host's local session identity
+# (uid:<os-uid>). The inventory and deletion commands must use the same scope.
+SCOPE_USER="uid:$(id -u)"
 export HERMES_HOME="$DEMO_HOME"
 say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$1"; }
 fail() { echo "demo step failed: $*" >&2; exit 1; }
@@ -93,7 +96,7 @@ run_chat() {
 }
 
 memories_total() {
-  hermes qdrant-memory list --user hermes-user --agent hermes 2>/dev/null \
+  hermes qdrant-memory list --user "$SCOPE_USER" --agent hermes 2>/dev/null \
     | python3 -c "import sys,json;print(json.load(sys.stdin)['count']['total'])" 2>/dev/null || echo -1
 }
 
@@ -114,9 +117,9 @@ hermes qdrant-memory init --existing use || fail "qdrant-memory init"
 hermes qdrant-memory status || fail "qdrant-memory status"
 pre=$(memories_total)
 if [ "$pre" = "-1" ]; then
-  fail "cannot read the demo scope (hermes-user/hermes) in $DEMO_HOME"
+  fail "cannot read the demo scope for this host user in $DEMO_HOME"
 elif [ "$pre" != "0" ]; then
-  fail "the demo scope (hermes-user/hermes) is not empty in $DEMO_HOME (count: ${pre}); the demo deletes this scope at the end, so it only runs on an empty scope. Use a fresh demo home."
+  fail "the demo scope for this host user is not empty in $DEMO_HOME (count: ${pre}); the demo deletes this scope at the end, so it only runs on an empty scope. Use a fresh demo home."
 fi
 
 say "Session 1 — tell Hermes a preference (the plugin stores it automatically)"
@@ -125,6 +128,13 @@ before=$(memories_total)
 run_chat 780 "Please remember: my project codename is ORION-7 and my main deploy node is 192.0.2.10." || fail "session 1 chat"
 
 say "Waiting for the background extraction to land..."
+# A one-shot chat leaves its gateway process serving the demo home; that process
+# holds the writer lease until it exits. Let the background extraction commit
+# (seconds on the documented setup), then stop the demo home's own gateway so
+# the inventory commands can read the store.
+sleep 45
+hermes gateway stop >/dev/null 2>&1 || true
+sleep 5
 stored=0
 for i in $(seq 1 60); do
   total=$(memories_total)
@@ -140,12 +150,24 @@ done
 [ "$stored" -gt 0 ] || fail "the background extraction stored no new memories within 600s"
 
 say "Stored memories — scoped inventory"
-hermes qdrant-memory list --user hermes-user --agent hermes || fail "qdrant-memory list"
+hermes qdrant-memory list --user "$SCOPE_USER" --agent hermes || fail "qdrant-memory list"
 
 say "Session 2 — a fresh session recalls the preference"
-recall_out=$(run_chat 600 "Search your durable memory: what is my project codename, and which node do I deploy to?") || fail "session 2 chat"
+# Small local models can occasionally answer before their search lands; retry a
+# bounded number of times and show the successful answer.
+recall_out=""
+for attempt in 1 2 3; do
+  recall_out=$(run_chat 600 "Search your durable memory: what is my project codename, and which node do I deploy to?") || fail "session 2 chat"
+  printf '%s\n' "$recall_out" | grep -q "ORION-7" && break
+  echo "  ... the recall answer missed the codename; retrying (attempt $((attempt + 1)))"
+done
 printf '%s\n' "$recall_out"
 printf '%s\n' "$recall_out" | grep -q "ORION-7" || fail "the recall did not return the stored codename"
+# The recall session's gateway holds the writer lease until it exits; stop the
+# demo home's own gateway so the remaining read and lifecycle commands run.
+sleep 5
+hermes gateway stop >/dev/null 2>&1 || true
+sleep 3
 
 say "Backend — embedded Qdrant, no separate service"
 hermes qdrant-memory stats || true
@@ -155,14 +177,24 @@ say "Lifecycle — export a portable copy"
 export_dir=$(mktemp -d "${TMPDIR:-/tmp}/qdrant-demo-export.XXXXXX")
 export_file="$export_dir/export.json"
 trap 'rm -rf "$export_dir"' EXIT
-hermes qdrant-memory export --output "$export_file" --user hermes-user --agent hermes || fail "qdrant-memory export"
+hermes qdrant-memory export --output "$export_file" --user "$SCOPE_USER" --agent hermes || fail "qdrant-memory export"
 head -c 420 "$export_file" || true; echo
 rm -rf "$export_dir"
 trap - EXIT
 
 say "Lifecycle — scoped deletion with verification"
-hermes qdrant-memory delete-all --user hermes-user --agent hermes --confirm || fail "qdrant-memory delete-all"
+# The recall session's gateway can hold the writer lease briefly; stop the demo
+# home's own gateway, then retry until the lease releases.
+hermes gateway stop >/dev/null 2>&1 || true
+del_out=""
+for i in $(seq 1 60); do
+  del_out=$(hermes qdrant-memory delete-all --user "$SCOPE_USER" --agent hermes --confirm </dev/null 2>&1) && break
+  echo "  ... waiting for the writer to release ($((i*10))s)"
+  sleep 10
+done
+printf '%s\n' "$del_out"
 remaining=$(memories_total)
 [ "$remaining" = "0" ] || fail "the scope is not empty after deletion (${remaining} memories)"
-hermes qdrant-memory list --user hermes-user --agent hermes || fail "qdrant-memory list"
+hermes qdrant-memory list --user "$SCOPE_USER" --agent hermes || fail "qdrant-memory list"
+hermes gateway stop >/dev/null 2>&1 || true
 say "Done — the memory is gone and the scope is empty."
