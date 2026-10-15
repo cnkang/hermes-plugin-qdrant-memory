@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import tomllib
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +13,19 @@ from qdrant_memory.embedding import HTTPEmbeddingProvider, build_embedder
 from qdrant_memory.standalone import load_standalone_config
 
 MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+
+def test_optional_cpu_extra_and_hashed_security_snapshot_stay_in_sync():
+    """Dependency updates must also update the pipeline identity and scan snapshot."""
+    from qdrant_memory.local_model import FASTEMBED_VERSION
+
+    root = Path(__file__).resolve().parents[1]
+    project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    requirement = f"fastembed=={FASTEMBED_VERSION}"
+    assert requirement in project["optional-dependencies"]["local"]
+    locked = (root / "requirements-local.txt").read_text(encoding="utf-8")
+    assert requirement + " " in locked or requirement + "\n" in locked
+    assert "--hash=sha256:" in locked
 
 
 def local_cfg(cache):
