@@ -24,7 +24,7 @@ def _read(path):
         raise ManagedProfileConflictError("Invalid profile configuration or setup marker") from exc
 
 
-def _write_new(path, value):
+def _write_new(path, value, *, replace=False):
     """Publish a private configuration atomically under the provisioning lock."""
     descriptor, temporary = tempfile.mkstemp(prefix=".setup-", dir=path.parent)
     try:
@@ -32,7 +32,7 @@ def _write_new(path, value):
             json.dump(value, stream, sort_keys=True, indent=2)
             stream.flush()
             os.fsync(stream.fileno())
-        if path.exists() or path.is_symlink():
+        if not replace and (path.exists() or path.is_symlink()):
             raise ManagedProfileConflictError("Profile destination changed during setup")
         os.replace(temporary, path)
     finally:
@@ -63,7 +63,7 @@ def _service_settings(args):
             "base_url": args.base_url or "http://127.0.0.1:11434",
         }
     if not args.model or args.dimensions is None or not args.base_url:
-        raise ValueError("Remote embedding requires model, dimensions and HTTPS endpoint")
+        raise ValueError("Remote embedding requires model, dimensions and a service endpoint")
     return {"model": args.model, "dimensions": args.dimensions, "base_url": args.base_url}
 
 
@@ -97,12 +97,16 @@ def _claim_profile(home, cfg, owner):
     path = home / "qdrant-memory.json"
     if marker.exists() or marker.is_symlink():
         if _read(marker) != owner:
-            raise ManagedProfileConflictError("Setup cannot change an owned profile's settings")
+            if path.exists() or path.is_symlink():
+                raise ManagedProfileConflictError("Setup cannot change an owned profile's settings")
+            # A failed first attempt leaves only the marker; a corrected request may retry.
+            _write_new(marker, owner, replace=True)
         if (path.exists() or path.is_symlink()) and _read(path) != cfg:
             raise ManagedProfileConflictError("Profile settings have changed")
     elif any(home.iterdir()):
         raise ManagedProfileConflictError("Setup cannot adopt an existing profile")
     else:
+        os.chmod(home, 0o700)
         _write_new(marker, owner)
     return path
 
@@ -136,12 +140,19 @@ def setup_profile(args):
         raise ManagedProfileConflictError("Unsafe profile setup lock")
     digest = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()
     owner = {"owner": "qdrant-memory-setup", "schema": 1, "configuration_sha256": digest}
-    with portalocker.Lock(lock, mode="a", timeout=0):
-        path = _claim_profile(home, cfg, owner)
-        if cfg["embedding"]["provider"] == "fastembed":
-            from .local_model import prepare_model
+    if cfg["embedding"]["provider"] == "fastembed":
+        from .local_model import prepare_model
 
-            prepare_model(cfg["embedding"].get("model_cache_dir"))
+        # Prepare the shared model cache before taking the profile lock so a slow
+        # download does not block retries or a concurrent setup.
+        prepare_model(cfg["embedding"].get("model_cache_dir"))
+    lock_handle = portalocker.Lock(lock, mode="a", timeout=0)
+    try:
+        lock_handle.acquire()
+    except portalocker.exceptions.LockException as exc:
+        raise ManagedProfileConflictError("Profile setup is already running") from exc
+    try:
+        path = _claim_profile(home, cfg, owner)
         if not path.exists():
             _write_new(path, cfg)
         command = argparse.Namespace(qdrant_command="init", collection=None, existing="use")
@@ -150,6 +161,8 @@ def setup_profile(args):
         )
         if result.get("ok", True) is False:
             raise RuntimeError("Profile initialization did not complete")
+    finally:
+        lock_handle.release()
     return {
         "ok": True,
         "ready": True,
