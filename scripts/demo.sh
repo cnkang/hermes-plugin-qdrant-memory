@@ -122,7 +122,7 @@ fi
 say "Session 1 — tell Hermes a preference (the plugin stores it automatically)"
 before=$(memories_total)
 [ "$before" -ge 0 ] || fail "cannot read the memory store"
-run_chat 780 "Please remember: my project codename is ORION-7 and my main deploy node is 10.99.0.2." || fail "session 1 chat"
+run_chat 780 "Please remember: my project codename is ORION-7 and my main deploy node is 192.0.2.10." || fail "session 1 chat"
 
 say "Waiting for the background extraction to land..."
 stored=0

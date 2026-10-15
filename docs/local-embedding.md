@@ -1,8 +1,8 @@
 # Optional local CPU embedding and guided setup
 
-These commands are available in this source revision. They are not part of the
-published Runtime 0.2.2 or MCP distribution 0.1.3. Until a release includes them,
-the published packages continue to use their existing configuration workflow.
+These commands ship with Runtime 0.3.0. Published Runtime 0.2.2 and MCP
+distribution 0.1.3 predate them; those packages keep their existing
+configuration workflow.
 
 ## Choose your embedding provider
 
