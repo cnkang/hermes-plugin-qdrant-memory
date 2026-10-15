@@ -134,6 +134,8 @@ extraction, new network listener or cloud credential custody is introduced.
 
 Real local CPU inference and offline official-MCP CRUD/restart tests are separate
 from package installation and real WorkBuddy GUI acceptance. The optional local
-embedding workflow tests native Linux x64, Windows x64, macOS Apple Silicon and
-macOS Intel with Python 3.11. A successful dependency resolution alone is not a
-platform support claim. ARM64 variants outside macOS require separate acceptance.
+embedding workflow tests native Linux x64, Windows x64 and macOS Apple Silicon
+with Python 3.11. macOS Intel is best-effort compatibility and is not a release
+gate or a formally supported CPU platform. A successful dependency resolution
+alone is not a platform support claim. ARM64 variants outside macOS require
+separate acceptance.
