@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import os
+import stat
 from pathlib import Path
 
 import httpx
@@ -137,3 +139,70 @@ def test_manifest_contains_only_flat_nonexecutable_immutable_artifacts():
         assert name.endswith((".json", ".onnx"))
         assert len(digest) == 64
         assert size > 0
+
+
+def test_model_files_are_synced_before_cache_publication(tmp_path, model_source, monkeypatch):
+    """Publish only after artifact bytes and the completion marker are flushed."""
+    module, data, _ = model_source
+    synced = []
+    sync = os.fsync
+    rename = Path.rename
+
+    def record_sync(descriptor):
+        """Record real file/directory synchronization in publication order."""
+        synced.append("directory" if stat.S_ISDIR(os.fstat(descriptor).st_mode) else "file")
+        return sync(descriptor)
+
+    def publish(path, target):
+        """Check durability at the actual directory publication boundary."""
+        assert synced.count("file") == len(data) + 1
+        if module.sys.platform != "win32":
+            assert synced[-1] == "directory"
+        return rename(path, target)
+
+    monkeypatch.setattr(module.os, "fsync", record_sync)
+    monkeypatch.setattr(Path, "rename", publish)
+    assert module.prepare_model(tmp_path) == module.verify_model(tmp_path)
+    if module.sys.platform != "win32":
+        assert synced.count("directory") == 2
+
+
+def test_sync_failure_leaves_no_ready_cache_and_can_retry(tmp_path, model_source, monkeypatch):
+    """A failed durability operation must not publish an apparently ready model."""
+    module, _, _ = model_source
+    sync = os.fsync
+
+    def fail(descriptor):
+        raise OSError("synthetic sync failure")
+
+    monkeypatch.setattr(module.os, "fsync", fail)
+    with pytest.raises(OSError, match="synthetic sync failure"):
+        module.prepare_model(tmp_path)
+    with pytest.raises(module.LocalModelNotPreparedError):
+        module.verify_model(tmp_path)
+    assert not list(tmp_path.glob(".prepare-*"))
+    monkeypatch.setattr(module.os, "fsync", sync)
+    assert module.prepare_model(tmp_path) == module.verify_model(tmp_path)
+
+
+def test_nonempty_destination_created_at_publication_is_preserved(
+    tmp_path, model_source, monkeypatch
+):
+    """A noncooperating writer's nonempty destination must never be overwritten."""
+    module, _, _ = model_source
+    rename = Path.rename
+    destinations = []
+
+    def race(path, target):
+        """Introduce another directory immediately before the filesystem rename."""
+        target.mkdir()
+        (target / "unrelated-data.txt").write_text("preserve this data")
+        destinations.append(target)
+        return rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", race)
+    with pytest.raises(OSError):
+        module.prepare_model(tmp_path)
+    assert (destinations[0] / "unrelated-data.txt").read_text() == "preserve this data"
+    assert not (destinations[0] / "ready.json").exists()
+    assert not list(tmp_path.glob(".prepare-*"))
