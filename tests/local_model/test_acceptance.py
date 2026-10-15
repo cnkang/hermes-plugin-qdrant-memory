@@ -194,10 +194,8 @@ def test_real_cpu_official_mcp_protocol_and_process_restart(prepared_profile, tm
                         result = await session.call_tool(
                             "qdrant_memory_search", {"query": "CPU model persistence test"}
                         )
-                        assert (
-                            not result.model_dump(by_alias=True)["isError"]
-                            and memory_id in result.content[0].text
-                        )
+                        assert not result.model_dump(by_alias=True)["isError"]
+                        assert memory_id in result.content[0].text
                         updated = await session.call_tool(
                             "qdrant_memory_update",
                             {"id": memory_id, "text": "Updated CPU model test"},

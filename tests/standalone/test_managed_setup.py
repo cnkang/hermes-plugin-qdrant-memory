@@ -112,8 +112,10 @@ def test_setup_keeps_writer_lease_enforcement(tmp_path, service, capsys):
 
 def test_setup_requires_explicit_embedding_choice():
     """Require a deliberate provider choice rather than silently selecting CPU."""
+    parser = standalone.parser()
+    argv = ["setup", "--profile", str(Path.cwd() / "profile")]
     with pytest.raises(SystemExit):
-        standalone.parser().parse_args(["setup", "--profile", str(Path.cwd() / "profile")])
+        parser.parse_args(argv)
 
 
 def test_cpu_preparation_is_a_separate_explicit_cli_command(tmp_path, monkeypatch, capsys):
@@ -125,3 +127,51 @@ def test_cpu_preparation_is_a_separate_explicit_cli_command(tmp_path, monkeypatc
     assert standalone.main(["prepare-model", "--cache-dir", str(tmp_path)]) == 0
     assert calls == [tmp_path]
     assert json.loads(capsys.readouterr().out)["ready"] is True
+
+
+@pytest.mark.parametrize("change", ["configuration", "invalid-configuration", "invalid-marker"])
+def test_setup_rejects_changed_or_corrupt_owned_files_without_overwriting(
+    tmp_path, service, capsys, change
+):
+    """Retry must preserve manually changed settings and corrupt ownership evidence."""
+    argv = arguments(tmp_path, service)
+    assert standalone.main(argv) == 0
+    home = tmp_path / "new-profile"
+    target = home / (".setup-owner.json" if change == "invalid-marker" else "qdrant-memory.json")
+    if change == "configuration":
+        value = json.loads(target.read_text())
+        value["scope"]["user_id"] = "different-user"
+        target.write_text(json.dumps(value))
+    else:
+        target.write_text("private-corrupt-configuration")
+    original = target.read_bytes()
+    sentinel = home / "existing-memory.txt"
+    sentinel.write_text("keep this data")
+    capsys.readouterr()
+    assert standalone.main(argv) == 1
+    assert target.read_bytes() == original
+    assert sentinel.read_text() == "keep this data"
+    output = capsys.readouterr().out
+    assert "ManagedProfileConflictError" in output
+    assert "private-corrupt-configuration" not in output
+
+
+def test_cpu_setup_requires_dependencies_before_creating_or_downloading(
+    tmp_path, monkeypatch, capsys
+):
+    """Missing optional packages leave the new profile and model cache untouched."""
+    from qdrant_memory import local_embedding, local_model
+
+    def missing():
+        raise local_embedding.LocalEmbeddingUnavailableError("Install the local extra")
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Missing optional packages must not trigger a model download")
+
+    monkeypatch.setattr(local_embedding, "require_local_dependencies", missing)
+    monkeypatch.setattr(local_model, "prepare_model", forbidden)
+    home = tmp_path / "new-profile"
+    argv = ["setup", "--profile", str(home), "--embedding-provider", "fastembed"]
+    assert standalone.main(argv) == 1
+    assert not home.exists()
+    assert "LocalEmbeddingUnavailableError" in capsys.readouterr().out

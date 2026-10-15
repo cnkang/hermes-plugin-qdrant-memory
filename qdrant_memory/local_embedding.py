@@ -1,6 +1,6 @@
 """Optional, offline-only CPU embeddings over verified model artifacts."""
 
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import version
 
 from .config import fingerprint
 from .embedding import validate_vectors
@@ -28,7 +28,7 @@ def require_local_dependencies():
             raise LocalEmbeddingUnavailableError("Install the supported local extra")
         from fastembed import TextEmbedding
         from tokenizers import Tokenizer
-    except (ImportError, PackageNotFoundError) as exc:
+    except ImportError as exc:
         raise LocalEmbeddingUnavailableError("Install the local extra before use") from exc
     return TextEmbedding, Tokenizer
 
@@ -40,14 +40,14 @@ class LocalEmbeddingProvider:
         """Verify the prepared cache before loading optional inference dependencies."""
         validate_local_config(cfg)
         model_dir = verify_model(cfg.get("model_cache_dir"))
-        TextEmbedding, Tokenizer = require_local_dependencies()
+        text_embedding, tokenizer = require_local_dependencies()
         self.cfg = cfg
         self.dimensions = cfg["dimensions"]
         self.fingerprint = fingerprint(cfg)
-        self._tokenizer = Tokenizer.from_file(str(model_dir / "tokenizer.json"))
+        self._tokenizer = tokenizer.from_file(str(model_dir / "tokenizer.json"))
         self._tokenizer.no_truncation()
         self._tokenizer.no_padding()
-        self._model = TextEmbedding(
+        self._model = text_embedding(
             model_name=MODEL_NAME,
             specific_model_path=str(model_dir),
             local_files_only=True,
