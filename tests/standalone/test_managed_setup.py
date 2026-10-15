@@ -215,3 +215,17 @@ def test_setup_refuses_plaintext_remote_with_a_configured_key(
     argv += ["--embedding-api-key-env", "SETUP_TEST_KEY"]
     assert standalone.main(argv) == 1
     assert "ValueError" in capsys.readouterr().out
+
+
+def test_setup_reclaims_a_marker_with_stale_temporary_files(tmp_path, service, capsys):
+    """Stale temporary files from an interrupted write do not block a retry."""
+    home = tmp_path / "new-profile"
+    home.mkdir()
+    (home / ".setup-owner.json").write_text(
+        json.dumps({"owner": "qdrant-memory-setup", "schema": 1, "configuration_sha256": "stale"}),
+        encoding="utf-8",
+    )
+    (home / ".setup-abc123").write_text("stale", encoding="utf-8")
+    argv = arguments(tmp_path, service)
+    assert standalone.main(argv) == 0
+    assert (home / "qdrant-memory.json").exists()
