@@ -130,7 +130,9 @@ def _precheck_profile(home, cfg, owner):
     """Refuse an obviously conflicting destination before model preparation."""
     if home.is_symlink():
         raise ManagedProfileConflictError("Unsafe profile destination")
-    if home.exists() and home.is_dir():
+    if home.exists():
+        if not home.is_dir():
+            raise ManagedProfileConflictError("Choose a new canonical private profile directory")
         _conflicts(home, cfg, owner)
 
 
@@ -138,6 +140,8 @@ def _claim_profile(home, cfg, owner):
     """Create or validate ownership while the caller holds the provisioning lock."""
     if home.is_symlink():
         raise ManagedProfileConflictError("Unsafe profile destination")
+    if home.exists() and not home.is_dir():
+        raise ManagedProfileConflictError("Choose a new canonical private profile directory")
     home.mkdir(mode=0o700, exist_ok=True)
     _conflicts(home, cfg, owner)
     marker = home / ".setup-owner.json"
@@ -185,13 +189,13 @@ def setup_profile(args):
     owner = {"owner": "qdrant-memory-setup", "schema": 1, "configuration_sha256": digest}
     _precheck_profile(home, cfg, owner)
     if cfg["embedding"]["provider"] == "fastembed":
-        cache = cfg["embedding"].get("model_cache_dir")
-        if cache is not None:
-            resolved_cache = Path(cache).expanduser().resolve()
-            if resolved_cache == home or home in resolved_cache.parents:
-                raise ValueError("The model cache must live outside the profile directory")
-        from .local_model import prepare_model
+        from .local_model import default_cache_dir, prepare_model
 
+        cache = cfg["embedding"].get("model_cache_dir")
+        effective_cache = default_cache_dir() if cache is None else Path(cache).expanduser()
+        resolved_cache = effective_cache.resolve()
+        if resolved_cache == home or home in resolved_cache.parents:
+            raise ValueError("The model cache must live outside the profile directory")
         # Prepare the shared model cache before taking the profile lock so a slow
         # download does not block retries or a concurrent setup.
         prepare_model(cache)

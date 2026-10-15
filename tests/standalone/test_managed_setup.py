@@ -280,3 +280,53 @@ def test_setup_refuses_a_model_cache_inside_the_profile(tmp_path, service, monke
     ]
     assert standalone.main(argv) == 1
     assert "ValueError" in capsys.readouterr().out
+
+
+def test_setup_refuses_a_file_at_the_profile_path(tmp_path, service, monkeypatch, capsys):
+    """A regular file at the destination is refused before model preparation."""
+    from qdrant_memory import local_embedding, local_model
+
+    monkeypatch.setattr(local_embedding, "require_local_dependencies", lambda: None)
+    monkeypatch.setattr(
+        local_model, "prepare_model", lambda *a, **k: pytest.fail("must not prepare")
+    )
+    home = tmp_path / "new-profile"
+    home.write_text("not a directory")
+    argv = [
+        "setup",
+        "--profile",
+        str(home),
+        "--embedding-provider",
+        "fastembed",
+        "--model-cache-dir",
+        str(tmp_path / "cache"),
+        "--agent-id",
+        "test-agent",
+    ]
+    assert standalone.main(argv) == 1
+    assert "ManagedProfileConflictError" in capsys.readouterr().out
+
+
+def test_setup_refuses_the_default_model_cache_inside_the_profile(
+    tmp_path, service, monkeypatch, capsys
+):
+    """The default model cache location is checked against the profile too."""
+    from qdrant_memory import local_embedding, local_model
+
+    monkeypatch.setattr(local_embedding, "require_local_dependencies", lambda: None)
+    monkeypatch.setattr(
+        local_model, "prepare_model", lambda *a, **k: pytest.fail("must not prepare")
+    )
+    home = tmp_path / "new-profile"
+    monkeypatch.setattr(local_model, "default_cache_dir", lambda: home / "models")
+    argv = [
+        "setup",
+        "--profile",
+        str(home),
+        "--embedding-provider",
+        "fastembed",
+        "--agent-id",
+        "test-agent",
+    ]
+    assert standalone.main(argv) == 1
+    assert "ValueError" in capsys.readouterr().out
