@@ -29,11 +29,22 @@ def prepared_profile(tmp_path, monkeypatch):
     cache = Path(os.environ["QDRANT_MEMORY_TEST_LOCAL_CACHE"])
     verify_model(cache)
 
-    def offline(*args, **kwargs):
+    original_connect = socket.socket.connect
+
+    def offline(sock, address):
+        caller = sys._getframe(1)
+        # Windows implements socketpair with a private loopback connection.
+        # Permit only that stdlib callsite, never a provider/service connection.
+        if caller.f_globals.get("__name__") == "socket" and caller.f_code.co_name == "socketpair":
+            return original_connect(sock, address)
         pytest.fail("CPU inference/setup must not contact any network service")
 
     monkeypatch.setattr(socket.socket, "connect", offline)
-    monkeypatch.setattr(httpx.Client, "send", offline)
+
+    def offline_http(*args, **kwargs):
+        pytest.fail("CPU inference/setup must not contact any HTTP service")
+
+    monkeypatch.setattr(httpx.Client, "send", offline_http)
     home = tmp_path / "cpu-profile"
     started = time.monotonic()
     assert (
@@ -56,6 +67,16 @@ def prepared_profile(tmp_path, monkeypatch):
     )
     assert time.monotonic() - started < 30
     return home, cache
+
+
+def test_offline_guard_still_rejects_ollama_and_http_services(prepared_profile):
+    """The Windows socketpair exception must not permit embedding-service calls."""
+    with socket.socket() as connection:
+        with pytest.raises(pytest.fail.Exception, match="network service"):
+            connection.connect(("127.0.0.1", 11434))
+    with httpx.Client() as client:
+        with pytest.raises(pytest.fail.Exception, match="HTTP service"):
+            client.post("http://127.0.0.1:11434/api/embed", json={"input": "synthetic"})
 
 
 def test_real_cpu_retrieval_exact_crud_restart_and_no_truncation(prepared_profile):
@@ -132,8 +153,13 @@ def test_real_cpu_official_mcp_protocol_and_process_restart(prepared_profile, tm
     guard = tmp_path / "offline-guard"
     guard.mkdir()
     (guard / "sitecustomize.py").write_text(
-        "import socket\n"
-        "def offline(*args, **kwargs): raise RuntimeError('Network forbidden in CPU acceptance')\n"
+        "import socket, sys\n"
+        "original_connect = socket.socket.connect\n"
+        "def offline(sock, address):\n"
+        " caller = sys._getframe(1)\n"
+        " if caller.f_globals.get('__name__') == 'socket' and caller.f_code.co_name == 'socketpair':\n"
+        "  return original_connect(sock, address)\n"
+        " raise RuntimeError('Network forbidden in CPU acceptance')\n"
         "socket.socket.connect = offline\n",
         encoding="utf-8",
     )
