@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 > **Runtime 0.2.2** supports MCP Python SDK 1.x and 2.x for the standalone
-> CLI/MCP. MCP distribution 0.1.2 pins Runtime 0.2.2. Explicit writes retain
+> CLI/MCP. MCP distribution 0.1.3 pins Runtime 0.2.2. Explicit writes retain
 > canonical-text deduplication without an LLM.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.

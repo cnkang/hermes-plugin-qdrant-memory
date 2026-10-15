@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 > **Runtime 0.2.2** 支持独立 CLI/MCP 的 MCP Python SDK 1.x 和 2.x。
-> MCP 发行包 0.1.2 固定依赖 Runtime 0.2.2；显式写入继续按规范化文本去重，
+> MCP 发行包 0.1.3 固定依赖 Runtime 0.2.2；显式写入继续按规范化文本去重，
 > 不调用 LLM。Hermes Plugin Catalog 使用独立审核的固定版本，PyPI 发布不会
 > 自动升级目录。每个目标仍只允许一个写入者。
 > 参见[发布说明](docs/releases/0.2.2.zh-CN.md)和[验证记录](docs/validation.md)。
