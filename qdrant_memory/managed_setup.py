@@ -15,7 +15,7 @@ class ManagedProfileConflictError(ValueError):
     """Refuse an existing, changed or unowned destination without overwriting it."""
 
 
-class ManagedProfileBusyError(ManagedProfileConflictError):
+class ManagedProfileBusyError(ValueError):
     """Another setup holds the profile lock; wait for it and retry."""
 
 
