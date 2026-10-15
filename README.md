@@ -125,6 +125,23 @@ The install resolves the catalog's reviewed commit and prints the entry's declar
 tools, requirements and known issues before it clones anything.
 `hermes plugins enable` prepares the declared dependencies through Hermes PM.
 
+**Version-locked: install the verified Runtime 0.3.0 source through the Hermes CLI.**
+
+This immutable source revision includes the optional CPU embedding and guided
+setup. It does not depend on a PyPI release or a catalog update.
+
+```bash
+export HERMES_HOME="/absolute/path/to/your/hermes-profile"
+ollama pull qwen3-embedding:4b
+# Start Ollama if it is not running. Keep its service available.
+hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
+  --ref 7c9e52d816b4f8e8109dbef2797f573b93e0d604   # verified Runtime 0.3.0 source
+hermes plugins enable qdrant-memory
+hermes memory setup
+hermes config set memory.provider qdrant-memory
+hermes qdrant-memory init
+```
+
 **Previous verified source: install Runtime 0.2.2 through the Hermes CLI.**
 
 This older immutable source revision supports MCP SDK 1.x/2.x and includes the

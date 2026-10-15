@@ -106,6 +106,23 @@ hermes qdrant-memory init
 安装使用 Catalog 审核过的固定提交，并在克隆前先展示该条目的声明工具、版本要求与已知限制；
 `hermes plugins enable` 通过 Hermes PM 准备声明的依赖。
 
+**锁定版本：通过 Hermes CLI 安装已验证的 Runtime 0.3.0 源码。**
+
+此不可变源码提交包含可选的 CPU Embedding 与引导初始化，
+不依赖 PyPI 发布或 Catalog 更新。
+
+```bash
+export HERMES_HOME="/absolute/path/to/your/hermes-profile"
+ollama pull qwen3-embedding:4b
+# 如果 Ollama 尚未运行，先启动服务，并保持服务可用。
+hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
+  --ref 7c9e52d816b4f8e8109dbef2797f573b93e0d604   # 已验证的 Runtime 0.3.0 源码
+hermes plugins enable qdrant-memory
+hermes memory setup
+hermes config set memory.provider qdrant-memory
+hermes qdrant-memory init
+```
+
 **上一验证源码：通过 Hermes CLI 安装 Runtime 0.2.2。**
 
 此不可变源码提交支持 MCP SDK 1.x/2.x 并包含显式写入修复，
