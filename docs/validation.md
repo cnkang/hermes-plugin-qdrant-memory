@@ -6,6 +6,23 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
+## Runtime 0.3.0 checks (2026-10-16)
+
+Release-preparation checks on the preparation head
+([PR #53](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/53)) passed:
+
+- Local: 44 files, 442 tests passed, 0 failed, 4 skipped (behavior contract
+  suite).
+- [Behavior/security CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38763388693),
+  [Platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38763388746),
+  [Standalone acceptance](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38763388459),
+  [Optional CPU embedding](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38763388706),
+  [Runtime packaging](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38763388870)
+  and [CodeQL](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/38763388632).
+- The optional CPU embedding job prepares the pinned model artifacts and runs
+  the real offline model acceptance on Linux, macOS and Windows with Python
+  3.11.
+
 ## Runtime 0.2.1 checks (2026-10-13)
 
 Behavioral checks on revision `b7b42799f29ee3ba83b91aa4f7cec3b30cc4dd21` in
