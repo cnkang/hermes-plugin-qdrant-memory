@@ -48,6 +48,10 @@ class LocalModelNotPreparedError(RuntimeError):
     """Require explicit model preparation before starting a memory session."""
 
 
+class LocalModelPreparationBusyError(LocalModelNotPreparedError):
+    """Another process holds the model preparation lock; wait for it and retry."""
+
+
 class LocalModelIntegrityError(ValueError):
     """Reject damaged files or unsafe cache paths without replacing user data."""
 
@@ -188,7 +192,7 @@ def prepare_model(cache_dir=None):
     try:
         lock.acquire()
     except portalocker.exceptions.LockException as exc:
-        raise LocalModelNotPreparedError("Model preparation is already in progress") from exc
+        raise LocalModelPreparationBusyError("Model preparation is already in progress") from exc
     try:
         target = _target(root)
         if target.exists() or target.is_symlink():

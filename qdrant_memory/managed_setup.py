@@ -15,6 +15,10 @@ class ManagedProfileConflictError(ValueError):
     """Refuse an existing, changed or unowned destination without overwriting it."""
 
 
+class ManagedProfileBusyError(ManagedProfileConflictError):
+    """Another setup holds the profile lock; wait for it and retry."""
+
+
 def _read(path):
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
         raise ManagedProfileConflictError("Unsafe profile configuration or setup marker")
@@ -94,11 +98,8 @@ def configuration(args):
     return cfg
 
 
-def _claim_profile(home, cfg, owner):
-    """Create or validate ownership while the caller holds the provisioning lock."""
-    if home.is_symlink():
-        raise ManagedProfileConflictError("Unsafe profile destination")
-    home.mkdir(mode=0o700, exist_ok=True)
+def _conflicts(home, cfg, owner):
+    """Raise for a destination this setup must not adopt. Read-only."""
     marker = home / ".setup-owner.json"
     path = home / "qdrant-memory.json"
     if marker.exists() or marker.is_symlink():
@@ -119,13 +120,33 @@ def _claim_profile(home, cfg, owner):
                 )
             ):
                 raise ManagedProfileConflictError("Setup cannot change an owned profile's settings")
-            # A failed first attempt leaves only its marker; a corrected request may retry.
-            os.chmod(home, 0o700)
-            _write_new(marker, owner, replace=True)
         if (path.exists() or path.is_symlink()) and _read(path) != cfg:
             raise ManagedProfileConflictError("Profile settings have changed")
     elif any(home.iterdir()):
         raise ManagedProfileConflictError("Setup cannot adopt an existing profile")
+
+
+def _precheck_profile(home, cfg, owner):
+    """Refuse an obviously conflicting destination before model preparation."""
+    if home.is_symlink():
+        raise ManagedProfileConflictError("Unsafe profile destination")
+    if home.exists() and home.is_dir():
+        _conflicts(home, cfg, owner)
+
+
+def _claim_profile(home, cfg, owner):
+    """Create or validate ownership while the caller holds the provisioning lock."""
+    if home.is_symlink():
+        raise ManagedProfileConflictError("Unsafe profile destination")
+    home.mkdir(mode=0o700, exist_ok=True)
+    _conflicts(home, cfg, owner)
+    marker = home / ".setup-owner.json"
+    path = home / "qdrant-memory.json"
+    if marker.exists() or marker.is_symlink():
+        if _read(marker) != owner:
+            # A failed first attempt leaves only its marker; a corrected request may retry.
+            os.chmod(home, 0o700)
+            _write_new(marker, owner, replace=True)
     else:
         os.chmod(home, 0o700)
         _write_new(marker, owner)
@@ -162,17 +183,25 @@ def setup_profile(args):
         raise ManagedProfileConflictError("Unsafe profile setup lock")
     digest = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()
     owner = {"owner": "qdrant-memory-setup", "schema": 1, "configuration_sha256": digest}
+    _precheck_profile(home, cfg, owner)
     if cfg["embedding"]["provider"] == "fastembed":
+        cache = cfg["embedding"].get("model_cache_dir")
+        if cache is not None:
+            resolved_cache = Path(cache).expanduser().resolve()
+            if resolved_cache == home or home in resolved_cache.parents:
+                raise ValueError("The model cache must live outside the profile directory")
         from .local_model import prepare_model
 
         # Prepare the shared model cache before taking the profile lock so a slow
         # download does not block retries or a concurrent setup.
-        prepare_model(cfg["embedding"].get("model_cache_dir"))
+        prepare_model(cache)
+    if lock.is_symlink():
+        raise ManagedProfileConflictError("Unsafe profile setup lock")
     lock_handle = portalocker.Lock(lock, mode="a", timeout=0)
     try:
         lock_handle.acquire()
     except portalocker.exceptions.LockException as exc:
-        raise ManagedProfileConflictError("Profile setup is already running") from exc
+        raise ManagedProfileBusyError("Profile setup is already running") from exc
     try:
         path = _claim_profile(home, cfg, owner)
         if not path.exists():
