@@ -139,3 +139,8 @@ with Python 3.11. macOS Intel is best-effort compatibility and is not a release
 gate or a formally supported CPU platform. A successful dependency resolution
 alone is not a platform support claim. ARM64 variants outside macOS require
 separate acceptance.
+
+The optional CPU dependency security snapshot is pinned with artifact hashes in
+`requirements-local.txt`, constrained by the existing base snapshot. CI scans
+both base and optional dependency sets. It does not make CPU packages mandatory
+for normal installations or replace platform/runtime installation acceptance.
