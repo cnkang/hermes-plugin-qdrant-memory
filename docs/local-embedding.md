@@ -33,6 +33,12 @@ CPU embedding:
 python -m pip install '.[mcp,local]'
 ```
 
+For a published package, install the same extras with the release version:
+
+```sh
+python -m pip install 'hermes-plugin-qdrant-memory[mcp,local]==0.3.0'
+```
+
 Choose **one** setup command and replace the profile path with a new absolute
 private directory. The command writes the configuration and initializes embedded
 Qdrant using the existing Runtime initialization, writer lease and validation.

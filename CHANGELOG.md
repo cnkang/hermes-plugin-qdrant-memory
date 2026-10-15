@@ -14,8 +14,8 @@
   The four conversational MCP tools and existing storage format are unchanged.
 - Close read-only recovery-inspection SQLite connections on success, early
   return and query failure, without relying on garbage collection.
-- Documentation: align the README install pins and the demo script with the
-  commit the `v0.2.2` tag points to.
+- Documentation: keep the version-locked installation ref and the demo script
+  pin aligned with the tagged release commit.
 - CI: add a host pin compatibility job. It reconciles the plugin's dependency
   specifiers with the tested Hermes hosts' pins on Python 3.11 and 3.14,
   including optional extras and dependency groups, and co-resolves the shared
