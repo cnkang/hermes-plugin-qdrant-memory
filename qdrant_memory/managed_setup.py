@@ -57,14 +57,14 @@ def _cpu_settings(args):
 def _service_settings(args):
     """Keep existing Ollama defaults and require explicit remote service settings."""
     if args.embedding_provider == "ollama":
-        return dict(
-            model="qwen3-embedding:4b" if args.model is None else args.model,
-            dimensions=2560 if args.dimensions is None else args.dimensions,
-            base_url=args.base_url or "http://127.0.0.1:11434",
-        )
+        return {
+            "model": "qwen3-embedding:4b" if args.model is None else args.model,
+            "dimensions": 2560 if args.dimensions is None else args.dimensions,
+            "base_url": args.base_url or "http://127.0.0.1:11434",
+        }
     if not args.model or args.dimensions is None or not args.base_url:
         raise ValueError("Remote embedding requires model, dimensions and HTTPS endpoint")
-    return dict(model=args.model, dimensions=args.dimensions, base_url=args.base_url)
+    return {"model": args.model, "dimensions": args.dimensions, "base_url": args.base_url}
 
 
 def configuration(args):
