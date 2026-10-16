@@ -9,7 +9,8 @@
 
 > **Runtime 0.3.0** 为独立 CLI/MCP 增加可选的离线 CPU Embedding 与受信初始化命令，
 > 并支持 MCP Python SDK 1.x 和 2.x。显式写入继续按规范化文本去重，不调用 LLM。
-> MCP 发行包 0.1.3 固定依赖 Runtime 0.2.2，Runtime 0.3.0 的更新随后在 MCP 仓库发布。
+> Runtime 0.3.0 已在 [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.3.0/) 发布。
+> 通用 MCP 发行包和托管启动器各自选择精确的 Runtime 依赖，分别发布。
 > Hermes Plugin Catalog 使用独立审核的固定版本，PyPI 发布不会
 > 自动升级目录。每个目标仍只允许一个写入者。
 > 参见[发布说明](docs/releases/0.3.0.zh-CN.md)和[验证记录](docs/validation.md)。
@@ -116,7 +117,7 @@ export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # 如果 Ollama 尚未运行，先启动服务，并保持服务可用。
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref 7c9e52d816b4f8e8109dbef2797f573b93e0d604   # 已验证的 Runtime 0.3.0 源码
+  --ref 534562f1df43541dbf906d248bb11cd085b211ee   # Runtime 0.3.0 发布版本
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
