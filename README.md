@@ -10,8 +10,9 @@
 > **Runtime 0.3.0** adds optional offline CPU embedding and trusted setup
 > commands to the standalone CLI/MCP. It supports MCP Python SDK 1.x and 2.x.
 > Explicit writes retain canonical-text deduplication without an LLM.
-> MCP distribution 0.1.3 pins Runtime 0.2.2. The Runtime 0.3.0 update follows
-> in the MCP repository.
+> Runtime 0.3.0 is available on [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.3.0/).
+> The generic MCP distribution and managed launcher select their own exact Runtime
+> dependency and are released independently.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.
 > See [release notes](docs/releases/0.3.0.md) and [validation](docs/validation.md).
@@ -135,7 +136,7 @@ export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # Start Ollama if it is not running. Keep its service available.
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref 7c9e52d816b4f8e8109dbef2797f573b93e0d604   # verified Runtime 0.3.0 source
+  --ref 534562f1df43541dbf906d248bb11cd085b211ee   # Runtime 0.3.0 release
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
