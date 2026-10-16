@@ -126,3 +126,11 @@ def test_pinned_install_preserves_the_profile_and_guided_setup(recommended_insta
         ["hermes", "config", "set", "memory.provider", "qdrant-memory"],
         ["hermes", "qdrant-memory", "init"],
     ]
+
+
+def test_demo_script_pins_the_published_release_commit():
+    """The shipped demo script must install the same released commit."""
+    script = (ROOT / "scripts/demo.sh").read_text(encoding="utf-8")
+    match = re.search(r'^RELEASE_REF="([0-9a-f]{40})"', script, re.M)
+    assert match, "scripts/demo.sh must pin a full release commit"
+    assert match.group(1) == RELEASE_COMMIT
