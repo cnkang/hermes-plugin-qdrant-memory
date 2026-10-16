@@ -91,7 +91,11 @@ flowchart LR
 
 明确选择当前 profile 的 home，不要复用其他 profile 的数据。
 
-**推荐：通过官方 Hermes Plugin Catalog 安装。**
+**Catalog 安装：使用官方 Hermes Plugin Catalog 审核过的版本。**
+
+Catalog 独立选择固定提交，其版本可能早于 Runtime 0.3.0。
+如需使用当前发布版本，包括可选的 CPU Embedding 与引导初始化，
+请采用下方推荐的固定版本安装方式。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
@@ -107,7 +111,7 @@ hermes qdrant-memory init
 安装使用 Catalog 审核过的固定提交，并在克隆前先展示该条目的声明工具、版本要求与已知限制；
 `hermes plugins enable` 通过 Hermes PM 准备声明的依赖。
 
-**锁定版本：通过 Hermes CLI 安装已验证的 Runtime 0.3.0 源码。**
+**推荐：通过 Hermes CLI 安装固定版本的 Runtime 0.3.0 源码。**
 
 此不可变源码提交包含可选的 CPU Embedding 与引导初始化，
 不依赖 PyPI 发布或 Catalog 更新。

@@ -109,7 +109,11 @@ to serve `qwen3-embedding:4b`.
 
 Choose the **active profile's** home explicitly. Do not reuse another profile's data.
 
-**Recommended: install from the official Hermes Plugin Catalog.**
+**Catalog option: install the version reviewed by the official Hermes Plugin Catalog.**
+
+The Catalog selects its own fixed revision, which may be older than Runtime
+0.3.0. To use the current release, including optional CPU embedding and guided
+setup, follow the recommended version-locked installation below.
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
@@ -126,7 +130,7 @@ The install resolves the catalog's reviewed commit and prints the entry's declar
 tools, requirements and known issues before it clones anything.
 `hermes plugins enable` prepares the declared dependencies through Hermes PM.
 
-**Version-locked: install the verified Runtime 0.3.0 source through the Hermes CLI.**
+**Recommended: install the version-locked Runtime 0.3.0 source through the Hermes CLI.**
 
 This immutable source revision includes the optional CPU embedding and guided
 setup. It does not depend on a PyPI release or a catalog update.
