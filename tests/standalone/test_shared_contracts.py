@@ -17,6 +17,20 @@ from .test_standalone import command
 from .test_standalone import profile as standalone_profile
 
 
+def test_loopback_startup_does_not_depend_on_dns(monkeypatch):
+    """An unavailable resolver must never block literal-loopback service readiness."""
+
+    def unavailable_resolver(*args):
+        """Fail immediately if server binding attempts reverse hostname resolution."""
+        raise AssertionError("Literal loopback must not invoke DNS")
+
+    monkeypatch.setattr("socket.getfqdn", unavailable_resolver)
+    with make_server(None, 0) as server:
+        assert server.server_name == "127.0.0.1"
+        assert server.server_address[0] == "127.0.0.1"
+        assert server.server_port > 0
+
+
 @pytest.fixture
 def profile(tmp_path):
     """Reuse the hermetic embedding transport without inheriting unrelated fixtures."""
