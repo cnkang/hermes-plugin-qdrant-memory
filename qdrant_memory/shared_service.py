@@ -12,7 +12,16 @@ from pathlib import Path
 from socketserver import TCPServer
 from threading import BoundedSemaphore
 
-from .models import Scope, content_hash, digest, enforce_limits, now, payload, point_id
+from .models import (
+    Scope,
+    content_hash,
+    digest,
+    enforce_limits,
+    normalize,
+    now,
+    payload,
+    point_id,
+)
 from .retry import safe_error
 from .shared_state import SharedRecoveryRequiredError
 from .tools import schemas
@@ -239,7 +248,11 @@ class SharedOwner:
         """Never promote private collisions or reuse an edited content ID."""
         if not self.belongs(old.payload, grant):
             raise PermissionError("Existing private ID cannot become shared")
-        if old.payload["content_hash"] != content_hash(text):
+        stored = enforce_limits(
+            {"text": text, "metadata": {}, "content_hash": content_hash(text)},
+            self.runtime.cfg["limits"],
+        )["content_hash"]
+        if old.payload["content_hash"] not in {content_hash(text), stored}:
             raise SharedConflictError("Original content ID has since been edited")
 
     def _plan(self, grant, scope, name, args):
@@ -272,6 +285,8 @@ class SharedOwner:
                     "source_id": source_id,
                     "source_version": source_version,
                 }, {"id": identifier, "action": "DELETE", "version": old.payload["version"]}
+            if not normalize(args["text"]):
+                raise ValueError("Memory text must be nonempty")
             value = {
                 **old.payload,
                 "text": args["text"],

@@ -6,12 +6,13 @@ import json
 import math
 import os
 import platform
-import selectors
+import queue
 import signal
 import statistics
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -87,14 +88,20 @@ def service(home, policy):
         text=True,
         start_new_session=os.name != "nt",
     )
+    assert process.stdout is not None
     try:
-        with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout, selectors.EVENT_READ)
-            if not selector.select(timeout=120):
-                raise TimeoutError(
-                    "Shared service did not become ready: " + _diagnostics(diagnostics)
-                )
-        line = process.stdout.readline()
+        lines = queue.Queue()
+        threading.Thread(target=lambda: lines.put(process.stdout.readline()), daemon=True).start()
+        try:
+            line = lines.get(timeout=120)
+        except queue.Empty:
+            raise TimeoutError(
+                "Shared service did not become ready: " + _diagnostics(diagnostics)
+            ) from None
+        if not line:
+            raise RuntimeError(
+                "Shared service exited before readiness: " + _diagnostics(diagnostics)
+            )
         ready = json.loads(line)
         if not ready.get("ready"):
             raise RuntimeError("Shared service startup failed: " + _diagnostics(diagnostics))

@@ -608,6 +608,51 @@ def test_embedding_outage_preserves_failed_plan_for_operator_retry(profile):
         assert hits[0]["id"] == result["id"]
 
 
+def test_truncated_duplicate_add_and_whitespace_update(profile):
+    """Truncated duplicate add skips cleanly and whitespace update is rejected."""
+    home, _ = profile
+    cfg_path = home / "qdrant-memory.json"
+    cfg = json.loads(cfg_path.read_text())
+    cfg["limits"] = {
+        **cfg.get("limits", {}),
+        "max_text_bytes": 10,
+        "oversize_policy": "truncate",
+    }
+    cfg_path.write_text(json.dumps(cfg))
+    command(profile, "init")
+    with owner_process(profile) as (url, _):
+        first = client(
+            profile,
+            url,
+            "hermes",
+            "add",
+            text="1234567890abcdefghij",
+            request_id="trunc-1",
+        )
+        assert first["action"] == "ADD"
+        second = client(
+            profile,
+            url,
+            "hermes",
+            "add",
+            text="1234567890abcdefghij",
+            request_id="trunc-2",
+        )
+        assert second["action"] == "SKIP"
+        assert second["id"] == first["id"]
+        ws_update = client(
+            profile,
+            url,
+            "hermes",
+            "update",
+            id=first["id"],
+            text="   \n\t  ",
+            expected_version=first["version"],
+            request_id="ws-up",
+        )
+        assert ws_update["error"]["type"] == "ValueError"
+
+
 def test_error_and_audit_output_contains_no_secrets(profile, caplog):
     """Transport errors and audit decisions never echo tokens, memory or dependency text."""
     import logging
