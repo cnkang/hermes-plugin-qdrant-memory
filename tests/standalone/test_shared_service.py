@@ -541,9 +541,10 @@ def test_superseded_operation_records_conflict_without_blocking(profile):
         # The receipt is complete, so the same request ID replays the conflict.
         replay = client(profile, url, "hermes", "add", text="superseded fact", request_id="s1")
         assert replay == result
-    # A restart is ready: the superseded plan must not wedge recovery.
+    # A restart is ready and not blocked: a new write must be admitted.
     with owner_process(profile) as (url, _):
-        assert "memories" in client(profile, url, "hermes", "search", query="superseded fact")
+        added = client(profile, url, "hermes", "add", text="post-recovery fact", request_id="s2")
+        assert added["action"] == "ADD"
 
 
 def test_policy_validation(tmp_path):
