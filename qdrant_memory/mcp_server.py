@@ -7,11 +7,13 @@ from .standalone import call_tool, open_runtime
 from .tools import schemas
 
 
-def create_server(runtime):
+def create_server(runtime, *, tool_schemas=schemas, invoke_tool=None):
     """Bind the four fixed-scope tools to an official SDK server instance."""
     import anyio
     from mcp.server import Server
     from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
+
+    invoke_tool = invoke_tool or (lambda name, arguments: call_tool(runtime, name, arguments))
 
     async def list_tools():
         """Advertise only the shared explicit-memory schemas."""
@@ -19,16 +21,16 @@ def create_server(runtime):
         await anyio.lowlevel.checkpoint()
         return [
             Tool(name=item["name"], description=item["description"], inputSchema=item["parameters"])
-            for item in schemas()
+            for item in tool_schemas()
         ]
 
     async def invoke(name, arguments):
         """Validate and dispatch without echoing sensitive invalid arguments."""
         try:
-            result = await anyio.to_thread.run_sync(lambda: call_tool(runtime, name, arguments))
+            result = await anyio.to_thread.run_sync(lambda: invoke_tool(name, arguments))
             return CallToolResult(
                 content=[TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
-                isError=False,
+                isError="error" in result,
             )
         except Exception as exc:
             return CallToolResult(

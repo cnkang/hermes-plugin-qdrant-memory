@@ -752,6 +752,10 @@ def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=No
             report(progress, "Acquiring writer lock")
             lease = WriterLease.for_config(home, cfg)
             resources.callback(lease.close)
+        if command in {"init", "migrate", "delete-all"}:
+            from .shared_state import require_no_pending_shared
+
+            require_no_pending_shared(home, ledger_namespace(cfg))
         embedder = _open_embedder(command, cfg, resources, progress, secret_reader)
         report(progress, "Connecting to target")
         store = QdrantStore(build_client(cfg), cfg, embedder)
