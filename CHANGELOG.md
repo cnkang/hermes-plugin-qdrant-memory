@@ -7,7 +7,7 @@
 - Enforce fixed-space grants, read-only access, legacy isolation, revision conflicts
   and durable request replay through the existing Runtime/Ledger/WriterLease.
 - Interlock legacy mutations/destructive maintenance while shared plans remain
-  unfinished; operator retry and owner recovery remain available.
+  unfinished. Operator retry and owner recovery remain available.
 - Add independent-process embedded/Server acceptance tests, reproducible retrieval
   and latency evaluation, and English/Chinese operational documentation.
 

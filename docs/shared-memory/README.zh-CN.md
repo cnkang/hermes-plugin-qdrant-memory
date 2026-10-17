@@ -1,11 +1,11 @@
 # One Memory, Multiple Agents：跨 Agent 共享记忆（未发布预览）
 
-本次实现让多个独立 Agent 通过一个持有 Runtime、Ledger 和 WriterLease 的本地服务访问同一份记忆。
+多个独立 Agent 可以通过同一个持有 Runtime、Ledger 和 WriterLease 的本地服务访问同一份记忆。
 它是显式选择启用的新模式；Hermes Native Provider、自动提取、现有 stdio MCP、DSH 和 WorkBuddy
 私有配置均不自动切换。Hermes 兼容性是首要验收门槛。
 
 完整命令与可复制配置见[英文操作指南](README.md)，设计与安全边界见
-[架构决策](architecture.md)，实测与未完成项见[交付报告](report.md)。
+[架构决策](architecture.md)，实测与未完成项见[验证报告](report.md)。
 
 ## 安装和启动
 
@@ -51,7 +51,7 @@ owner 映射为原 `user_id`；稳定空间映射为保留的 `agent_id: shared:
 
 通过宿主支持的安全环境变量机制传入该 Agent 的 `QDRANT_MEMORY_SHARED_TOKEN`。
 桥接进程不打开数据库、不创建 Ledger、不运行 embedding。英文指南包含 JSON 与 Codex TOML 示例。
-DSH Bundle 和 WorkBuddy Managed Connector 默认仍安装和运行私有 profile；本轮不修改已有安装。
+DSH Bundle 和 WorkBuddy Managed Connector 默认仍安装和运行私有 profile；本次更新不修改已有安装。
 真实宿主 UI 导入仍需后续人工验收，自动测试覆盖官方 MCP SDK 的独立进程协议连接。
 
 **Hermes 优先兼容：Native Provider 继续处理原有私有记忆，不改变生命周期或默认 schema。**
@@ -105,7 +105,7 @@ Native Provider 自动将提取结果保存到共享空间尚未实现。只有�
 - 同一 OS 用户的恶意代码可读进程环境和 profile，不属于 bearer token 的隔离边界。
 - 不同 profile/主机的直接 Qdrant 写入不受本地 WriterLease 约束，属于不支持的部署。
 - 所有操作经过 owner 串行化，embedding 可能成为瓶颈；不宣称性能或检索质量提升。
-- receipt 为可靠重试而保留，完成后的正文计划会清除；本轮无 receipt 自动压缩策略。
+- receipt 为可靠重试而保留，完成后的正文计划会清除；当前版本没有 receipt 自动压缩策略。
 - 不支持公网 API、OAuth、远程 Agent 直连、分布式多写、独立进程打开 embedded 数据目录，
   不支持自动将私有历史转为共享数据。
 
@@ -120,7 +120,7 @@ Native Provider 自动将提取结果保存到共享空间尚未实现。只有�
 Bearer 凭据用于约束已配置客户端；同一 OS 用户的恶意代码或本机高权限进程不在
 该凭据的保密边界内。当前版本不支持远程访问，不应通过公共代理暴露服务。
 
-PR 中明确记录一项 Sonar 规则例外：仅对 `qdrant_memory/shared_service.py`
+仓库中明确记录一项 Sonar 规则例外：仅对 `qdrant_memory/shared_service.py`
 中的 `python:S5332`（明文 HTTP）应用上述本机传输设计判断。其他安全规则和质量
 阈值继续执行。依据及测试见[架构说明](architecture.md#reviewed-local-http-transport-decision-sonar-s5332)。
 加入远程或通配监听前必须移除此例外，重新审核 TLS 和远程身份授权方案。

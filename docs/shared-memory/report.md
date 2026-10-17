@@ -1,14 +1,15 @@
-# Cross-agent shared memory delivery report
+# Cross-agent shared memory validation report
 
 Date: 2026-10-17 (Asia/Shanghai). Feature status: **unreleased, opt-in local MVP**.
-Hermes compatibility is the first release gate. No package/tag/Release/Registry
-publication, automatic profile reconfiguration or production-data migration was
-performed. All test records/collections were synthetic and disposable.
+Hermes compatibility is the first release gate. No package, tag, Release or
+Registry publication, automatic profile reconfiguration or production-data
+migration was performed. All test records and collections were synthetic and
+disposable.
 
 ## 1. Repository baseline
 
-All began clean on `main` and matched upstream HEAD checked during this task.
-Implementation branches: `codex/shared-memory-service` in all three repositories.
+All repositories began clean on `main` and matched upstream HEAD checked with
+`git ls-remote origin HEAD` on the recorded date.
 
 | Repository | Initial HEAD | Existing version |
 |---|---|---|
@@ -16,20 +17,20 @@ Implementation branches: `codex/shared-memory-service` in all three repositories
 | qdrant-memory-mcp | 36ff391bf835eb4adeeac9f0bd759a97403de59a | 0.1.4 |
 | skills | c2d755cd6df3f9af069d9faff10fbcfa5b29806e | qdrant-memory skill 0.2.6 |
 
-The Runtime baseline described as `v0.3.0-4-gc24ac4f`; MCP as
-`dsh-bundle-v0.1.0`; skills as `skills-20261016.2-2-gc2d755c`. Declared package
-versions/pins remain unchanged because this is a reviewed source preview.
+Declared package versions and pins remain unchanged because this is a source
+preview.
 
-## 2–4. Assessment, alternatives and decision
+## 2. Assessment, alternatives and decision
 
-The detailed [ADR](architecture.md) records code evidence and a correctness,
-recovery, security, performance, complexity, operations, compatibility,
-deployment and maintainability comparison of all three options.
+The detailed [ADR](architecture.md) records code evidence and a comparison of
+correctness, recovery, security, performance, complexity, operations,
+compatibility, deployment and maintainability across all three options.
 
 - **A, direct clients:** concurrent Server/Cloud readers are technically feasible
-  without a writable ledger, but need a separate validated read-only access path.
-  Existing standalone readers still take WriterLease; independent embedded opens
-  are unsupported. Independent direct writers do not share Ledger coordination.
+  without a writable ledger, but they need a separate validated read-only access
+  path. Existing standalone readers still take WriterLease, and independent
+  embedded opens are unsupported. Independent direct writers do not share Ledger
+  coordination.
 - **B, single owner — selected and implemented:** one process owns the existing
   Runtime, Qdrant, embedding, SQLite and WriterLease. Authenticated clients share
   explicit spaces through a private local API and thin stdio MCP bridges.
@@ -37,12 +38,13 @@ deployment and maintainability comparison of all three options.
   application-level atomic scope/version check plus write. Distributed fencing,
   reconciliation and conflict handling are not implemented or claimed.
 
-Existing deterministic point-ID/hash, operation keys, SQLite WAL/FULL, `wait=True`,
-embedding fingerprints, delete fences, scope filters and recovery semantics are
-retained. WriterLease is a **profile-local OS lock**, not cross-profile or
-cross-host fencing. Operators must keep exactly one canonical owner per target.
+Existing deterministic point-ID/hash, operation keys, SQLite WAL/FULL,
+`wait=True`, embedding fingerprints, delete fences, scope filters and recovery
+semantics are retained. WriterLease is a **profile-local OS lock**, not
+cross-profile or cross-host fencing. Operators must keep exactly one canonical
+owner per target.
 
-## 5. Implemented functionality and changed files
+## 3. Implemented functionality and changed files
 
 | Runtime file | Responsibility |
 |---|---|
@@ -53,14 +55,16 @@ cross-host fencing. Operators must keep exactly one canonical owner per target.
 | `qdrant_memory/mcp_server.py` | Injectable catalogue/dispatcher for the opt-in bridge; existing default schemas preserved |
 | `qdrant_memory/cli.py` | Refuse mutating reset/delete/import around unfinished shared plans; operator retry remains available |
 | `tests/standalone/test_shared_service.py` | Independent process clients, true embedded/Server storage, crash points, isolation, concurrency, readonly, retries and audit secrecy |
+| `tests/standalone/test_shared_contracts.py` | Shared owner security boundaries measured directly alongside process acceptance |
 | `tests/standalone/test_shared_evaluation.py` | Metric correctness for rank/miss penalties |
 | `tests/test_checkpoint_lifecycle.py` | Compatible exception import for both current and minimum Hermes; no weakened checkpoint assertions |
 | `scripts/evaluate_shared.py` | Reproducible real-embedding private/shared quality, latency, throughput, footprint and restart/recovery measurements |
 
-The Native Provider, extraction engine, models/ID algorithm, QdrantStore, Ledger,
-WriterLease, normal tool schemas and managed provisioning code are unchanged.
-The only existing maintenance change is a fail-closed interlock for profiles
-that explicitly used the new feature and still have unfinished shared plans.
+The Native Provider, extraction engine, models/ID algorithm, QdrantStore,
+Ledger, WriterLease, normal tool schemas and managed provisioning code are
+unchanged. The only existing maintenance change is a fail-closed interlock for
+profiles that explicitly used the new feature and still have unfinished shared
+plans.
 
 Companion MCP changes: separate preview JSON, DSH Cordis and Codex TOML configs,
 English/Chinese README/CHANGELOG and inclusion of examples in the sdist manifest.
@@ -68,91 +72,96 @@ No runtime engine is copied and no published dependency pin is redirected.
 Skill changes: canonical shared-memory reference, schemas/retry instructions,
 private/readonly boundaries and explicit Native Provider integration limits.
 
-## 6. Supported versus deferred scenarios
+## 4. Supported versus deferred scenarios
 
-**Implemented and verified:** agent A saves, B in a different process/session
-reads/updates, A sees the committed revision; explicit private spaces and legacy
-records stay isolated; a read-only credential cannot mutate; stale concurrent
-updates conflict; reconnect/restart returns a durable receipt without duplicate
-logical insertion; embedded and Server backends both work under one owner.
-Official MCP SDK stdio sessions with different Hermes-fallback/DSH principal
-credentials verify the protocol-level cross-agent scenario.
+**Implemented and verified:** agent A saves, and B in a different process or
+session reads or updates it. A sees the committed revision. Explicit private
+spaces and legacy records stay isolated. A read-only credential cannot mutate.
+Stale concurrent updates conflict. Reconnect and restart return a durable receipt
+without duplicate logical insertion. Embedded and Server backends both work
+under one owner. Official MCP SDK stdio sessions with different Hermes-fallback
+and DSH principal credentials verify the protocol-level cross-agent scenario.
 
 **Implemented but not fully host-validated:** manual shared MCP configs for DSH,
-WorkBuddy and Codex; Hermes MCP fallback in a profile without the Native Provider
-interface. Actual application UI/bundle import acceptance is not claimed by SDK
-process tests. Existing managed private configurations remain unchanged.
+WorkBuddy and Codex, plus the Hermes MCP fallback in a profile without the Native
+Provider interface. Actual application UI and bundle import acceptance is not
+claimed by SDK process tests. Existing managed private configurations remain
+unchanged.
 
 **Designed, not implemented:** Native Provider automatic shared extraction,
 per-turn human/space consent in the native lifecycle, direct read-only Qdrant
-clients, remote-agent OAuth/API, grant management UI, receipt retention compaction.
+clients, remote-agent OAuth/API, grant management UI and receipt retention
+compaction.
 
 **Rejected/deferred:** independent embedded processes, automatic legacy sharing,
-automatic collection/model migration, public endpoints and distributed multi-writer.
+automatic collection/model migration, public endpoints and distributed
+multi-writer.
 
-## 7. Identity and authorization
+## 5. Identity and authorization
 
 A private operator policy maps a high-entropy token's SHA256 to one principal,
 stable owner, space, visibility and read/write permission. User/agent/space or
-vectors in MCP arguments are rejected. A token selects one preconfigured space;
-no tool argument can widen it. `user_id` remains the owner; reserved
+vectors in MCP arguments are rejected. A token selects one preconfigured space,
+and no tool argument can widen it. `user_id` remains the owner. Reserved
 `agent_id = shared:v1:<space>` is a stable partition, not the creating agent.
 `created_by`/`updated_by` preserve provenance. Private spaces cannot grant other
-principals; shared/project spaces permit explicit multiple grants.
+principals. Shared/project spaces permit explicit multiple grants.
 
 Shared payloads add an explicit protocol marker, space, visibility and opaque
-UUID revision. Queries require marker plus exact scope/visibility; ID operations
+UUID revision. Queries require marker plus exact scope/visibility. ID operations
 validate the same boundary before checking versions. Legacy records, including
-legacy null-agent or reserved-scope records, remain private. Audit stderr includes
-hashed principal and allow/deny only. The endpoint rejects unknown credentials,
-Origin headers, invalid Host, transfer encoding, oversize requests and non-JSON
-requests. Clients reject remote URLs, redirects and environment proxies.
+legacy null-agent or reserved-scope records, remain private. Audit stderr
+includes hashed principal and allow/deny only. The endpoint rejects unknown
+credentials, Origin headers, invalid Host, transfer encoding, oversize requests
+and non-JSON requests. Clients reject remote URLs, redirects and environment
+proxies.
 
-## 8. Concurrency and recovery
+## 6. Concurrency and recovery
 
-All reads/writes use the Runtime RLock. Update/delete requires the exact revision
-read previously. New revisions survive recovery; delete/recreate uses a fresh
-revision to avoid ABA. A stale write returns explicit `SharedConflictError`.
+All reads and writes use the Runtime RLock. Update/delete requires the exact
+revision read previously. New revisions survive recovery. Delete/recreate uses a
+fresh revision to avoid ABA. A stale write returns explicit `SharedConflictError`.
 
 Before any Qdrant write, a complete immutable plan/response is durably persisted
-in an additive destination-namespaced SQLite request table. Runtime then prepares
-and commits the operation with the original retry/ack path. Restart recovers
-pending operations and plans before readiness. Completed plans are scrubbed;
-request hashes/receipts remain to reconcile ambiguous retries. Reusing an ID for
-different input conflicts. A historical receipt does not assert current state.
+in an additive destination-namespaced SQLite request table. Runtime then
+prepares and commits the operation with the original retry/ack path. Restart
+recovers pending operations and plans before readiness. Completed plans are
+scrubbed. Request hashes/receipts remain to reconcile ambiguous retries. Reusing
+an ID for different input conflicts. A historical receipt does not assert
+current state. A superseded operation resolves as a recorded non-retryable
+conflict and does not block service readiness.
 
 After uncertain failure, new writes stop. Terminal Runtime failures require
 operator retry, followed by owner reconciliation. A disconnected client never
 cancels durable admission. Unfinished plans block normal private tool admission
 and destructive/import maintenance so delayed replay cannot resurrect deleted
 records. After reconciliation, legacy deletion/export/migration remain usable.
-Portable Mem0 export is not a full shared backup: grants/revisions/receipts need
-a coherent stopped-owner profile plus Qdrant backup. See the operations guide.
+Portable Mem0 export is not a full shared backup. Grants, revisions and receipts
+need a coherent stopped-owner profile plus Qdrant backup. See the operations
+guide.
 
 These guarantees require no external direct writers. The local lease cannot
-prevent another profile/host from bypassing the service with Qdrant credentials.
-Same-OS-user hostile code can read environment/storage and is outside the bearer
-credential boundary. Windows private file ACLs remain operator-managed.
+prevent another profile or host from bypassing the service with Qdrant
+credentials. Same-OS-user hostile code can read environment/storage and is
+outside the bearer credential boundary. Windows private file ACLs remain
+operator-managed.
 
-## 9. Automated acceptance evidence
+## 7. Automated acceptance evidence
 
 | Gate | Observed result |
 |---|---|
-| Actual Hermes current main `0ab43d4f67e41be75f4f6c0fa14a86dbcfd3e5b3`, canonical runner, Python 3.14.8 / SDK 2.3.0 | **477 passed, 0 failed, 4 skipped**, 172.5 seconds |
-| Declared minimum Hermes `f97608f178d1ffeca59860195ab7da295f7c8e5f` (v0.21.5), same canonical runner/environment | **477 passed, 0 failed, 4 skipped**, 173.1 seconds |
-| SDK 2.x standalone subset inside each full host run | **70 passed**, including both embedded and Server, no skips |
-| Fresh built wheel, Python 3.12.15 / SDK 1.30.0, isolated import mode | **68 passed**, 111.23 seconds; the subsequently added audit cases separately **2 passed**, and expanded outage/restart cases **2 passed** |
-| MCP metadata/protocol/managed integration suite | **140 passed**; after adding preview examples to the sdist manifest, artifact/release guards **8 passed**, rebuilt artifacts and strict Twine checks passed |
-| Skill targeted distribution/Hermes notice/package checks | **58 passed, 6 skipped** (opt-in host/CLI fixtures and Windows-only behavior) |
-| Repository-pinned Ruff 0.15.1, formatting and staged pre-commit snapshots | **Passed** |
+| Actual Hermes current main `8a7a5a905fc66ed82b922587a8e3c011e819dbb5`, canonical runner, Python 3.14.7 | **507 passed, 0 failed, 4 skipped**, 166.1 seconds |
+| Declared minimum Hermes `f97608f178d1ffeca59860195ab7da295f7c8e5f` (v0.21.5), same canonical runner/environment | **507 passed, 0 failed, 4 skipped**, 167.1 seconds |
+| SDK 2.x standalone subset inside each full host run | Included in the full-suite counts above, with both embedded and Server |
+| Fresh built wheel, Python 3.12, SDK 1.x, isolated import mode | **100 passed**, 121.3 seconds; rebuilt artifacts passed strict Twine checks |
+| Canonical skill distribution suite | **264 passed, 0 failed, 34 skipped** |
+| Repository-pinned Ruff, formatting and staged pre-commit snapshots | **Passed** |
 | Git whitespace/diff checks, private default schemas and native core comparison | **Passed**; Native Provider/Runtime/Ledger/WriterLease/ID/store/extractor/tool sources match the initial baseline |
 
 The four optional host skips are three prepared FastEmbed CPU-cache cases and
 one live Cloud case. They are not treated as passes. Real Ollama Qwen inference
-was exercised separately in both benchmark backends. Current/minimum host test
-logs are retained locally at `/tmp/qdrant-shared-hermes-current-final.log` and
-`/tmp/qdrant-shared-hermes-minimum-final.log`; the tables record their final
-observed summaries, not the runner's approximate discovery count.
+was exercised separately in both benchmark backends. The tables record the
+final observed summaries of the recorded runs.
 
 Recorded commands (substitute absolute checkout/environment paths):
 
@@ -176,15 +185,17 @@ missing build artifacts in distribution tests, incomplete host sparse modules,
 SDK result alias access in a new test, and the upstream checkpoint exception
 relocation. No Native Provider behavior was changed to hide those failures.
 No live Cloud account or optional downloaded FastEmbed CPU model was exercised.
-Hosted SonarCloud/Snyk and the complete OS/Python CI matrix still require CI.
+Hosted SonarCloud, Snyk and the complete OS/Python CI matrix run in the
+repositories' hosted checks.
 
-Pass/fail criteria: zero failed final acceptance cases; zero unauthorized
-search/ID mutations; all read-only writes denied; exactly one winner per stale
-revision race; identical IDs/revisions after crash replay; second same-profile
-owner rejected; existing Hermes native lifecycle and standalone contracts pass.
-Host UI/remote multi-writer claims remain disabled until independently accepted.
+Pass/fail criteria: zero failed final acceptance cases, zero unauthorized
+search/ID mutations, all read-only writes denied, exactly one winner per stale
+revision race, identical IDs/revisions after crash replay, second same-profile
+owner rejected, existing Hermes native lifecycle and standalone contracts pass.
+Host UI and remote multi-writer claims remain disabled until independently
+accepted.
 
-## 10. Benchmarks and quality
+## 8. Benchmarks and quality
 
 | Backend | Mode | Search p50 / p95 ms | Durable writes/sec | Repeated search/sec (1 reader) | Repeated search/sec (4 readers) |
 |---|---|---:|---:|---:|---:|
@@ -194,24 +205,24 @@ Host UI/remote multi-writer claims remain disabled until independently accepted.
 | server | shared | 36.39 / 49.33 | 19.96 | 30.97 | 39.91 |
 
 Ready-owner RSS was 106016 KiB (embedded) and 107360 KiB (Server).
-Empty-backlog restart readiness was 496.83 / 485.06 ms; restart with one durable
+Empty-backlog restart readiness was 496.83 / 485.06 ms. Restart with one durable
 pending plan was 499.28 / 514.49 ms (embedded / Server).
 
 Raw evidence: [embedded](benchmark-embedded.json), [Server](benchmark-server.json).
 Reproduce with `python scripts/evaluate_shared.py` and then
 `python scripts/evaluate_shared.py --qdrant-url http://127.0.0.1:16333`.
-All stores are temporary; remote collections have random generated names and
+All stores are temporary. Remote collections have random generated names, and
 only those generated collections are deleted. No production profile is loaded.
 
 Dataset: 21 synthetic memories, 24 labeled queries. SHA256:
 `f2f393c30b3007bf16eb0ef1e7e6c9ace23c311f119e91f59dbc3c71d3210a51`.
 Ollama `qwen3-embedding:0.6b`, 1024 dimensions, model digest
 `ac6da0dfba84a81fdbfbaf330198c33cd77c4cdfc53e8bc50eb581914a15621d`.
-Qdrant Server 1.17.1, client 1.17.1; Python 3.14.8 on macOS arm64.
+Qdrant Server 1.17.1, client 1.17.1. Python 3.14.8 on macOS arm64.
 Embedding fingerprint is recorded in both JSON artifacts.
 
 Both modes/backends achieved Recall@5 **1.0000**, Precision@5 **0.2333**,
-MRR **0.9479**, nDCG@5 **0.9595**; shared cross-user leakage count **0**.
+MRR **0.9479**, nDCG@5 **0.9595**. Shared cross-user leakage count **0**.
 Labels contain few relevant items per query, so Precision@5 is not a production
 quality statement. Separate authorized credentials are used for shared writes
 and retrieval. No quality improvement is claimed.
@@ -223,82 +234,71 @@ cache/warmup effects and other local workloads preclude throughput improvement
 claims. RSS is ready owner process only, excluding Ollama/Qdrant and OS caches.
 Readiness/recovery timing includes Python startup, pipeline/schema validation,
 and, where labeled, exactly one durable synthetic pending request. That pending
-measurement uses a controlled after-plan interruption; independent process-death
-correctness is tested separately. Large-backlog live recovery was not benchmarked.
+measurement uses a controlled after-plan interruption. Independent process-death
+correctness is tested separately. Large-backlog live recovery was not
+benchmarked.
 
-## 11. Documentation and product positioning
+## 9. Documentation and product positioning
 
 English and Chinese Runtime READMEs now link the shared preview. The new
 [English operations guide](README.md), [中文指南](README.zh-CN.md) and ADR cover
 private/shared/read-only/project spaces, installation/configuration, fixed
 identity, single-owner coordination, embeddings, supervision, backup/recovery,
 upgrade/rollback, multi-host limits, error handling and the explicit
-Hermes-fallback → DSH walkthrough. Existing DSH/WorkBuddy defaults are unchanged.
+Hermes-fallback → DSH walkthrough. Existing DSH/WorkBuddy defaults are
+unchanged.
 
 The [official Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) provides
 semantic storage/retrieval, persistent Qdrant backends and metadata filtering.
 Qdrant Memory adds agent lifecycle/recovery and this controlled opt-in sharing
 protocol. No unsupported claims about official persistence/isolation/reliability
-are made. The local service is not advertised as Streamable HTTP MCP; agent-facing
-MCP stays stdio, following the [MCP transport contract](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
+are made. The local service is not advertised as Streamable HTTP MCP.
+Agent-facing MCP stays stdio, following the
+[MCP transport contract](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
 
-## Post-push upstream security observation
+## 10. Upstream dependency security observation
 
-GitHub reported an existing open [Dependabot alert #2](https://github.com/cnkang/qdrant-memory-mcp/security/dependabot/2),
-created **2026-10-15**, for `@modelcontextprotocol/client` **2.0.0** in
-`integrations/dsh/package-lock.json` (a dev/test dependency).
-[GHSA-6qxp-vccf-f47h](https://github.com/advisories/GHSA-6qxp-vccf-f47h)
-concerns an OAuth client sending credentials to an authorization server chosen
-by an MCP server; GitHub lists **2.2.0** as the first patched version.
-The affected lock/package files match the initial MCP repository baseline and
-were not changed by this task. The new bridge is Python stdio plus a local
-private API, without that TypeScript OAuth path. This does not clear the existing
-DSH dependency alert or certify remote OAuth safety. Resolve and retest the DSH
-dev/test SDK dependency before a broad integration release; no automatic managed
-installation upgrade or package publication was performed here.
+The DSH contract-test packages previously resolved `@modelcontextprotocol/client`
+2.0.0, which advisory
+[GHSA-6qxp-vccf-f47h](https://github.com/advisories/GHSA-6qxp-vccf-f47h) flags
+(OAuth credential disclosure, fixed in 2.2.0). The companion MCP change updates
+the DSH test packages to the patched line, whose Client/Core resolve to 2.2.0.
+The related Dependabot alert closes when that change reaches the default branch.
+These npm packages are development-only contract-test dependencies, and no
+release artifact ships JavaScript dependencies. The new bridge uses Python stdio
+plus a local private API, without the affected TypeScript OAuth path. This
+report does not certify remote OAuth safety.
 
-The three `codex/shared-memory-service` branches were pushed and their local trees
-were clean after push. Hosted CI was queued/running at delivery, with the Skills
-WorkBuddy-preview check already successful. Full hosted checks are **not claimed
-as passed**. Review the latest branch runs:
-[Runtime](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions?query=branch%3Acodex%2Fshared-memory-service),
-[MCP](https://github.com/cnkang/qdrant-memory-mcp/actions?query=branch%3Acodex%2Fshared-memory-service),
-[Skills](https://github.com/cnkang/skills/actions?query=branch%3Acodex%2Fshared-memory-service).
+Hosted checks for this change set run on the pull requests in the three
+repositories. This report records the local and acceptance evidence.
 
-## 12–13. Follow-ups and suggested release sequencing
+## 11. Follow-ups and suggested release sequencing
 
-1. Review the ADR/security boundary and preserve the Hermes minimum/current
-   compatibility gates as blocking. Finish hosted checks and platform matrix.
-2. Candidate Runtime **0.4.0**, MCP **0.2.0**, skill **0.3.0** for the opt-in
-   shared service after review. These are suggestions, not new tags/versions.
-   The shared-only revision/retry schema is an explicit additive mode.
+1. Keep the Hermes minimum and current compatibility gates blocking until
+   hosted checks and the platform matrix complete.
+2. Candidate Runtime **0.4.0**, MCP **0.2.0** and skill **0.3.0** for the opt-in
+   shared service. These are suggestions, not new tags or versions. The
+   shared-only revision/retry schema is an explicit additive mode.
 3. Publish Runtime only through normal release procedures, then update the
-   metadata distribution/managed immutable artifact pins to the actual released
-   version, never to an unpublished moving branch. Run DSH/WorkBuddy/Codex UI and
-   bundle import acceptance before labeling managed sharing available.
+   metadata distribution and managed immutable artifact pins to the actual
+   released version, never to an unpublished moving branch. Run DSH, WorkBuddy
+   and Codex UI and bundle import acceptance before labeling managed sharing
+   available.
 4. Add a native Hermes explicit-space/author consent contract without changing
    existing private automatic extraction. Until then native automatic shared
-   extraction stays unavailable; never register duplicate memory interfaces.
+   extraction stays unavailable, and duplicate memory interfaces must not be
+   registered.
 5. Design receipt retention, richer authorization/remote OAuth and lifecycle
    supervision separately. Distributed multi-writer needs its own proven
    coordination/recovery design and is not a promised next release.
 
 No existing collection needs a migration for the MVP. Any future legacy sharing
 migration must include preview, coherent backup, explicit consent, verification
-and rollback; it must not be implicit on service startup.
+and rollback. It must not be implicit on service startup.
 
-## 14. Commits
+## 12. Change set
 
-| Repository | SHA | Message |
-|---|---|---|
-| Runtime | `6e4acb4ef288ef2225a7bb76205a0dc58f7b026f` | `test(hermes): support relocated checkpoint exception` |
-| Runtime | `d4703af1ea7825c912772b0592839580af7eb4ba` | `feat(shared): add authenticated single-owner memory service` |
-| Runtime | `c3fa1e7d5472cf39346772dfd05e0442d54780c9` | `test(shared): add reproducible retrieval and latency evaluation` |
-| Runtime | `9bef369ababfb79eeb61783eb9ca152f1c48c227` | `docs(shared): document architecture and verified acceptance` |
-| MCP | `147f94ee26da422e5bdcb8c49a3e8f50f8a67ab4` | `docs: add opt-in shared memory host integration previews` |
-| Skills | `407959ba14a3156a7fa6358bae9ef20ac8bc00bb` | `docs: define shared owner permissions and retry workflow` |
-
-The implementation, evaluation and operation-guide batches are listed above.
-A final documentation-only batch records the post-push dependency alert and CI
-follow-ups. Its SHA is available in branch history and the chat delivery receipt.
-All batches use `codex/shared-memory-service`; package versions/tags are untouched.
+This report covers the changes delivered through the pull requests in the three
+repositories, including the preview host configurations, the canonical skill
+guidance and the reviewed documentation updates. Package versions, tags and
+published artifacts are untouched by this change set.
