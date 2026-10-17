@@ -52,10 +52,10 @@ artifacts. Sharing is never automatically enabled on those installations.
 
 | Dimension | A: coordinated direct clients | B: single owner service | C: independent distributed writers |
 |---|---|---|---|
-| Correctness | Remote readers possible; independent writers unsafe | Existing Runtime lock plus CAS revisions | Needs distributed CAS, fencing and coordination |
+| Correctness | Remote readers possible. Independent writers unsafe | Existing Runtime lock plus CAS revisions | Needs distributed CAS, fencing and coordination |
 | Crash recovery | One designated writer ledger only | Existing ledger plus durable request plans | Multiple ledgers can replay conflicting old state |
 | Security | Qdrant access must independently enforce scopes | Credential-to-fixed-space boundary | Distributed identities and policy consistency |
-| Performance | Readers avoid owner hop | One extra local hop; all operations serialized | Potential parallelism, not established |
+| Performance | Readers avoid owner hop | One extra local hop. All operations serialized | Potential parallelism, not established |
 | Complexity | Safe reads need separate read-only store API | Small adapter around existing engine | High: reconciliation, split brain, tombstones |
 | Operations | Must prevent other direct writers manually | One supervised process/profile and backup | Distributed coordinator and recovery tooling |
 | Compatibility | Existing standalone reader acquires lease | Additive commands, existing defaults preserved | Risks changing identity/recovery semantics |
