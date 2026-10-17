@@ -10,7 +10,8 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
-from queue import Queue
+from queue import Empty, Queue
+from tempfile import TemporaryFile
 from threading import Thread
 
 import httpx
@@ -86,7 +87,7 @@ def owner_process(profile, crash=None):
     """Launch a separate owner; injected kill points only exist in the test process."""
     home, env = profile
     path = policy(home)
-    prefix = "import os, signal\nif os.name == 'nt': signal.signal(signal.SIGBREAK, signal.default_int_handler)\n"
+    prefix = "import faulthandler, os, signal\nfaulthandler.dump_traceback_later(20)\nif os.name == 'nt': signal.signal(signal.SIGBREAK, signal.default_int_handler)\n"
     if crash == "prepared":
         prefix += "from qdrant_memory.runtime import Runtime\nRuntime.commit = lambda *a, **k: __import__('os')._exit(71)\n"
     elif crash == "ack":
@@ -97,12 +98,13 @@ def owner_process(profile, crash=None):
         prefix
         + f"from qdrant_memory.shared_service import serve\nserve({str(home)!r}, {str(path)!r}, 0)\n"
     )
+    diagnostics = TemporaryFile(mode="w+t")
     process = subprocess.Popen(
         [sys.executable, "-c", script],
         env=env,
         cwd=home,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=diagnostics,
         text=True,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     )
@@ -110,8 +112,14 @@ def owner_process(profile, crash=None):
     reader = Thread(target=lambda: ready.put(process.stdout.readline()), daemon=True)
     reader.start()
     try:
-        line = ready.get(timeout=30)
-        assert line, process.stderr.read()
+        try:
+            line = ready.get(timeout=30)
+        except Empty:
+            diagnostics.seek(0)
+            pytest.fail("Shared owner readiness timed out:\n" + diagnostics.read())
+        if not line:
+            diagnostics.seek(0)
+            pytest.fail("Shared owner exited before readiness:\n" + diagnostics.read())
         url = json.loads(line)["url"]
         yield url, process
     finally:
@@ -124,7 +132,7 @@ def owner_process(profile, crash=None):
                 process.wait(timeout=10)
         reader.join(timeout=5)
         process.stdout.close()
-        process.stderr.close()
+        diagnostics.close()
 
 
 def client(profile, url, identity, tool, **arguments):
