@@ -5,11 +5,14 @@ from types import SimpleNamespace
 
 import pytest
 from agent.context_compressor import COMPRESSED_SUMMARY_METADATA_KEY
-from agent.conversation_compression import (
-    CompressionCheckpointUnavailable,
-    _pre_compress_memory_context,
-)
+from agent.conversation_compression import _pre_compress_memory_context
 from agent.memory_manager import MemoryManager
+
+try:
+    from agent.conversation_compression import CompressionCheckpointUnavailable
+except ImportError:
+    # Current Hermes moved the exception; the minimum supported host exports it here.
+    from agent.conversation_compression_checkpoint import CompressionCheckpointUnavailable
 
 from .helpers import capture_committed_event_payloads
 from .test_provider import provider
