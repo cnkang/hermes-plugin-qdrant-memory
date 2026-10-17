@@ -21,6 +21,7 @@ from .reset import (
 )
 from .retry import safe_error
 from .runtime import Runtime
+from .shared_state import require_no_pending_shared
 from .tools import dispatch, schemas
 
 STANDALONE_DEFAULTS = merge(
@@ -60,7 +61,7 @@ def load_standalone_config(home, overrides=None, resolve_secrets=True, *, secret
 
 
 @contextmanager
-def open_runtime(home=None, *, secret_reader=None):
+def open_runtime(home=None, *, secret_reader=None, shared_owner=False):
     """Own one fixed-scope writer session using the existing durable core.
 
     A session requires an initialized compatible collection. Pending bulk reset
@@ -86,6 +87,8 @@ def open_runtime(home=None, *, secret_reader=None):
         intents = pending_scope_deletes_file(home, namespace)
         if intents:
             raise cli._pending_intent_error(intents)
+        if not shared_owner:
+            require_no_pending_shared(home, namespace)
         embedder = build_embedder(None, cfg, secret_reader=reader)
         resources.callback(embedder.close)
         store = QdrantStore(build_client(cfg), cfg, embedder)
@@ -156,6 +159,16 @@ def parser():
         for key in definition["parameters"]["properties"]:
             command.add_argument("--" + key, required=key in definition["parameters"]["required"])
     commands.add_parser("mcp", help="Serve fixed-scope memory tools over local stdio MCP")
+    shared = commands.add_parser("shared-serve", help="Own an opt-in local shared memory service")
+    shared.add_argument("--policy", type=Path, required=True)
+    shared.add_argument("--port", type=int, default=8765)
+    for mode in ("shared-call", "shared-mcp"):
+        bridge = commands.add_parser(mode, help="Connect to an explicitly authorized shared owner")
+        bridge.add_argument("--url", required=True)
+        bridge.add_argument("--token-env", default="QDRANT_MEMORY_SHARED_TOKEN")
+        if mode == "shared-call":
+            bridge.add_argument("--tool", required=True)
+            bridge.add_argument("--arguments", required=True, help="JSON tool arguments")
     prepare = commands.add_parser(
         "prepare-model", help="Explicitly download and verify the optional CPU model"
     )
@@ -181,6 +194,24 @@ def main(argv=None):
     """Print JSON results; reserve stdout exclusively for MCP protocol in MCP mode."""
     args = parser().parse_args(argv)
     try:
+        if args.qdrant_command == "shared-serve":
+            from .shared_service import serve
+
+            serve(args.home, args.policy, args.port)
+            return 0
+        if args.qdrant_command == "shared-mcp":
+            from .shared_client import serve_mcp
+
+            serve_mcp(args.url, args.token_env)
+            return 0
+        if args.qdrant_command == "shared-call":
+            from .shared_client import call
+
+            result = call(
+                args.url, os.environ.get(args.token_env, ""), args.tool, json.loads(args.arguments)
+            )
+            cli.print_json(result)
+            return 1 if "error" in result else 0
         if args.qdrant_command == "mcp":
             from .mcp_server import serve
 
@@ -227,7 +258,7 @@ def main(argv=None):
         # Error text from services/configuration may contain credentials. Keep the
         # machine-readable diagnostic sanitized just like the Hermes boundary.
         print(json.dumps({"error": error}), file=sys.stderr, flush=True)
-        if args.qdrant_command != "mcp":
+        if args.qdrant_command not in {"mcp", "shared-mcp"}:
             cli.print_json({"error": error})
         return 1
 
