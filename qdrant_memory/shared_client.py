@@ -27,11 +27,17 @@ def call(url, token, name, arguments):
         or parsed.fragment
     ):
         raise ValueError("Shared service URL must be literal IPv4 loopback with port")
+    # Convert at the trust boundary: only a bounded numeric port can vary;
+    # neither an untrusted URL string nor its host/path reaches HTTPX.
+    port = int(parsed.port)
+    if not 1 <= port <= 65535:
+        raise ValueError("Shared service port must be between 1 and 65535")
+    endpoint = httpx.URL("http://127.0.0.1/v1/tool", port=port)
     if not isinstance(token, str) or len(token) < 32:
         raise ValueError("A high-entropy shared credential is required")
     with httpx.Client(trust_env=False, follow_redirects=False, timeout=120) as client:
         response = client.post(
-            f"http://127.0.0.1:{parsed.port}/v1/tool",
+            endpoint,
             headers={"Authorization": "Bearer " + token},
             json={"name": name, "arguments": arguments},
         )
