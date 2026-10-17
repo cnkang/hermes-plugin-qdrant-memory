@@ -4,19 +4,21 @@ import asyncio
 import hashlib
 import json
 import os
-import selectors
 import signal
 import socket
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
+from queue import Queue
+from threading import Thread
 
 import httpx
 import pytest
 
 from qdrant_memory.models import Scope
 from qdrant_memory.shared_service import SharedOwner, load_policy
+from qdrant_memory.shared_state import SharedRecoveryRequiredError
 from qdrant_memory.standalone import open_runtime
 
 from .test_standalone import command
@@ -28,12 +30,19 @@ TOKENS = {
 }
 
 
-@pytest.fixture(params=["embedded", "server"])
+def pytest_generate_tests(metafunc):
+    """Collect Server acceptance only when a disposable endpoint was supplied."""
+    if "profile" in metafunc.fixturenames:
+        modes = ["embedded"]
+        if metafunc.config.getoption("--qdrant-test-url"):
+            modes.append("server")
+        metafunc.parametrize("profile", modes, indirect=True)
+
+
+@pytest.fixture
 def profile(tmp_path, request):
     """Select real embedded or explicitly supplied disposable Server collection."""
     url = request.config.getoption("--qdrant-test-url")
-    if request.param == "server" and not url:
-        pytest.skip("Disposable Qdrant Server URL was not supplied")
     for value in standalone_profile.__wrapped__(tmp_path):
         home, _ = value
         collection = "shared_test_" + hashlib.sha256(str(home).encode()).hexdigest()[:24]
@@ -77,13 +86,13 @@ def owner_process(profile, crash=None):
     """Launch a separate owner; injected kill points only exist in the test process."""
     home, env = profile
     path = policy(home)
-    prefix = ""
+    prefix = "import os, signal\nif os.name == 'nt': signal.signal(signal.SIGBREAK, signal.default_int_handler)\n"
     if crash == "prepared":
-        prefix = "from qdrant_memory.runtime import Runtime\nRuntime.commit = lambda *a, **k: __import__('os')._exit(71)\n"
+        prefix += "from qdrant_memory.runtime import Runtime\nRuntime.commit = lambda *a, **k: __import__('os')._exit(71)\n"
     elif crash == "ack":
-        prefix = "from qdrant_memory.qdrant_store import QdrantStore\noriginal = QdrantStore.upsert\ndef killed(self, records):\n original(self, records)\n __import__('os')._exit(72)\nQdrantStore.upsert = killed\n"
+        prefix += "from qdrant_memory.qdrant_store import QdrantStore\noriginal = QdrantStore.upsert\ndef killed(self, records):\n original(self, records)\n __import__('os')._exit(72)\nQdrantStore.upsert = killed\n"
     elif crash == "plan":
-        prefix = "from qdrant_memory.shared_service import SharedOwner\nSharedOwner._apply = lambda *a, **k: __import__('os')._exit(73)\n"
+        prefix += "from qdrant_memory.shared_service import SharedOwner\nSharedOwner._apply = lambda *a, **k: __import__('os')._exit(73)\n"
     script = (
         prefix
         + f"from qdrant_memory.shared_service import serve\nserve({str(home)!r}, {str(path)!r}, 0)\n"
@@ -95,23 +104,25 @@ def owner_process(profile, crash=None):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     )
+    ready = Queue()
+    reader = Thread(target=lambda: ready.put(process.stdout.readline()), daemon=True)
+    reader.start()
     try:
-        with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout, selectors.EVENT_READ)
-            assert selector.select(timeout=30), "Shared owner startup timed out"
-        line = process.stdout.readline()
+        line = ready.get(timeout=30)
         assert line, process.stderr.read()
         url = json.loads(line)["url"]
         yield url, process
     finally:
         if process.poll() is None:
-            process.send_signal(signal.SIGINT)
+            process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
             try:
                 process.wait(timeout=20)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=10)
+        reader.join(timeout=5)
         process.stdout.close()
         process.stderr.close()
 
@@ -271,7 +282,8 @@ def test_independent_clients_isolation_versions_and_restart(profile):
         recreated = client(
             profile, url, "hermes", "add", text="Project uses SQLite", request_id="a2"
         )
-        assert recreated["id"] == added["id"] and recreated["version"] != added["version"]
+        assert recreated["id"] == added["id"]
+        assert recreated["version"] != added["version"]
         assert (
             client(
                 profile,
@@ -314,7 +326,8 @@ def test_killed_owner_replays_immutable_plan_without_duplicates(profile, stage):
         )
         assert replay["action"] == "ADD"
         hits = client(profile, url, "dsh", "search", query="durable crash fact")["memories"]
-        assert len(hits) == 1 and hits[0]["id"] == replay["id"]
+        assert len(hits) == 1
+        assert hits[0]["id"] == replay["id"]
         assert hits[0]["version"] == replay["version"]
     command(profile, "delete-all", "--user", "user", "--all-agents", "--confirm")
     with owner_process(profile) as (url, _):
@@ -474,9 +487,8 @@ def test_legacy_matching_scope_stays_private_and_poisoned_writer_blocks(profile)
             owner.call(
                 TOKENS["hermes"], "qdrant_memory_add", {"text": "failed", "request_id": "f1"}
             )
-        with pytest.raises(Exception) as error:
+        with pytest.raises(SharedRecoveryRequiredError):
             owner.call(TOKENS["dsh"], "qdrant_memory_add", {"text": "blocked", "request_id": "f2"})
-        assert type(error.value).__name__ == "SharedRecoveryRequiredError"
         runtime.store.upsert = original
 
 
@@ -537,7 +549,8 @@ def test_embedding_outage_preserves_failed_plan_for_operator_retry(profile):
         )
         assert result["action"] == "ADD"
         hits = client(profile, url, "dsh", "search", query="failed shared write")["memories"]
-        assert len(hits) == 1 and hits[0]["id"] == result["id"]
+        assert len(hits) == 1
+        assert hits[0]["id"] == result["id"]
 
 
 def test_error_and_audit_output_contains_no_secrets(profile, caplog):
