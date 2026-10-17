@@ -112,3 +112,15 @@ Native Provider 自动将提取结果保存到共享空间尚未实现。只有�
 官方 [Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) 提供通用语义存储和检索，
 具备 Qdrant 持久化与 metadata 过滤能力。本项目侧重 Agent 长期记忆生命周期、恢复和显式授权共享，
 不以未经验证的方式贬低官方实现。本功能尚未发布，不能等同于已上线产品能力。
+
+
+### 本机 HTTP 的安全审查边界
+
+共享 owner 使用未加密的本机私有 HTTP API，固定监听 `127.0.0.1`。
+Bearer 凭据用于约束已配置客户端；同一 OS 用户的恶意代码或本机高权限进程不在
+该凭据的保密边界内。当前版本不支持远程访问，不应通过公共代理暴露服务。
+
+PR 中明确记录一项 Sonar 规则例外：仅对 `qdrant_memory/shared_service.py`
+中的 `python:S5332`（明文 HTTP）应用上述本机传输设计判断。其他安全规则和质量
+阈值继续执行。依据及测试见[架构说明](architecture.md#reviewed-local-http-transport-decision-sonar-s5332)。
+加入远程或通配监听前必须移除此例外，重新审核 TLS 和远程身份授权方案。

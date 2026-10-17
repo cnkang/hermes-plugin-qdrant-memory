@@ -170,3 +170,27 @@ After owner reconciliation, existing deletion/reset operations work as before.
 The Native Provider implementation and its lifecycle/schema contracts are unchanged.
 The checkpoint acceptance test supports the latest host relocation of
 `CompressionCheckpointUnavailable` while retaining the minimum-host import path.
+
+
+## Reviewed local HTTP transport decision (Sonar S5332)
+
+The optional shared service deliberately uses an unencrypted private HTTP API
+bound to literal IPv4 loopback. This follows the local-only MVP transport decision;
+TLS certificates and remote access are outside this iteration. Bearer credentials
+separate configured clients within the documented local OS trust boundary. They
+do not provide confidentiality against a privileged local process or hostile code
+running as the same OS user.
+
+`sonar-project.properties` records one rule/resource exception: `python:S5332`
+for `qdrant_memory/shared_service.py`. This is the component that implements the
+private HTTP API. The Sonar quality thresholds and all other security rules remain
+active, including SSRF analysis of the client. This explicit policy is reviewed
+with the PR before merge/publication, rather than silently hiding a finding in
+source annotations.
+
+The exception depends on the literal `127.0.0.1` bind, exact Host/port validation,
+Origin rejection, fixed authenticated grants, disabled environment proxies and
+redirects, and the private OS account boundary. Tests exercise those restrictions,
+verify DNS-independent loopback binding, and verify that shutdown drains admitted
+requests before releasing ownership. Remove the exception and review TLS and
+remote authorization before adding any wildcard/remote listener or public proxy.
