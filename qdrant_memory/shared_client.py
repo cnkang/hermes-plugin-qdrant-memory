@@ -31,7 +31,7 @@ def call(url, token, name, arguments):
         raise ValueError("A high-entropy shared credential is required")
     with httpx.Client(trust_env=False, follow_redirects=False, timeout=120) as client:
         response = client.post(
-            url.rstrip("/") + "/v1/tool",
+            f"http://127.0.0.1:{parsed.port}/v1/tool",
             headers={"Authorization": "Bearer " + token},
             json={"name": name, "arguments": arguments},
         )

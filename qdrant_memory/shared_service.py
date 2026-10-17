@@ -39,6 +39,30 @@ def shared_schemas():
     return result
 
 
+def _validate_grant(grant, seen):
+    """Validate a single fixed identity before comparing space boundaries."""
+    if not isinstance(grant, dict) or set(grant) != {
+        "token_sha256",
+        "principal",
+        "owner_id",
+        "space_id",
+        "permission",
+        "visibility",
+    }:
+        raise ValueError("Invalid shared grant fields")
+    if not all(isinstance(value, str) and value and len(value) <= 256 for value in grant.values()):
+        raise ValueError("Invalid shared grant values")
+    if not re.fullmatch("[a-f0-9]{64}", grant["token_sha256"]) or grant["token_sha256"] in seen:
+        raise ValueError("Credential hashes must be unique SHA256 values")
+    seen.add(grant["token_sha256"])
+    if grant["permission"] not in {"read", "write"} or grant["visibility"] not in {
+        "private",
+        "shared",
+        "project",
+    }:
+        raise ValueError("Invalid shared grant permission")
+
+
 def load_policy(path):
     """Read explicit operator grants; credential hashes are never tool arguments."""
     path = Path(path)
@@ -46,7 +70,8 @@ def load_policy(path):
         raise PermissionError("Shared policy must be private to its owner")
     policy = json.loads(path.read_text(encoding="utf-8"))
     if (
-        set(policy) != {"clients"}
+        not isinstance(policy, dict)
+        or set(policy) != {"clients"}
         or not isinstance(policy["clients"], list)
         or not policy["clients"]
     ):
@@ -54,28 +79,7 @@ def load_policy(path):
     seen = set()
     spaces = {}
     for grant in policy["clients"]:
-        if set(grant) != {
-            "token_sha256",
-            "principal",
-            "owner_id",
-            "space_id",
-            "permission",
-            "visibility",
-        }:
-            raise ValueError("Invalid shared grant fields")
-        if not all(
-            isinstance(value, str) and value and len(value) <= 256 for value in grant.values()
-        ):
-            raise ValueError("Invalid shared grant values")
-        if not re.fullmatch("[a-f0-9]{64}", grant["token_sha256"]) or grant["token_sha256"] in seen:
-            raise ValueError("Credential hashes must be unique SHA256 values")
-        seen.add(grant["token_sha256"])
-        if grant["permission"] not in {"read", "write"} or grant["visibility"] not in {
-            "private",
-            "shared",
-            "project",
-        }:
-            raise ValueError("Invalid shared grant permission")
+        _validate_grant(grant, seen)
         space = (grant["owner_id"], grant["space_id"])
         boundary = (
             grant["visibility"],
@@ -146,7 +150,9 @@ class SharedOwner:
         finally:
             LOG.info("shared_access principal=%s decision=%s", digest(grant["principal"]), outcome)
 
-    def _call(self, grant, name, args):
+    @staticmethod
+    def _validate_arguments(name, args):
+        """Check the exact shared catalogue before resolving any memory scope."""
         definition = next((item for item in shared_schemas() if item["name"] == name), None)
         if definition is None or not isinstance(args, dict):
             raise ValueError("Unknown shared tool")
@@ -155,21 +161,28 @@ class SharedOwner:
             raise ValueError("Invalid shared tool arguments")
         if any(not isinstance(v, str) or not v or len(v.encode()) > 65536 for v in args.values()):
             raise ValueError("Invalid shared tool values")
+
+    def _search(self, grant, scope, args):
+        """Read only the authenticated space and explicit shared marker."""
+        filters = {
+            "shared_protocol": MARKER,
+            "space_id": grant["space_id"],
+            "visibility": grant["visibility"],
+        }
+        if args.get("category"):
+            filters["category"] = args["category"]
+        return {
+            "memories": [
+                {"id": str(hit.id), "score": hit.score, **hit.payload}
+                for hit in self.runtime.store.search(args["query"], scope, filters)
+            ]
+        }
+
+    def _call(self, grant, name, args):
+        self._validate_arguments(name, args)
         scope = self.scope(grant)
         if name.endswith("search"):
-            filters = {
-                "shared_protocol": MARKER,
-                "space_id": grant["space_id"],
-                "visibility": grant["visibility"],
-            }
-            if args.get("category"):
-                filters["category"] = args["category"]
-            return {
-                "memories": [
-                    {"id": str(hit.id), "score": hit.score, **hit.payload}
-                    for hit in self.runtime.store.search(args["query"], scope, filters)
-                ]
-            }
+            return self._search(grant, scope, args)
         if grant["permission"] != "write":
             raise PermissionError("Read-only shared credential")
         if self.blocked:
@@ -212,6 +225,13 @@ class SharedOwner:
             raise
         return result
 
+    def _validate_existing_add(self, old, grant, text):
+        """Never promote private collisions or reuse an edited content ID."""
+        if not self.belongs(old.payload, grant):
+            raise PermissionError("Existing private ID cannot become shared")
+        if old.payload["content_hash"] != content_hash(text):
+            raise SharedConflictError("Original content ID has since been edited")
+
     def _plan(self, grant, scope, name, args):
         source_id, source_version = "", ""
         if name.endswith("add"):
@@ -221,10 +241,7 @@ class SharedOwner:
             ) or self.runtime.store.get(identifier, scope)
             if old:
                 identifier = str(old.id)
-                if not self.belongs(old.payload, grant):
-                    raise PermissionError("Existing private ID cannot become shared")
-                if old.payload["content_hash"] != content_hash(args["text"]):
-                    raise SharedConflictError("Original content ID has since been edited")
+                self._validate_existing_add(old, grant, args["text"])
                 return None, {"id": identifier, "action": "SKIP", "version": old.payload["version"]}
             value = payload(args["text"], scope, MARKER)
             creator = grant["principal"]
@@ -288,6 +305,17 @@ class SharedOwner:
             )
 
 
+def _error_status(exc):
+    """Map sanitized service failures to explicit transport outcomes."""
+    if isinstance(exc, PermissionError):
+        return 403
+    if isinstance(exc, SharedConflictError):
+        return 409
+    if isinstance(exc, SharedRecoveryRequiredError):
+        return 503
+    return 400
+
+
 def make_server(owner, port):
     """Bind IPv4 loopback only; this bounded private API is not HTTP MCP."""
 
@@ -326,15 +354,7 @@ def make_server(owner, port):
                     raise ValueError("Invalid request envelope")
                 result = owner.call(auth[7:], data["name"], data["arguments"])
             except Exception as exc:
-                status = (
-                    403
-                    if isinstance(exc, PermissionError)
-                    else 409
-                    if isinstance(exc, SharedConflictError)
-                    else 503
-                    if isinstance(exc, SharedRecoveryRequiredError)
-                    else 400
-                )
+                status = _error_status(exc)
                 result = {"error": safe_error(exc)}
             body = json.dumps(result, ensure_ascii=False).encode()
             self.send_response(status)
