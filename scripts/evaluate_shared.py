@@ -55,10 +55,20 @@ def checked(result):
     return result
 
 
+def _diagnostics(stream):
+    """Return the bounded stderr tail of a failed helper process."""
+    stream.seek(0)
+    text = stream.read().strip()
+    return text[-1500:] if text else "(no diagnostics)"
+
+
 @contextmanager
 def service(home, policy):
     """Measure readiness including process startup, validation and durable recovery."""
     started = time.perf_counter()
+    # Diagnostics go to an unnamed file: the child can never stall on a full
+    # stderr pipe, and a failed startup stays explainable.
+    diagnostics = tempfile.TemporaryFile(mode="w+t")
     process = subprocess.Popen(
         [
             sys.executable,
@@ -73,18 +83,21 @@ def service(home, policy):
             "0",
         ],
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        stderr=diagnostics,
         text=True,
+        start_new_session=os.name != "nt",
     )
     try:
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
             if not selector.select(timeout=120):
-                raise TimeoutError("Shared service did not become ready")
+                raise TimeoutError(
+                    "Shared service did not become ready: " + _diagnostics(diagnostics)
+                )
         line = process.stdout.readline()
         ready = json.loads(line)
         if not ready.get("ready"):
-            raise RuntimeError("Shared service startup failed")
+            raise RuntimeError("Shared service startup failed: " + _diagnostics(diagnostics))
         startup_ms = (time.perf_counter() - started) * 1000
         rss = None
         if os.name != "nt":
@@ -96,13 +109,17 @@ def service(home, policy):
         yield ready["url"], startup_ms, rss
     finally:
         if process.poll() is None:
-            process.send_signal(signal.SIGINT if os.name != "nt" else signal.SIGTERM)
+            try:
+                process.send_signal(signal.SIGINT if os.name != "nt" else signal.SIGTERM)
+            except ProcessLookupError:
+                pass  # The service exited between the poll and the signal.
             try:
                 process.wait(timeout=60)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
         process.stdout.close()
+        diagnostics.close()
 
 
 def run(args):
@@ -167,13 +184,24 @@ def run(args):
                     "search": {"top_k": 10, "candidate_k": max(24, len(dataset["memories"]))},
                 }
                 (home / "qdrant-memory.json").write_text(json.dumps(cfg))
-                subprocess.run(
-                    [sys.executable, "-m", "qdrant_memory.standalone", "--home", str(home), "init"],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=180,
-                )
+                with tempfile.TemporaryFile(mode="w+t") as init_diagnostics:
+                    completed = subprocess.run(
+                        [
+                            sys.executable,
+                            "-m",
+                            "qdrant_memory.standalone",
+                            "--home",
+                            str(home),
+                            "init",
+                        ],
+                        stdout=subprocess.DEVNULL,
+                        stderr=init_diagnostics,
+                        timeout=180,
+                    )
+                    if completed.returncode != 0:
+                        raise RuntimeError(
+                            "Shared owner initialization failed: " + _diagnostics(init_diagnostics)
+                        )
                 if mode == "private":
                     with open_runtime(home) as runtime:
 

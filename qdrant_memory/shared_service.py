@@ -221,6 +221,10 @@ class SharedOwner:
             )
         try:
             self._apply(request_key, plan)
+        except SharedConflictError:
+            # A superseded plan is a determinate outcome with a recorded
+            # receipt; it must not block the service.
+            raise
         except BaseException:
             self.blocked = True
             raise
@@ -296,7 +300,22 @@ class SharedOwner:
         if plan is not None:
             key = self.runtime.operation(**plan)
             self.runtime.commit([key])
-            if self.runtime.ledger.row("operations", key)["status"] != "COMMITTED":
+            status = self.runtime.ledger.row("operations", key)["status"]
+            if status == "SUPERSEDED":
+                # A newer operation replaced this one before it committed. The
+                # outcome is determinate: complete the receipt with a recorded
+                # non-retryable conflict so the caller can re-read, without
+                # blocking the service on a benign race.
+                ledger = self.runtime.ledger
+                conflict = {"error": safe_error(SharedConflictError("Operation was superseded"))}
+                with ledger.lock, ledger.db:
+                    ledger.db.execute(
+                        "UPDATE shared_requests_v1 SET done=1,plan='null',response=?"
+                        " WHERE collection=? AND request_key=?",
+                        (json.dumps(conflict), ledger.collection, request_key),
+                    )
+                raise SharedConflictError("Operation was superseded")
+            if status != "COMMITTED":
                 raise SharedRecoveryRequiredError()
         ledger = self.runtime.ledger
         with ledger.lock, ledger.db:
@@ -330,6 +349,10 @@ def make_server(owner, port):
 
         def log_message(self, *args):
             """Never log HTTP headers, credentials, paths or request bodies."""
+
+        def version_string(self):
+            """Never fingerprint the Python runtime in the Server header."""
+            return "qdrant-memory"
 
         def do_POST(self):
             """Validate transport boundaries before resolving a trusted identity."""
@@ -373,7 +396,10 @@ def make_server(owner, port):
 
         daemon_threads = False
         block_on_close = True
-        slots = BoundedSemaphore(32)
+
+        def __init__(self, *args, **kwargs):
+            self.slots = BoundedSemaphore(32)
+            super().__init__(*args, **kwargs)
 
         def server_bind(self):
             """Bind the literal loopback without HTTPServer's reverse DNS lookup."""

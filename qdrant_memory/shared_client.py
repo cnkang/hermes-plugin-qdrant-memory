@@ -9,10 +9,6 @@ import httpx
 from .shared_service import shared_schemas
 
 
-class SharedClientError(RuntimeError):
-    """Expose only a sanitized service error code to the MCP adapter."""
-
-
 def call(url, token, name, arguments):
     """Call only a literal loopback address with no redirects or environment proxies."""
     parsed = urlsplit(url)
@@ -66,7 +62,7 @@ def serve_mcp(url, token_env):
 
     from .mcp_server import create_server
 
-    token = os.environ.get(token_env, "")
+    token = os.environ.get(token_env, "").strip()
     if len(token) < 32:
         raise ValueError("Shared credential environment variable is missing")
     server = create_server(
