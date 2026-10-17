@@ -242,6 +242,29 @@ protocol. No unsupported claims about official persistence/isolation/reliability
 are made. The local service is not advertised as Streamable HTTP MCP; agent-facing
 MCP stays stdio, following the [MCP transport contract](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
 
+## Post-push upstream security observation
+
+GitHub reported an existing open [Dependabot alert #2](https://github.com/cnkang/qdrant-memory-mcp/security/dependabot/2),
+created **2026-10-15**, for `@modelcontextprotocol/client` **2.0.0** in
+`integrations/dsh/package-lock.json` (a dev/test dependency).
+[GHSA-6qxp-vccf-f47h](https://github.com/advisories/GHSA-6qxp-vccf-f47h)
+concerns an OAuth client sending credentials to an authorization server chosen
+by an MCP server; GitHub lists **2.2.0** as the first patched version.
+The affected lock/package files match the initial MCP repository baseline and
+were not changed by this task. The new bridge is Python stdio plus a local
+private API, without that TypeScript OAuth path. This does not clear the existing
+DSH dependency alert or certify remote OAuth safety. Resolve and retest the DSH
+dev/test SDK dependency before a broad integration release; no automatic managed
+installation upgrade or package publication was performed here.
+
+The three `codex/shared-memory-service` branches were pushed and their local trees
+were clean after push. Hosted CI was queued/running at delivery, with the Skills
+WorkBuddy-preview check already successful. Full hosted checks are **not claimed
+as passed**. Review the latest branch runs:
+[Runtime](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions?query=branch%3Acodex%2Fshared-memory-service),
+[MCP](https://github.com/cnkang/qdrant-memory-mcp/actions?query=branch%3Acodex%2Fshared-memory-service),
+[Skills](https://github.com/cnkang/skills/actions?query=branch%3Acodex%2Fshared-memory-service).
+
 ## 12–13. Follow-ups and suggested release sequencing
 
 1. Review the ADR/security boundary and preserve the Hermes minimum/current
@@ -271,11 +294,11 @@ and rollback; it must not be implicit on service startup.
 | Runtime | `6e4acb4ef288ef2225a7bb76205a0dc58f7b026f` | `test(hermes): support relocated checkpoint exception` |
 | Runtime | `d4703af1ea7825c912772b0592839580af7eb4ba` | `feat(shared): add authenticated single-owner memory service` |
 | Runtime | `c3fa1e7d5472cf39346772dfd05e0442d54780c9` | `test(shared): add reproducible retrieval and latency evaluation` |
+| Runtime | `9bef369ababfb79eeb61783eb9ca152f1c48c227` | `docs(shared): document architecture and verified acceptance` |
 | MCP | `147f94ee26da422e5bdcb8c49a3e8f50f8a67ab4` | `docs: add opt-in shared memory host integration previews` |
 | Skills | `407959ba14a3156a7fa6358bae9ef20ac8bc00bb` | `docs: define shared owner permissions and retry workflow` |
 
-This report, operation guides and benchmark JSON are the separate final
-`docs(shared): document architecture and verified acceptance` batch. Its containing
-commit SHA is recorded in the chat delivery receipt and branch history (a file
-cannot embed the hash of its own containing commit). All batches use the
-`codex/shared-memory-service` branch; package versions/tags remain untouched.
+The implementation, evaluation and operation-guide batches are listed above.
+A final documentation-only batch records the post-push dependency alert and CI
+follow-ups. Its SHA is available in branch history and the chat delivery receipt.
+All batches use `codex/shared-memory-service`; package versions/tags are untouched.
