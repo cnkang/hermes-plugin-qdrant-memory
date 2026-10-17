@@ -8,6 +8,7 @@ import signal
 import socket
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
 from queue import Empty, Queue
@@ -94,6 +95,16 @@ def owner_process(profile, crash=None):
         prefix += "from qdrant_memory.qdrant_store import QdrantStore\noriginal = QdrantStore.upsert\ndef killed(self, records):\n original(self, records)\n __import__('os')._exit(72)\nQdrantStore.upsert = killed\n"
     elif crash == "plan":
         prefix += "from qdrant_memory.shared_service import SharedOwner\nSharedOwner._apply = lambda *a, **k: __import__('os')._exit(73)\n"
+    elif crash == "supersede":
+        prefix += (
+            "from qdrant_memory.runtime import Runtime\n"
+            "original_commit = Runtime.commit\n"
+            "def superseded_commit(self, keys):\n"
+            "    original_commit(self, keys)\n"
+            "    for key in keys:\n"
+            "        self.ledger.finish('operations', key, 'SUPERSEDED')\n"
+            "Runtime.commit = superseded_commit\n"
+        )
     script = (
         prefix
         + f"from qdrant_memory.shared_service import serve\nserve({str(home)!r}, {str(path)!r}, 0)\n"
@@ -405,8 +416,12 @@ def test_concurrent_processes_and_transport_boundaries(profile):
                 == 403
             )
             assert (
-                http.post(url + "/v1/tool", content="x" * 131073, headers=headers).status_code
-                == 403
+                http.post(
+                    url + "/v1/tool",
+                    content="x" * 131073,
+                    headers={**headers, "Content-Type": "application/json"},
+                ).status_code
+                == 400
             )
 
 
@@ -432,6 +447,22 @@ def test_disconnected_write_and_real_mcp_bridge(profile):
                 ).encode()
                 + body
             )
+        # The disconnected caller never reads the response. Wait for durable
+        # persistence with a read-only probe before asserting the replay.
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            persisted = [
+                memory
+                for memory in client(profile, url, "hermes", "search", query="disconnect fact")[
+                    "memories"
+                ]
+                if memory.get("text") == "disconnect fact"
+            ]
+            if persisted:
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError("The disconnected write was not persisted")
         replay = client(
             profile, url, "hermes", "add", text="disconnect fact", request_id="disconnect"
         )
@@ -498,6 +529,21 @@ def test_legacy_matching_scope_stays_private_and_poisoned_writer_blocks(profile)
         with pytest.raises(SharedRecoveryRequiredError):
             owner.call(TOKENS["dsh"], "qdrant_memory_add", {"text": "blocked", "request_id": "f2"})
         runtime.store.upsert = original
+
+
+def test_superseded_operation_records_conflict_without_blocking(profile):
+    """A superseded plan resolves as a recorded conflict; restart stays ready."""
+    command(profile, "init")
+    with owner_process(profile, crash="supersede") as (url, _):
+        result = client(profile, url, "hermes", "add", text="superseded fact", request_id="s1")
+        assert result["error"]["type"] == "SharedConflictError"
+        assert result["error"]["retryable"] is False
+        # The receipt is complete, so the same request ID replays the conflict.
+        replay = client(profile, url, "hermes", "add", text="superseded fact", request_id="s1")
+        assert replay == result
+    # A restart is ready: the superseded plan must not wedge recovery.
+    with owner_process(profile) as (url, _):
+        assert "memories" in client(profile, url, "hermes", "search", query="superseded fact")
 
 
 def test_policy_validation(tmp_path):
