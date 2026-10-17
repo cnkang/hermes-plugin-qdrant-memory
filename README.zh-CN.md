@@ -1,5 +1,9 @@
 # Hermes Qdrant 记忆插件
 
+## One Memory, Multiple Agents — 未发布预览
+
+本 checkout 新增显式启用的本地认证共享 owner 与 stdio 桥接，多个 Agent 可访问授权空间，旧记录继续私有。Hermes Native Provider 和原私有默认行为保持不变。见[中文操作指南](docs/shared-memory/README.zh-CN.md)、[架构](docs/shared-memory/architecture.md)和[验证报告](docs/shared-memory/report.md)。Native Provider 自动共享提取尚未实现。
+
 [![CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml)
 [![Platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml)
 [![Standalone CLI and MCP](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/standalone.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/standalone.yml)
