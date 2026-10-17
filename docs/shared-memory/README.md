@@ -112,8 +112,9 @@ Each host launches its own bridge from the preview environment:
 
 The placeholder is not a usable credential. Use your host's supported secret
 injection mechanism. Never paste real tokens into source-controlled examples.
-The stdio tool names remain `qdrant_memory_search/add/update/delete`. Their shared mode schemas add required `request_id` and `expected_version`
-fields. Discover the actual catalogue.
+The stdio tool names remain `qdrant_memory_search/add/update/delete`. Shared
+mode adds a required `request_id` for mutations. Update and delete also require
+`expected_version`. Discover the actual catalogue.
 For Codex's TOML MCP configuration use:
 
 ```toml

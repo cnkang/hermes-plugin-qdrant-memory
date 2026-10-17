@@ -49,15 +49,15 @@ owner per target.
 | Runtime file | Responsibility |
 |---|---|
 | `qdrant_memory/shared_service.py` | Fixed credential grants, strict schemas, scope/marker authorization, CAS revisions, durable request plans/receipts, bounded authenticated loopback API and audit decisions |
-| `qdrant_memory/shared_client.py` | Loopback-only client, sanitized errors, official SDK stdio bridge; no local storage/embedding |
+| `qdrant_memory/shared_client.py` | Loopback-only client, sanitized errors, official SDK stdio bridge. No local storage/embedding |
 | `qdrant_memory/shared_state.py` | Read-only pending-plan interlock, without creating schema in legacy profiles |
-| `qdrant_memory/standalone.py` | New explicit `shared-serve`, `shared-call`, `shared-mcp`; default private mode preserved |
-| `qdrant_memory/mcp_server.py` | Injectable catalogue/dispatcher for the opt-in bridge; existing default schemas preserved |
-| `qdrant_memory/cli.py` | Refuse mutating reset/delete/import around unfinished shared plans; operator retry remains available |
+| `qdrant_memory/standalone.py` | New explicit `shared-serve`, `shared-call`, `shared-mcp`. Default private mode preserved |
+| `qdrant_memory/mcp_server.py` | Injectable catalogue/dispatcher for the opt-in bridge. Existing default schemas preserved |
+| `qdrant_memory/cli.py` | Refuse mutating reset/delete/import around unfinished shared plans. Operator retry remains available |
 | `tests/standalone/test_shared_service.py` | Independent process clients, true embedded/Server storage, crash points, isolation, concurrency, readonly, retries and audit secrecy |
 | `tests/standalone/test_shared_contracts.py` | Shared owner security boundaries measured directly alongside process acceptance |
 | `tests/standalone/test_shared_evaluation.py` | Metric correctness for rank/miss penalties |
-| `tests/test_checkpoint_lifecycle.py` | Compatible exception import for both current and minimum Hermes; no weakened checkpoint assertions |
+| `tests/test_checkpoint_lifecycle.py` | Compatible exception import for both current and minimum Hermes. No weakened checkpoint assertions |
 | `scripts/evaluate_shared.py` | Reproducible real-embedding private/shared quality, latency, throughput, footprint and restart/recovery measurements |
 
 The Native Provider, extraction engine, models/ID algorithm, QdrantStore,
@@ -153,10 +153,10 @@ operator-managed.
 | Actual Hermes current main `8a7a5a905fc66ed82b922587a8e3c011e819dbb5`, canonical runner, Python 3.14.7 | **507 passed, 0 failed, 4 skipped**, 166.1 seconds |
 | Declared minimum Hermes `f97608f178d1ffeca59860195ab7da295f7c8e5f` (v0.21.5), same canonical runner/environment | **507 passed, 0 failed, 4 skipped**, 167.1 seconds |
 | SDK 2.x standalone subset inside each full host run | Included in the full-suite counts above, with both embedded and Server |
-| Fresh built wheel, Python 3.12, SDK 1.x, isolated import mode | **100 passed**, 121.3 seconds; rebuilt artifacts passed strict Twine checks |
+| Fresh built wheel, Python 3.12, SDK 1.x, isolated import mode | **100 passed**, 121.3 seconds. Rebuilt artifacts passed strict Twine checks |
 | Canonical skill distribution suite | **264 passed, 0 failed, 34 skipped** |
 | Repository-pinned Ruff, formatting and staged pre-commit snapshots | **Passed** |
-| Git whitespace/diff checks, private default schemas and native core comparison | **Passed**; Native Provider/Runtime/Ledger/WriterLease/ID/store/extractor/tool sources match the initial baseline |
+| Git whitespace/diff checks, private default schemas and native core comparison | **Passed**. Native Provider/Runtime/Ledger/WriterLease/ID/store/extractor/tool sources match the initial baseline |
 
 The four optional host skips are three prepared FastEmbed CPU-cache cases and
 one live Cloud case. They are not treated as passes. Real Ollama Qwen inference
@@ -300,5 +300,5 @@ and rollback. It must not be implicit on service startup.
 
 This report covers the changes delivered through the pull requests in the three
 repositories, including the preview host configurations, the canonical skill
-guidance and the reviewed documentation updates. Package versions, tags and
+guidance and the accompanying documentation updates. Package versions, tags and
 published artifacts are untouched by this change set.
