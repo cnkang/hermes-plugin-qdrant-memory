@@ -111,7 +111,12 @@ class SharedOwner:
                 (ledger.collection,),
             ).fetchall()
             for row in rows:
-                self._apply(row["request_key"], json.loads(row["plan"]))
+                try:
+                    self._apply(row["request_key"], json.loads(row["plan"]))
+                except SharedConflictError:
+                    # A superseded plan is a complete outcome (receipt recorded);
+                    # keep replaying the remaining pending requests.
+                    continue
 
     def authenticate(self, token):
         """Resolve identity only from a configured credential; never from request data."""

@@ -185,19 +185,25 @@ def run(args):
                 }
                 (home / "qdrant-memory.json").write_text(json.dumps(cfg))
                 with tempfile.TemporaryFile(mode="w+t") as init_diagnostics:
-                    completed = subprocess.run(
-                        [
-                            sys.executable,
-                            "-m",
-                            "qdrant_memory.standalone",
-                            "--home",
-                            str(home),
-                            "init",
-                        ],
-                        stdout=subprocess.DEVNULL,
-                        stderr=init_diagnostics,
-                        timeout=180,
-                    )
+                    try:
+                        completed = subprocess.run(
+                            [
+                                sys.executable,
+                                "-m",
+                                "qdrant_memory.standalone",
+                                "--home",
+                                str(home),
+                                "init",
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=init_diagnostics,
+                            timeout=180,
+                        )
+                    except subprocess.TimeoutExpired:
+                        raise RuntimeError(
+                            "Shared owner initialization timed out: "
+                            + _diagnostics(init_diagnostics)
+                        ) from None
                     if completed.returncode != 0:
                         raise RuntimeError(
                             "Shared owner initialization failed: " + _diagnostics(init_diagnostics)
