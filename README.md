@@ -1,5 +1,9 @@
 # Qdrant Memory for Hermes
 
+## One Memory, Multiple Agents — unreleased preview
+
+This checkout adds an opt-in authenticated local shared owner and stdio bridge. Multiple agents can share an explicitly authorized space while legacy records remain private. Hermes Native Provider and existing private defaults remain unchanged. See [setup, Hermes/DSH walkthrough and limits](docs/shared-memory/README.md), [architecture](docs/shared-memory/architecture.md), and [validation](docs/shared-memory/report.md). Native Provider automatic shared extraction is planned, not implemented.
+
 [![CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml)
 [![Platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml)
 [![Standalone CLI and MCP](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/standalone.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/standalone.yml)

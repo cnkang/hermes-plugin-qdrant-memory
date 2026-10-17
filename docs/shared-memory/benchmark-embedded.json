@@ -1,0 +1,87 @@
+{
+  "python": "3.14.8",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "model": "qwen3-embedding:0.6b",
+  "dimensions": 1024,
+  "dataset": "retrieval.json",
+  "dataset_sha256": "f2f393c30b3007bf16eb0ef1e7e6c9ace23c311f119e91f59dbc3c71d3210a51",
+  "backend": "embedded",
+  "modes": {
+    "private": {
+      "writes": {
+        "samples": 21,
+        "p50_ms": 21.658374999788066,
+        "p95_ms": 27.06012499947974
+      },
+      "write_records_per_second": 43.934896717624035,
+      "searches": {
+        "samples": 24,
+        "p50_ms": 15.266208499724598,
+        "p95_ms": 19.505499999468157
+      },
+      "quality": {
+        "recall_at_5": 1.0,
+        "precision_at_5": 0.23333333333333334,
+        "mrr": 0.9479166666666666,
+        "ndcg_at_5": 0.9595447622972508
+      },
+      "repeated_single_reader": {
+        "samples": 24,
+        "p50_ms": 17.593937500350876,
+        "p95_ms": 24.16850000008708,
+        "requests_per_second": 55.57366742532496
+      },
+      "four_readers": {
+        "samples": 24,
+        "p50_ms": 63.99029149997659,
+        "p95_ms": 68.21866700011014,
+        "requests_per_second": 61.498139415995546
+      }
+    },
+    "shared": {
+      "writes": {
+        "samples": 21,
+        "p50_ms": 33.90208299970254,
+        "p95_ms": 47.218707999491016
+      },
+      "write_records_per_second": 28.039092813582016,
+      "searches": {
+        "samples": 24,
+        "p50_ms": 29.680395500236045,
+        "p95_ms": 43.76908299946081
+      },
+      "quality": {
+        "recall_at_5": 1.0,
+        "precision_at_5": 0.23333333333333334,
+        "mrr": 0.9479166666666666,
+        "ndcg_at_5": 0.9595447622972508
+      },
+      "startup_ms": 495.9759169996687,
+      "owner_ready_rss_kib": 106016,
+      "scope_leakage_count": 0,
+      "repeated_single_reader": {
+        "samples": 24,
+        "p50_ms": 24.273374999665975,
+        "p95_ms": 32.104458000503655,
+        "requests_per_second": 40.6108778263761
+      },
+      "four_readers": {
+        "samples": 24,
+        "p50_ms": 68.41847900022913,
+        "p95_ms": 108.333125000172,
+        "requests_per_second": 50.21502229473688
+      },
+      "restart_ready_ms_no_pending_backlog": 496.82845799998177,
+      "restart_ready_ms_one_pending_request": 499.2829160000838
+    }
+  },
+  "embedding_fingerprint": "c192cfb939918cb63d6a48f9740400271c09c70a23532dd1100ce7f8fd86937d",
+  "limitations": [
+    "Synthetic pilot corpus, one local machine; not production performance or recall claims.",
+    "Private mode calls an open Runtime; shared mode includes a fresh HTTP client and local hop per call.",
+    "Four-reader latency includes Runtime serialization and local embedding contention.",
+    "Restart times include Python startup and collection/embedding validation; one pending plan is measured separately.",
+    "RSS is owner process only, excluding Ollama/Qdrant server, OS caches and children.",
+    "Host application UIs and Cloud authentication are not benchmarked."
+  ]
+}
