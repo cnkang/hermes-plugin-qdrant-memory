@@ -1,13 +1,13 @@
 # ADR: One Memory, Multiple Agents (unreleased)
 
 Decision date: 2026-10-17. Status: implemented opt-in MVP, release gates recorded
-in [delivery report](report.md). Hermes compatibility is the first acceptance gate.
+in the [validation report](report.md). Hermes compatibility is the first acceptance gate.
 
 ## Baseline
 
 All three repositories began clean on `main`, matching upstream HEAD checked
 with `git ls-remote origin HEAD` on the decision date. No existing user files
-were changed before this task. Work is on `codex/shared-memory-service`.
+were changed.
 
 | Repository | Initial HEAD | Package version | Local describe |
 |---|---|---|---|
@@ -18,12 +18,12 @@ were changed before this task. Work is on `codex/shared-memory-service`.
 ## Existing guarantees and limits
 
 `ownership.WriterLease.for_config` canonicalizes backend destination/collection,
-but stores its OS lock below the profile home. Acquisition is nonblocking;
+but stores its OS lock below the profile home. Acquisition is nonblocking.
 ExitStack releases it after store/ledger/embedder cleanup. It excludes a second
 owner of the same profile destination, including read sessions using
 `standalone.open_runtime`. It is **not a distributed lock**, nor an exclusion
 mechanism across separate profile homes. Embedded Qdrant also owns its directory
-lock; independent processes must not open that path, even as nominal readers.
+lock. Independent processes must not open that path, even as nominal readers.
 
 `Ledger` stores SQLite WAL with synchronous FULL. Rows are destination-namespaced
 within the profile database (`config.ledger_namespace`), not a global coordinator.
@@ -31,18 +31,18 @@ Operation keys hash destination, point, action, full prepared payload and source
 identity/version. `models.point_id` uses UUIDv5 over exact user/agent/source/source
 identity. These algorithms remain unchanged. Runtime's RLock serializes
 prepare/dedupe/commit, and remote mutations use `wait=True`. Pending operations
-replay after restart; terminal failures require authorized CLI retry. Delete
+replay after restart. Terminal failures require authorized CLI retry. Delete
 fences prevent older prepared work from resurrecting deleted facts. A collection
-fingerprint point validates embedding pipeline; dimensions and distance are
-validated before admission. No client-supplied vectors are accepted.
+fingerprint point validates the embedding pipeline. Dimensions and distance
+are validated before admission. No client-supplied vectors are accepted.
 
-`tools.dispatch` authorizes exact IDs using `store.get(id, scope)` before writes;
-search always applies exact `user_id` and `agent_id` filters. Null agent is an
+`tools.dispatch` authorizes exact IDs using `store.get(id, scope)` before
+writes. Search always applies exact `user_id` and `agent_id` filters. Null agent is an
 exact null partition, never a wildcard. Standalone argument validation rejects
 identity overrides. Hermes Native Provider additionally derives scope from human
 turn provenance, quarantines unattributed/mixed histories, persists extraction
 events, and uses a context-bound worker. Its automatic extraction can perform
-relation-based updates; explicit add only deduplicates exact content. None of
+relation-based updates. Explicit add only deduplicates exact content. None of
 these lifecycle paths are redirected into shared spaces.
 
 DSH/WorkBuddy managed installers provision private profiles and pinned runtime
@@ -74,10 +74,10 @@ not an atomic application-level read-check-write transaction across clients.
 Each **operator-configured** credential hash grants one principal one fixed
 `owner_id`/`space_id`, visibility and permission. A space maps to existing
 `Scope(user_id=owner_id, agent_id="shared:v1:" + space_id)`. The caller agent is
-`principal`; it is deliberately distinct from the stable storage partition.
+`principal`. It is deliberately distinct from the stable storage partition.
 Private grants require a unique principal for that owner/space. Shared/project
 grants may authorize multiple principals. Use separate credentials for separate
-spaces; tool calls cannot select or widen a space.
+spaces. Tool calls cannot select or widen a space.
 
 Payloads retain schema-v1 core fields and add `shared_protocol`, `space_id`,
 `visibility`, `created_by`, `updated_by`, and `version`. `created_by` survives
@@ -90,34 +90,37 @@ or the reserved scope string. No payload or collection migration is performed.
 
 ## Write protocol and recovery
 
-1. Authenticate, validate a strict schema and fixed grant; reject read-only writes.
+1. Authenticate, validate a strict schema and the fixed grant, and reject
+   read-only writes.
 2. Hold the same Runtime RLock across scoped lookup and version validation.
 3. Persist the complete immutable plan and response in destination-namespaced
    `shared_requests_v1` within the same SQLite database (additive table only).
 4. Enqueue that exact plan through Runtime, commit using its retry/embedding/store
    path, and mark the receipt done **only after COMMITTED**.
-5. Scrub completed plans; retain request input hashes and responses for safe retry.
+5. Scrub completed plans. Retain request input hashes and responses for safe
+   retry.
 
 A crash before plan persistence admits no operation. A crash after plan persistence
 but before operation enqueue recreates the operation from the plan. A crash after
 Qdrant write but before acknowledgement replays the same deterministic point and
 revision. A crash before receipt completion reuses the committed operation.
 Recovery drains unfinished plans before service readiness. Receipt lookup is
-credential-principal/space-bound; using one request ID for other input conflicts.
+credential-principal/space-bound. Using one request ID for other input conflicts
+is rejected.
 A disconnect never cancels admitted work. Completed receipts return the original
 result even if the record was subsequently changed/deleted: they are operation
 receipts, not current-state reads. Search to reconcile current state.
 
 After an uncertain write error, new writes fail closed until restart/recovery.
-Terminal FAILED operations require operator `retry`; service startup refuses
+Terminal FAILED operations require operator `retry`. Service startup refuses
 readiness if a request cannot be reconciled. Concurrent stale update/delete
-returns `SharedConflictError`; re-read and obtain user intent before issuing a
-new request. Do not transparently retry stale edits against a newer version.
+returns `SharedConflictError`. Re-read and obtain user intent before issuing
+a new request. Do not transparently retry stale edits against a newer version.
 
 There is no distributed fencing. Operators must use **one canonical owner home**
 per destination and keep Qdrant credentials/data-directory access from agents.
-A second differently configured profile or another host can bypass a local lease;
-this deployment is unsupported. SQLite and Qdrant do not form one atomic database
+A second differently configured profile or another host can bypass a local
+lease. This deployment is unsupported. SQLite and Qdrant do not form one atomic database
 transaction: deterministic replay closes the crash gap under this single-owner
 assumption. External direct writes invalidate these guarantees.
 
@@ -128,16 +131,16 @@ MCP or an OAuth resource server. It binds literal IPv4 loopback only, validates
 Host/Origin, rejects browser origins, transfer encoding and oversized requests,
 bounds idle sockets and worker count, and disables request logging. Clients
 reject non-loopback URLs, environment proxies and redirects. Secrets are supplied
-via environment variables; policy stores only SHA256 of high-entropy tokens and
-requires owner-only POSIX permissions. Windows requires operator-managed ACLs.
-Audit stderr records hashed principals and allow/deny; no memory text, credentials
-or raw errors. Policy changes/revocation require restart. Protect/supervise the
+via environment variables. Policy stores only the SHA256 of high-entropy tokens
+and requires owner-only POSIX permissions. Windows requires operator-managed ACLs.
+Audit stderr records hashed principals and allow/deny only. It contains no
+memory text, credentials or raw errors. Policy changes/revocation require restart. Protect/supervise the
 service and rotate client credentials as local OS account security requires.
-Same-OS-user malicious code is outside this credential boundary: it can inspect
-process environments/config/storage. No public endpoint, CORS or multi-host access.
+Same-OS-user malicious code is outside this credential boundary. It can
+inspect process environments, configuration and storage. No public endpoint, CORS or multi-host access.
 
 Agents use official SDK **stdio MCP** bridges. Only the opt-in shared catalogue
-requires `request_id` and update/delete `expected_version`; existing stdio and
+requires `request_id` and update/delete `expected_version`. Existing stdio and
 Hermes schemas are unchanged. This is not a claim of host-native integration tests
 for DSH/WorkBuddy/Hermes applications. Native Provider automatic sharing is deferred
 until there is an explicit host author/space consent contract. The provider stays
@@ -153,8 +156,8 @@ private, and duplicate Hermes interfaces must not be registered.
   and this opt-in controlled sharing protocol.
 - [Qdrant points documentation](https://qdrant.tech/documentation/concepts/points/)
   and [distributed deployment](https://qdrant.tech/documentation/concepts/distributed_deployment/).
-  Distributed documentation was inaccessible through the web reader during the
-  initial check; no unverified distributed guarantees are inferred from it.
+  The distributed deployment documentation was not accessible at review time.
+  No unverified distributed guarantees are inferred from it.
 
 ### Maintenance interlock
 
@@ -163,8 +166,8 @@ private tool sessions and legacy mutating maintenance (init/reset, scope delete,
 import) inspect the optional request table **after acquiring ownership** and
 refuse unfinished shared work with `SharedRecoveryRequiredError`. This uses a
 read-only SQLite connection and creates no schema/files in legacy profiles.
-Operator `retry` remains available to repair terminal Runtime failures; then the
-owner reconciles receipts. This prevents reset/delete followed by delayed plan
+Operator `retry` remains available to repair terminal Runtime failures. The
+owner then reconciles receipts. This prevents reset/delete followed by delayed plan
 replay from resurrecting records. Read-only diagnostics/export remain available.
 After owner reconciliation, existing deletion/reset operations work as before.
 The Native Provider implementation and its lifecycle/schema contracts are unchanged.
@@ -175,7 +178,7 @@ The checkpoint acceptance test supports the latest host relocation of
 ## Reviewed local HTTP transport decision (Sonar S5332)
 
 The optional shared service deliberately uses an unencrypted private HTTP API
-bound to literal IPv4 loopback. This follows the local-only MVP transport decision;
+bound to literal IPv4 loopback. This follows the local-only MVP transport decision.
 TLS certificates and remote access are outside this iteration. Bearer credentials
 separate configured clients within the documented local OS trust boundary. They
 do not provide confidentiality against a privileged local process or hostile code
@@ -184,9 +187,8 @@ running as the same OS user.
 `sonar-project.properties` records one rule/resource exception: `python:S5332`
 for `qdrant_memory/shared_service.py`. This is the component that implements the
 private HTTP API. The Sonar quality thresholds and all other security rules remain
-active, including SSRF analysis of the client. This explicit policy is reviewed
-with the PR before merge/publication, rather than silently hiding a finding in
-source annotations.
+active, including SSRF analysis of the client. The policy is recorded explicitly in the repository,
+rather than hiding the finding with a source annotation.
 
 The exception depends on the literal `127.0.0.1` bind, exact Host/port validation,
 Origin rejection, fixed authenticated grants, disabled environment proxies and
