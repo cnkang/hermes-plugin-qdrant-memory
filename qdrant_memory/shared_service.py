@@ -9,6 +9,7 @@ import re
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 from threading import BoundedSemaphore
 
 from .models import Scope, content_hash, digest, enforce_limits, now, payload, point_id
@@ -371,6 +372,12 @@ def make_server(owner, port):
         """Bound workers while retaining drain-before-lease-release semantics."""
 
         slots = BoundedSemaphore(32)
+
+        def server_bind(self):
+            """Bind the literal loopback without HTTPServer's reverse DNS lookup."""
+            TCPServer.server_bind(self)
+            self.server_name = "127.0.0.1"
+            self.server_port = self.server_address[1]
 
         def process_request(self, request, client_address):
             """Apply admission backpressure before creating another worker."""
