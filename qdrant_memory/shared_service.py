@@ -371,6 +371,8 @@ def make_server(owner, port):
     class BoundedServer(ThreadingHTTPServer):
         """Bound workers while retaining drain-before-lease-release semantics."""
 
+        daemon_threads = False
+        block_on_close = True
         slots = BoundedSemaphore(32)
 
         def server_bind(self):

@@ -2,7 +2,7 @@
 
 import json
 from contextlib import contextmanager
-from threading import Thread
+from threading import Event, Thread
 
 import httpx
 import pytest
@@ -29,6 +29,69 @@ def test_loopback_startup_does_not_depend_on_dns(monkeypatch):
         assert server.server_name == "127.0.0.1"
         assert server.server_address[0] == "127.0.0.1"
         assert server.server_port > 0
+
+
+def test_server_close_drains_admitted_requests():
+    """The HTTP owner must finish admitted work before its enclosing Runtime exits."""
+    admitted, release, closing, closed = Event(), Event(), Event(), Event()
+    responses = []
+
+    class BlockingOwner:
+        """Hold one admitted request at the exact lifetime boundary under test."""
+
+        def authenticate(self, token):
+            """Accept the synthetic transport credential for this lifetime contract."""
+            return {}
+
+        def call(self, token, name, arguments):
+            """Finish only after the test permits the admitted operation to drain."""
+            admitted.set()
+            if not release.wait(timeout=10):
+                raise TimeoutError("Test did not release the admitted operation")
+            return {"memories": []}
+
+    server = make_server(BlockingOwner(), 0)
+    serving = Thread(target=server.serve_forever)
+    serving.start()
+
+    def request():
+        """Send a real HTTP request whose response cannot complete before release."""
+        responses.append(
+            call(
+                f"http://127.0.0.1:{server.server_port}",
+                TOKENS["dsh"],
+                "qdrant_memory_search",
+                {"query": "x"},
+            )
+        )
+
+    def close():
+        """Record when the server has finished joining its admitted request worker."""
+        closing.set()
+        server.server_close()
+        closed.set()
+
+    caller = Thread(target=request)
+    closer = Thread(target=close)
+    caller.start()
+    try:
+        assert admitted.wait(timeout=10)
+        server.shutdown()
+        closer.start()
+        assert closing.wait(timeout=5)
+        assert not closed.wait(timeout=0.2)
+        release.set()
+        assert closed.wait(timeout=10)
+        caller.join(timeout=10)
+        assert responses == [{"memories": []}]
+    finally:
+        release.set()
+        server.shutdown()
+        server.server_close()
+        serving.join(timeout=10)
+        caller.join(timeout=10)
+        if closer.ident is not None:
+            closer.join(timeout=10)
 
 
 @pytest.fixture
