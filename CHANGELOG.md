@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Add an opt-in single-owner authenticated loopback service and stdio bridge for
+  explicit shared memory. Preserve Hermes Native Provider and private defaults.
+- Enforce fixed-space grants, read-only access, legacy isolation, revision conflicts
+  and durable request replay through the existing Runtime/Ledger/WriterLease.
+- Interlock legacy mutations/destructive maintenance while shared plans remain
+  unfinished. Operator retry and owner recovery remain available.
+- Add independent-process embedded/Server acceptance tests, reproducible retrieval
+  and latency evaluation, and English/Chinese operational documentation.
+
 ## 0.3.0
 
 - Add optional, explicitly selected CPU embeddings with revision-pinned model

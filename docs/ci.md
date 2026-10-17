@@ -136,3 +136,13 @@ review check is not evidence of a completed code review.
 Never paste secret values into issues, pull requests or logs. Missing tokens
 produce explicit CI failures rather than a misleading green scan. Confirm actual
 checks on a pull request before making them required branch protections.
+
+
+### Shared loopback HTTP review
+
+The opt-in local service has a documented, rule/resource-scoped `python:S5332`
+exception in `sonar-project.properties`. Review the [transport decision and its
+expiry conditions](shared-memory/architecture.md#reviewed-local-http-transport-decision-sonar-s5332)
+with the shared-service PR. This does not change the quality thresholds or exempt
+other security analysis. Remove the exception before introducing a remote listener and complete a new
+transport and authorization review.
