@@ -1,4 +1,4 @@
-# ADR: One Memory, Multiple Agents (unreleased)
+# ADR: One Memory, Multiple Agents (released in Runtime 0.4.0)
 
 Decision date: 2026-10-17. Status: implemented opt-in MVP, release gates recorded
 in the [validation report](report.md). Hermes compatibility is the first acceptance gate.

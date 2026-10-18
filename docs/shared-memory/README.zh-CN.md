@@ -1,4 +1,4 @@
-# One Memory, Multiple Agents：跨 Agent 共享记忆（未发布预览）
+# One Memory, Multiple Agents：跨 Agent 共享记忆（可选启用）
 
 多个独立 Agent 可以通过同一个持有 Runtime、Ledger 和 WriterLease 的本地服务访问同一份记忆。
 它是显式选择启用的新模式；Hermes Native Provider、自动提取、现有 stdio MCP、DSH 和 WorkBuddy
@@ -111,7 +111,7 @@ Native Provider 自动将提取结果保存到共享空间尚未实现。只有�
 
 官方 [Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) 提供通用语义存储和检索，
 具备 Qdrant 持久化与 metadata 过滤能力。本项目侧重 Agent 长期记忆生命周期、恢复和显式授权共享，
-不以未经验证的方式贬低官方实现。本功能尚未发布，不能等同于已上线产品能力。
+不以未经验证的方式贬低官方实现。本功能随 Runtime 0.4.0 发布，默认不启用，需要运维方配置。
 
 
 ### 本机 HTTP 的安全审查边界
