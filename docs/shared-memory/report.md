@@ -1,6 +1,6 @@
 # Cross-agent shared memory validation report
 
-Date: 2026-10-17 (Asia/Shanghai). Feature status: **unreleased, opt-in local MVP**.
+Date: 2026-10-17 (Asia/Shanghai). Feature status: **released in Runtime 0.4.0, opt-in local MVP**.
 Hermes compatibility is the first release gate. No package, tag, Release or
 Registry publication, automatic profile reconfiguration or production-data
 migration was performed. All test records and collections were synthetic and
@@ -17,8 +17,8 @@ All repositories began clean on `main` and matched upstream HEAD checked with
 | qdrant-memory-mcp | 36ff391bf835eb4adeeac9f0bd759a97403de59a | 0.1.4 |
 | skills | c2d755cd6df3f9af069d9faff10fbcfa5b29806e | qdrant-memory skill 0.2.6 |
 
-Declared package versions and pins remain unchanged because this is a source
-preview.
+The recorded runs above used the source preview. Runtime 0.4.0 publishes the
+same code with no schema change.
 
 ## 2. Assessment, alternatives and decision
 
@@ -276,9 +276,9 @@ repositories. This report records the local and acceptance evidence.
 
 1. Keep the Hermes minimum and current compatibility gates blocking until
    hosted checks and the platform matrix complete.
-2. Candidate Runtime **0.4.0**, MCP **0.2.0** and skill **0.3.0** for the opt-in
-   shared service. These are suggestions, not new tags or versions. The
-   shared-only revision/retry schema is an explicit additive mode.
+2. Runtime **0.4.0** publishes the opt-in shared service. The companion MCP
+   distribution and the skill publish separately. The shared-only
+   revision/retry schema is an explicit additive mode.
 3. Publish Runtime only through normal release procedures, then update the
    metadata distribution and managed immutable artifact pins to the actual
    released version, never to an unpublished moving branch. Run DSH, WorkBuddy
@@ -299,6 +299,6 @@ and rollback. It must not be implicit on service startup.
 ## 12. Change set
 
 This report covers the changes delivered through the pull requests in the three
-repositories, including the preview host configurations, the canonical skill
-guidance and the accompanying documentation updates. Package versions, tags and
-published artifacts are untouched by this change set.
+repositories, including the host configurations, the canonical skill guidance
+and the accompanying documentation updates. Runtime 0.4.0 publishes this change
+set. The companion MCP distribution and the skill publish separately.

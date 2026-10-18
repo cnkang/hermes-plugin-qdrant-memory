@@ -1,4 +1,4 @@
-# One Memory, Multiple Agents — unreleased opt-in preview
+# One Memory, Multiple Agents — opt-in shared owner
 
 Several independent agents can use one canonical store through a single Runtime
 owner. This checkout implements a local authenticated service and stdio MCP bridge.
@@ -11,8 +11,9 @@ Do not use commands below against an existing production profile for experiments
 
 ## Install and create a separate owner profile
 
-Use Python 3.11+ and an isolated environment. This feature is not published yet:
-install the unreleased local checkout, not the unchanged PyPI version.
+Use Python 3.11+ and an isolated environment. Runtime 0.4.0 includes this
+feature. Install the PyPI release, or use a reviewed checkout at an immutable
+commit for development.
 
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env
@@ -227,8 +228,8 @@ pending shared plan.
 The [official Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) offers
 semantic storage/retrieval with Qdrant persistence and metadata filtering.
 Qdrant Memory focuses on agent memory lifecycle, durable recovery and explicit
-controlled sharing. This feature is an unreleased checkout capability, not a
-claim about packages already published.
+controlled sharing. This feature is part of Runtime 0.4.0. It remains opt-in
+and operator-configured.
 
 ## Local HTTP security boundary
 

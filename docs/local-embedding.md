@@ -1,6 +1,6 @@
 # Optional local CPU embedding and guided setup
 
-These commands ship with Runtime 0.3.0. Published Runtime 0.2.2 and MCP
+These commands ship with Runtime 0.4.0. Published Runtime 0.2.2 and MCP
 distribution 0.1.3 predate them. Those packages keep their existing
 configuration workflow.
 
@@ -36,7 +36,7 @@ python -m pip install '.[mcp,local]'
 For a published package, install the same extras with the release version:
 
 ```sh
-python -m pip install 'hermes-plugin-qdrant-memory[mcp,local]==0.3.0'
+python -m pip install 'hermes-plugin-qdrant-memory[mcp,local]==0.4.0'
 ```
 
 Choose **one** setup command and replace the profile path with a new absolute

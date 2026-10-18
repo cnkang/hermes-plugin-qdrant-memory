@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - Add an opt-in single-owner authenticated loopback service and stdio bridge for
   explicit shared memory. Preserve Hermes Native Provider and private defaults.
