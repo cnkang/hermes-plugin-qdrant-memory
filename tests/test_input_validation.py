@@ -14,7 +14,9 @@ from scripts.evaluate import evaluate
 from .helpers import config, runtime
 
 
-@pytest.mark.parametrize("text", ["a" * 65537, "猫" * 21846])
+@pytest.mark.parametrize(
+    "text", ["a" * 65537, "猫" * 21846], ids=["ascii-over-limit", "utf8-over-limit"]
+)
 @pytest.mark.parametrize(
     "operation,field", [("search", "query"), ("add", "text"), ("delete", "id")]
 )
