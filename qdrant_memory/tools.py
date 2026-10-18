@@ -2,6 +2,26 @@
 
 from .models import payload
 
+MAX_ARGUMENT_BYTES = 65536
+
+
+def validate_arguments(name, args, catalogue=None):
+    """Bound all tool strings before normalization, hashing, embedding or storage."""
+    definition = next((item for item in (catalogue or schemas()) if item["name"] == name), None)
+    if definition is None:
+        raise ValueError("Unknown memory tool")
+    fields = definition["parameters"]
+    if not isinstance(args, dict) or set(args) - set(fields["properties"]):
+        raise ValueError("Unexpected memory tool arguments")
+    if set(fields["required"]) - set(args):
+        raise ValueError("Missing memory tool arguments")
+    for value in args.values():
+        if not isinstance(value, str):
+            raise ValueError("Memory tool arguments must be strings")
+        # The character bound avoids allocating an encoded copy of huge inputs.
+        if len(value) > MAX_ARGUMENT_BYTES or len(value.encode()) > MAX_ARGUMENT_BYTES:
+            raise ValueError("Memory tool argument exceeds byte limit")
+
 
 def schemas():
     """Return stable schemas without caller-supplied scope overrides."""
@@ -40,6 +60,7 @@ def schemas():
 
 def dispatch(runtime, name, args, scope, session_id):
     """Execute a scoped tool under the shared lock with exact-ID authorization."""
+    validate_arguments(name, args)
     with runtime.lock:
         if name == "qdrant_memory_search":
             filters = {"category": args["category"]} if args.get("category") else None

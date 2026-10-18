@@ -6,9 +6,38 @@ import pytest
 
 from qdrant_memory.migration import verify_collection
 from qdrant_memory.models import Scope, content_hash, enforce_limits, payload
+from qdrant_memory.shared_service import SharedOwner
+from qdrant_memory.standalone import call_tool
+from qdrant_memory.tools import MAX_ARGUMENT_BYTES, dispatch, validate_arguments
 from scripts.evaluate import evaluate
 
 from .helpers import config, runtime
+
+
+@pytest.mark.parametrize("text", ["a" * 65537, "猫" * 21846])
+@pytest.mark.parametrize(
+    "operation,field", [("search", "query"), ("add", "text"), ("delete", "id")]
+)
+def test_tool_bounds_precede_runtime_access(text, operation, field):
+    """All entry paths reject oversized strings before touching runtime resources."""
+    name, args = "qdrant_memory_" + operation, {field: text}
+    with pytest.raises(ValueError, match="byte limit"):
+        dispatch(None, name, args, Scope("u", None), "test")
+    with pytest.raises(ValueError, match="byte limit"):
+        call_tool(None, name, args)
+    shared_args = args if operation == "search" else {**args, "request_id": "bounded"}
+    if operation == "delete":
+        shared_args["expected_version"] = "version"
+    with pytest.raises(ValueError, match="byte limit"):
+        SharedOwner._validate_arguments(name, shared_args)
+
+
+def test_tool_bounds_accept_exact_utf8_limit_and_reject_scope_override():
+    """Accept the boundary in bytes while keeping extra fields unauthorized."""
+    args = {"query": "猫" * (MAX_ARGUMENT_BYTES // 3) + "a"}
+    validate_arguments("qdrant_memory_search", args)
+    with pytest.raises(ValueError, match="Unexpected"):
+        validate_arguments("qdrant_memory_search", {**args, "user_id": "other"})
 
 
 @pytest.mark.parametrize("text,bound", [("猫", 1), ("é", 1), ("  猫", 2), ("\u3000猫", 3)])

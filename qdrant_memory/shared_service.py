@@ -24,7 +24,7 @@ from .models import (
 )
 from .retry import safe_error
 from .shared_state import SharedRecoveryRequiredError
-from .tools import schemas
+from .tools import schemas, validate_arguments
 
 LOG = logging.getLogger(__name__)
 MARKER = "qdrant-memory-shared-v1"
@@ -168,13 +168,8 @@ class SharedOwner:
     @staticmethod
     def _validate_arguments(name, args):
         """Check the exact shared catalogue before resolving any memory scope."""
-        definition = next((item for item in shared_schemas() if item["name"] == name), None)
-        if definition is None or not isinstance(args, dict):
-            raise ValueError("Unknown shared tool")
-        fields = definition["parameters"]
-        if set(args) - set(fields["properties"]) or set(fields["required"]) - set(args):
-            raise ValueError("Invalid shared tool arguments")
-        if any(not isinstance(v, str) or not v or len(v.encode()) > 65536 for v in args.values()):
+        validate_arguments(name, args, shared_schemas())
+        if any(not value for value in args.values()):
             raise ValueError("Invalid shared tool values")
 
     def _search(self, grant, scope, args):
