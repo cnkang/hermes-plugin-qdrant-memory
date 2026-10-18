@@ -22,7 +22,7 @@ from .reset import (
 from .retry import safe_error
 from .runtime import Runtime
 from .shared_state import require_no_pending_shared
-from .tools import dispatch, schemas
+from .tools import dispatch, schemas, validate_arguments
 
 STANDALONE_DEFAULTS = merge(
     DEFAULTS,
@@ -112,16 +112,7 @@ def open_runtime(home=None, *, secret_reader=None, shared_owner=False):
 
 def call_tool(runtime, name, arguments):
     """Validate the shared schema before dispatch; identities are operator-controlled."""
-    definition = next((item for item in schemas() if item["name"] == name), None)
-    if definition is None:
-        raise ValueError("Unknown memory tool")
-    schema = definition["parameters"]
-    if not isinstance(arguments, dict) or set(arguments) - set(schema["properties"]):
-        raise ValueError("Unexpected memory tool arguments")
-    if any(key not in arguments for key in schema["required"]):
-        raise ValueError("Missing memory tool arguments")
-    if any(not isinstance(value, str) for value in arguments.values()):
-        raise ValueError("Memory tool arguments must be strings")
+    validate_arguments(name, arguments)
     scope = Scope(runtime.cfg["scope"]["user_id"], runtime.cfg["scope"].get("agent_id"))
     return dispatch(runtime, name, arguments, scope, "standalone")
 
