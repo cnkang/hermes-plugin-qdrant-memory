@@ -9,8 +9,14 @@
 
 ## 安装和启动
 
-在独立 Python 3.11+ 虚拟环境中安装经过审查的本地 checkout 及 `[mcp]` extra。
-当前 PyPI 包版本没有本功能。使用新的 owner profile，通过原有 `setup` 显式选择 embedding 模型
+在独立 Python 3.11+ 虚拟环境中安装 PyPI 上的 Runtime 0.4.0 及 `[mcp]` extra：
+
+```sh
+python3 -m venv /absolute/path/shared-runtime-env
+/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.4.0'
+```
+
+使用新的 owner profile，通过原有 `setup` 显式选择 embedding 模型
 并初始化集合；不要拿生产 profile 做测试。Ollama 模型须先安装，例如
 `qwen3-embedding:0.6b` 对应 1024 维。集合维度、距离和 embedding fingerprint 验证继续生效。
 更换模型应显式创建新目标并执行已有备份和迁移流程，不能直接改原集合。

@@ -17,7 +17,7 @@ commit for development.
 
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env
-/absolute/path/shared-runtime-env/bin/pip install '/absolute/path/hermes-plugin-qdrant-memory[mcp]'
+/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.4.0'
 /absolute/path/shared-runtime-env/bin/qdrant-memory setup \
   --profile /absolute/path/shared-owner --embedding-provider ollama \
   --model qwen3-embedding:0.6b --dimensions 1024 \
