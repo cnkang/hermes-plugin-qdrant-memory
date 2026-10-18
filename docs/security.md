@@ -49,6 +49,27 @@ pages, WAL files or copied backups. Use storage encryption and a backup retentio
 policy appropriate to the data. Error reporting includes exception type and
 retryability rather than API keys or remote response bodies.
 
+### Deployment checklist for private state
+
+- Place the entire profile, embedded collection and backup destination on
+  encrypted storage. Include SQLite WAL/SHM sidecars in the protected boundary;
+  encrypting only an exported file does not protect the live ledger.
+- On Windows, provision a private ACL before initialization and check inherited
+  permissions on the profile, model cache and backups. POSIX modes do not
+  establish a Windows access policy.
+- Define a backup expiry period appropriate to the data and apply it to all
+  copies. Take a consistent backup after stopping every writer, or use a
+  supported database backup mechanism; copying a live SQLite file alone can
+  omit admitted work.
+- Monitor pending/failed work and storage growth. Resolve recovery through the
+  supported CLI before any lifecycle cleanup. Never delete ledger rows, deletion
+  fences, locks or sidecars to implement a retention schedule.
+- For data disposal, account for encrypted-volume snapshots and off-host copies.
+  A scoped delete or reset is a logical operation, not secure erasure.
+
+The plugin does not manage volume encryption keys or automatically expire
+recovery records. Those policies belong to the deployment operator.
+
 ## Identity, scope and shared sessions
 
 Recall and exact-ID memory tools enforce their configured user/agent scope.

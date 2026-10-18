@@ -20,7 +20,15 @@ supported and tested independently. Tools use the same store, embedding
 pipeline, ledger, retry/recovery rules and writer lease as the Hermes plugin.
 Only these four tools are advertised. No resources or prompts are advertised.
 Maintenance, export, migration, reset and bulk deletion remain operator CLI
-operations. There is no HTTP/SSE listener or remote authentication service.
+operations. This private adapter has no HTTP/SSE listener. Runtime 0.4.0 also
+offers a separate, opt-in authenticated loopback owner and stdio bridge; see
+[shared memory](shared-memory/README.md). Do not expose that owner through a
+public proxy.
+
+Every tool string is limited to 65,536 UTF-8 bytes before normalization, hashing,
+embedding or storage, across native, standalone and shared entry points. This
+transport limit also applies when payload truncation is configured; payload
+limits can be stricter. It does not change the four advertised tool schemas.
 
 ## Connect a client
 
@@ -83,7 +91,10 @@ collection, embedding pipeline and `scope: {"user_id": "my-user", "agent_id": nu
 Explicit agent IDs remain private partitions. Close one MCP session before
 opening another against that profile: the server holds its writer lease for
 its entire lifetime. Independent profiles/hosts do not share a distributed lock.
-This preview does not provide a concurrent multi-agent shared service.
+For concurrent clients, use the separate [shared owner](shared-memory/README.md)
+introduced in Runtime 0.4.0, with explicit credential-bound grants and one owner
+process. Reusing a private profile is still sequential and is not distributed
+coordination. Native Provider automatic shared extraction remains deferred.
 
 ## Evidence and limits
 
