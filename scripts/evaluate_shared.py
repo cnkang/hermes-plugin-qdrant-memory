@@ -86,6 +86,7 @@ def service(home, policy):
         stdout=subprocess.PIPE,
         stderr=diagnostics,
         text=True,
+        cwd=Path(policy).parent,
         start_new_session=os.name != "nt",
     )
     assert process.stdout is not None
@@ -137,7 +138,7 @@ def run(args):
     reader_token = uuid.uuid4().hex + uuid.uuid4().hex
     collections = []
     with tempfile.TemporaryDirectory(prefix="qdrant-shared-evaluation-") as directory:
-        root = Path(directory)
+        root = Path(directory).resolve()
         policy = root / "policy.json"
         policy.write_text(
             json.dumps(

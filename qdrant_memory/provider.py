@@ -59,6 +59,7 @@ class QdrantMemoryProvider(MemoryProvider):
         self._latencies = []
         self._stop_at = None
         self._shared_recall = None
+        self._native_owner = None
 
     @property
     def name(self):
@@ -94,6 +95,9 @@ class QdrantMemoryProvider(MemoryProvider):
 
             self._shared_recall = SharedRecall(shared_read, secret_reader=secret)
         self.session_id = session_id
+        from .native_owner import load_native_settings
+
+        owner_settings = load_native_settings(self.home, self.cfg.get("native_owner"))
         self._primary = kwargs.get("agent_context", "primary") == "primary"
         self.default_scope = Scope(**self.cfg["scope"])
         self._scopes[session_id] = Scope(
@@ -106,7 +110,15 @@ class QdrantMemoryProvider(MemoryProvider):
                 # Register them before ledger setup so every failure path releases the
                 # embedded Qdrant file lock.
                 self._resources.callback(self.client.close)
-            lease = WriterLease.for_config(self.home, self.cfg)
+            lease = WriterLease.for_config(
+                self.home,
+                self.cfg,
+                **(
+                    {"destination_policy": owner_settings["document"].get("destination")}
+                    if owner_settings and owner_settings["document"].get("destination") is not None
+                    else {}
+                ),
+            )
             self._resources.callback(lease.close)
             self.embedder = self.embedder or build_embedder(self.context, self.cfg)
             if hasattr(self.embedder, "close"):
@@ -158,7 +170,28 @@ class QdrantMemoryProvider(MemoryProvider):
                 Extractor(self.context.llm, self.cfg["llm"]),
                 stop_requested=self._stop_requested,
             )
+            if owner_settings is not None:
+                from .native_owner import NativeOwner
+
+                if any(
+                    next(self.ledger.iter_rows(table, "FAILED"), None) is not None
+                    for table in ("events", "operations")
+                ):
+                    raise RuntimeError("Native Owner requires explicit retry of failed work")
+                self._native_owner = NativeOwner(
+                    self.runtime, owner_settings, self.default_scope.user_id
+                )
+                self._native_owner.reauthorize_pending()
+                if self.runtime.recover() or next(self.ledger.iter_rows("events", "FAILED"), None):
+                    raise RuntimeError("Native Owner requires complete lifecycle recovery")
+                self.default_scope = self._native_owner.scope
+                self._scopes[session_id] = Scope(
+                    self._scopes[session_id].user_id, self.default_scope.agent_id
+                )
+                self._native_owner.start()
         except Exception:
+            if self._native_owner is not None:
+                self._native_owner.close()
             self._resources.close()
             raise
         self._accepting = True
@@ -191,6 +224,17 @@ class QdrantMemoryProvider(MemoryProvider):
                 try:
                     context.run(self._run_job, kind, value)
                 except Exception as exc:
+                    if self._native_owner is not None and kind == "event":
+                        with self.runtime.lock:
+                            if (
+                                any(
+                                    next(self.ledger.iter_rows("operations", status), None)
+                                    is not None
+                                    for status in ("PENDING", "FAILED")
+                                )
+                                or next(self.ledger.iter_rows("events", "FAILED"), None) is not None
+                            ):
+                                self._native_owner.owner.blocked = True
                     logger.warning(
                         "qdrant-memory background failure %s", json.dumps(safe_error(exc))
                     )
@@ -199,6 +243,8 @@ class QdrantMemoryProvider(MemoryProvider):
                         self._busy = False
                         self._condition.notify_all()
         finally:
+            if self._native_owner is not None:
+                self._native_owner.close()
             with self.runtime.lock:
                 self._resources.close()
 
@@ -210,21 +256,26 @@ class QdrantMemoryProvider(MemoryProvider):
         """Run recovery, event preparation or generation-checked background recall."""
         if kind == "recover":
             if failures := self.runtime.recover():
+                if self._native_owner is not None:
+                    self._native_owner.owner.blocked = True
                 logger.warning("qdrant-memory recovery retained %d failed work items", failures)
         elif kind == "event":
+            if self._native_owner is not None and self._native_owner.owner.blocked:
+                return  # The raw event is already durable; operator recovery owns replay.
             self.runtime.process_event(value)
         else:
             session, query, scope, generation = value
             start = time.monotonic()
             with self.runtime.lock:
                 hits = self.store.search(query, scope)
+                revision = self.runtime.mutation_revision
             with self._condition:
                 # A completed search may belong to an author/session that has since changed.
                 if self._generations.get(session, 0) == generation:
                     self._cache[session] = (
                         scope,
                         "\n".join("- " + h.payload["text"] for h in hits),
-                    )
+                    ) + ((revision,) if self._native_owner is not None else ())
                 self._latencies.append((time.monotonic() - start) * 1000)
                 self._latencies = self._latencies[-512:]
 
@@ -321,6 +372,27 @@ class QdrantMemoryProvider(MemoryProvider):
                 value["scope"] = (scope or Scope("__mixed__", None)).as_dict()
                 if value["kind"] == "checkpoint":
                     value["extract"] = self._primary and scope is not None
+            values = [value]
+            if self._native_owner is not None:
+                try:
+                    values = self._native_owner.events(value)
+                except PermissionError as exc:
+                    value = {**value, "source": "native_owner_unadmitted"}
+                    key = self.ledger.enqueue_event(value)
+                    self.ledger.failure("events", key, exc, terminal=True)
+                    raise
+                except Exception as exc:
+                    value = {**value, "source": "native_owner_unadmitted"}
+                    key = self.ledger.enqueue_event(value)
+                    self.ledger.failure("events", key, exc, terminal=True)
+                    self._native_owner.owner.blocked = True
+                    raise
+            for captured in values:
+                self._enqueue_event(captured)
+
+    def _enqueue_event(self, value):
+        """Queue an already-authorized durable event on the one existing worker."""
+        with self._condition:
             key = self.ledger.enqueue_event(value)
             # The event ID itself is stored only after hashing the immutable turn.
             row = self.ledger.row("events", key)
@@ -380,6 +452,7 @@ class QdrantMemoryProvider(MemoryProvider):
                 return ""
             scope = self._scope(session)
             generation = self._generations.get(session, 0)
+            revision = self.runtime.mutation_revision
             private = self._private_prefetch(query, session_id=session)
         rows = self._read_shared(
             query,
@@ -392,6 +465,13 @@ class QdrantMemoryProvider(MemoryProvider):
                 or not self._accepting
                 or self._scope(session) != scope
                 or self._generations.get(session, 0) != generation
+                or (
+                    self._native_owner is not None
+                    and (
+                        self.runtime.mutation_revision != revision
+                        or not self._native_owner.can_read(scope)
+                    )
+                )
             ):
                 return ""
         if rows:
@@ -430,6 +510,12 @@ class QdrantMemoryProvider(MemoryProvider):
                 return ""
             self._cache_calls += 1
             cached = self._cache.get(session)
+            if self._native_owner is not None:
+                scope = self._scopes.get(session, self.default_scope)
+                if not self._native_owner.can_read(scope):
+                    return ""
+                if cached and (len(cached) != 3 or cached[2] != self.runtime.mutation_revision):
+                    return ""
             if cached and cached[0] == self._scopes.get(session, self.default_scope):
                 self._cache_hits += 1
                 if self._accepting:
@@ -577,6 +663,10 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def get_tool_schemas(self):
         """Return a stable four-tool schema surface for the conversation."""
+        if self._native_owner is not None:
+            from .shared_service import shared_schemas
+
+            return shared_schemas()
         return schemas()
 
     def handle_tool_call(self, tool_name, args, **kwargs):
@@ -587,7 +677,15 @@ class QdrantMemoryProvider(MemoryProvider):
                 with self._condition:
                     if not self._accepting:
                         raise RuntimeError("Provider is shut down")
-                result = dispatch(self.runtime, tool_name, args, self._scope(session), session)
+                if (
+                    self._native_owner is not None
+                    and self._scope(session) == self._native_owner.scope
+                ):
+                    result = self._native_owner.owner.call(
+                        self._native_owner.token(), tool_name, args
+                    )
+                else:
+                    result = dispatch(self.runtime, tool_name, args, self._scope(session), session)
             if (
                 tool_name == "qdrant_memory_search"
                 and self._shared_recall is not None

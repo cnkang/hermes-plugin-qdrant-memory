@@ -1,0 +1,324 @@
+"""One Native Provider hosts the Owner and uses the host extractor for shared events."""
+
+import hashlib
+import json
+import os
+from types import SimpleNamespace
+
+import pytest
+
+from qdrant_memory.provider import QdrantMemoryProvider
+from qdrant_memory.shared_client import call
+
+from .helpers import LLM, Embedder, config
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"unexpected": True},
+        {"port": True},
+        {"private_token_env": "BAD-name"},
+        {"enable_lifecycle": "true"},
+        {"enable_lifecycle": True},
+        {"remote_port": 0},
+        {"remote_port": True},
+        {"remote_port": 65536},
+    ],
+)
+def test_unsafe_native_admission_is_rejected_before_storage(tmp_path, change):
+    """A malformed or unprotected listener cannot open a private database first."""
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"clients": []}))
+    policy.chmod(0o600)
+    settings = {
+        "enabled": True,
+        "policy": str(policy),
+        "port": 0,
+        "private_token_env": "QM_NATIVE",
+        **change,
+    }
+    vectors = tmp_path / "vectors"
+    p = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()),
+        embedder=Embedder(),
+        overrides=config(qdrant={"path": str(vectors)}, native_owner=settings),
+    )
+    try:
+        with pytest.raises(ValueError):
+            p.initialize("invalid-native", hermes_home=str(tmp_path))
+        assert vectors.exists() is False
+    finally:
+        p.shutdown()
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="Protected Owner state is POSIX-only and fails closed on Windows"
+)
+def test_protected_native_gateway_lifecycle_and_shutdown(tmp_path, monkeypatch):
+    """The actual Native loopback MCP listener shares one Runtime and drains cleanly."""
+    import httpx
+
+    from qdrant_memory.config import backend_destination, embedding_config, fingerprint
+    from qdrant_memory.models import digest
+
+    from .standalone.test_device_grants import grant
+
+    monkeypatch.setattr("qdrant_memory.shared_security.registry_path", lambda: tmp_path / "claims")
+    token = "a" * 40
+    monkeypatch.setenv("QM_NATIVE", token)
+    policy = tmp_path / "native-policy.json"
+    cfg = config(
+        qdrant={"path": str(tmp_path / "vectors")},
+        native_owner={
+            "enabled": True,
+            "policy": str(policy),
+            "port": 0,
+            "remote_port": 0,
+            "allowed_hosts": ["memory.test"],
+            "private_token_env": "QM_NATIVE",
+            "enable_lifecycle": True,
+        },
+    )
+    binding = {
+        "backend": "embedded",
+        "destination": list(backend_destination(cfg["qdrant"])),
+        "collection": cfg["qdrant"]["collection"],
+        "embedding_fingerprint": fingerprint(embedding_config(cfg)),
+        "owner_profile": digest(str(tmp_path.resolve())),
+        "schema_version": 1,
+        "security_mode": "local-embedded",
+    }
+    policy.write_text(
+        json.dumps(
+            {"destination": binding, "clients": [grant(token, "mac", owner_id="hermes-user")]}
+        )
+    )
+    policy.chmod(0o600)
+    profile_config = tmp_path / "qdrant-memory.json"
+    profile_config.write_text(json.dumps(cfg))
+    profile_config.chmod(0o600)
+    p = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()), embedder=Embedder(), overrides=cfg
+    )
+    remote_thread = None
+    # Match the documented dedicated service's private startup umask. Qdrant
+    # creates its own files; admission must not chmod already exposed state.
+    previous_umask = os.umask(0o077)
+    try:
+        p.initialize("native-session", hermes_home=str(tmp_path))
+        host = p._native_owner
+        remote_thread = host.remote_thread
+        assert host.owner.runtime is p.runtime
+        host.owner.admission_check()
+        port = host.remote_socket.getsockname()[1]
+        event = {
+            "event_id": "remote-turn",
+            "session_id": "pi",
+            "kind": "turn_completed",
+            "user": "cats remote lifecycle",
+            "assistant": "ack",
+        }
+        with httpx.Client(trust_env=False) as http:
+            response = http.post(
+                f"http://127.0.0.1:{port}/events",
+                headers={"Host": "memory.test", "Authorization": "Bearer " + token},
+                json=event,
+            )
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "COMMITTED"
+        rows = call(host.url, token, "qdrant_memory_search", {"query": "cats"})["memories"]
+        assert rows[0]["text"] == "cats remote lifecycle"
+    finally:
+        try:
+            p.shutdown()
+        finally:
+            os.umask(previous_umask)
+    assert remote_thread is not None
+    assert remote_thread.is_alive() is False
+
+
+def test_native_owner_lifecycle_project_handoff_and_private_isolation(tmp_path, monkeypatch):
+    """Actual Native turn hooks write through one Runtime; a second client recalls."""
+    tokens = {name: name[0] * 40 for name in ("native", "project", "reader")}
+    clients = []
+    for name, token in tokens.items():
+        clients.append(
+            {
+                "token_sha256": hashlib.sha256(token.encode()).hexdigest(),
+                "principal": name,
+                "owner_id": "hermes-user",
+                "device_id": name,
+                "logical_agent_id": "hermes" if name != "reader" else "pi",
+                "space_id": "hermes-private" if name == "native" else "alpha",
+                "visibility": "private" if name == "native" else "project",
+                "permission": "read" if name == "reader" else "write",
+            }
+        )
+    clients[1]["capture_rule_id"] = "explicit-user-approved-alpha"
+    policy = tmp_path / "grants.json"
+    policy.write_text(json.dumps({"clients": clients}))
+    policy.chmod(0o600)
+    for name, token in tokens.items():
+        monkeypatch.setenv("QM_" + name.upper(), token)
+    cfg = config(
+        native_owner={
+            "enabled": True,
+            "policy": str(policy),
+            "port": 0,
+            "private_token_env": "QM_NATIVE",
+            "shared_capture_token_envs": ["QM_PROJECT"],
+        }
+    )
+    p = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()), embedder=Embedder(), overrides=cfg
+    )
+    p.initialize("first", hermes_home=str(tmp_path))
+    try:
+        assert p.wait_idle()
+        p.on_turn_start(1, "Project Alpha uses SQLite WAL.")
+        p.sync_turn("Project Alpha uses SQLite WAL.", "ack")
+        assert p.wait_idle()
+        url = p._native_owner.url
+        rows = call(url, tokens["reader"], "qdrant_memory_search", {"query": "Alpha"})["memories"]
+        assert len(rows) == 1 and rows[0]["text"] == "Project Alpha uses SQLite WAL."
+        assert rows[0]["capture_rule_id"] == "explicit-user-approved-alpha"
+        private = call(url, tokens["native"], "qdrant_memory_search", {"query": "Alpha"})[
+            "memories"
+        ]
+        assert len(private) == 1 and private[0]["visibility"] == "private"
+        assert private[0]["id"] != rows[0]["id"]
+        assert p.runtime is p._native_owner.owner.runtime
+        p.queue_prefetch("Alpha")
+        assert p.wait_idle()
+        assert "SQLite WAL" in p.prefetch("Alpha")
+        deleted = call(
+            url,
+            tokens["native"],
+            "qdrant_memory_delete",
+            {
+                "id": private[0]["id"],
+                "expected_version": private[0]["version"],
+                "request_id": "remote-delete",
+            },
+        )
+        assert deleted["action"] == "DELETE"
+        assert p.prefetch("Alpha") == ""
+        forged = call(
+            url,
+            tokens["reader"],
+            "qdrant_memory_search",
+            {"query": "Alpha", "space_id": "hermes-private"},
+        )
+        assert "error" in forged
+        clients[1]["revoked"] = True
+        policy.write_text(json.dumps({"clients": clients}))
+        p.sync_turn("dogs private only", "ack")
+        assert p.wait_idle()
+        assert p._native_owner.owner.blocked is False
+        assert p._native_owner.denied_captures == 1
+        assert any(
+            row["text"] == "dogs private only"
+            for row in call(url, tokens["native"], "qdrant_memory_search", {"query": "dogs"})[
+                "memories"
+            ]
+        )
+        assert not any(
+            row["text"] == "dogs private only"
+            for row in call(url, tokens["reader"], "qdrant_memory_search", {"query": "dogs"})[
+                "memories"
+            ]
+        )
+        clients[1]["revoked"] = False
+        p.queue_prefetch("dogs")
+        assert p.wait_idle()
+        assert "dogs private only" in p.prefetch("dogs")
+        clients[0]["revoked"] = True
+        policy.write_text(json.dumps({"clients": clients}))
+        assert p.prefetch("dogs") == ""
+        with pytest.raises(PermissionError):
+            p.sync_turn("cats denied but retained", "ack")
+        assert p.ledger.stats()["events"]["FAILED"] == 1
+        clients[0]["revoked"] = False
+        policy.write_text(json.dumps({"clients": clients}))
+        # Simulate the existing explicit operator retry, then restart with the
+        # restored policy. Recovery may save private data, never share the turn.
+        p.ledger.retry_failed()
+        p.shutdown()
+        p = QdrantMemoryProvider(
+            plugin_context=SimpleNamespace(llm=LLM()), embedder=Embedder(), overrides=cfg
+        )
+        p.initialize("next", hermes_home=str(tmp_path))
+        assert p.wait_idle()
+        private_rows = call(
+            p._native_owner.url, tokens["native"], "qdrant_memory_search", {"query": "cats"}
+        )["memories"]
+        project_rows = call(
+            p._native_owner.url, tokens["reader"], "qdrant_memory_search", {"query": "cats"}
+        )["memories"]
+        assert any(row["text"] == "cats denied but retained" for row in private_rows)
+        assert not any(row["text"] == "cats denied but retained" for row in project_rows)
+        p.queue_prefetch("cats")
+        assert p.wait_idle()
+        assert "cats denied but retained" in p.prefetch("cats")
+
+        def failed_write(_):
+            raise TimeoutError("synthetic storage acknowledgement failure")
+
+        monkeypatch.setattr(p.store, "upsert", failed_write)
+        p.sync_turn("new failing storage fact", "ack")
+        assert p.wait_idle()
+        assert p._native_owner.owner.blocked is True
+        assert p.prefetch("cats") == ""
+        assert (
+            call(
+                p._native_owner.url,
+                tokens["native"],
+                "qdrant_memory_add",
+                {"text": "cannot bypass failed Native operation", "request_id": "blocked"},
+            )["error"]["type"]
+            == "SharedRecoveryRequiredError"
+        )
+    finally:
+        p.shutdown()
+
+
+def test_extraction_failure_gates_owner_before_any_operation(tmp_path, monkeypatch):
+    """A durable FAILED event cannot be overtaken merely because it has no operations."""
+    from .standalone.test_device_grants import grant
+
+    token = "x" * 40
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"clients": [grant(token, "native", owner_id="hermes-user")]}))
+    policy.chmod(0o600)
+    monkeypatch.setenv("QM_NATIVE_FAILURE", token)
+
+    class FailedLLM(LLM):
+        """Fail only the admitted extraction phase."""
+
+        def complete_structured(self, **kwargs):
+            raise TimeoutError("synthetic extraction failure")
+
+    cfg = config(
+        native_owner={
+            "enabled": True,
+            "policy": str(policy),
+            "port": 0,
+            "private_token_env": "QM_NATIVE_FAILURE",
+        }
+    )
+    p = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=FailedLLM()), embedder=Embedder(), overrides=cfg
+    )
+    p.initialize("first", hermes_home=str(tmp_path))
+    try:
+        p.sync_turn("cats", "ack")
+        assert p.wait_idle()
+        assert p.ledger.stats()["events"]["FAILED"] == 1
+        assert p._native_owner.owner.blocked is True
+        p.sync_turn("later cats", "ack")
+        assert p.wait_idle()
+        assert p.ledger.stats()["events"]["PENDING"] == 1
+        assert p.store.count() == 0
+    finally:
+        p.shutdown()
