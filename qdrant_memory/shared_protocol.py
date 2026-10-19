@@ -18,7 +18,11 @@ def validate_loopback_url(url: object) -> int:
     """Return the numeric port of a literal loopback URL or raise a redacted error."""
     if not isinstance(url, str):
         raise ValueError(_URL_REJECTED)
-    parsed = urlsplit(url)
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        # urllib errors can include the complete untrusted authority.
+        raise ValueError(_URL_REJECTED) from None
     if (
         parsed.scheme != "http"
         or parsed.hostname != "127.0.0.1"

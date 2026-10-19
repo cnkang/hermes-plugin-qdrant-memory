@@ -46,7 +46,7 @@ def call(url, token, name, arguments):
             raw = _collect_bounded(response)
             try:
                 result = json.loads(raw)
-            except ValueError:
+            except (ValueError, RecursionError):
                 raise ValueError("Shared service response is not valid JSON") from None
             if not isinstance(result, dict):
                 raise ValueError("Shared service response is not a JSON object")
