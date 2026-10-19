@@ -65,12 +65,11 @@ Device A: Codex or DSH (stdio) -- local bridge ------> Owner                 |
 Device B: remote client ---- HTTPS /mcp -------------> same Owner            |--> Qdrant
 ```
 
-The remote listener is a second transport in the owner process, in addition to the
-loopback JSON API. Both transports get the
-grant from the credential, and then call the same SharedOwner.call function. There is one
-ledger, one CAS path and one admission check. The shutdown sequence drains both
-transports before the owner releases the lease. The owner reports readiness only after
-both listeners are bound.
+The owner supplies two listeners: the loopback JSON API and the remote MCP listener. Both
+listeners get the grant from the credential, and then call the same SharedOwner.call
+function. There is one ledger, one CAS path and one admission check. The shutdown
+sequence drains both listeners before the owner releases the lease. The owner reports
+readiness only after both listeners are bound.
 
 The transport name is Streamable HTTP.
 
@@ -96,8 +95,8 @@ network namespace. Mutual TLS is optional and is not part of the base topology.
 
 The remote listener must not use the private create_server(runtime, ...) factory. A
 separate create_shared_server(owner, grant_resolver) function supplies the shared schemas
-only and has no runtime parameter. The remote path uses this factory, and the private
-factory stays out of the remote path.
+only and has no private runtime parameter. The remote path uses this factory, and the
+private factory stays out of the remote path.
 
 ## 6. Identity model
 
@@ -131,7 +130,7 @@ value.
 | Threat | Control |
 |---|---|
 | Accidental public bind | The listener accepts a loopback address or a Unix socket only. A bind to a different interface causes an error at startup. |
-| Proxy header spoofing | The configuration pins the trusted proxy addresses. The proxy must validate the Forwarded, Host and Origin headers and remove forwarded headers from client requests. The owner must also check the Host and Origin values. |
+| Proxy header spoofing | The configuration pins the trusted proxy addresses. The proxy validates the Forwarded, Host and Origin headers and removes forwarded headers from client requests. The owner rejects a request with a bad Host or Origin value. |
 | Token replay | Each device has its own credential. Receipts deduplicate writes by principal and request ID. This method gives idempotency, but not replay protection. The owner checks expiry and revocation for each request, and a revoked credential also invalidates its sessions. |
 | Revocation latency | The policy reloads on SIGHUP or on an mtime change. A revoked token fails on the next request. A restart is not necessary. |
 | Same-agent impersonation | The policy supplies logical_agent_id. The request cannot supply it. |
