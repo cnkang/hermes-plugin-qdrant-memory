@@ -1,5 +1,6 @@
 """Exclusive profile/destination writer ownership across provider reloads."""
 
+import errno
 import os
 from pathlib import Path
 
@@ -8,6 +9,30 @@ from .models import digest
 
 class WriterBusyError(RuntimeError):
     """Report exclusive writer ownership without disclosing destination details."""
+
+
+def _writer_registry(protected):
+    """Resolve and provision the account registry without breaking private containers."""
+    from .private_paths import checked_absolute_path
+    from .shared_security import private_entry, registry_path
+
+    try:
+        root = registry_path()
+    except KeyError:
+        if protected:
+            raise PermissionError("Protected mode requires a resolvable local account") from None
+        return None
+    checked_absolute_path(root)
+    try:
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    except OSError as exc:
+        if exc.errno not in {errno.EACCES, errno.EPERM, errno.EROFS} or protected or root.exists():
+            raise
+        # Provision the registry offline with all writers stopped before enabling
+        # protection in a private container whose account home is read-only.
+        return None
+    private_entry(root, directory=True)
+    return root
 
 
 class WriterLease:
@@ -27,7 +52,6 @@ class WriterLease:
             admit_claim,
             destination_key,
             private_entry,
-            registry_path,
             validate_destination,
         )
 
@@ -42,27 +66,9 @@ class WriterLease:
 
         if destination_policy is not None:
             validate_destination(home, cfg, destination_policy)
-        try:
-            root = registry_path()
-        except KeyError:
-            if destination_policy is not None:
-                raise PermissionError(
-                    "Protected mode requires a resolvable local account"
-                ) from None
+        root = _writer_registry(destination_policy is not None)
+        if root is None:
             return cls(home, [destination, q["collection"]])
-        from .private_paths import checked_absolute_path
-
-        checked_absolute_path(root)
-        try:
-            root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        except PermissionError:
-            if destination_policy is not None or root.exists():
-                raise
-            # An account with a read-only home cannot enroll a protected claim.
-            # Preserve its legacy private workflow until an operator provisions
-            # the registry offline, with all writers stopped.
-            return cls(home, [destination, q["collection"]])
-        private_entry(root, directory=True)
         lock_path = root / (destination_key(cfg) + ".lock")
         descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         account_lock = os.fdopen(descriptor, "a")

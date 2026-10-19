@@ -116,18 +116,22 @@ def open_runtime(home=None, *, secret_reader=None, shared_owner=False, destinati
                 raise CollectionCompatibilityError("Protected collection schema is incompatible")
         ledger = Ledger(home, namespace)
         resources.callback(ledger.close)
-        # Raw turns may contain sensitive host context and require its trusted
-        # extractor. Never run recover(extractor=None): that would change raw
-        # events to FAILED and let a later restart bypass pending work.
-        if any(
-            next(ledger.iter_rows("events", status), None) is not None
-            for status in ("PENDING", "FAILED")
-        ):
-            raise HostExtractionRequiredError()
-        runtime = Runtime(cfg, store, ledger)
-        if runtime.recover():
-            raise RuntimeError("Pending durable operations require recovery before new tools")
-        yield runtime
+        yield _recovered_runtime(cfg, store, ledger)
+
+
+def _recovered_runtime(cfg, store, ledger):
+    """Require host extraction and durable recovery before exposing tool admission."""
+    # Raw turns need the trusted host extractor. Recovering without it could
+    # change raw events to FAILED and allow a later restart to bypass that work.
+    if any(
+        next(ledger.iter_rows("events", status), None) is not None
+        for status in ("PENDING", "FAILED")
+    ):
+        raise HostExtractionRequiredError()
+    runtime = Runtime(cfg, store, ledger)
+    if runtime.recover():
+        raise RuntimeError("Pending durable operations require recovery before new tools")
+    return runtime
 
 
 def call_tool(runtime, name, arguments):
@@ -141,6 +145,19 @@ class OperatorPathOutsideRootError(ValueError):
     """Reject explicit CLI file paths outside the operator invocation directory."""
 
 
+def _operator_path(value, *, reject_symlinks=False):
+    """Resolve an explicit CLI file within the operator's invocation directory."""
+    root = Path.cwd().resolve()
+    path = Path(value).expanduser().resolve()
+    if not path.is_relative_to(root):
+        raise OperatorPathOutsideRootError()
+    if reject_symlinks:
+        from .private_paths import checked_absolute_path
+
+        checked_absolute_path(Path(value).expanduser().absolute())
+    return path
+
+
 def validate_operator_paths(args):
     """Contain explicit maintenance file arguments within the trusted invocation cwd.
 
@@ -148,15 +165,11 @@ def validate_operator_paths(args):
     access. Home/storage paths and default profile files remain trusted profile
     configuration; this boundary applies only to explicit source/export options.
     """
-    root = Path.cwd().resolve()
     for key in ("source_json", "source_config", "output"):
         value = getattr(args, key, None)
         if value is None:
             continue
-        path = Path(value).expanduser().resolve()
-        if not path.is_relative_to(root):
-            raise OperatorPathOutsideRootError()
-        setattr(args, key, path)
+        setattr(args, key, _operator_path(value))
 
 
 def parser():
@@ -212,13 +225,13 @@ def main(argv=None):
         if args.qdrant_command == "shared-doctor":
             from .shared_security import doctor
 
-            report = doctor(args.home, args.policy)
+            report = doctor(args.home, _operator_path(args.policy, reject_symlinks=True))
             cli.print_json(report)
             return {"PASS": 0, "FAIL": 1, "UNVERIFIED": 2}[report["status"]]
         if args.qdrant_command == "shared-serve":
             from .shared_service import serve
 
-            serve(args.home, args.policy, args.port)
+            serve(args.home, _operator_path(args.policy, reject_symlinks=True), args.port)
             return 0
         if args.qdrant_command == "shared-mcp":
             from .shared_client import serve_mcp
@@ -255,17 +268,9 @@ def main(argv=None):
             result = setup_profile(args)
         elif args.qdrant_command in {"search", "add", "update", "delete"}:
             with open_runtime(args.home) as runtime:
-                definition = next(
-                    item
-                    for item in schemas()
-                    if item["name"] == "qdrant_memory_" + args.qdrant_command
+                result = call_tool(
+                    runtime, "qdrant_memory_" + args.qdrant_command, _tool_arguments(args)
                 )
-                arguments = {
-                    key: getattr(args, key)
-                    for key in definition["parameters"]["properties"]
-                    if getattr(args, key) is not None
-                }
-                result = call_tool(runtime, definition["name"], arguments)
         else:
             validate_operator_paths(args)
             result = cli.run(
@@ -282,6 +287,18 @@ def main(argv=None):
         if args.qdrant_command not in {"mcp", "shared-mcp"}:
             cli.print_json({"error": error})
         return 1
+
+
+def _tool_arguments(args):
+    """Select the fixed standalone tool fields from parsed CLI arguments."""
+    definition = next(
+        item for item in schemas() if item["name"] == "qdrant_memory_" + args.qdrant_command
+    )
+    return {
+        key: getattr(args, key)
+        for key in definition["parameters"]["properties"]
+        if getattr(args, key) is not None
+    }
 
 
 if __name__ == "__main__":

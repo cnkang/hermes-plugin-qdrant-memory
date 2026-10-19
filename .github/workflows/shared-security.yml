@@ -18,6 +18,8 @@ jobs:
     name: Protected Owner and Qdrant TLS/JWT isolation
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      QDRANT_TEST_IMAGE: qdrant/qdrant@sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
@@ -30,6 +32,6 @@ jobs:
       - name: Require deterministic protected destination contracts
         run: python -m pytest tests/security/test_shared_security.py -q
       - name: Fetch the disposable fixture image
-        run: docker pull qdrant/qdrant:v1.15.5
+        run: docker pull "$QDRANT_TEST_IMAGE"
       - name: Require actual database denial and authorized shared writes
-        run: python scripts/test_shared_security_docker.py qdrant/qdrant:v1.15.5
+        run: python scripts/test_shared_security_docker.py "$QDRANT_TEST_IMAGE"

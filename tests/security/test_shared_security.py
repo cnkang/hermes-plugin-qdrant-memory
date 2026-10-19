@@ -1,7 +1,10 @@
 """Protected destinations reject unsafe admission before touching memory."""
 
+import errno
 import json
 import os
+from contextlib import closing
+from pathlib import Path
 
 import pytest
 
@@ -75,8 +78,9 @@ def test_policy_mismatch_precedes_storage(profile, field):
     binding[field] = "incorrect"
     make_private(home)
     before = sorted(str(p.relative_to(home)) for p in home.rglob("*"))
+    cfg = load_standalone_config(home)
     with pytest.raises(ValueError):
-        validate_destination(home, load_standalone_config(home), binding)
+        validate_destination(home, cfg, binding)
     assert sorted(str(p.relative_to(home)) for p in home.rglob("*")) == before
     assert path.exists()
 
@@ -134,8 +138,9 @@ def test_unsafe_owner_state_rejected_without_repair(profile, unsafe):
             target.write_text("sensitive fixture")
             target.chmod(0o644)
     previous = target.lstat()
+    cfg = load_standalone_config(home)
     with pytest.raises((PermissionError, ValueError)):
-        validate_destination(home, load_standalone_config(home), binding)
+        validate_destination(home, cfg, binding)
     assert target.lstat().st_mode == previous.st_mode
 
 
@@ -246,6 +251,167 @@ def test_private_uid_without_account_record_remains_compatible(profile, monkeypa
     lease.close()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX registry admission requires POSIX permissions")
+@pytest.mark.parametrize("failure", [errno.EACCES, errno.EPERM, errno.EROFS, errno.EIO])
+@pytest.mark.parametrize("protected", [False, True])
+@pytest.mark.parametrize("existing", [False, True])
+def test_registry_creation_errors_preserve_only_safe_private_fallback(
+    profile, monkeypatch, failure, protected, existing
+):
+    """Permission/read-only errors allow legacy admission only without a claim registry."""
+    from qdrant_memory.shared_security import registry_path
+
+    home, _ = profile
+    _, binding = protected_policy(home)
+    make_private(home)
+    cfg = load_standalone_config(home)
+    root = registry_path()
+    if existing:
+        root.mkdir(mode=0o700, parents=True)
+    original = Path.mkdir
+
+    def unavailable(path, *args, **kwargs):
+        if path == root:
+            raise OSError(failure, "Synthetic registry creation error")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", unavailable)
+    if not protected and not existing and failure != errno.EIO:
+        lease = WriterLease.for_config(home, cfg)
+        lease.close()
+    else:
+        with pytest.raises(OSError) as caught:
+            WriterLease.for_config(home, cfg, destination_policy=binding if protected else None)
+        assert caught.value.errno == failure
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Protected mode requires POSIX permissions")
+@pytest.mark.parametrize("stage", ["serialize", "sync", "publish"])
+def test_interrupted_claim_is_not_published_and_can_be_retried(profile, monkeypatch, stage):
+    """Readers never observe partial claims; a failed publication leaves no final file."""
+    from qdrant_memory import shared_security
+
+    home, _ = profile
+    _, binding = protected_policy(home)
+    make_private(home)
+    cfg = load_standalone_config(home)
+
+    def interrupted(*args, **kwargs):
+        if stage == "serialize":
+            args[1].write('{"partial":')
+            args[1].flush()
+        assert shared_security.read_claim(cfg) is None
+        raise OSError(errno.EIO, "Synthetic interrupted claim")
+
+    with monkeypatch.context() as patch:
+        target, name = {
+            "serialize": (shared_security.json, "dump"),
+            "sync": (shared_security.os, "fsync"),
+            "publish": (shared_security.os, "replace"),
+        }[stage]
+        patch.setattr(target, name, interrupted)
+        with pytest.raises(OSError, match="Synthetic interrupted claim"):
+            WriterLease.for_config(home, cfg, destination_policy=binding)
+    assert shared_security.read_claim(cfg) is None
+    assert not list(shared_security.registry_path().glob(".claim-*"))
+    lease = WriterLease.for_config(home, cfg, destination_policy=binding)
+    lease.close()
+    assert shared_security.read_claim(cfg) == binding
+
+
+@pytest.mark.parametrize("mode", ["shared-serve", "shared-doctor"])
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "absolute",
+        "parent",
+        pytest.param(
+            "symlink",
+            marks=pytest.mark.skipif(
+                os.name == "nt", reason="Symlink creation requires Windows privileges"
+            ),
+        ),
+    ],
+)
+def test_shared_cli_policy_cannot_escape_invocation_directory(
+    profile, tmp_path, monkeypatch, capsys, mode, spelling
+):
+    """Shared CLI policy selection is checked before reading an outside file."""
+    from qdrant_memory.standalone import main
+
+    home, _ = profile
+    outside = policy(tmp_path)
+    argument = outside
+    if spelling == "parent":
+        argument = Path("..") / outside.name
+    elif spelling == "symlink":
+        argument = home / "policy-link.json"
+        argument.symlink_to(outside)
+    monkeypatch.chdir(home)
+    assert main(["--home", str(home), mode, "--policy", str(argument)]) == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["error"]["type"] == "OperatorPathOutsideRootError"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Protected mode requires POSIX permissions")
+def test_doctor_distinguishes_registered_idle_and_active_owner(profile):
+    """A valid claim does not turn an occupied writer lock into a health proof."""
+    from qdrant_memory.shared_security import doctor
+
+    home, _ = profile
+    command(profile, "init")
+    path, binding = protected_policy(home)
+    make_private(home)
+    cfg = load_standalone_config(home)
+    lease = WriterLease.for_config(home, cfg, destination_policy=binding)
+    try:
+        active = {c["code"]: c["status"] for c in doctor(home, path)["checks"]}
+        assert active["local_ownership"] == "PASS"
+        assert active["local_writer"] == "UNVERIFIED"
+    finally:
+        lease.close()
+    idle = {c["code"]: c["status"] for c in doctor(home, path)["checks"]}
+    assert idle["local_writer"] == "PASS"
+    assert idle["credential_isolation"] == "UNVERIFIED"
+
+
+@pytest.mark.parametrize("mismatch", [None, "dimensions", "fingerprint", "schema", "missing"])
+def test_remote_doctor_checks_existing_schema_without_mutation(profile, monkeypatch, mismatch):
+    """The remote read interface validates identity and never initializes or repairs it."""
+    from qdrant_client import QdrantClient
+
+    from qdrant_memory.qdrant_store import IDENTITY_ID
+    from qdrant_memory.shared_security import doctor
+
+    home, _ = profile
+    command(profile, "init")
+    cfg = load_standalone_config(home)
+    storage = cfg["qdrant"]["path"]
+    collection = cfg["qdrant"]["collection"]
+    with closing(QdrantClient(path=storage)) as client:
+        if mismatch == "missing":
+            client.delete(collection, points_selector=[IDENTITY_ID], wait=True)
+        elif mismatch in {"fingerprint", "schema"}:
+            key = "embedding_fingerprint" if mismatch == "fingerprint" else "_qdrant_memory_schema"
+            client.set_payload(collection, {key: "incompatible"}, points=[IDENTITY_ID], wait=True)
+        before = client.count(collection, exact=True).count
+    if mismatch == "dimensions":
+        cfg["embedding"]["dimensions"] += 1
+    cfg["qdrant"].update(mode="server", url="https://qdrant.invalid:6333")
+    (home / "qdrant-memory.json").write_text(json.dumps(cfg))
+    path = policy(home)
+    make_private(home)
+    # Exercise the real Qdrant read methods without requiring a network service.
+    monkeypatch.setattr(
+        "qdrant_memory.qdrant_store.build_client", lambda cfg: QdrantClient(path=storage)
+    )
+    report = {c["code"]: c["status"] for c in doctor(home, path)["checks"]}
+    assert report["database_schema"] == ("PASS" if mismatch is None else "FAIL")
+    assert report["credential_isolation"] == "UNVERIFIED"
+    with closing(QdrantClient(path=storage)) as client:
+        assert client.count(collection, exact=True).count == before
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Protected mode requires POSIX permissions")
 def test_protected_restart_recovers_prepared_plan(profile, monkeypatch):
     """Destination claims survive an interrupted shared plan and preserve idempotency."""
@@ -302,6 +468,6 @@ def test_protected_collection_schema_is_checked_before_ledger(profile):
         )
     _, binding = protected_policy(home)
     make_private(home)
-    with pytest.raises(CollectionCompatibilityError):
-        with open_runtime(home, shared_owner=True, destination_policy=binding):
-            pytest.fail("Incompatible schema was admitted")
+    startup = open_runtime(home, shared_owner=True, destination_policy=binding)
+    with pytest.raises(CollectionCompatibilityError), startup:
+        pass
