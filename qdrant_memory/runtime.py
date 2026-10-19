@@ -216,6 +216,8 @@ class Runtime:
     def _prepare(self, event):
         """Persist extraction candidates and prepare scoped event operations."""
         self.check_active()
+        if event.get("source") == "native_owner_unadmitted":
+            raise PermissionError("Unadmitted Native event requires explicit authorized retry")
         scope = Scope(**event["scope"])
         if event["kind"] == "builtin":
             return self._prepare_builtin(event, scope)
@@ -257,6 +259,10 @@ class Runtime:
                 updated_at=event["created_at"],
                 metadata={"write_origin": event["kind"], **relation},
             )
+            if event.get("source") == "owner_lifecycle":
+                from .owner_lifecycle import record_fields
+
+                value.update(record_fields(event, old, identifier))
             keys.append(self.operation(identifier, "UPSERT", value))
         return keys
 
@@ -297,6 +303,10 @@ class Runtime:
             created_at=event["created_at"],
             updated_at=event["created_at"],
         )
+        if event.get("source") == "owner_lifecycle":
+            from .owner_lifecycle import record_fields
+
+            value.update(record_fields(event, self.store.get(identifier, scope), identifier))
         keys = []
         if old_id and old_id != identifier:
             keys.append(
