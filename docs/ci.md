@@ -1,5 +1,27 @@
 # CI services
 
+## Transient runner download retries
+
+The validation workflows have a separate, bounded retry controller for confirmed
+transient failures downloading GitHub Action archives during `Set up job`.
+It permits at most two additional run attempts (three attempts total), and
+requests only failed jobs. All failed jobs must have stopped before any workflow
+step executed, with both a download failure and a transient DNS, timeout or
+service-unavailable error in their logs. Test/quality-gate failures, permanent
+404s, foreign heads and missing evidence do not qualify.
+
+The controller reads fresh run/attempt metadata, serializes events per run and
+checks again before requesting a rerun. It needs `actions: write` only to request
+the rerun. It never checks out or executes the triggering head, consumes its
+artifacts or evaluates its logs. Its script is fetched from the retry workflow's
+own trusted SHA, with three bounded download attempts, and no external actions
+are required to bootstrap that controller. Release/publish workflows are excluded.
+
+GitHub activates `workflow_run` workflows only after their file exists on the
+default branch; adding this controller in a PR does not activate it before merge.
+See [workflow event behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
+and [failed-job rerun API](https://docs.github.com/en/rest/actions/workflow-runs#re-run-failed-jobs-from-a-workflow-run).
+
 See [standalone CLI and MCP](standalone.md) for the additive host-independent
 interface, shared durable core, fixed operator scope and its validation boundary.
 
