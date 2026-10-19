@@ -25,6 +25,7 @@ class Runtime:
         self.decisions = {"ADD": 0, "UPDATE": 0, "SKIP": 0}
         self.store.metrics = ledger
         self.stop_requested = stop_requested or (lambda: False)
+        self.mutation_revision = 0
 
     def check_active(self):
         """Defer another service phase after the owner's drain deadline."""
@@ -127,6 +128,9 @@ class Runtime:
             for row in group:
                 self.ledger.failure("operations", row["idempotency_key"], exc)
 
+        # Invalidate in-process Owner recall before any possibly accepted remote
+        # mutation, including an operation whose acknowledgement is then lost.
+        self.mutation_revision += 1
         try:
             run_with_retry(apply, self.cfg["write"], failed)
         except WorkDeferred:
@@ -216,6 +220,8 @@ class Runtime:
     def _prepare(self, event):
         """Persist extraction candidates and prepare scoped event operations."""
         self.check_active()
+        if event.get("source") == "native_owner_unadmitted":
+            raise PermissionError("Unadmitted Native event requires explicit authorized retry")
         scope = Scope(**event["scope"])
         if event["kind"] == "builtin":
             return self._prepare_builtin(event, scope)
@@ -230,10 +236,20 @@ class Runtime:
             # Persist extraction before dedupe or remote writes.
             self.ledger.prepare_event(event["event_id"], event)
         keys = []
+        filters = None
+        if event.get("source") == "owner_lifecycle":
+            from .owner_lifecycle import record_filters
+
+            filters = record_filters(event)
         for candidate in event["candidates"]:
             self.check_active()
             action, identifier, relation = decide(
-                candidate["text"], scope, self.store, self.extractor, self.cfg["dedupe"]
+                candidate["text"],
+                scope,
+                self.store,
+                self.extractor,
+                self.cfg["dedupe"],
+                **({"filters": filters} if filters else {}),
             )
             self.decisions[action] += 1
             self.ledger.increment(action)
@@ -257,6 +273,10 @@ class Runtime:
                 updated_at=event["created_at"],
                 metadata={"write_origin": event["kind"], **relation},
             )
+            if event.get("source") == "owner_lifecycle":
+                from .owner_lifecycle import record_fields
+
+                value.update(record_fields(event, old, identifier))
             keys.append(self.operation(identifier, "UPSERT", value))
         return keys
 
@@ -297,6 +317,10 @@ class Runtime:
             created_at=event["created_at"],
             updated_at=event["created_at"],
         )
+        if event.get("source") == "owner_lifecycle":
+            from .owner_lifecycle import record_fields
+
+            value.update(record_fields(event, self.store.get(identifier, scope), identifier))
         keys = []
         if old_id and old_id != identifier:
             keys.append(

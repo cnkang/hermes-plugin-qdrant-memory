@@ -208,11 +208,11 @@ class QdrantStore:
             self.metrics.measure("search_latency_ms", (time.monotonic() - started) * 1000)
         return hits[: top_k or search["top_k"]]
 
-    def lookup_hash(self, scope, value):
+    def lookup_hash(self, scope, value, filters=None):
         """Find an exact normalized-content hash in the caller's scope."""
         rows, _ = self.client.scroll(
             self.collection,
-            scroll_filter=scope_filter(scope, {"content_hash": value}),
+            scroll_filter=scope_filter(scope, {**(filters or {}), "content_hash": value}),
             limit=1,
             with_payload=True,
             with_vectors=False,

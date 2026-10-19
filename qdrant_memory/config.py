@@ -89,7 +89,7 @@ def active_home():
     return Path(get_hermes_home())
 
 
-def validate_url(value, cloud=False, api_key=None):
+def validate_url(value, cloud=False, api_key=None, *, require_tls=False):
     """Reject invalid endpoints, unsafe API-key transport and non-HTTPS Cloud URLs."""
     parsed = urlsplit(value or "")
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -98,13 +98,15 @@ def validate_url(value, cloud=False, api_key=None):
         raise ValueError("Credentials and query parameters are forbidden in endpoint URLs")
     if cloud and parsed.scheme != "https":
         raise ValueError("Cloud requires HTTPS")
-    if api_key and parsed.scheme == "http":
+    if (api_key or require_tls) and parsed.scheme == "http":
         hostname = parsed.hostname.rstrip(".").lower()
         try:
             loopback = ipaddress.ip_address(hostname).is_loopback
         except ValueError:
             loopback = False
         if hostname != "localhost" and not loopback:
+            if require_tls:
+                raise ValueError("Private-content endpoints require HTTPS")
             raise ValueError("API-key endpoints require HTTPS")
 
 
