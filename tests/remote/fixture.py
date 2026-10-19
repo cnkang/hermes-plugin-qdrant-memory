@@ -196,11 +196,11 @@ async def client(recovery=False):
     assert disposable["id"] not in {
         item["id"] for item in (await call("codex", "search", {"query": "disposable"}))["memories"]
     }
-    private = await call(
-        "private-a", "add", {"text": "Hermes private cats", "request_id": "private"}
-    )
     private_rows = await call("private-b", "search", {"query": "cats"})
-    assert private["id"] in {item["id"] for item in private_rows["memories"]}
+    private = next(
+        item for item in private_rows["memories"] if item["text"] == "Hermes private cats"
+    )
+    assert private["created_by_device"] == "private-a"
     assert not (await call("codex-private", "search", {"query": "cats"}))["memories"]
     assert private["id"] not in {item["id"] for item in found["memories"]}
     async with httpx.AsyncClient(
@@ -252,8 +252,38 @@ async def client(recovery=False):
     )
 
 
+async def device_a():
+    """Run a separate actual SDK client in the Owner device's network namespace."""
+    for _ in range(100):
+        try:
+            result = await call_remote(
+                "https://owner:8443/mcp",
+                TOKENS["hermes-a"],
+                "qdrant_memory_add",
+                {"text": "Project Alpha uses SQLite WAL.", "request_id": "alpha"},
+                ca_file="/tmp/tls/cert.pem",
+            )
+            assert result["action"] == "ADD"
+            break
+        except Exception:
+            await asyncio.sleep(0.1)
+    else:
+        raise RuntimeError("Device A could not connect to HTTPS MCP")
+    saved = await call_remote(
+        "https://owner:8443/mcp",
+        TOKENS["private-a"],
+        "qdrant_memory_add",
+        {"text": "Hermes private cats", "request_id": "private"},
+        ca_file="/tmp/tls/cert.pem",
+    )
+    assert saved["action"] == "ADD"
+    print(json.dumps({"status": "PASS", "role": "device-a", "sdk": version("mcp")}))
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "server":
         serve()
+    elif sys.argv[1] == "device-a":
+        asyncio.run(device_a())
     else:
         asyncio.run(client(sys.argv[1] == "recover"))

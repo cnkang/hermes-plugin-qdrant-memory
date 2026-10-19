@@ -58,6 +58,7 @@ def main():
             else:
                 raise RuntimeError("Synthetic TLS fixture failed startup")
             run("cp", certificate, client + ":/tmp/owner-ca.pem")
+            print(run("exec", server, "python", "tests/remote/fixture.py", "device-a"))
             print(run("start", "-a", client))
             exit_code = run("inspect", "--format", "{{.State.ExitCode}}", client)
             if exit_code != "0":
