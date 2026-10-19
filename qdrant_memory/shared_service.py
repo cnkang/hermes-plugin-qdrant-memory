@@ -4,8 +4,10 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import re
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -51,17 +53,37 @@ def shared_schemas():
 
 def _validate_grant(grant, seen):
     """Validate a single fixed identity before comparing space boundaries."""
-    if not isinstance(grant, dict) or set(grant) != {
+    required = {
         "token_sha256",
         "principal",
         "owner_id",
         "space_id",
         "permission",
         "visibility",
-    }:
+    }
+    optional = {"logical_agent_id", "device_id", "expires_at", "revoked"}
+    if (
+        not isinstance(grant, dict)
+        or not required <= set(grant)
+        or set(grant) - required - optional
+    ):
         raise ValueError("Invalid shared grant fields")
-    if not all(isinstance(value, str) and value and len(value) <= 256 for value in grant.values()):
+    strings = required | ({"logical_agent_id", "device_id"} & set(grant))
+    if not all(isinstance(grant[k], str) and grant[k] and len(grant[k]) <= 256 for k in strings):
         raise ValueError("Invalid shared grant values")
+    if ("logical_agent_id" in grant) != ("device_id" in grant):
+        raise ValueError("Logical identity and device must be configured together")
+    if "revoked" in grant and not isinstance(grant["revoked"], bool):
+        raise ValueError("Revocation must be boolean")
+    if "expires_at" in grant:
+        expiry = grant["expires_at"]
+        if (
+            isinstance(expiry, bool)
+            or not isinstance(expiry, (int, float))
+            or not math.isfinite(expiry)
+            or expiry <= 0
+        ):
+            raise ValueError("Expiry must be a finite positive Unix timestamp")
     if not re.fullmatch("[a-f0-9]{64}", grant["token_sha256"]) or grant["token_sha256"] in seen:
         raise ValueError("Credential hashes must be unique SHA256 values")
     seen.add(grant["token_sha256"])
@@ -89,12 +111,25 @@ def load_policy_document(path):
         raise ValueError("Expected explicit shared clients")
     seen = set()
     spaces = {}
+    devices = {}
     for grant in policy["clients"]:
         _validate_grant(grant, seen)
+        if "device_id" in grant:
+            device = (grant["owner_id"], grant["device_id"])
+            identity = (grant["principal"], grant["logical_agent_id"])
+            if device in devices and devices[device] != identity:
+                raise ValueError("Device identity cannot differ between grants")
+            devices[device] = identity
         space = (grant["owner_id"], grant["space_id"])
         boundary = (
             grant["visibility"],
-            grant["principal"] if grant["visibility"] == "private" else None,
+            (
+                ("logical", grant["logical_agent_id"])
+                if "logical_agent_id" in grant
+                else ("legacy", grant["principal"])
+            )
+            if grant["visibility"] == "private"
+            else None,
         )
         if space in spaces and spaces[space] != boundary:
             raise ValueError("Space visibility/ownership cannot differ between grants")
@@ -111,10 +146,11 @@ def load_policy_document(path):
 class SharedOwner:
     """Authorize every operation and coordinate durable plans under the Runtime lock."""
 
-    def __init__(self, runtime, grants, *, admission_check=None):
+    def __init__(self, runtime, grants, *, admission_check=None, grant_loader=None):
         """Recover prepared requests before accepting any new client work."""
         self.runtime, self.grants = runtime, grants
         self.admission_check = admission_check
+        self.grant_loader = grant_loader
         self.blocked = False
         ledger = runtime.ledger
         with ledger.lock, ledger.db:
@@ -149,8 +185,16 @@ class SharedOwner:
             LOG.info("shared_access principal=unknown decision=deny")
             raise PermissionError("Invalid shared credential")
         hashed = hashlib.sha256(token.encode()).hexdigest()
-        for grant in self.grants:
+        try:
+            grants = self.grant_loader() if self.grant_loader is not None else self.grants
+        except Exception:
+            raise PermissionError("Shared policy unavailable") from None
+        for grant in grants:
             if hmac.compare_digest(hashed, grant["token_sha256"]):
+                if grant.get("revoked", False) or time.time() >= grant.get(
+                    "expires_at", float("inf")
+                ):
+                    raise PermissionError("Shared credential unavailable")
                 return grant
         LOG.info("shared_access principal=unknown decision=deny")
         raise PermissionError("Unknown shared credential")
@@ -171,15 +215,20 @@ class SharedOwner:
 
     def call(self, token, name, args):
         """Audit allow/deny without credentials, text, query, IDs or exception messages."""
-        grant = self.authenticate(token)
+        grant = None
         outcome = "deny"
         try:
             with self.runtime.lock:
+                grant = self.authenticate(token)
                 result = self._call(grant, name, args)
             outcome = "allow"
             return result
         finally:
-            LOG.info("shared_access principal=%s decision=%s", digest(grant["principal"]), outcome)
+            LOG.info(
+                "shared_access principal=%s decision=%s",
+                digest(grant["principal"]) if grant else "unknown",
+                outcome,
+            )
 
     @staticmethod
     def _validate_arguments(name, args):
@@ -319,6 +368,12 @@ class SharedOwner:
             updated_by=grant["principal"],
             version=version,
         )
+        if "device_id" in grant:
+            value.update(
+                logical_agent_id=grant["logical_agent_id"],
+                created_by_device=value.get("created_by_device", grant["device_id"]),
+                updated_by_device=grant["device_id"],
+            )
         value = enforce_limits(value, self.runtime.cfg["limits"])
         return {
             "identifier": identifier,
@@ -487,6 +542,7 @@ def serve(home, policy_path, port):
                 runtime,
                 policy["clients"],
                 admission_check=admission_check if binding is not None else None,
+                grant_loader=lambda: load_policy(policy_path),
             )
             with make_server(owner, port) as server:
                 print(
