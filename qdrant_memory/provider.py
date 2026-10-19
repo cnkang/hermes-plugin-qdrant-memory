@@ -59,6 +59,7 @@ class QdrantMemoryProvider(MemoryProvider):
         self._latencies = []
         self._stop_at = None
         self._shared_recall = None
+        self._native_owner = None
 
     @property
     def name(self):
@@ -87,7 +88,7 @@ class QdrantMemoryProvider(MemoryProvider):
         """
         self.home = kwargs.get("hermes_home") or str(active_home())
         self.cfg = load_config(self.home, self.overrides)
-        if (self.cfg["scope"]["agent_id"] or "").startswith("shared:v1:"):
+        if (self.cfg["scope"]["agent_id"] or "").startswith(("shared:v1:", "shared:v2:")):
             raise ValueError("Native private scope cannot use the shared namespace")
         if self.cfg.get("shared_read", {}).get("enabled", False):
             from .config import secret
@@ -95,6 +96,9 @@ class QdrantMemoryProvider(MemoryProvider):
 
             self._shared_recall = SharedRecall(self.cfg["shared_read"], secret_reader=secret)
         self.session_id = session_id
+        from .native_owner import load_native_settings
+
+        owner_settings = load_native_settings(self.home, self.cfg.get("native_owner"))
         self._primary = kwargs.get("agent_context", "primary") == "primary"
         self.default_scope = Scope(**self.cfg["scope"])
         self._scopes[session_id] = Scope(
@@ -107,7 +111,15 @@ class QdrantMemoryProvider(MemoryProvider):
                 # Register them before ledger setup so every failure path releases the
                 # embedded Qdrant file lock.
                 self._resources.callback(self.client.close)
-            lease = WriterLease.for_config(self.home, self.cfg)
+            lease = WriterLease.for_config(
+                self.home,
+                self.cfg,
+                **(
+                    {"destination_policy": owner_settings["document"].get("destination")}
+                    if owner_settings and owner_settings["document"].get("destination") is not None
+                    else {}
+                ),
+            )
             self._resources.callback(lease.close)
             self.embedder = self.embedder or build_embedder(self.context, self.cfg)
             if hasattr(self.embedder, "close"):
@@ -159,7 +171,23 @@ class QdrantMemoryProvider(MemoryProvider):
                 Extractor(self.context.llm, self.cfg["llm"]),
                 stop_requested=self._stop_requested,
             )
+            if owner_settings is not None:
+                from .native_owner import NativeOwner
+
+                self._native_owner = NativeOwner(
+                    self.runtime, owner_settings, self.default_scope.user_id
+                )
+                self._native_owner.reauthorize_pending()
+                if self.runtime.recover() or next(self.ledger.iter_rows("events", "FAILED"), None):
+                    raise RuntimeError("Native Owner requires complete lifecycle recovery")
+                self.default_scope = self._native_owner.scope
+                self._scopes[session_id] = Scope(
+                    self._scopes[session_id].user_id, self.default_scope.agent_id
+                )
+                self._native_owner.start()
         except Exception:
+            if self._native_owner is not None:
+                self._native_owner.close()
             self._resources.close()
             raise
         self._accepting = True
@@ -200,6 +228,8 @@ class QdrantMemoryProvider(MemoryProvider):
                         self._busy = False
                         self._condition.notify_all()
         finally:
+            if self._native_owner is not None:
+                self._native_owner.close()
             with self.runtime.lock:
                 self._resources.close()
 
@@ -322,6 +352,22 @@ class QdrantMemoryProvider(MemoryProvider):
                 value["scope"] = (scope or Scope("__mixed__", None)).as_dict()
                 if value["kind"] == "checkpoint":
                     value["extract"] = self._primary and scope is not None
+            values = [value]
+            if self._native_owner is not None:
+                try:
+                    values = self._native_owner.events(value)
+                except Exception as exc:
+                    value = {**value, "source": "native_owner_unadmitted"}
+                    key = self.ledger.enqueue_event(value)
+                    self.ledger.failure("events", key, exc, terminal=True)
+                    self._native_owner.owner.blocked = True
+                    raise
+            for captured in values:
+                self._enqueue_event(captured)
+
+    def _enqueue_event(self, value):
+        """Queue an already-authorized durable event on the one existing worker."""
+        with self._condition:
             key = self.ledger.enqueue_event(value)
             # The event ID itself is stored only after hashing the immutable turn.
             row = self.ledger.row("events", key)
@@ -558,6 +604,10 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def get_tool_schemas(self):
         """Return a stable four-tool schema surface for the conversation."""
+        if self._native_owner is not None:
+            from .shared_service import shared_schemas
+
+            return shared_schemas()
         return schemas()
 
     def handle_tool_call(self, tool_name, args, **kwargs):
@@ -568,7 +618,15 @@ class QdrantMemoryProvider(MemoryProvider):
                 with self._condition:
                     if not self._accepting:
                         raise RuntimeError("Provider is shut down")
-                result = dispatch(self.runtime, tool_name, args, self._scope(session), session)
+                if (
+                    self._native_owner is not None
+                    and self._scope(session) == self._native_owner.scope
+                ):
+                    result = self._native_owner.owner.call(
+                        self._native_owner.token(), tool_name, args
+                    )
+                else:
+                    result = dispatch(self.runtime, tool_name, args, self._scope(session), session)
             if (
                 tool_name == "qdrant_memory_search"
                 and self._shared_recall is not None
