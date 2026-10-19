@@ -120,6 +120,9 @@ def validate(cfg):
     emb = validate_embedding(cfg)
     validate_numbers(cfg, emb)
     validate_search_scope(cfg)
+    from .shared_recall import validate_shared_read
+
+    validate_shared_read(cfg.get("shared_read"))
 
 
 def validate_llm(llm):
