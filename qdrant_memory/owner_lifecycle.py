@@ -140,6 +140,21 @@ class OwnerLifecycle:
             return failures
 
 
+def record_filters(event):
+    """Restrict lifecycle dedupe to records admitted under the same authority."""
+    from .shared_protocol import MARKER
+
+    authority = event["owner_authority"]
+    filters = {
+        "shared_protocol": MARKER,
+        "space_id": authority["space_id"],
+        "visibility": authority["visibility"],
+    }
+    if authority["visibility"] == "private":
+        filters["logical_agent_id"] = authority["logical_agent_id"]
+    return filters
+
+
 def record_fields(event, old, identifier):
     """Attach only authority captured by the Owner, never extractor-produced metadata."""
     authority = event.get("owner_authority")
@@ -148,6 +163,8 @@ def record_fields(event, old, identifier):
     from .shared_protocol import MARKER
 
     previous = old.payload if old else {}
+    if old and any(previous.get(key) != value for key, value in record_filters(event).items()):
+        raise PermissionError("Lifecycle target is outside authorized records")
     return {
         "shared_protocol": MARKER,
         "space_id": authority["space_id"],

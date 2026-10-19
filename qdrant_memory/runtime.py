@@ -236,10 +236,20 @@ class Runtime:
             # Persist extraction before dedupe or remote writes.
             self.ledger.prepare_event(event["event_id"], event)
         keys = []
+        filters = None
+        if event.get("source") == "owner_lifecycle":
+            from .owner_lifecycle import record_filters
+
+            filters = record_filters(event)
         for candidate in event["candidates"]:
             self.check_active()
             action, identifier, relation = decide(
-                candidate["text"], scope, self.store, self.extractor, self.cfg["dedupe"]
+                candidate["text"],
+                scope,
+                self.store,
+                self.extractor,
+                self.cfg["dedupe"],
+                **({"filters": filters} if filters else {}),
             )
             self.decisions[action] += 1
             self.ledger.increment(action)
