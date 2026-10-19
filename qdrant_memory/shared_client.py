@@ -1,58 +1,72 @@
 """Thin local service client and stdio MCP bridge; never opens storage or embeds."""
 
+import json
 import os
 import re
-from urllib.parse import urlsplit
 
 import httpx
 
+from .shared_protocol import validate_loopback_url
 from .shared_service import shared_schemas
+
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
+def _collect_bounded(response):
+    """Read a hard-capped body without decoding, so compression cannot expand it."""
+    body = bytearray()
+    # iter_raw() never decodes transfer encodings; combined with the identity request
+    # header the cap always measures the real byte count.
+    for chunk in response.iter_raw():
+        body.extend(chunk)
+        if len(body) > MAX_RESPONSE_BYTES:
+            raise ValueError("Shared service response too large")
+    return bytes(body)
 
 
 def call(url, token, name, arguments):
     """Call only a literal loopback address with no redirects or environment proxies."""
-    parsed = urlsplit(url)
-    if (
-        parsed.scheme != "http"
-        or parsed.hostname != "127.0.0.1"
-        or not parsed.port
-        or parsed.username
-        or parsed.password
-        or parsed.path not in {"", "/"}
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise ValueError("Shared service URL must be literal IPv4 loopback with port")
     # Convert at the trust boundary: only a bounded numeric port can vary;
     # neither an untrusted URL string nor its host/path reaches HTTPX.
-    port = int(parsed.port)
-    if not 1 <= port <= 65535:
-        raise ValueError("Shared service port must be between 1 and 65535")
+    port = validate_loopback_url(url)
     endpoint = httpx.URL("http://127.0.0.1/v1/tool", port=port)
     if not isinstance(token, str) or len(token) < 32:
         raise ValueError("A high-entropy shared credential is required")
     with httpx.Client(trust_env=False, follow_redirects=False, timeout=120) as client:
-        response = client.post(
+        with client.stream(
+            "POST",
             endpoint,
-            headers={"Authorization": "Bearer " + token},
+            headers={
+                "Authorization": "Bearer " + token,
+                # No compression on the loopback boundary: the size cap must see real bytes.
+                "Accept-Encoding": "identity",
+            },
             json={"name": name, "arguments": arguments},
-        )
-        result = response.json()
-        if response.status_code != 200:
-            code = result.get("error", {}).get("type", "SharedClientError")
-            code = (
-                code
-                if isinstance(code, str) and re.fullmatch(r"[A-Za-z]+Error", code)
-                else "SharedClientError"
-            )
-            # Preserve machine-readable conflicts without reflecting remote error messages.
-            return {
-                "error": {
-                    "type": code,
-                    "retryable": result.get("error", {}).get("retryable") is True,
+        ) as response:
+            raw = _collect_bounded(response)
+            try:
+                result = json.loads(raw)
+            except ValueError:
+                raise ValueError("Shared service response is not valid JSON") from None
+            if not isinstance(result, dict):
+                raise ValueError("Shared service response is not a JSON object")
+            if response.status_code != 200:
+                envelope = result.get("error")
+                envelope = envelope if isinstance(envelope, dict) else {}
+                code = envelope.get("type", "SharedClientError")
+                code = (
+                    code
+                    if isinstance(code, str) and re.fullmatch(r"[A-Za-z]+Error", code)
+                    else "SharedClientError"
+                )
+                # Preserve machine-readable conflicts without reflecting remote error messages.
+                return {
+                    "error": {
+                        "type": code,
+                        "retryable": envelope.get("retryable") is True,
+                    }
                 }
-            }
-        return result
+            return result
 
 
 def serve_mcp(url, token_env):
