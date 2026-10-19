@@ -87,9 +87,10 @@ at startup. The deployment guide puts Caddy or Nginx on the same host. The proxy
 terminates TLS. This rule also keeps the security exception for the old loopback HTTP
 code in one file, shared_service.py.
 
-For a container deployment, the proxy and the owner must share a network namespace. As an
-alternative, the proxy uses a shared mount for the Unix socket. The two-container test
-uses one of these methods and shows that the proxy can connect to the owner.
+For a container deployment, the proxy container and the owner container must share a
+network namespace. As an alternative, the proxy container uses a shared mount for the
+Unix socket of the owner. The two-container test uses one of these methods and shows that
+the proxy can connect to the owner.
 
 The remote listener must not use the private create_server(runtime, ...) factory. A
 separate create_shared_server(owner, grant_resolver) function supplies the shared schemas
@@ -155,7 +156,9 @@ value.
   reader uses an explicit allowlist and revalidates the provenance. Tests only.
 - Phase 1b: connect the reader to prefetch and search behind an explicit flag. This step
   changes the visible data for enabled profiles. The flag is separate, and the review
-  covers this step.
+  covers this step. After a revocation, the host must clear or rebuild the related
+  context before the next model call, or the smaller guarantee applies (see the review
+  notes).
 - Phase 2a: the Streamable HTTP listener that binds a loopback address or a Unix socket,
   the shared server factory, and the remote_design doctor check. No public exposure. A
   two-container HTTPS test runs against the same-host proxy.
@@ -172,8 +175,8 @@ value.
 2. Bind: the listener uses a loopback address or a Unix socket only. A wildcard bind
    causes an error.
 3. TLS: a plaintext connection to the public port fails. The TLS client rejects an
-   expired server certificate. If mutual TLS is enabled, the server rejects an expired
-   client certificate.
+   expired server certificate. If the operator enables mutual TLS, the proxy (the TLS
+   server) rejects an expired client certificate.
 4. Proxy trust: the server rejects untrusted Forwarded, Host and Origin headers. It
    removes spoofed client headers.
 5. Authentication: a missing, malformed, expired or revoked token gives the response 401
@@ -184,9 +187,9 @@ value.
    stay invisible.
 8. Recovery: a crash during a write gives the same receipt state as the loopback path.
 9. Non-regression: the existing stdio MCP, scope, ledger and reset tests do not change.
-10. End-to-end: two containers connect through real TLS with embedded Qdrant. The two
-    containers use a shared network namespace or a shared socket mount. No cloud account
-    is necessary.
+10. End-to-end: a client container connects to the proxy of the owner container through
+    real TLS. The proxy reaches the owner through a shared network namespace or a shared
+    socket mount. The owner uses embedded Qdrant. No cloud account is necessary.
 
 ## 11. Design review
 
