@@ -151,3 +151,33 @@ def test_lifecycle_route_opt_in_and_bounded_event_admission(tmp_path):
     finally:
         rt.ledger.close()
         rt.store.close()
+
+
+def test_unauthenticated_flood_cannot_spend_authenticated_quota(tmp_path):
+    """Unknown/missing credentials cannot deny a valid principal by spending its budget."""
+    rt = runtime(tmp_path)
+    token = "a" * 40
+    app = create_gateway(SharedOwner(rt, [grant(token, "mac")]), allowed_hosts=["memory.test"])
+
+    async def check():
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://memory.test"
+            ) as client:
+                for _ in range(241):
+                    await client.post("/mcp", json={})
+                response = await client.post(
+                    "/mcp",
+                    headers={
+                        "Authorization": "Bearer " + token,
+                        "Accept": "application/json, text/event-stream",
+                    },
+                    json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+                )
+                assert response.status_code == 200
+
+    try:
+        asyncio.run(check())
+    finally:
+        rt.ledger.close()
+        rt.store.close()

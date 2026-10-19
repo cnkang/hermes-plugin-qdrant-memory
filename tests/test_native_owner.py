@@ -70,6 +70,25 @@ def test_native_owner_lifecycle_project_handoff_and_private_isolation(tmp_path, 
             {"query": "Alpha", "space_id": "hermes-private"},
         )
         assert "error" in forged
+        clients[1]["revoked"] = True
+        policy.write_text(json.dumps({"clients": clients}))
+        p.sync_turn("dogs private only", "ack")
+        assert p.wait_idle()
+        assert p._native_owner.owner.blocked is False
+        assert p._native_owner.denied_captures == 1
+        assert any(
+            row["text"] == "dogs private only"
+            for row in call(url, tokens["native"], "qdrant_memory_search", {"query": "dogs"})[
+                "memories"
+            ]
+        )
+        assert not any(
+            row["text"] == "dogs private only"
+            for row in call(url, tokens["reader"], "qdrant_memory_search", {"query": "dogs"})[
+                "memories"
+            ]
+        )
+        clients[1]["revoked"] = False
         clients[0]["revoked"] = True
         policy.write_text(json.dumps({"clients": clients}))
         with pytest.raises(PermissionError):

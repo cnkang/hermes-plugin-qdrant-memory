@@ -1,10 +1,13 @@
 """Opt-in Owner hosted by the existing Native Provider and host LLM Runtime."""
 
+import logging
 from pathlib import Path
 from threading import Thread
 
 from .config import secret
 from .shared_service import SharedOwner, load_policy, load_policy_document, make_server
+
+LOG = logging.getLogger(__name__)
 
 
 def load_native_settings(home, value):
@@ -87,6 +90,7 @@ class NativeOwner:
         self.server = self.thread = None
         self.remote = self.remote_thread = self.remote_socket = None
         self.url = None
+        self.denied_captures = 0
 
     def start(self):
         """Bind loopback only after recovery and complete initialization."""
@@ -162,24 +166,32 @@ class NativeOwner:
             names += self.settings.get("shared_capture_token_envs", [])
         result = []
         for index, name in enumerate(names):
-            grant = self.owner.authenticate(secret(name))
-            if not index and self.owner.scope(grant) != self.scope:
-                raise PermissionError(
-                    "Native private identity changed; explicit reconfiguration required"
-                )
-            if (
-                grant["owner_id"] != self.scope.user_id
-                or grant["permission"] != "write"
-                or "logical_agent_id" not in grant
-                or (
-                    index
-                    and (
-                        grant["visibility"] not in {"project", "shared"}
-                        or not grant.get("capture_rule_id")
+            try:
+                grant = self.owner.authenticate(secret(name))
+                if not index and self.owner.scope(grant) != self.scope:
+                    raise PermissionError(
+                        "Native private identity changed; explicit reconfiguration required"
                     )
-                )
-            ):
-                raise PermissionError("Native automatic capture rule is unavailable")
+                if (
+                    grant["owner_id"] != self.scope.user_id
+                    or grant["permission"] != "write"
+                    or "logical_agent_id" not in grant
+                    or (
+                        index
+                        and (
+                            grant["visibility"] not in {"project", "shared"}
+                            or not grant.get("capture_rule_id")
+                        )
+                    )
+                ):
+                    raise PermissionError("Native automatic capture rule is unavailable")
+            except PermissionError:
+                if not index:
+                    raise
+                self.denied_captures += 1
+                self.owner.runtime.ledger.increment("native_shared_capture_denied")
+                LOG.info("native_shared_capture decision=deny rule_index=%d", index)
+                continue
             authority = {
                 key: grant[key]
                 for key in (

@@ -157,3 +157,33 @@ def test_slow_shared_read_has_bounded_delivery_and_discards_late_result(tmp_path
     finally:
         release.set()
         p.shutdown()
+
+
+def test_author_switch_during_shared_io_cannot_deliver_old_private_cache(tmp_path, monkeypatch):
+    """Adding shared I/O must not extend a private cache authorization window."""
+    p = provider(tmp_path)
+    started, release = threading.Event(), threading.Event()
+    delivered = []
+    try:
+        p.sync_turn("private cats", "ack")
+        assert p.wait_idle()
+        p.queue_prefetch("cats")
+        assert p.wait_idle()
+        p._shared_recall = SharedRecall(settings(), secret_reader=lambda _: "x" * 40)
+
+        def wait(*args, **kwargs):
+            started.set()
+            release.wait(2)
+            return []
+
+        monkeypatch.setattr(p._shared_recall, "search", wait)
+        thread = threading.Thread(target=lambda: delivered.append(p.prefetch("cats")))
+        thread.start()
+        assert started.wait(2)
+        p.on_turn_start(2, "", author_id="another-user")
+        release.set()
+        thread.join(timeout=3)
+        assert delivered == [""]
+    finally:
+        release.set()
+        p.shutdown()

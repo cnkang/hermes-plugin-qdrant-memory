@@ -50,7 +50,8 @@ def create_gateway(owner, *, allowed_hosts, lifecycle=None):
         ),
     )
     slots = anyio.Semaphore(32)
-    arrivals = deque()
+    buckets = {}
+    auth_limiter = anyio.CapacityLimiter(8)
 
     async def endpoint(scope, receive, send):
         headers = scope["headers"]
@@ -77,12 +78,43 @@ def create_gateway(owner, *, allowed_hosts, lifecycle=None):
                 raise PermissionError()
             token = auth[7:].decode("ascii")
             # Even initialize and tools/list require a current credential.
-            await anyio.to_thread.run_sync(owner.authenticate, token)
+            grant = await anyio.to_thread.run_sync(owner.authenticate, token, limiter=auth_limiter)
         except Exception:
             await Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})(
                 scope, receive, send
             )
             return
+        key = (grant["owner_id"], grant["principal"])
+        now = time.monotonic()
+        for old_key in list(buckets):
+            times, principal_slots = buckets[old_key]
+            if times and times[-1] < now - 60 and principal_slots.value == 4:
+                del buckets[old_key]
+        arrivals, principal_slots = buckets.setdefault(key, (deque(), anyio.Semaphore(4)))
+        while arrivals and arrivals[0] < now - 60:
+            arrivals.popleft()
+        if len(arrivals) >= 240:
+            await Response(status_code=429, headers={"Retry-After": "60"})(scope, receive, send)
+            return
+        arrivals.append(now)
+        try:
+            principal_slots.acquire_nowait()
+        except anyio.WouldBlock:
+            await Response(status_code=429, headers={"Retry-After": "1"})(scope, receive, send)
+            return
+        try:
+            slots.acquire_nowait()
+        except anyio.WouldBlock:
+            principal_slots.release()
+            await Response(status_code=429, headers={"Retry-After": "1"})(scope, receive, send)
+            return
+        try:
+            await authorized(scope, receive, send, token)
+        finally:
+            slots.release()
+            principal_slots.release()
+
+    async def authorized(scope, receive, send, token):
         if scope["method"] != "POST":
             await Response(status_code=405, headers={"Allow": "POST"})(scope, receive, send)
             return
@@ -128,27 +160,11 @@ def create_gateway(owner, *, allowed_hosts, lifecycle=None):
         """Keep raw ASGI streams intact instead of wrapping a request handler."""
 
         async def __call__(self, scope, receive, send):
-            now = time.monotonic()
-            while arrivals and arrivals[0] < now - 60:
-                arrivals.popleft()
-            if len(arrivals) >= 240:
-                await Response(status_code=429, headers={"Retry-After": "60"})(scope, receive, send)
-                return
-            arrivals.append(now)
-            try:
-                slots.acquire_nowait()
-            except anyio.WouldBlock:
-                await Response(status_code=429, headers={"Retry-After": "1"})(scope, receive, send)
-                return
-
             async def bounded_receive():
                 with anyio.fail_after(10):
                     return await receive()
 
-            try:
-                await endpoint(scope, bounded_receive, send)
-            finally:
-                slots.release()
+            await endpoint(scope, bounded_receive, send)
 
     routes = [Route("/mcp", endpoint=Endpoint(), methods=["POST", "GET", "DELETE"])]
     if lifecycle is not None:
@@ -241,6 +257,8 @@ def serve(home, policy_path, *, port, local_port, allowed_hosts, enable_lifecycl
                     flush=True,
                 )
                 service.run(sockets=[sock])
+                if not service.started:
+                    raise RuntimeError("Remote MCP listener failed startup")
             finally:
                 local.shutdown()
                 thread.join()
