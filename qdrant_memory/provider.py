@@ -58,6 +58,7 @@ class QdrantMemoryProvider(MemoryProvider):
         self._cache_hits = self._cache_calls = 0
         self._latencies = []
         self._stop_at = None
+        self._shared_recall = None
 
     @property
     def name(self):
@@ -86,6 +87,13 @@ class QdrantMemoryProvider(MemoryProvider):
         """
         self.home = kwargs.get("hermes_home") or str(active_home())
         self.cfg = load_config(self.home, self.overrides)
+        if (self.cfg["scope"]["agent_id"] or "").startswith("shared:v1:"):
+            raise ValueError("Native private scope cannot use the shared namespace")
+        if self.cfg.get("shared_read", {}).get("enabled", False):
+            from .config import secret
+            from .shared_recall import SharedRecall
+
+            self._shared_recall = SharedRecall(self.cfg["shared_read"], secret_reader=secret)
         self.session_id = session_id
         self._primary = kwargs.get("agent_context", "primary") == "primary"
         self.default_scope = Scope(**self.cfg["scope"])
@@ -364,7 +372,39 @@ class QdrantMemoryProvider(MemoryProvider):
             self._queue("prefetch", (session, query, self._scope(session), generation))
 
     def prefetch(self, query, *, session_id=""):
-        """Return matching cached recall or an empty string without network I/O."""
+        """Return private cached recall and optionally fresh, authorized shared data."""
+        private = self._private_prefetch(query, session_id=session_id)
+        session = session_id or self.session_id
+        rows = self._read_shared(query, session, budget=0.05)
+        if rows:
+            return (private[:2000] + self._shared_recall.render(rows))[:4000]
+        return private
+
+    def _read_shared(self, query, session, *, budget=None):
+        """Do not let profile credentials cross a trusted human/session boundary."""
+        with self._condition:
+            if (
+                self._shared_recall is None
+                or not self._accepting
+                or session in self._blocked_sessions
+                or self._scope(session).user_id != self.default_scope.user_id
+            ):
+                return []
+            scope = self._scope(session)
+            generation = self._generations.get(session, 0)
+        rows = self._shared_recall.search(query, budget=budget)
+        with self._condition:
+            if (
+                not self._accepting
+                or session in self._blocked_sessions
+                or self._scope(session) != scope
+                or self._generations.get(session, 0) != generation
+            ):
+                return []
+        return rows
+
+    def _private_prefetch(self, query, *, session_id=""):
+        """Preserve the default private cache contract without network I/O."""
         session = session_id or self.session_id
         with self._condition:
             if session in self._blocked_sessions:
@@ -529,6 +569,12 @@ class QdrantMemoryProvider(MemoryProvider):
                     if not self._accepting:
                         raise RuntimeError("Provider is shut down")
                 result = dispatch(self.runtime, tool_name, args, self._scope(session), session)
+            if (
+                tool_name == "qdrant_memory_search"
+                and self._shared_recall is not None
+                and self._shared_recall.settings.get("include_tool_search", False)
+            ):
+                result["shared"] = self._read_shared(args["query"], session)
             return json.dumps(result, ensure_ascii=False)
         except Exception as exc:
             return json.dumps({"error": safe_error(exc)})
@@ -554,6 +600,8 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def shutdown(self):
         """Bound queued drain and retain ownership until an active request finishes."""
+        if self._shared_recall is not None:
+            self._shared_recall.close()
         with self._condition:
             self._accepting = False
             timeout = self.cfg["write"]["shutdown_timeout_seconds"]

@@ -24,7 +24,7 @@ def _collect_bounded(response):
     return bytes(body)
 
 
-def call(url, token, name, arguments):
+def call(url, token, name, arguments, *, timeout=120):
     """Call only a literal loopback address with no redirects or environment proxies."""
     # Convert at the trust boundary: only a bounded numeric port can vary;
     # neither an untrusted URL string nor its host/path reaches HTTPX.
@@ -32,7 +32,7 @@ def call(url, token, name, arguments):
     endpoint = httpx.URL("http://127.0.0.1/v1/tool", port=port)
     if not isinstance(token, str) or len(token) < 32:
         raise ValueError("A high-entropy shared credential is required")
-    with httpx.Client(trust_env=False, follow_redirects=False, timeout=120) as client:
+    with httpx.Client(trust_env=False, follow_redirects=False, timeout=timeout) as client:
         with client.stream(
             "POST",
             endpoint,
