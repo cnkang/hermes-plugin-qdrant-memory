@@ -50,6 +50,12 @@ resolutions. The notes are for contributors who change these files.
   when it is a dictionary.
 - Text with an unpaired surrogate caused an encoding error. Resolution: the reader drops
   this record.
+- A deeply nested response could raise RecursionError on Python 3.11 even below the
+  byte limit. Resolution: convert JSON ValueError and RecursionError to the same
+  redacted ValueError. Decoders that accept the nested array still reject its envelope.
+- urllib parser errors for malformed IPv6 and Unicode authorities included the input.
+  Resolution: normalize these failures to the redacted loopback URL error. Regression
+  cases were reproduced before the fix; URL restrictions remain unchanged.
 
 ## Tests
 
