@@ -87,6 +87,10 @@ at startup. The deployment guide puts Caddy or Nginx on the same host. The proxy
 terminates TLS. This rule also keeps the security exception for the old loopback HTTP
 code in one file, shared_service.py.
 
+For a container deployment, the proxy and the owner must share a network namespace. As an
+alternative, the proxy uses a shared mount for the Unix socket. The two-container test
+uses one of these methods and shows that the proxy can connect to the owner.
+
 The remote listener must not use the private create_server(runtime, ...) factory. A
 separate create_shared_server(owner, grant_resolver) function supplies the shared schemas
 only. It has no runtime parameter. Thus, a wiring error cannot expose the private tools
@@ -167,8 +171,9 @@ value.
 1. Default off: no remote socket exists. The loopback behavior is byte-identical.
 2. Bind: the listener uses a loopback address or a Unix socket only. A wildcard bind
    causes an error.
-3. TLS: a plaintext connection to the public port fails. The server rejects an expired
-   certificate.
+3. TLS: a plaintext connection to the public port fails. The TLS client rejects an
+   expired server certificate. If mutual TLS is enabled, the server rejects an expired
+   client certificate.
 4. Proxy trust: the server rejects untrusted Forwarded, Host and Origin headers. It
    removes spoofed client headers.
 5. Authentication: a missing, malformed, expired or revoked token gives the response 401
@@ -179,8 +184,9 @@ value.
    stay invisible.
 8. Recovery: a crash during a write gives the same receipt state as the loopback path.
 9. Non-regression: the existing stdio MCP, scope, ledger and reset tests do not change.
-10. End-to-end: two containers connect through real TLS with embedded Qdrant. No cloud
-    account is necessary.
+10. End-to-end: two containers connect through real TLS with embedded Qdrant. The two
+    containers use a shared network namespace or a shared socket mount. No cloud account
+    is necessary.
 
 ## 11. Design review
 

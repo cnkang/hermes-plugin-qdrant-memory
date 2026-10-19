@@ -46,8 +46,13 @@ resolutions. The notes are for contributors who build the later phases.
   in UTF-8 bytes, not characters. It must drop large or malformed records and stop with a
   safe result.
 - A recalled item keeps its provenance: the space, the visibility, the author and the
-  version. The recall cache uses a policy fingerprint. Thus, a revoked grant cannot leave
-  shared text in the model context.
+  version. The recall cache uses a policy fingerprint. Thus, a later recall does not use
+  an entry from a revoked grant.
+- The fingerprint cannot remove text that a host already put into the model context.
+  Phase 1b must clear or rebuild the related context before the next model call after a
+  revocation. If this step is not designed, the smaller guarantee applies: later cache
+  queries do not find the entry. The design does not claim that the removal of injected
+  text occurs.
 
 ## Deployment
 
