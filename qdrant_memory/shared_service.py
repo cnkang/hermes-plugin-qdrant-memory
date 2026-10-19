@@ -124,8 +124,8 @@ class SharedOwner:
         with ledger.lock, ledger.db:
             ledger.db.execute("""CREATE TABLE IF NOT EXISTS shared_requests_v1 (
                 collection TEXT NOT NULL, request_key TEXT NOT NULL, input_hash TEXT NOT NULL,
-                principal TEXT NOT NULL DEFAULT '',
                 plan TEXT NOT NULL, response TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0,
+                principal TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY(collection, request_key))""")
             # Additive upgrade: existing profiles keep their receipts and gain
             # attribution for requests admitted after this revision.
