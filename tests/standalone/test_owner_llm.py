@@ -10,6 +10,12 @@ from qdrant_memory.extraction import Extractor
 from qdrant_memory.owner_llm import OwnerLLM
 
 
+@pytest.fixture(autouse=True)
+def isolate_provider_credentials(monkeypatch):
+    """Mock-provider tests never inherit a real optional account credential."""
+    monkeypatch.delenv("QDRANT_MEMORY_LLM_API_KEY", raising=False)
+
+
 def test_private_content_transport_requires_tls_without_an_api_key():
     """Anonymous extraction endpoints still receive private content, requiring TLS."""
     with pytest.raises(ValueError, match="HTTPS"):
