@@ -1,5 +1,12 @@
 # Security and deployment boundaries
 
+Explicit shared CLI policy paths are confined to the invocation directory after
+canonicalization, including symlink and parent-segment resolution. Start the
+Owner from its private directory (or a deliberately chosen enclosing directory).
+This follows the existing maintenance file boundary and rejects an outside
+policy before it is read. Programmatic policy loading remains a trusted operator
+interface and never exposes policy contents through client tools or diagnostics.
+
 For the optional protected Shared Owner, see the [versioned threat model](shared-memory/threat-model-v1.md)
 and [deployment security and diagnostics](shared-memory/deployment-security.md).
 Its account-local claim does not fence remote database writers. Direct Qdrant

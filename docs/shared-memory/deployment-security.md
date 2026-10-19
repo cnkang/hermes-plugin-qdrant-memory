@@ -65,9 +65,19 @@ recovery and again before admitting writes. Unsafe existing modes are rejected,
 not silently repaired. Private defaults are otherwise retained.
 
 ```sh
+cd /srv/memory-owner
 qdrant-memory --home /srv/memory-owner shared-doctor --policy /srv/memory-owner/policy.json
 qdrant-memory --home /srv/memory-owner shared-serve --policy /srv/memory-owner/policy.json
 ```
+
+For CLI invocation, the policy must resolve inside the current working directory,
+just like explicit maintenance input/output files. Start from the private Owner
+directory or another deliberately chosen enclosing directory. Absolute paths,
+parent segments and symlinks that resolve outside that directory are rejected
+before reading policy content; policy paths also reject symlink/reparse aliases.
+Existing services launched from an unrelated
+directory must update their working directory; no grant or memory migration is
+needed. Programmatic policy loading retains its explicit trusted-operator API.
 
 Enrollment records a durable binding under the Owner account's
 `~/.qdrant-memory-owners`, keyed by the existing destination namespace. All updated

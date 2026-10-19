@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import stat
+import tempfile
 from contextlib import closing
 from pathlib import Path
 
@@ -54,15 +55,20 @@ def check_owner_state(home, cfg):
     if cfg["qdrant"]["mode"] == "embedded":
         roots.append(Path(cfg["qdrant"]["path"]))
     for root in roots:
-        checked_absolute_path(root)
-        if not root.exists():
-            continue
-        private_entry(root, directory=True)
-        for parent, directories, files in os.walk(root, followlinks=False):
-            for name in directories:
-                private_entry(Path(parent) / name, directory=True)
-            for name in files:
-                private_entry(Path(parent) / name)
+        _check_private_tree(root)
+
+
+def _check_private_tree(root):
+    """Reject exposed or substituted state entries without repairing their modes."""
+    checked_absolute_path(root)
+    if not root.exists():
+        return
+    private_entry(root, directory=True)
+    for parent, directories, files in os.walk(root, followlinks=False):
+        for name in directories:
+            private_entry(Path(parent) / name, directory=True)
+        for name in files:
+            private_entry(Path(parent) / name)
 
 
 def validate_destination(home, cfg, binding):
@@ -148,11 +154,15 @@ def admit_claim(home, cfg, binding):
             raise PermissionError("Destination is already assigned to another protected owner")
         return
     path = claim_path(cfg)
-    descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        json.dump(binding, stream, sort_keys=True)
-        stream.flush()
-        os.fsync(stream.fileno())
+    descriptor, temporary = tempfile.mkstemp(prefix=".claim-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(binding, stream, sort_keys=True)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     directory = os.open(path.parent, os.O_RDONLY)
     try:
         os.fsync(directory)
@@ -299,14 +309,16 @@ def doctor(home, policy_path):
         "UNVERIFIED",
         "Verify a quiescent coherent Owner and Qdrant backup and a tested restore procedure.",
     )
-    status = (
-        "FAIL"
-        if any(c["status"] == "FAIL" for c in checks)
-        else "UNVERIFIED"
-        if any(c["status"] == "UNVERIFIED" for c in checks)
-        else "PASS"
-    )
-    return {"status": status, "checks": checks}
+    return {"status": _diagnostic_status(checks), "checks": checks}
+
+
+def _diagnostic_status(checks):
+    """Give failed checks precedence over unverifiable deployment controls."""
+    if any(c["status"] == "FAIL" for c in checks):
+        return "FAIL"
+    if any(c["status"] == "UNVERIFIED" for c in checks):
+        return "UNVERIFIED"
+    return "PASS"
 
 
 def _local_writer(cfg):
