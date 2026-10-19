@@ -25,6 +25,7 @@ def load_native_settings(home, value):
         "shared_capture_token_envs",
         "remote_port",
         "allowed_hosts",
+        "enable_lifecycle",
     }:
         raise ValueError("Unsupported native_owner setting")
     policy = Path(value.get("policy", ""))
@@ -46,6 +47,10 @@ def load_native_settings(home, value):
     ):
         raise ValueError("Native Owner requires credential environment names")
     document = load_policy_document(policy)
+    if not isinstance(value.get("enable_lifecycle", False), bool):
+        raise ValueError("Native lifecycle flag must be boolean")
+    if value.get("enable_lifecycle", False) and "remote_port" not in value:
+        raise ValueError("Native lifecycle events require the protected MCP gateway")
     if "remote_port" in value:
         remote_port = value["remote_port"]
         if (
@@ -89,6 +94,13 @@ class NativeOwner:
         ):
             raise ValueError("Native Owner requires its own writable device-bound private grant")
         self.scope = self.owner.scope(grant)
+        self.lifecycle = None
+        if settings.get("enable_lifecycle", False):
+            from .owner_lifecycle import OwnerLifecycle
+
+            self.lifecycle = OwnerLifecycle(self.owner)
+            if self.lifecycle.recover():
+                raise RuntimeError("Native Owner lifecycle requires recovery before admission")
         self.server = self.thread = None
         self.remote = self.remote_thread = self.remote_socket = None
         self.url = None
@@ -112,7 +124,11 @@ class NativeOwner:
 
             from .remote_gateway import create_gateway
 
-            app = create_gateway(self.owner, allowed_hosts=self.settings.get("allowed_hosts", []))
+            app = create_gateway(
+                self.owner,
+                allowed_hosts=self.settings.get("allowed_hosts", []),
+                lifecycle=self.lifecycle,
+            )
             self.remote_socket = socket.socket()
             self.remote_socket.bind(("127.0.0.1", self.settings["remote_port"]))
             self.remote_socket.listen(128)
@@ -162,6 +178,18 @@ class NativeOwner:
     def token(self):
         """Resolve the current scoped Native credential; never expose it in diagnostics."""
         return secret(self.settings["private_token_env"])
+
+    def can_read(self, scope):
+        """Recheck the current device grant before delivering private cached recall."""
+        if self.owner.blocked:
+            return False
+        try:
+            grant = self.owner.authenticate(self.token())
+            return (
+                scope == self.scope == self.owner.scope(grant) and grant["visibility"] == "private"
+            )
+        except Exception:
+            return False
 
     def events(self, value, *, include_shared=True):
         """Bind new permitted turns to private and explicitly approved project spaces."""

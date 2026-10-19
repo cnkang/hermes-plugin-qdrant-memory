@@ -63,6 +63,21 @@ def test_native_owner_lifecycle_project_handoff_and_private_isolation(tmp_path, 
         assert len(private) == 1 and private[0]["visibility"] == "private"
         assert private[0]["id"] != rows[0]["id"]
         assert p.runtime is p._native_owner.owner.runtime
+        p.queue_prefetch("Alpha")
+        assert p.wait_idle()
+        assert "SQLite WAL" in p.prefetch("Alpha")
+        deleted = call(
+            url,
+            tokens["native"],
+            "qdrant_memory_delete",
+            {
+                "id": private[0]["id"],
+                "expected_version": private[0]["version"],
+                "request_id": "remote-delete",
+            },
+        )
+        assert deleted["action"] == "DELETE"
+        assert p.prefetch("Alpha") == ""
         forged = call(
             url,
             tokens["reader"],
@@ -89,8 +104,12 @@ def test_native_owner_lifecycle_project_handoff_and_private_isolation(tmp_path, 
             ]
         )
         clients[1]["revoked"] = False
+        p.queue_prefetch("dogs")
+        assert p.wait_idle()
+        assert "dogs private only" in p.prefetch("dogs")
         clients[0]["revoked"] = True
         policy.write_text(json.dumps({"clients": clients}))
+        assert p.prefetch("dogs") == ""
         with pytest.raises(PermissionError):
             p.sync_turn("cats denied but retained", "ack")
         assert p.ledger.stats()["events"]["FAILED"] == 1
@@ -113,5 +132,26 @@ def test_native_owner_lifecycle_project_handoff_and_private_isolation(tmp_path, 
         )["memories"]
         assert any(row["text"] == "cats denied but retained" for row in private_rows)
         assert not any(row["text"] == "cats denied but retained" for row in project_rows)
+        p.queue_prefetch("cats")
+        assert p.wait_idle()
+        assert "cats denied but retained" in p.prefetch("cats")
+
+        def failed_write(_):
+            raise TimeoutError("synthetic storage acknowledgement failure")
+
+        monkeypatch.setattr(p.store, "upsert", failed_write)
+        p.sync_turn("new failing storage fact", "ack")
+        assert p.wait_idle()
+        assert p._native_owner.owner.blocked is True
+        assert p.prefetch("cats") == ""
+        assert (
+            call(
+                p._native_owner.url,
+                tokens["native"],
+                "qdrant_memory_add",
+                {"text": "cannot bypass failed Native operation", "request_id": "blocked"},
+            )["error"]["type"]
+            == "SharedRecoveryRequiredError"
+        )
     finally:
         p.shutdown()

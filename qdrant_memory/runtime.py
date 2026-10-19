@@ -25,6 +25,7 @@ class Runtime:
         self.decisions = {"ADD": 0, "UPDATE": 0, "SKIP": 0}
         self.store.metrics = ledger
         self.stop_requested = stop_requested or (lambda: False)
+        self.mutation_revision = 0
 
     def check_active(self):
         """Defer another service phase after the owner's drain deadline."""
@@ -127,6 +128,9 @@ class Runtime:
             for row in group:
                 self.ledger.failure("operations", row["idempotency_key"], exc)
 
+        # Invalidate in-process Owner recall before any possibly accepted remote
+        # mutation, including an operation whose acknowledgement is then lost.
+        self.mutation_revision += 1
         try:
             run_with_retry(apply, self.cfg["write"], failed)
         except WorkDeferred:
