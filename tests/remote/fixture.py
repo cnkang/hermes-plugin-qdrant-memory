@@ -196,6 +196,27 @@ async def client(recovery=False):
     assert disposable["id"] not in {
         item["id"] for item in (await call("codex", "search", {"query": "disposable"}))["memories"]
     }
+    race = await call("hermes-a", "add", {"text": "synthetic race", "request_id": "race-add"})
+    race_results = await asyncio.gather(
+        *[
+            call(
+                identity,
+                "update",
+                {
+                    "id": race["id"],
+                    "expected_version": race["version"],
+                    "request_id": "race-" + identity,
+                    "text": "synthetic race " + identity,
+                },
+            )
+            for identity in ("hermes-b", "codex")
+        ]
+    )
+    assert sum(item.get("action") == "UPDATE" for item in race_results) == 1
+    assert (
+        sum(item.get("error", {}).get("type") == "SharedConflictError" for item in race_results)
+        == 1
+    )
     private_rows = await call("private-b", "search", {"query": "cats"})
     private = next(
         item for item in private_rows["memories"] if item["text"] == "Hermes private cats"
@@ -206,6 +227,28 @@ async def client(recovery=False):
     async with httpx.AsyncClient(
         verify=ssl.create_default_context(cafile="/tmp/owner-ca.pem"), trust_env=False
     ) as http:
+        # JSON response headers follow the durable tool result. Close without
+        # reading it, then retry the identical request through the official SDK.
+        async with http.stream(
+            "POST",
+            url,
+            headers={
+                "Authorization": "Bearer " + TOKENS["hermes-a"],
+                "Accept": "application/json, text/event-stream",
+                "MCP-Protocol-Version": "2025-11-25",
+            },
+            json={
+                "jsonrpc": "2.0",
+                "id": 101,
+                "method": "tools/call",
+                "params": {
+                    "name": "qdrant_memory_add",
+                    "arguments": {"text": "synthetic lost reply", "request_id": "lost-reply"},
+                },
+            },
+        ) as response:
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("application/json")
         assert (
             await http.post(url, headers={"Authorization": "Bearer invalid"}, json={})
         ).status_code == 401
@@ -219,6 +262,12 @@ async def client(recovery=False):
                 json={},
             )
         ).status_code == 403
+    replay_lost = await call(
+        "hermes-a", "add", {"text": "synthetic lost reply", "request_id": "lost-reply"}
+    )
+    assert replay_lost["action"] == "ADD"
+    lost_rows = await call("codex", "search", {"query": "synthetic lost reply"})
+    assert sum(item["text"] == "synthetic lost reply" for item in lost_rows["memories"]) == 1
     # A fresh default trust store cannot accept this synthetic self-signed server.
     try:
         async with httpx.AsyncClient(trust_env=False) as http:
@@ -246,6 +295,10 @@ async def client(recovery=False):
                     "authentication",
                     "Origin",
                     "TLS trust",
+                    "concurrent CAS",
+                    "lost response retry",
+                    "same-agent devices",
+                    "private isolation",
                 ],
             }
         )
