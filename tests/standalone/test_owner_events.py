@@ -125,6 +125,126 @@ def test_cancel_failed_extraction_keeps_existing_owner_recovery_gate(tmp_path, m
         rt.store.close()
 
 
+def test_event_management_http_reuses_auth_and_rejects_scope_parameters(tmp_path, monkeypatch):
+    """Event controls are opt-in Owner endpoints, never new MCP memory tools."""
+    import asyncio
+
+    import httpx
+
+    from qdrant_memory.remote_gateway import create_gateway
+
+    rt = runtime(tmp_path)
+    token = "a" * 40
+    lifecycle = OwnerLifecycle(SharedOwner(rt, [grant(token, "mac")]))
+    monkeypatch.setattr(rt, "process_event", lambda _: None)
+    app = create_gateway(lifecycle.owner, allowed_hosts=["memory.test"], lifecycle=lifecycle)
+
+    async def check():
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://memory.test"
+            ) as http:
+                headers = {"Authorization": "Bearer " + token}
+                await http.post("/events", headers=headers, json=event())
+                body = {"action": "status", "event_id": "one"}
+                assert (await http.post("/events/manage", headers=headers, json=body)).json()[
+                    "status"
+                ] == "PENDING"
+                assert (await http.post("/events/manage", json=body)).status_code == 403
+                assert (
+                    await http.post(
+                        "/events/manage", headers=headers, json={**body, "owner_id": "forged"}
+                    )
+                ).status_code == 400
+                body["action"] = "cancel"
+                assert (await http.post("/events/manage", headers=headers, json=body)).json()[
+                    "status"
+                ] == "CANCELLED"
+
+    try:
+        asyncio.run(check())
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_production_event_client_control_and_cancelled_replay(tmp_path, monkeypatch):
+    """The CLI transport receives cancellation as a terminal result, not a write ack."""
+    import asyncio
+
+    import httpx
+
+    from qdrant_memory.remote_client import control_event, send_event
+    from qdrant_memory.remote_gateway import create_gateway
+
+    rt = runtime(tmp_path)
+    token = "a" * 40
+    lifecycle = OwnerLifecycle(SharedOwner(rt, [grant(token, "mac")]))
+    monkeypatch.setattr(rt, "process_event", lambda _: None)
+    app = create_gateway(lifecycle.owner, allowed_hosts=["memory.test"], lifecycle=lifecycle)
+    constructor = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: constructor(transport=httpx.ASGITransport(app=app), **kwargs),
+    )
+
+    async def check():
+        async with app.router.lifespan_context(app):
+            with pytest.raises(RuntimeError, match="not committed"):
+                await send_event("https://memory.test/mcp", token, event())
+            assert (await control_event("https://memory.test/mcp", token, "one", "status"))[
+                "status"
+            ] == "PENDING"
+            assert (await control_event("https://memory.test/mcp", token, "one", "cancel"))[
+                "status"
+            ] == "CANCELLED"
+            assert (await send_event("https://memory.test/mcp", token, event()))[
+                "status"
+            ] == "CANCELLED"
+
+    try:
+        asyncio.run(check())
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_public_event_control_cli_requires_only_event_id(monkeypatch, capsys):
+    """No command-line payload can override trusted Owner identity or space."""
+    import io
+    import sys
+
+    from qdrant_memory.standalone import main
+
+    seen = []
+
+    async def control(url, token, event_id, action, **kwargs):
+        seen.append((event_id, action))
+        return {"event_id": event_id, "status": "CANCELLED"}
+
+    monkeypatch.setattr("qdrant_memory.remote_client.control_event", control)
+    monkeypatch.setenv("QM_EVENT_CONTROL", "a" * 40)
+    args = [
+        "remote-event",
+        "--url",
+        "https://memory.test/mcp",
+        "--token-env",
+        "QM_EVENT_CONTROL",
+        "--action",
+        "cancel",
+    ]
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b'{"event_id":"one"}')))
+    assert main(args) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "CANCELLED"
+    assert seen == [("one", "cancel")]
+    monkeypatch.setattr(
+        sys, "stdin", io.TextIOWrapper(io.BytesIO(b'{"event_id":"one","space_id":"spoof"}'))
+    )
+    assert main(args) == 1
+    assert seen == [("one", "cancel")]
+
+
 def test_cancellation_detects_a_changed_ledger_plan(tmp_path, monkeypatch):
     """A plan prepared between validation and update must never be discarded."""
     import qdrant_memory.owner_lifecycle as module

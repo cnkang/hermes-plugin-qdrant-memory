@@ -14,6 +14,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  device-server:
+    name: Device identity on actual Qdrant Server
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      qdrant:
+        image: qdrant/qdrant@sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863
+        ports: ['6333:6333']
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - run: python -m pip install '.[mcp]' 'pytest>=8,<10' 'qdrant-client==1.15.1'
+      - name: Require actual Server private scope, CAS and receipt recovery
+        env:
+          QDRANT_DEVICE_FIXTURE_URL: http://127.0.0.1:6333
+        run: python -m pytest tests/security/test_device_server.py -q
+  remote-mcp:
+    name: HTTPS MCP two-network acceptance (${{ matrix.sdk }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: ['mcp>=1.30,<2', 'mcp>=2,<3']
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Require real TLS MCP across isolated container networks
+        env:
+          MCP_REQUIREMENT: ${{ matrix.sdk }}
+        run: python scripts/test_remote_mcp_docker.py "$MCP_REQUIREMENT" | tee remote-https-evidence.jsonl
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: remote-https-${{ strategy.job-index }}
+          path: remote-https-evidence.jsonl
+          if-no-files-found: error
   protected-owner:
     name: Protected Owner and Qdrant TLS/JWT isolation
     runs-on: ubuntu-24.04
