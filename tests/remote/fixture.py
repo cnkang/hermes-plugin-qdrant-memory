@@ -183,6 +183,19 @@ async def client(recovery=False):
     stale = await call("codex", "update", {**update, "request_id": "u2"})
     assert stale["error"]["type"] == "SharedConflictError"
     assert await call("hermes-b", "update", update) == changed
+    disposable = await call(
+        "hermes-a", "add", {"text": "synthetic disposable", "request_id": "disposable"}
+    )
+    removal = {
+        "id": disposable["id"],
+        "expected_version": disposable["version"],
+        "request_id": "delete-disposable",
+    }
+    assert (await call("codex", "delete", removal))["action"] == "DELETE"
+    assert (await call("codex", "delete", removal))["action"] == "DELETE"
+    assert disposable["id"] not in {
+        item["id"] for item in (await call("codex", "search", {"query": "disposable"}))["memories"]
+    }
     private = await call(
         "private-a", "add", {"text": "Hermes private cats", "request_id": "private"}
     )

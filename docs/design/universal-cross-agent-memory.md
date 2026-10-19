@@ -210,3 +210,37 @@ Phase 2b stays blocked until the identity work exists.
 This design does not include multi-owner high availability, distributed locking, a
 management UI, a memory graph, automatic migration of legacy private records, or SSH and
 VPN as a requirement.
+
+## 13. Implementation amendment, 2026-10-20
+
+The implementation adds a second explicit Native role: the existing Native
+Provider may itself host the Owner. It reuses its one Runtime, Ledger, worker,
+WriterLease and inherited host LLM. A different Harness or device accesses that
+same Owner through a grant. This avoids creating a second writer or registering
+a conflicting Hermes provider. The additive SharedReader remains available for
+read-only access to another destination. Standalone Owner remains independent
+of Hermes and supplies an explicit configurable extraction provider.
+
+New logical private grants use an identity-bound `shared:v2:` partition. Legacy
+six-field grants retain their original mapping. Existing Native/null-agent
+records are not exposed or migrated. Native Owner opt-in changes only the
+partition for new authorized writes; rollback needs the matching saved config.
+
+MCP uses the official SDK manager in stateless mode, with per-request
+authentication, exact Host validation, Origin/forwarded-header rejection and
+credential/principal resource budgets after authentication. There is no OAuth
+implementation or automatic public exposure. Both listeners bind loopback;
+external HTTPS requires an explicitly configured same-host proxy.
+
+The original Phase 1b cache plan is superseded for shared data: fresh Owner
+authorization is required at delivery. Late results are discarded, only one
+read may be in flight, and private recall waits at most 50 ms for shared data.
+Scope and generation are checked again after I/O, including the private result.
+Pi uses the actual public ephemeral context hook and never persists shared
+recall into history. Already delivered model context cannot be remotely erased.
+
+See [deployment and rollback](../shared-memory/remote-owner.md) and the Chinese
+development report for implementation coverage, exact evidence and remaining
+acceptance gaps. In particular, deterministic real Host runtime tests are not
+real-model quality measurements, and Cloud storage tests are not remote MCP
+network tests.
