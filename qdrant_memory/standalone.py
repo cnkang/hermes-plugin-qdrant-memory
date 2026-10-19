@@ -75,12 +75,7 @@ def open_runtime(home=None, *, secret_reader=None, shared_owner=False, destinati
     home = Path(home or default_home()).expanduser().resolve()
     reader = os.environ.get if secret_reader is None else secret_reader
     cfg = load_standalone_config(home, secret_reader=reader)
-    if destination_policy is not None:
-        from .shared_security import validate_destination
-
-        if not shared_owner:
-            raise ValueError("Protected destination requires shared owner admission")
-        validate_destination(home, cfg, destination_policy)
+    _validate_runtime_policy(home, cfg, shared_owner, destination_policy)
     namespace = ledger_namespace(cfg)
     if has_pending_reset_file(home, namespace):
         raise ResetRecoveryRequiredError()
@@ -117,6 +112,17 @@ def open_runtime(home=None, *, secret_reader=None, shared_owner=False, destinati
         ledger = Ledger(home, namespace)
         resources.callback(ledger.close)
         yield _recovered_runtime(cfg, store, ledger)
+
+
+def _validate_runtime_policy(home, cfg, shared_owner, destination_policy):
+    """Validate opt-in protection before opening ownership, recovery or storage."""
+    if destination_policy is None:
+        return
+    from .shared_security import validate_destination
+
+    if not shared_owner:
+        raise ValueError("Protected destination requires shared owner admission")
+    validate_destination(home, cfg, destination_policy)
 
 
 def _recovered_runtime(cfg, store, ledger):
@@ -222,30 +228,8 @@ def main(argv=None):
     """Print JSON results; reserve stdout exclusively for MCP protocol in MCP mode."""
     args = parser().parse_args(argv)
     try:
-        if args.qdrant_command == "shared-doctor":
-            from .shared_security import doctor
-
-            report = doctor(args.home, _operator_path(args.policy, reject_symlinks=True))
-            cli.print_json(report)
-            return {"PASS": 0, "FAIL": 1, "UNVERIFIED": 2}[report["status"]]
-        if args.qdrant_command == "shared-serve":
-            from .shared_service import serve
-
-            serve(args.home, _operator_path(args.policy, reject_symlinks=True), args.port)
-            return 0
-        if args.qdrant_command == "shared-mcp":
-            from .shared_client import serve_mcp
-
-            serve_mcp(args.url, args.token_env)
-            return 0
-        if args.qdrant_command == "shared-call":
-            from .shared_client import call
-
-            result = call(
-                args.url, os.environ.get(args.token_env, ""), args.tool, json.loads(args.arguments)
-            )
-            cli.print_json(result)
-            return 1 if "error" in result else 0
+        if args.qdrant_command in {"shared-doctor", "shared-serve", "shared-mcp", "shared-call"}:
+            return _shared_command(args)
         if args.qdrant_command == "mcp":
             from .mcp_server import serve
 
@@ -287,6 +271,33 @@ def main(argv=None):
         if args.qdrant_command not in {"mcp", "shared-mcp"}:
             cli.print_json({"error": error})
         return 1
+
+
+def _shared_command(args):
+    """Dispatch the four shared CLI routes with the same path and output boundaries."""
+    if args.qdrant_command == "shared-doctor":
+        from .shared_security import doctor
+
+        report = doctor(args.home, _operator_path(args.policy, reject_symlinks=True))
+        cli.print_json(report)
+        return {"PASS": 0, "FAIL": 1, "UNVERIFIED": 2}[report["status"]]
+    if args.qdrant_command == "shared-serve":
+        from .shared_service import serve
+
+        serve(args.home, _operator_path(args.policy, reject_symlinks=True), args.port)
+        return 0
+    if args.qdrant_command == "shared-mcp":
+        from .shared_client import serve_mcp
+
+        serve_mcp(args.url, args.token_env)
+        return 0
+    from .shared_client import call
+
+    result = call(
+        args.url, os.environ.get(args.token_env, ""), args.tool, json.loads(args.arguments)
+    )
+    cli.print_json(result)
+    return 1 if "error" in result else 0
 
 
 def _tool_arguments(args):

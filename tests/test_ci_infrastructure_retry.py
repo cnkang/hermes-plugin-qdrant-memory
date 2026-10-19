@@ -115,7 +115,8 @@ def test_retry_request_targets_only_failed_jobs_and_rechecks_attempt(monkeypatch
             return json.dumps({"jobs": [fixture_job()]})
         if endpoint.endswith("/jobs/12/logs"):
             return "Failed to download action: connection timed out"
-        assert endpoint.endswith("/rerun-failed-jobs") and method == "POST"
+        assert endpoint.endswith("/rerun-failed-jobs")
+        assert method == "POST"
         return ""
 
     monkeypatch.setattr(retry_infrastructure, "_request", request)
