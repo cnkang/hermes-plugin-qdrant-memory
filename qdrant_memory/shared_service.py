@@ -23,11 +23,11 @@ from .models import (
     point_id,
 )
 from .retry import safe_error
+from .shared_protocol import MARKER, VISIBILITIES
 from .shared_state import SharedRecoveryRequiredError
 from .tools import schemas, validate_arguments
 
 LOG = logging.getLogger(__name__)
-MARKER = "qdrant-memory-shared-v1"
 
 
 class SharedConflictError(RuntimeError):
@@ -65,11 +65,7 @@ def _validate_grant(grant, seen):
     if not re.fullmatch("[a-f0-9]{64}", grant["token_sha256"]) or grant["token_sha256"] in seen:
         raise ValueError("Credential hashes must be unique SHA256 values")
     seen.add(grant["token_sha256"])
-    if grant["permission"] not in {"read", "write"} or grant["visibility"] not in {
-        "private",
-        "shared",
-        "project",
-    }:
+    if grant["permission"] not in {"read", "write"} or grant["visibility"] not in VISIBILITIES:
         raise ValueError("Invalid shared grant permission")
 
 
