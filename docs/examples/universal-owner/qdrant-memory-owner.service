@@ -1,0 +1,25 @@
+[Unit]
+Description=Single Qdrant Memory Owner (source preview)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=qdrant-memory
+Group=qdrant-memory
+WorkingDirectory=/var/lib/qdrant-memory
+UMask=0077
+EnvironmentFile=/etc/qdrant-memory/owner.env
+ExecStart=/opt/qdrant-memory/venv/bin/qdrant-memory --home /var/lib/qdrant-memory remote-serve --policy /var/lib/qdrant-memory/policy.json --port 8766 --local-port 8765 --allowed-host memory.example.com
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=180
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/qdrant-memory
+
+[Install]
+WantedBy=multi-user.target

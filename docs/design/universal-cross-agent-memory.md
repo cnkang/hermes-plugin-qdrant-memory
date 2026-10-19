@@ -210,3 +210,39 @@ Phase 2b stays blocked until the identity work exists.
 This design does not include multi-owner high availability, distributed locking, a
 management UI or a memory graph. It does not include automatic migration of legacy
 private records. SSH and VPN are not requirements.
+
+## 13. Implementation amendment, 2026-10-20
+
+The implementation adds a second explicit Native role. The existing Native
+Provider can host the Owner. It reuses its one Runtime, Ledger, worker,
+WriterLease and the inherited host LLM. A different Harness or device reaches
+that Owner through a grant. This avoids a second writer and a conflicting
+Hermes provider registration. The additive SharedReader stays available for
+read-only access to another destination. A standalone Owner stays independent
+of Hermes and supplies an explicit extraction provider.
+
+New logical private grants use an identity-bound `shared:v2:` partition. Legacy
+six-field grants keep their original mapping. Existing Native records with a
+null agent are not exposed and are not migrated. Native Owner opt-in changes
+only the partition for new authorized writes. Rollback needs the matching saved
+configuration.
+
+MCP uses the official SDK manager in stateless mode. It authenticates each
+request and validates the Host value exactly. It rejects Origin and forwarded
+headers. It applies credential and principal resource budgets after
+authentication. It has no OAuth implementation and no automatic public
+exposure. Both listeners bind loopback. External HTTPS needs an explicitly
+configured proxy on the same host.
+
+The original Phase 1b cache plan does not apply to shared data. Delivery
+requires fresh Owner authorization. The code discards late results and permits
+one read in flight. Private recall waits 50 ms for shared data by default.
+Explicit configuration can raise the bounded wait to 250 ms. The code checks
+the scope and the generation again after I/O, including the private result.
+Pi uses the actual public ephemeral context hook and never stores shared recall
+in history. The Owner cannot erase model context that a host already received.
+
+See [deployment and rollback](../shared-memory/remote-owner.md) and the Chinese
+development report for implementation coverage, exact evidence and remaining
+acceptance gaps. Deterministic real Host runtime tests are not real-model
+quality measurements. Cloud storage tests are not remote MCP network tests.
