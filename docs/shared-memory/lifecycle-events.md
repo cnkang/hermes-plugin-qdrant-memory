@@ -35,6 +35,7 @@ Cancellation is conservative:
 - Only a raw `PENDING` or `FAILED` event with no persisted extraction candidates or
   operation plan can be cancelled. The transaction marks it `CANCELLED` and scrubs
   both the event body and durable admission plan; its input hash remains for ID reuse checks.
+  An atomic status/body comparison rejects a plan changed since inspection.
 - A prepared, committed or uncertain write cannot be cancelled. Reconcile through
   existing recovery/CAS semantics. Cancellation never pretends to roll back Qdrant.
 - Calls serialize with extraction/writes. An in-flight extraction may finish before
@@ -48,6 +49,9 @@ Cancellation is conservative:
 Pi records `CANCELLED` as a distinct terminal outbox acknowledgement, never as a
 committed write. Hosts without this extension remain explicit MCP/assisted clients.
 Additional generic task/pre-compact lifecycle semantics remain separate work.
+
+CLI control failures preserve only redacted machine error types and retryability;
+remote message/body text is never reflected, including malformed success envelopes.
 
 Standalone and SDK1/SDK2 tests cover authorization, forbidden scope overrides,
 prepared-write refusal, raw-body scrubbing, actual SQLite reopen, CLI dispatch,

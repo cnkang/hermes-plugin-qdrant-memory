@@ -87,11 +87,19 @@ class OwnerLifecycle:
             ):
                 raise ValueError("Event is prepared or committed; recover writes instead")
             with rt.ledger.lock, rt.ledger.db:
-                rt.ledger.db.execute(
+                updated = rt.ledger.db.execute(
                     "UPDATE events SET status='CANCELLED',payload_json='{}',last_error=NULL,committed_at=? "
-                    "WHERE collection=? AND event_id=?",
-                    (now(), rt.ledger.collection, receipt["event_key"]),
-                )
+                    "WHERE collection=? AND event_id=? AND status=? AND payload_json=?",
+                    (
+                        now(),
+                        rt.ledger.collection,
+                        receipt["event_key"],
+                        row["status"],
+                        row["payload_json"],
+                    ),
+                ).rowcount
+                if updated != 1:
+                    raise ValueError("Event is prepared or committed; recover writes instead")
                 rt.ledger.db.execute(
                     "UPDATE owner_events_v1 SET event_json='{}' WHERE collection=? AND request_key=?",
                     (rt.ledger.collection, receipt["request_key"]),

@@ -43,6 +43,23 @@ def http_module():
     return httpx
 
 
+def _control_error(body):
+    """Retain a small machine vocabulary, never remote message/body fields."""
+    error = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(error, dict):
+        return None
+    code = error.get("type")
+    if code not in (
+        "KeyError",
+        "ValueError",
+        "PermissionError",
+        "SharedRecoveryRequiredError",
+        "TypeError",
+    ):
+        code = "OwnerEventError"
+    return {"error": {"type": code, "retryable": error.get("retryable") is True}}
+
+
 async def _event_request(url, token, event, *, ca_file, path):
     """Use the same verified, non-redirecting transport for event admission/control."""
     validate_endpoint(url)
@@ -63,6 +80,14 @@ async def _event_request(url, token, event, *, ca_file, path):
             json=event,
         )
         if response.status_code != 200:
+            if path == "/events/manage" and 400 <= response.status_code < 500:
+                try:
+                    body = response.json()
+                except (ValueError, RecursionError):
+                    body = None
+                error = _control_error(body)
+                if error is not None:
+                    return error
             raise RuntimeError("Owner lifecycle admission failed")
         return response.json()
 
@@ -86,6 +111,9 @@ async def control_event(url, token, event_id, action, *, ca_file=None):
     result = await _event_request(
         url, token, {"action": action, "event_id": event_id}, ca_file=ca_file, path="/events/manage"
     )
+    error = _control_error(result)
+    if error is not None:
+        return error
     if not isinstance(result, dict) or not isinstance(result.get("status"), str):
         raise ValueError("Invalid lifecycle control response")
     return result

@@ -111,3 +111,28 @@ def test_event_client_retains_uncommitted_event(response, monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", client)
     with pytest.raises(RuntimeError, match="not committed"):
         asyncio.run(send_event("https://memory.test/mcp", "a" * 40, {"event_id": "synthetic"}))
+
+
+@pytest.mark.parametrize("status", [200, 400])
+def test_control_preserves_only_redacted_machine_error(monkeypatch, status):
+    """CLI users can distinguish missing events without reflecting untrusted error text."""
+    import asyncio
+
+    import httpx
+
+    from qdrant_memory.remote_client import control_event
+
+    constructor = httpx.AsyncClient
+    body = {
+        "error": {"type": "KeyError", "message": "PRIVATE", "retryable": False},
+        "text": "PRIVATE",
+    }
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: constructor(
+            transport=httpx.MockTransport(lambda _: httpx.Response(status, json=body)), **kwargs
+        ),
+    )
+    result = asyncio.run(control_event("https://memory.test/mcp", "a" * 40, "one", "cancel"))
+    assert result == {"error": {"type": "KeyError", "retryable": False}}

@@ -243,3 +243,34 @@ def test_public_event_control_cli_requires_only_event_id(monkeypatch, capsys):
     )
     assert main(args) == 1
     assert seen == [("one", "cancel")]
+
+
+def test_cancellation_detects_a_changed_ledger_plan(tmp_path, monkeypatch):
+    """A plan prepared between validation and update must never be discarded."""
+    import qdrant_memory.owner_lifecycle as module
+
+    rt = runtime(tmp_path)
+    token = "a" * 40
+    lifecycle = OwnerLifecycle(SharedOwner(rt, [grant(token, "mac")]))
+    try:
+        monkeypatch.setattr(rt, "process_event", lambda _: None)
+        lifecycle.submit(token, event())
+        row = rt.ledger.db.execute("SELECT * FROM events").fetchone()
+        loads = json.loads
+        changed = False
+
+        def prepare_during_validation(raw):
+            nonlocal changed
+            value = loads(raw)
+            if not changed:
+                changed = True
+                rt.ledger.prepare_event(row["event_id"], {**value, "candidates": []})
+            return value
+
+        monkeypatch.setattr(module.json, "loads", prepare_during_validation)
+        with pytest.raises(ValueError, match="prepared|committed"):
+            lifecycle.cancel(token, "one")
+        assert rt.ledger.row("events", row["event_id"])["status"] == "PENDING"
+    finally:
+        rt.ledger.close()
+        rt.store.close()
