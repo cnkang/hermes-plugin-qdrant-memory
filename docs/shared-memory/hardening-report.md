@@ -1,5 +1,40 @@
 # Shared destination hardening validation — 2026-10-19
 
+## Review follow-up
+
+Claim publication now writes and fsyncs a private same-directory temporary file
+before atomic replacement and directory synchronization. Interrupted serialization,
+sync and publication tests confirm that readers never observe partial final
+claims and that enrollment can safely be retried. Registry creation classifies
+EACCES, EPERM and EROFS consistently: legacy fallback is allowed only without a
+protected policy or an existing registry; other errors remain fail-closed.
+
+The authenticated CI fixture is pinned to its verified image digest, shared by
+the pull and test commands. Explicit shared CLI policy paths now use the existing
+invocation-directory boundary before file access; services must start from the
+Owner directory or a deliberately chosen enclosing directory. The deployment
+guide documents this compatibility restriction. Programmatic policy loading
+retains its trusted-operator contract.
+
+The added read-only doctor tests exercise real Qdrant schema/identity reads,
+incompatible/missing identities, non-mutating results and occupied versus idle
+local ownership. Small helpers reduce validation/recovery complexity without
+changing recovery order or loosening quality thresholds.
+
+Final local follow-up verification: 567 tests passed, 7 optional environment
+tests skipped, with one existing embedded-index warning. Aggregate Runtime line
+coverage is 92%; shared security is 90% and writer ownership 94%. The authenticated
+TLS/JWT gate passed with the pinned image digest and matching client version.
+Ruff and actionlint passed. Remote quality-gate closure requires the final pushed
+revision's analysis; local coverage does not substitute for that result.
+
+Transient action-download retries are documented separately in [CI operations](../ci.md).
+Their 14 tests are included in the full result above. The classifier also matched
+the observed macOS bootstrap DNS failure using read-only historical run metadata
+and logs. Automatic triggering becomes available only after the controller is
+merged into the default branch; test and quality-gate failures are never retried
+by that controller.
+
 ## Repository baseline and versions
 
 All three initial worktrees were clean. Existing branches were preserved and new
