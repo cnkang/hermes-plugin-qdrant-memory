@@ -67,9 +67,12 @@ def test_lifecycle_outage_is_durable_and_recoverable(tmp_path, monkeypatch):
         with pytest.raises(TimeoutError):
             lifecycle.submit(token, event)
         assert rt.ledger.stats()["events"]["FAILED"] == 1
+        assert owner.blocked is True
         monkeypatch.setattr(rt.extractor, "extract", extract)
         rt.ledger.retry_failed()
-        assert rt.recover() == 0
+        owner = SharedOwner(rt, [grant(token, "mac")])
+        lifecycle = OwnerLifecycle(owner)
+        assert lifecycle.recover() == 0
         assert lifecycle.submit(token, event)["status"] == "COMMITTED"
         assert len(owner.call(token, "qdrant_memory_search", {"query": "cats"})["memories"]) == 1
     finally:

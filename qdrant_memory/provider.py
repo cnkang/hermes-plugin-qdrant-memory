@@ -227,9 +227,13 @@ class QdrantMemoryProvider(MemoryProvider):
                 except Exception as exc:
                     if self._native_owner is not None and kind == "event":
                         with self.runtime.lock:
-                            if any(
-                                next(self.ledger.iter_rows("operations", status), None) is not None
-                                for status in ("PENDING", "FAILED")
+                            if (
+                                any(
+                                    next(self.ledger.iter_rows("operations", status), None)
+                                    is not None
+                                    for status in ("PENDING", "FAILED")
+                                )
+                                or next(self.ledger.iter_rows("events", "FAILED"), None) is not None
                             ):
                                 self._native_owner.owner.blocked = True
                     logger.warning(
@@ -253,6 +257,8 @@ class QdrantMemoryProvider(MemoryProvider):
         """Run recovery, event preparation or generation-checked background recall."""
         if kind == "recover":
             if failures := self.runtime.recover():
+                if self._native_owner is not None:
+                    self._native_owner.owner.blocked = True
                 logger.warning("qdrant-memory recovery retained %d failed work items", failures)
         elif kind == "event":
             if self._native_owner is not None and self._native_owner.owner.blocked:

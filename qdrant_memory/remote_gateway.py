@@ -140,7 +140,13 @@ def create_gateway(owner, *, allowed_hosts, lifecycle=None):
                 status = 200
             except Exception as exc:
                 result = {"error": safe_error(exc)}
-                status = 403 if isinstance(exc, PermissionError) else 400
+                status = (
+                    403
+                    if isinstance(exc, PermissionError)
+                    else 503
+                    if result["error"].get("retryable")
+                    else 400
+                )
             await Response(json.dumps(result), status_code=status, media_type="application/json")(
                 scope, receive, send
             )

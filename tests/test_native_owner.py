@@ -155,3 +155,44 @@ def test_native_owner_lifecycle_project_handoff_and_private_isolation(tmp_path, 
         )
     finally:
         p.shutdown()
+
+
+def test_extraction_failure_gates_owner_before_any_operation(tmp_path, monkeypatch):
+    """A durable FAILED event cannot be overtaken merely because it has no operations."""
+    from .standalone.test_device_grants import grant
+
+    token = "x" * 40
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"clients": [grant(token, "native", owner_id="hermes-user")]}))
+    policy.chmod(0o600)
+    monkeypatch.setenv("QM_NATIVE_FAILURE", token)
+
+    class FailedLLM(LLM):
+        """Fail only the admitted extraction phase."""
+
+        def complete_structured(self, **kwargs):
+            raise TimeoutError("synthetic extraction failure")
+
+    cfg = config(
+        native_owner={
+            "enabled": True,
+            "policy": str(policy),
+            "port": 0,
+            "private_token_env": "QM_NATIVE_FAILURE",
+        }
+    )
+    p = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=FailedLLM()), embedder=Embedder(), overrides=cfg
+    )
+    p.initialize("first", hermes_home=str(tmp_path))
+    try:
+        p.sync_turn("cats", "ack")
+        assert p.wait_idle()
+        assert p.ledger.stats()["events"]["FAILED"] == 1
+        assert p._native_owner.owner.blocked is True
+        p.sync_turn("later cats", "ack")
+        assert p.wait_idle()
+        assert p.ledger.stats()["events"]["PENDING"] == 1
+        assert p.store.count() == 0
+    finally:
+        p.shutdown()

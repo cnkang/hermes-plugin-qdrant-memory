@@ -105,7 +105,11 @@ class OwnerLifecycle:
                     )
             # The receipt's immutable event plan closes the crash-before-enqueue gap.
             ledger.enqueue_event(value)
-            rt.process_event(event_key)
+            try:
+                rt.process_event(event_key)
+            except Exception:
+                self.owner.blocked = True
+                raise
             row = ledger.row("events", event_key)
             if row["status"] == "COMMITTED":
                 with ledger.lock, ledger.db:
@@ -125,6 +129,8 @@ class OwnerLifecycle:
             ).fetchall():
                 rt.ledger.enqueue_event(json.loads(row["event_json"]))
             failures = rt.recover()
+            if failures:
+                self.owner.blocked = True
             with rt.ledger.lock, rt.ledger.db:
                 rt.ledger.db.execute(
                     "UPDATE owner_events_v1 SET event_json='{}' WHERE collection=? AND event_key IN "
