@@ -13,6 +13,45 @@ from qdrant_memory.shared_client import call
 from .helpers import LLM, Embedder, config
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"unexpected": True},
+        {"port": True},
+        {"private_token_env": "BAD-name"},
+        {"enable_lifecycle": "true"},
+        {"enable_lifecycle": True},
+        {"remote_port": 0},
+        {"remote_port": True},
+        {"remote_port": 65536},
+    ],
+)
+def test_unsafe_native_admission_is_rejected_before_storage(tmp_path, change):
+    """A malformed or unprotected listener cannot open a private database first."""
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"clients": []}))
+    policy.chmod(0o600)
+    settings = {
+        "enabled": True,
+        "policy": str(policy),
+        "port": 0,
+        "private_token_env": "QM_NATIVE",
+        **change,
+    }
+    vectors = tmp_path / "vectors"
+    p = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()),
+        embedder=Embedder(),
+        overrides=config(qdrant={"path": str(vectors)}, native_owner=settings),
+    )
+    try:
+        with pytest.raises(ValueError):
+            p.initialize("invalid-native", hermes_home=str(tmp_path))
+        assert vectors.exists() is False
+    finally:
+        p.shutdown()
+
+
 @pytest.mark.skipif(
     os.name == "nt", reason="Protected Owner state is POSIX-only and fails closed on Windows"
 )
@@ -91,8 +130,10 @@ def test_protected_native_gateway_lifecycle_and_shutdown(tmp_path, monkeypatch):
         rows = call(host.url, token, "qdrant_memory_search", {"query": "cats"})["memories"]
         assert rows[0]["text"] == "cats remote lifecycle"
     finally:
-        p.shutdown()
-        os.umask(previous_umask)
+        try:
+            p.shutdown()
+        finally:
+            os.umask(previous_umask)
     assert remote_thread is not None
     assert remote_thread.is_alive() is False
 
