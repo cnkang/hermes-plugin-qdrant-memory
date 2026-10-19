@@ -24,6 +24,8 @@ resolutions. The notes are for contributors who build the later phases.
 - Resolution: the listener binds a loopback address or a Unix socket only. A reverse
   proxy on the same host terminates TLS. The shutdown sequence drains both transports
   before the owner releases the lease. The owner reports readiness after both binds.
+- Resolution: the remote path uses a shared-only factory. The private factory stays out of
+  the remote path. A test item checks that the factory has no private runtime parameter.
 - The remote surface must use a separate factory for shared tools only. This factory has
   no private runtime parameter, so the private tools of the owner stay out of the remote
   path.

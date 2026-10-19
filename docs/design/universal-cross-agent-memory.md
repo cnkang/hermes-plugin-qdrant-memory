@@ -65,11 +65,12 @@ Device A: Codex or DSH (stdio) -- local bridge ------> Owner                 |
 Device B: remote client ---- HTTPS /mcp -------------> same Owner            |--> Qdrant
 ```
 
-The remote listener is a second listener in the owner process. Both listeners get the
+The remote listener is a second transport in the owner process, in addition to the
+loopback JSON API. Both transports get the
 grant from the credential, and then call the same SharedOwner.call function. There is one
-ledger, one CAS path and one admission check. The shutdown sequence drains both listeners
-before the owner releases the lease. The owner reports readiness only after both
-listeners are bound.
+ledger, one CAS path and one admission check. The shutdown sequence drains both
+transports before the owner releases the lease. The owner reports readiness only after
+both listeners are bound.
 
 The transport name is Streamable HTTP.
 
@@ -95,8 +96,8 @@ network namespace. Mutual TLS is optional and is not part of the base topology.
 
 The remote listener must not use the private create_server(runtime, ...) factory. A
 separate create_shared_server(owner, grant_resolver) function supplies the shared schemas
-only. It has no runtime parameter, so the private tools of the owner stay out of the
-remote path.
+only and has no runtime parameter. The remote path uses this factory, and the private
+factory stays out of the remote path.
 
 ## 6. Identity model
 
@@ -130,12 +131,12 @@ value.
 | Threat | Control |
 |---|---|
 | Accidental public bind | The listener accepts a loopback address or a Unix socket only. A bind to a different interface causes an error at startup. |
-| Proxy header spoofing | The configuration pins the trusted proxy addresses. The proxy validates the Forwarded, Host and Origin headers and removes forwarded headers from client requests. The owner also checks the Host and Origin values. |
+| Proxy header spoofing | The configuration pins the trusted proxy addresses. The proxy must validate the Forwarded, Host and Origin headers and remove forwarded headers from client requests. The owner must also check the Host and Origin values. |
 | Token replay | Each device has its own credential. Receipts deduplicate writes by principal and request ID. This method gives idempotency, but not replay protection. The owner checks expiry and revocation for each request, and a revoked credential also invalidates its sessions. |
 | Revocation latency | The policy reloads on SIGHUP or on an mtime change. A revoked token fails on the next request. A restart is not necessary. |
 | Same-agent impersonation | The policy supplies logical_agent_id. The request cannot supply it. |
 | Cross-space leakage | Each query contains the owner, the space and the visibility. A shared record must have the shared_protocol marker. |
-| Reserved namespace abuse | The configuration load rejects the reserved prefix in a private `scope.agent_id` value. |
+| Reserved namespace abuse | The configuration load rejects the prefix `shared:v1:` in a private `scope.agent_id` value. |
 | Resource exhaustion | Limits apply to authentication attempts, body size, concurrency and request time. The shutdown sequence drains the connections. |
 | Ledger divergence | One owner is active. A client-mode profile refuses write credentials. No high-availability claim exists. |
 
@@ -182,9 +183,10 @@ value.
    removes spoofed client headers. The owner rejects a request with a bad Host or Origin
    value.
 5. Authentication: a missing, malformed, expired or revoked token gives the response 401
-   or 403. No token appears in the logs.
-6. Shared surface: tools/list contains the shared schemas only. A private record is not
-   reachable.
+   or 403. A revoked credential also invalidates its sessions. No token appears in the
+   logs.
+6. Shared surface: tools/list contains the shared schemas only. The remote factory has no
+   private runtime parameter. A private record is not reachable.
 7. Isolation: a token for space X cannot read space Y. Legacy records without the marker
    stay invisible.
 8. Recovery: a crash during a write gives the same receipt state as the loopback path.
