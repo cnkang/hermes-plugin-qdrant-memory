@@ -11,16 +11,17 @@ def decide_explicit(text, scope, store):
     return "ADD", None, {}
 
 
-def decide(text, scope, store, extractor, cfg):
+def decide(text, scope, store, extractor, cfg, filters=None):
     """Return ADD, UPDATE or SKIP after scoped hash and factual relation checks.
 
     Similarity only selects a review candidate. A high score alone never authorizes
     replacement; unresolved contradictions produce a separate linked memory.
     """
-    exact = store.lookup_hash(scope, content_hash(text))
+    kwargs = {"filters": filters} if filters else {}
+    exact = store.lookup_hash(scope, content_hash(text), **kwargs)
     if exact:
         return "SKIP", str(exact.id), {}
-    hits = store.search(text, scope, top_k=5)
+    hits = store.search(text, scope, top_k=5, **kwargs)
     if not hits or hits[0].score < cfg["similarity_review_threshold"]:
         return "ADD", None, {}
     top = hits[0]
