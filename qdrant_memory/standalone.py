@@ -61,16 +61,26 @@ def load_standalone_config(home, overrides=None, resolve_secrets=True, *, secret
 
 
 @contextmanager
-def open_runtime(home=None, *, secret_reader=None, shared_owner=False):
+def open_runtime(home=None, *, secret_reader=None, shared_owner=False, destination_policy=None):
     """Own one fixed-scope writer session using the existing durable core.
 
     A session requires an initialized compatible collection. Pending bulk reset
     or deletion intents fail closed and must be resumed with the operator CLI.
     The lease outlives the store, ledger and embedder, including startup failure.
     """
+    if destination_policy is not None:
+        from .private_paths import checked_absolute_path
+
+        checked_absolute_path(Path(home or default_home()).expanduser().absolute())
     home = Path(home or default_home()).expanduser().resolve()
     reader = os.environ.get if secret_reader is None else secret_reader
     cfg = load_standalone_config(home, secret_reader=reader)
+    if destination_policy is not None:
+        from .shared_security import validate_destination
+
+        if not shared_owner:
+            raise ValueError("Protected destination requires shared owner admission")
+        validate_destination(home, cfg, destination_policy)
     namespace = ledger_namespace(cfg)
     if has_pending_reset_file(home, namespace):
         raise ResetRecoveryRequiredError()
@@ -78,7 +88,11 @@ def open_runtime(home=None, *, secret_reader=None, shared_owner=False):
     if intents:
         raise cli._pending_intent_error(intents)
     with ExitStack() as resources:
-        lease = WriterLease.for_config(home, cfg)
+        lease = (
+            WriterLease.for_config(home, cfg)
+            if destination_policy is None
+            else WriterLease.for_config(home, cfg, destination_policy=destination_policy)
+        )
         resources.callback(lease.close)
         # Recheck after ownership: an operator may have started a destructive
         # intent between the initial inspection and acquiring the lease.
@@ -94,6 +108,12 @@ def open_runtime(home=None, *, secret_reader=None, shared_owner=False):
         store = QdrantStore(build_client(cfg), cfg, embedder)
         resources.callback(store.close)
         store.initialize(create=False)
+        if destination_policy is not None:
+            from .qdrant_store import IDENTITY_ID, CollectionCompatibilityError
+
+            identity = store.client.retrieve(store.collection, ids=[IDENTITY_ID], with_payload=True)
+            if not identity or identity[0].payload.get("_qdrant_memory_schema") != 1:
+                raise CollectionCompatibilityError("Protected collection schema is incompatible")
         ledger = Ledger(home, namespace)
         resources.callback(ledger.close)
         # Raw turns may contain sensitive host context and require its trusted
@@ -153,6 +173,10 @@ def parser():
     shared = commands.add_parser("shared-serve", help="Own an opt-in local shared memory service")
     shared.add_argument("--policy", type=Path, required=True)
     shared.add_argument("--port", type=int, default=8765)
+    shared_doctor = commands.add_parser(
+        "shared-doctor", help="Inspect shared deployment safety without modifying memory"
+    )
+    shared_doctor.add_argument("--policy", type=Path, required=True)
     for mode in ("shared-call", "shared-mcp"):
         bridge = commands.add_parser(mode, help="Connect to an explicitly authorized shared owner")
         bridge.add_argument("--url", required=True)
@@ -185,6 +209,12 @@ def main(argv=None):
     """Print JSON results; reserve stdout exclusively for MCP protocol in MCP mode."""
     args = parser().parse_args(argv)
     try:
+        if args.qdrant_command == "shared-doctor":
+            from .shared_security import doctor
+
+            report = doctor(args.home, args.policy)
+            cli.print_json(report)
+            return {"PASS": 0, "FAIL": 1, "UNVERIFIED": 2}[report["status"]]
         if args.qdrant_command == "shared-serve":
             from .shared_service import serve
 

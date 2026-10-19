@@ -75,13 +75,18 @@ def _validate_grant(grant, seen):
 
 def load_policy(path):
     """Read explicit operator grants; credential hashes are never tool arguments."""
+    return load_policy_document(path)["clients"]
+
+
+def load_policy_document(path):
+    """Keep legacy grants compatible while accepting an explicit destination binding."""
     path = Path(path)
     if os.name != "nt" and path.stat().st_mode & 0o077:
         raise PermissionError("Shared policy must be private to its owner")
     policy = json.loads(path.read_text(encoding="utf-8"))
     if (
         not isinstance(policy, dict)
-        or set(policy) != {"clients"}
+        or set(policy) not in ({"clients"}, {"clients", "destination"})
         or not isinstance(policy["clients"], list)
         or not policy["clients"]
     ):
@@ -98,15 +103,22 @@ def load_policy(path):
         if space in spaces and spaces[space] != boundary:
             raise ValueError("Space visibility/ownership cannot differ between grants")
         spaces[space] = boundary
-    return policy["clients"]
+    if "destination" in policy:
+        from .shared_security import private_entry
+
+        private_entry(path)
+        if not isinstance(policy["destination"], dict):
+            raise ValueError("Expected a protected destination binding")
+    return policy
 
 
 class SharedOwner:
     """Authorize every operation and coordinate durable plans under the Runtime lock."""
 
-    def __init__(self, runtime, grants):
+    def __init__(self, runtime, grants, *, admission_check=None):
         """Recover prepared requests before accepting any new client work."""
         self.runtime, self.grants = runtime, grants
+        self.admission_check = admission_check
         self.blocked = False
         ledger = runtime.ledger
         with ledger.lock, ledger.db:
@@ -195,6 +207,8 @@ class SharedOwner:
             return self._search(grant, scope, args)
         if grant["permission"] != "write":
             raise PermissionError("Read-only shared credential")
+        if self.admission_check is not None:
+            self.admission_check()
         if self.blocked:
             raise SharedRecoveryRequiredError()
         if len(args["request_id"]) > 128:
@@ -446,19 +460,36 @@ def serve(home, policy_path, port):
     """Hold ownership until every admitted request drains, including disconnected clients."""
     from .standalone import open_runtime
 
-    grants = load_policy(policy_path)
+    policy = load_policy_document(policy_path)
+    binding = policy.get("destination")
     if not LOG.handlers:
         LOG.addHandler(logging.StreamHandler())
     LOG.setLevel(logging.INFO)
     LOG.propagate = False
-    with open_runtime(home, shared_owner=True) as runtime:
-        owner = SharedOwner(runtime, grants)
-        with make_server(owner, port) as server:
-            print(
-                json.dumps({"ready": True, "url": f"http://127.0.0.1:{server.server_port}"}),
-                flush=True,
+    previous_umask = os.umask(0o077) if binding is not None else None
+    try:
+        with open_runtime(home, shared_owner=True, destination_policy=binding) as runtime:
+
+            def admission_check():
+                from .shared_security import private_entry, validate_destination
+
+                private_entry(policy_path)
+                validate_destination(home, runtime.cfg, binding)
+
+            owner = SharedOwner(
+                runtime,
+                policy["clients"],
+                admission_check=admission_check if binding is not None else None,
             )
-            try:
-                server.serve_forever()
-            except KeyboardInterrupt:
-                pass
+            with make_server(owner, port) as server:
+                print(
+                    json.dumps({"ready": True, "url": f"http://127.0.0.1:{server.server_port}"}),
+                    flush=True,
+                )
+                try:
+                    server.serve_forever()
+                except KeyboardInterrupt:
+                    pass
+    finally:
+        if previous_umask is not None:
+            os.umask(previous_umask)
