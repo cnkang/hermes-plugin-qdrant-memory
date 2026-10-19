@@ -105,8 +105,10 @@ or the reserved scope string. No payload or collection migration is performed.
 1. Authenticate, validate a strict schema and the fixed grant, and reject
    read-only writes.
 2. Hold the same Runtime RLock across scoped lookup and version validation.
-3. Persist the complete immutable plan and response in destination-namespaced
-   `shared_requests_v1` within the same SQLite database (additive table only).
+3. Persist the complete immutable plan, the authenticated principal and the
+   response in destination-namespaced `shared_requests_v1` within the same
+   SQLite database (additive table only). Attribution comes from the token's
+   grant, never from tool arguments.
 4. Enqueue that exact plan through Runtime, commit using its retry/embedding/store
    path, and mark the receipt done **only after COMMITTED**.
 5. Scrub completed plans. Retain request input hashes and responses for safe

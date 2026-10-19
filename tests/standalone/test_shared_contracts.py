@@ -266,6 +266,7 @@ def test_http_boundary_rejects_untrusted_requests(profile, mutation):
         "duplicate",
         "permission",
         "visibility",
+        "empty-principal",
         "private-owner",
     ],
 )
@@ -280,6 +281,8 @@ def test_policy_rejects_invalid_or_ambiguous_grants(tmp_path, change):
         grant["extra"] = "x"
     elif change == "value":
         grant["principal"] = 1
+    elif change == "empty-principal":
+        grant["principal"] = ""
     elif change == "hash":
         grant["token_sha256"] = "bad"
     elif change == "duplicate":
