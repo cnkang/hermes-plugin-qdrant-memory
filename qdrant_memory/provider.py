@@ -373,11 +373,31 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def prefetch(self, query, *, session_id=""):
         """Return private cached recall and optionally fresh, authorized shared data."""
-        private = self._private_prefetch(query, session_id=session_id)
+        if self._shared_recall is None:
+            return self._private_prefetch(query, session_id=session_id)
         session = session_id or self.session_id
-        rows = self._read_shared(query, session, budget=0.05)
+        with self._condition:
+            if session in self._blocked_sessions:
+                return ""
+            scope = self._scope(session)
+            generation = self._generations.get(session, 0)
+            private = self._private_prefetch(query, session_id=session)
+        rows = self._read_shared(
+            query,
+            session,
+            budget=self._shared_recall.settings.get("delivery_timeout_seconds", 0.05),
+        )
+        with self._condition:
+            if (
+                session in self._blocked_sessions
+                or not self._accepting
+                or self._scope(session) != scope
+                or self._generations.get(session, 0) != generation
+            ):
+                return ""
         if rows:
-            return (private[:2000] + self._shared_recall.render(rows))[:4000]
+            private = private[:2000]
+            return private + self._shared_recall.render(rows, max_chars=4000 - len(private))
         return private
 
     def _read_shared(self, query, session, *, budget=None):
