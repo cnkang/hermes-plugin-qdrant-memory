@@ -5,8 +5,18 @@ import json
 import httpx
 import pytest
 
+from qdrant_memory.config import validate_url
 from qdrant_memory.extraction import Extractor
 from qdrant_memory.owner_llm import OwnerLLM
+
+
+def test_private_content_transport_requires_tls_without_an_api_key():
+    """Anonymous extraction endpoints still receive private content, requiring TLS."""
+    with pytest.raises(ValueError, match="HTTPS"):
+        validate_url("http://remote.example/v1", require_tls=True)
+    validate_url("https://remote.example/v1", require_tls=True)
+    validate_url("http://127.0.0.1:11434/v1", require_tls=True)
+    validate_url("http://localhost:11434/v1", require_tls=True)
 
 
 def test_configured_owner_extraction_uses_structured_schema(monkeypatch):

@@ -50,8 +50,9 @@ async def send_event(url, token, event, *, ca_file=None):
         raise ValueError("A provisioned service credential is required")
     import httpx
 
+    context = ssl.create_default_context(cafile=ca_file)
     async with httpx.AsyncClient(
-        verify=ssl.create_default_context(cafile=ca_file),
+        verify=context,
         trust_env=False,
         follow_redirects=False,
         timeout=30,

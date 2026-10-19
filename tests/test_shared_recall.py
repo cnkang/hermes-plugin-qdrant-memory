@@ -192,20 +192,29 @@ def test_author_switch_during_shared_io_cannot_deliver_old_private_cache(tmp_pat
         p.shutdown()
 
 
-def test_explicit_delivery_budget_supports_slower_local_embedding(tmp_path, monkeypatch):
-    """Operators may opt into a small bounded wait for real local embedding latency."""
+def test_explicit_delivery_budget_reaches_the_bounded_wait(tmp_path, monkeypatch):
+    """Honor the operator budget independently of CI thread scheduling latency."""
+    from concurrent.futures import Future
+
     p = provider(tmp_path)
     try:
         p._shared_recall = SharedRecall(
             settings(delivery_timeout_seconds=0.2), secret_reader=lambda _: "x" * 40
         )
 
-        def slower(*args):
-            time.sleep(0.08)
-            return [{"text": "authorized shared SQLite WAL"}]
+        completed = Future()
+        completed.set_result([{"text": "authorized shared SQLite WAL"}])
+        wait = completed.result
+        budgets = []
 
-        monkeypatch.setattr(p._shared_recall, "_search", slower)
+        def record_wait(timeout=None):
+            budgets.append(timeout)
+            return wait(timeout=timeout)
+
+        monkeypatch.setattr(completed, "result", record_wait)
+        monkeypatch.setattr(p._shared_recall._executor, "submit", lambda *args: completed)
         assert "SQLite WAL" in p.prefetch("Alpha")
+        assert budgets == [0.2]
     finally:
         p.shutdown()
 

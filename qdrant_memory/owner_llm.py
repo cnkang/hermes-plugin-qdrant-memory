@@ -18,7 +18,7 @@ class OwnerLLM:
         self.model = cfg.get("model")
         self.url = cfg.get("base_url", "").rstrip("/") + "/chat/completions"
         key = os.environ.get(cfg.get("api_key_env", "QDRANT_MEMORY_LLM_API_KEY"))
-        validate_url(self.url, api_key=key or "require-encrypted-external-transport")
+        validate_url(self.url, api_key=key, require_tls=True)
         if not isinstance(self.model, str) or not self.model:
             raise ValueError("An explicit extraction model is required")
         headers = {"Authorization": "Bearer " + key} if key else {}

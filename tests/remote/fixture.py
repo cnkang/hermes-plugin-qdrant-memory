@@ -316,10 +316,11 @@ async def device_a():
                 {"text": "Project Alpha uses SQLite WAL.", "request_id": "alpha"},
                 ca_file="/tmp/tls/cert.pem",
             )
-            assert result["action"] == "ADD"
-            break
         except Exception:
             await asyncio.sleep(0.1)
+            continue
+        assert result["action"] == "ADD"
+        break
     else:
         raise RuntimeError("Device A could not connect to HTTPS MCP")
     saved = await call_remote(
