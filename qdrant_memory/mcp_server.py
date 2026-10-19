@@ -9,11 +9,16 @@ from .tools import schemas
 
 def create_server(runtime, *, tool_schemas=schemas, invoke_tool=None):
     """Bind the four fixed-scope tools to an official SDK server instance."""
+    return create_tool_server(
+        tool_schemas, invoke_tool or (lambda name, arguments: call_tool(runtime, name, arguments))
+    )
+
+
+def create_tool_server(tool_schemas, invoke_tool):
+    """Build protocol handlers without choosing any authority or storage scope."""
     import anyio
     from mcp.server import Server
     from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
-
-    invoke_tool = invoke_tool or (lambda name, arguments: call_tool(runtime, name, arguments))
 
     async def list_tools():
         """Advertise only the shared explicit-memory schemas."""

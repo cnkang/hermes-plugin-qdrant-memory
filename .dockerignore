@@ -1,0 +1,11 @@
+**
+!pyproject.toml
+!README.md
+!LICENSE
+!qdrant_memory/
+!qdrant_memory/**
+!tests/
+!tests/__init__.py
+!tests/helpers.py
+!tests/remote/
+!tests/remote/**

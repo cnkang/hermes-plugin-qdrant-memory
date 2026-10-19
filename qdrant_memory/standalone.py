@@ -61,7 +61,9 @@ def load_standalone_config(home, overrides=None, resolve_secrets=True, *, secret
 
 
 @contextmanager
-def open_runtime(home=None, *, secret_reader=None, shared_owner=False, destination_policy=None):
+def open_runtime(
+    home=None, *, secret_reader=None, shared_owner=False, destination_policy=None, extractor=None
+):
     """Own one fixed-scope writer session using the existing durable core.
 
     A session requires an initialized compatible collection. Pending bulk reset
@@ -111,7 +113,7 @@ def open_runtime(home=None, *, secret_reader=None, shared_owner=False, destinati
                 raise CollectionCompatibilityError("Protected collection schema is incompatible")
         ledger = Ledger(home, namespace)
         resources.callback(ledger.close)
-        yield _recovered_runtime(cfg, store, ledger)
+        yield _recovered_runtime(cfg, store, ledger, extractor=extractor)
 
 
 def _validate_runtime_policy(home, cfg, shared_owner, destination_policy):
@@ -125,16 +127,18 @@ def _validate_runtime_policy(home, cfg, shared_owner, destination_policy):
     validate_destination(home, cfg, destination_policy)
 
 
-def _recovered_runtime(cfg, store, ledger):
+def _recovered_runtime(cfg, store, ledger, *, extractor=None):
     """Require host extraction and durable recovery before exposing tool admission."""
     # Raw turns need the trusted host extractor. Recovering without it could
     # change raw events to FAILED and allow a later restart to bypass that work.
-    if any(
+    if extractor is None and any(
         next(ledger.iter_rows("events", status), None) is not None
         for status in ("PENDING", "FAILED")
     ):
         raise HostExtractionRequiredError()
-    runtime = Runtime(cfg, store, ledger)
+    runtime = Runtime(cfg, store, ledger, extractor=extractor)
+    if extractor is not None and next(ledger.iter_rows("events", "FAILED"), None) is not None:
+        raise HostExtractionRequiredError()
     if runtime.recover():
         raise RuntimeError("Pending durable operations require recovery before new tools")
     return runtime
@@ -192,10 +196,37 @@ def parser():
     shared = commands.add_parser("shared-serve", help="Own an opt-in local shared memory service")
     shared.add_argument("--policy", type=Path, required=True)
     shared.add_argument("--port", type=int, default=8765)
+    remote = commands.add_parser("remote-serve", help="Opt-in HTTPS-proxied Streamable HTTP Owner")
+    remote.add_argument("--policy", type=Path, required=True)
+    remote.add_argument("--port", type=int, default=8766)
+    remote.add_argument("--local-port", type=int, default=8765)
+    remote.add_argument("--allowed-host", action="append", required=True)
+    remote.add_argument(
+        "--enable-lifecycle",
+        action="store_true",
+        help="Explicitly enable Owner-side automatic extraction",
+    )
+    remote_bridge = commands.add_parser("remote-mcp", help="Bridge stdio to an HTTPS MCP Owner")
+    remote_bridge.add_argument("--url", required=True)
+    remote_bridge.add_argument("--token-env", default="QDRANT_MEMORY_REMOTE_TOKEN")
+    remote_bridge.add_argument("--ca-file", type=Path)
+    for mode in ("remote-call", "remote-event"):
+        remote_request = commands.add_parser(mode, help="Use an explicitly configured HTTPS Owner")
+        remote_request.add_argument("--url", required=True)
+        remote_request.add_argument("--token-env", default="QDRANT_MEMORY_REMOTE_TOKEN")
+        remote_request.add_argument("--ca-file", type=Path)
+        if mode == "remote-call":
+            remote_request.add_argument("--tool", required=True)
     shared_doctor = commands.add_parser(
         "shared-doctor", help="Inspect shared deployment safety without modifying memory"
     )
     shared_doctor.add_argument("--policy", type=Path, required=True)
+    admin = commands.add_parser("shared-device", help="Administer independent device grants")
+    admin.add_argument("action", choices=["validate", "revoke", "rotate"])
+    admin.add_argument("--policy", type=Path, required=True)
+    admin.add_argument("--owner-id")
+    admin.add_argument("--device-id")
+    admin.add_argument("--output", type=Path)
     for mode in ("shared-call", "shared-mcp"):
         bridge = commands.add_parser(mode, help="Connect to an explicitly authorized shared owner")
         bridge.add_argument("--url", required=True)
@@ -228,6 +259,66 @@ def main(argv=None):
     """Print JSON results; reserve stdout exclusively for MCP protocol in MCP mode."""
     args = parser().parse_args(argv)
     try:
+        if args.qdrant_command in {"remote-call", "remote-event"}:
+            import anyio
+
+            from .remote_client import call_remote, send_event
+
+            raw = sys.stdin.buffer.read(131073)
+            if len(raw) > 131072:
+                raise ValueError("Owner request exceeds input limit")
+            value = json.loads(raw)
+            token = os.environ.get(args.token_env, "").strip()
+
+            async def request():
+                if args.qdrant_command == "remote-event":
+                    return await send_event(args.url, token, value, ca_file=args.ca_file)
+                return await call_remote(args.url, token, args.tool, value, ca_file=args.ca_file)
+
+            result = anyio.run(request)
+            cli.print_json(result)
+            return 1 if "error" in result else 0
+        if args.qdrant_command == "remote-mcp":
+            from .remote_client import serve_mcp
+
+            serve_mcp(args.url, args.token_env, ca_file=args.ca_file)
+            return 0
+        if args.qdrant_command == "remote-serve":
+            from .remote_gateway import serve
+
+            serve(
+                args.home,
+                _operator_path(args.policy, reject_symlinks=True),
+                port=args.port,
+                local_port=args.local_port,
+                allowed_hosts=args.allowed_host,
+                enable_lifecycle=args.enable_lifecycle,
+            )
+            return 0
+        if args.qdrant_command == "shared-device":
+            from .policy_admin import revoke_device, rotate_device
+            from .shared_service import load_policy_document
+
+            policy_path = _operator_path(args.policy, reject_symlinks=True)
+            if args.action == "validate":
+                load_policy_document(policy_path)
+                result = {"ok": True, "status": "PASS"}
+            else:
+                if not args.owner_id or not args.device_id:
+                    raise ValueError("Explicit owner and device are required")
+                if args.action == "rotate":
+                    if args.output is None:
+                        raise ValueError("A new private token output file is required")
+                    result = rotate_device(
+                        policy_path,
+                        args.owner_id,
+                        args.device_id,
+                        _operator_path(args.output, reject_symlinks=True),
+                    )
+                else:
+                    result = revoke_device(policy_path, args.owner_id, args.device_id)
+            cli.print_json(result)
+            return 0
         if args.qdrant_command in {"shared-doctor", "shared-serve", "shared-mcp", "shared-call"}:
             return _shared_command(args)
         if args.qdrant_command == "mcp":
@@ -268,7 +359,7 @@ def main(argv=None):
         # Error text from services/configuration may contain credentials. Keep the
         # machine-readable diagnostic sanitized just like the Hermes boundary.
         print(json.dumps({"error": error}), file=sys.stderr, flush=True)
-        if args.qdrant_command not in {"mcp", "shared-mcp"}:
+        if args.qdrant_command not in {"mcp", "shared-mcp", "remote-mcp"}:
             cli.print_json({"error": error})
         return 1
 
