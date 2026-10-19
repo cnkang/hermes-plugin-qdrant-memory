@@ -198,9 +198,18 @@ together for consistent restore/rollback.
 
 Optional `remote_port` and `allowed_hosts` enable the same loopback MCP listener
 under the Native Owner, and require a protected destination policy. A same-host
-TLS proxy is still required. The Native listener supplies explicit MCP only;
-the Native lifecycle itself uses the real Hermes callbacks. Do not register a
+TLS proxy is still required. The Native lifecycle itself uses real Hermes callbacks.
+Optional `enable_lifecycle: true` enables the authenticated `/events` extension
+for other official Host adapters, reusing this Runtime and inherited host LLM.
+It requires the protected remote listener and defaults off. Do not register a
 second MCP memory interface in the same Native profile.
+
+Native Owner private recall revalidates its current device grant before delivery.
+A Runtime mutation generation invalidates private cached recall before any write
+attempt, including remote deletion and uncertain acknowledgements. Failed Native
+storage operations gate Owner writes and automatic recall, retaining queued raw
+events for explicit recovery. Legacy private cache behavior is unchanged when
+Native Owner is disabled.
 
 When a project capture rule is denied, private capture continues and a durable
 denial counter records the skipped rule. Other devices' writes remain available.
