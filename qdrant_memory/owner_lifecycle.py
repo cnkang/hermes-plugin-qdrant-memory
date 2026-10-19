@@ -6,7 +6,7 @@ Identity, space, capture policy, extraction and persistence remain Owner-side.
 
 import json
 
-from .models import digest
+from .models import digest, now
 
 
 class OwnerLifecycle:
@@ -21,6 +21,82 @@ class OwnerLifecycle:
                 collection TEXT NOT NULL, request_key TEXT NOT NULL,
                 input_hash TEXT NOT NULL, event_key TEXT NOT NULL, event_json TEXT NOT NULL,
                 PRIMARY KEY(collection, request_key))""")
+
+    def _authority(self, token):
+        """Resolve current write/capture authority for submission and event controls."""
+        self.owner.runtime.check_active()
+        grant = self.owner.authenticate(token)
+        if (
+            grant["permission"] != "write"
+            or "logical_agent_id" not in grant
+            or (grant["visibility"] != "private" and not grant.get("capture_rule_id"))
+        ):
+            raise PermissionError("Automatic capture requires explicit authorized policy")
+        if self.owner.admission_check is not None:
+            self.owner.admission_check()
+        authority = {
+            key: grant[key]
+            for key in (
+                "principal",
+                "owner_id",
+                "space_id",
+                "visibility",
+                "logical_agent_id",
+                "device_id",
+            )
+        }
+        authority["capture_rule_id"] = grant.get("capture_rule_id", "private-default")
+        return authority
+
+    def _receipt(self, token, event_id):
+        """Look up only this device/capture rule's receipt; never return its content."""
+        if not isinstance(event_id, str) or not 0 < len(event_id) <= 128:
+            raise ValueError("Invalid lifecycle event ID")
+        authority = self._authority(token)
+        ledger = self.owner.runtime.ledger
+        receipt = ledger.db.execute(
+            "SELECT * FROM owner_events_v1 WHERE collection=? AND request_key=?",
+            (ledger.collection, digest([authority, event_id])),
+        ).fetchone()
+        row = ledger.row("events", receipt["event_key"]) if receipt is not None else None
+        return receipt, row
+
+    def inspect(self, token, event_id):
+        """Inspect one's own durable event status without exposing memory or errors."""
+        with self.owner.runtime.lock:
+            receipt, row = self._receipt(token, event_id)
+            status = "NOT_FOUND"
+            if receipt is not None:
+                status = row["status"] if row is not None else "ACCEPTED"
+            return {"event_id": event_id, "status": status}
+
+    def cancel(self, token, event_id):
+        """Cancel only raw input; any prepared/uncertain write must still reconcile."""
+        rt = self.owner.runtime
+        with rt.lock:
+            receipt, row = self._receipt(token, event_id)
+            if receipt is None:
+                raise KeyError("Lifecycle event was not found")
+            if row is None:
+                raise ValueError("Accepted event requires recovery before cancellation")
+            if row["status"] == "CANCELLED":
+                return {"event_id": event_id, "status": "CANCELLED"}
+            value = json.loads(row["payload_json"])
+            if row["status"] not in {"PENDING", "FAILED"} or any(
+                key in value for key in ("candidates", "operation_keys")
+            ):
+                raise ValueError("Event is prepared or committed; recover writes instead")
+            with rt.ledger.lock, rt.ledger.db:
+                rt.ledger.db.execute(
+                    "UPDATE events SET status='CANCELLED',payload_json='{}',last_error=NULL,committed_at=? "
+                    "WHERE collection=? AND event_id=?",
+                    (now(), rt.ledger.collection, receipt["event_key"]),
+                )
+                rt.ledger.db.execute(
+                    "UPDATE owner_events_v1 SET event_json='{}' WHERE collection=? AND request_key=?",
+                    (rt.ledger.collection, receipt["request_key"]),
+                )
+            return {"event_id": event_id, "status": "CANCELLED"}
 
     def submit(self, token, event):
         """Authenticate and durably accept one turn before extraction or database I/O."""
@@ -37,33 +113,13 @@ class OwnerLifecycle:
         rt = self.owner.runtime
         ledger = rt.ledger
         with rt.lock:
-            grant = self.owner.authenticate(token)
-            if (
-                grant["permission"] != "write"
-                or "logical_agent_id" not in grant
-                or (grant["visibility"] != "private" and not grant.get("capture_rule_id"))
-            ):
-                raise PermissionError("Automatic capture requires explicit authorized policy")
+            authority = self._authority(token)
             if self.owner.blocked:
                 from .shared_state import SharedRecoveryRequiredError
 
                 raise SharedRecoveryRequiredError()
-            if self.owner.admission_check is not None:
-                self.owner.admission_check()
             if rt.extractor is None:
                 raise RuntimeError("Owner extraction provider must be explicitly configured")
-            authority = {
-                key: grant[key]
-                for key in (
-                    "principal",
-                    "owner_id",
-                    "space_id",
-                    "visibility",
-                    "logical_agent_id",
-                    "device_id",
-                )
-            }
-            authority["capture_rule_id"] = grant.get("capture_rule_id", "private-default")
             request_key = digest([authority, event["event_id"]])
             input_hash = digest(event)
             receipt = ledger.db.execute(
@@ -76,8 +132,8 @@ class OwnerLifecycle:
                 value = json.loads(receipt["event_json"])
                 event_key = receipt["event_key"]
                 existing = ledger.row("events", event_key)
-                if existing is not None and existing["status"] == "COMMITTED":
-                    return {"event_id": event["event_id"], "status": "COMMITTED"}
+                if existing is not None and existing["status"] in {"COMMITTED", "CANCELLED"}:
+                    return {"event_id": event["event_id"], "status": existing["status"]}
             else:
                 queued = sum(
                     ledger.db.execute(
@@ -90,7 +146,7 @@ class OwnerLifecycle:
                 value = {
                     "kind": "turn",
                     "source": "owner_lifecycle",
-                    "scope": self.owner.scope(grant).as_dict(),
+                    "scope": self.owner.scope(authority).as_dict(),
                     "session_id": digest([authority, event["session_id"]]),
                     "user": event["user"],
                     "assistant": event["assistant"],

@@ -43,8 +43,8 @@ def http_module():
     return httpx
 
 
-async def send_event(url, token, event, *, ca_file=None):
-    """Submit only hook-authorized content to the opt-in Owner lifecycle extension."""
+async def _event_request(url, token, event, *, ca_file, path):
+    """Use the same verified, non-redirecting transport for event admission/control."""
     validate_endpoint(url)
     if not isinstance(token, str) or not 32 <= len(token) <= 1000 or not token.isascii():
         raise ValueError("A provisioned service credential is required")
@@ -58,16 +58,37 @@ async def send_event(url, token, event, *, ca_file=None):
         timeout=30,
     ) as client:
         response = await client.post(
-            url.removesuffix("/mcp") + "/events",
+            url.removesuffix("/mcp") + path,
             headers={"Authorization": "Bearer " + token},
             json=event,
         )
         if response.status_code != 200:
             raise RuntimeError("Owner lifecycle admission failed")
-        result = response.json()
-        if not isinstance(result, dict) or result.get("status") != "COMMITTED":
-            raise RuntimeError("Owner lifecycle is not committed; retain the event for retry")
-        return result
+        return response.json()
+
+
+async def send_event(url, token, event, *, ca_file=None):
+    """Acknowledge only a committed write or an explicitly cancelled raw event."""
+    result = await _event_request(url, token, event, ca_file=ca_file, path="/events")
+    if not isinstance(result, dict) or result.get("status") not in ("COMMITTED", "CANCELLED"):
+        raise RuntimeError("Owner lifecycle is not committed; retain the event for retry")
+    return result
+
+
+async def control_event(url, token, event_id, action, *, ca_file=None):
+    """Inspect/cancel a device's own event without widening its memory authority."""
+    if (
+        action not in ("status", "cancel")
+        or not isinstance(event_id, str)
+        or not 0 < len(event_id) <= 128
+    ):
+        raise ValueError("Invalid lifecycle control")
+    result = await _event_request(
+        url, token, {"action": action, "event_id": event_id}, ca_file=ca_file, path="/events/manage"
+    )
+    if not isinstance(result, dict) or not isinstance(result.get("status"), str):
+        raise ValueError("Invalid lifecycle control response")
+    return result
 
 
 async def call_remote(url, token, name, arguments, *, ca_file=None):

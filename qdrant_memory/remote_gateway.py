@@ -14,6 +14,53 @@ from .mcp_server import create_tool_server
 from .shared_service import shared_schemas
 
 
+async def _lifecycle_request(lifecycle, token, scope, receive, send):
+    """Bound the optional event extension and keep its authority entirely Owner-side."""
+    import json
+
+    import anyio
+    from starlette.responses import Response
+
+    from .retry import safe_error
+
+    body = bytearray()
+    while True:
+        chunk = await receive()
+        if chunk["type"] == "http.disconnect":
+            return
+        body.extend(chunk.get("body", b""))
+        if len(body) > 131072:
+            await Response(status_code=413)(scope, receive, send)
+            return
+        if not chunk.get("more_body", False):
+            break
+    try:
+        event = json.loads(body)
+        if scope["path"] == "/events/manage":
+            if (
+                not isinstance(event, dict)
+                or set(event) != {"action", "event_id"}
+                or not isinstance(event["action"], str)
+                or event["action"] not in {"status", "cancel"}
+            ):
+                raise ValueError("Invalid lifecycle control")
+            method = lifecycle.inspect if event["action"] == "status" else lifecycle.cancel
+            result = await anyio.to_thread.run_sync(lambda: method(token, event["event_id"]))
+        else:
+            result = await anyio.to_thread.run_sync(lambda: lifecycle.submit(token, event))
+        status = 200
+    except Exception as exc:
+        result = {"error": safe_error(exc)}
+        status = 400
+        if isinstance(exc, PermissionError):
+            status = 403
+        elif result["error"].get("retryable"):
+            status = 503
+    await Response(json.dumps(result), status_code=status, media_type="application/json")(
+        scope, receive, send
+    )
+
+
 def create_shared_server(owner, token_resolver):
     """Expose only credential-bound Owner tools, with no private Runtime fallback."""
     return create_tool_server(
@@ -118,38 +165,8 @@ def create_gateway(owner, *, allowed_hosts, lifecycle=None):
         if scope["method"] != "POST":
             await Response(status_code=405, headers={"Allow": "POST"})(scope, receive, send)
             return
-        if scope["path"] == "/events" and lifecycle is not None:
-            import json
-
-            from .retry import safe_error
-
-            body = bytearray()
-            while True:
-                chunk = await receive()
-                if chunk["type"] == "http.disconnect":
-                    return
-                body.extend(chunk.get("body", b""))
-                if len(body) > 131072:
-                    await Response(status_code=413)(scope, receive, send)
-                    return
-                if not chunk.get("more_body", False):
-                    break
-            try:
-                event = json.loads(body)
-                result = await anyio.to_thread.run_sync(lambda: lifecycle.submit(token, event))
-                status = 200
-            except Exception as exc:
-                result = {"error": safe_error(exc)}
-                status = (
-                    403
-                    if isinstance(exc, PermissionError)
-                    else 503
-                    if result["error"].get("retryable")
-                    else 400
-                )
-            await Response(json.dumps(result), status_code=status, media_type="application/json")(
-                scope, receive, send
-            )
+        if scope["path"] in {"/events", "/events/manage"} and lifecycle is not None:
+            await _lifecycle_request(lifecycle, token, scope, receive, send)
             return
         context = current_token.set(token)
         try:
@@ -175,6 +192,7 @@ def create_gateway(owner, *, allowed_hosts, lifecycle=None):
     routes = [Route("/mcp", endpoint=Endpoint(), methods=["POST", "GET", "DELETE"])]
     if lifecycle is not None:
         routes.append(Route("/events", endpoint=Endpoint(), methods=["POST"]))
+        routes.append(Route("/events/manage", endpoint=Endpoint(), methods=["POST"]))
     return Starlette(
         routes=routes,
         lifespan=lifespan,

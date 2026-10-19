@@ -130,7 +130,7 @@ server {
     access_log off;
     client_max_body_size 128k;
     client_body_timeout 10s;
-    location ~ ^/(mcp|events)$ {
+    location ~ ^/(mcp|events|events/manage)$ {
         limit_req zone=memory_pre_auth burst=20 nodelay;
         if ($http_forwarded != '') { return 403; }
         if ($http_x_forwarded_host != '') { return 403; }

@@ -217,6 +217,10 @@ def parser():
         remote_request.add_argument("--ca-file", type=Path)
         if mode == "remote-call":
             remote_request.add_argument("--tool", required=True)
+        else:
+            remote_request.add_argument(
+                "--action", choices=["submit", "status", "cancel"], default="submit"
+            )
     shared_doctor = commands.add_parser(
         "shared-doctor", help="Inspect shared deployment safety without modifying memory"
     )
@@ -262,7 +266,7 @@ def main(argv=None):
         if args.qdrant_command in {"remote-call", "remote-event"}:
             import anyio
 
-            from .remote_client import call_remote, send_event
+            from .remote_client import call_remote, control_event, send_event
 
             raw = sys.stdin.buffer.read(131073)
             if len(raw) > 131072:
@@ -272,6 +276,12 @@ def main(argv=None):
 
             async def request():
                 if args.qdrant_command == "remote-event":
+                    if args.action != "submit":
+                        if not isinstance(value, dict) or set(value) != {"event_id"}:
+                            raise ValueError("Lifecycle control requires only event_id")
+                        return await control_event(
+                            args.url, token, value["event_id"], args.action, ca_file=args.ca_file
+                        )
                     return await send_event(args.url, token, value, ca_file=args.ca_file)
                 return await call_remote(args.url, token, args.tool, value, ca_file=args.ca_file)
 
