@@ -3,8 +3,10 @@
 The existing `cloud-smoke.yml` now has a separate `Scoped Cloud Owner devices and
 recovery` job. It is protected by the existing `qdrant-cloud` Environment and runs
 only on main/manual workflow dispatch. Fork PRs receive no Cloud credentials.
-Missing scoped configuration is explicitly reported `SKIPPED`; success of the
-workflow shell is not evidence that credentialed tests executed.
+An availability job reports only a boolean. Missing scoped configuration makes
+the actual Owner test job `SKIPPED` in GitHub, without a Cloud request; success of
+the availability job is not evidence that credentialed tests executed. If inputs
+disappear after that check, preparation fails rather than creating a false pass.
 
 Before running, an authorized operator must provision an isolated collection named
 `qm_owner_ci_<unique suffix>` and an API key scoped to that collection only. The

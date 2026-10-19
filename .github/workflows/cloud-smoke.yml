@@ -11,8 +11,32 @@ permissions:
   contents: read
 
 jobs:
+  owner-availability:
+    name: Check scoped Cloud Owner input availability
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    environment: qdrant-cloud
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - id: check
+        name: Report availability without exposing credentials
+        env:
+          QDRANT_CLOUD_URL: ${{ secrets.QDRANT_CLOUD_URL }}
+          QDRANT_CLOUD_OWNER_API_KEY: ${{ secrets.QDRANT_CLOUD_OWNER_API_KEY }}
+          QDRANT_CLOUD_OWNER_COLLECTION: ${{ secrets.QDRANT_CLOUD_OWNER_COLLECTION }}
+        run: |
+          python3 - <<'PY'
+          import os
+          available = all(os.environ[name] for name in ['QDRANT_CLOUD_URL', 'QDRANT_CLOUD_OWNER_API_KEY', 'QDRANT_CLOUD_OWNER_COLLECTION'])
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'available={str(available).lower()}\n')
+          print('Scoped Owner inputs available.' if available else 'SKIPPED: no scoped Cloud Owner credentials/collection.')
+          PY
   owner:
     name: Scoped Cloud Owner devices and recovery
+    needs: owner-availability
+    if: needs.owner-availability.outputs.available == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: qdrant-cloud
@@ -41,7 +65,7 @@ jobs:
               path.write_text(json.dumps({'url': os.environ['QDRANT_CLOUD_URL'], 'owner_api_key': os.environ['QDRANT_CLOUD_OWNER_API_KEY'], 'owner_collection': os.environ['QDRANT_CLOUD_OWNER_COLLECTION']}))
               path.chmod(0o600)
           else:
-              print('SKIPPED: separate scoped Owner key and disposable provisioned collection required.')
+              raise SystemExit('Scoped Owner inputs changed after availability check; rerun authorization.')
           PY
       - name: Install Owner acceptance dependencies
         if: steps.owner.outputs.available == 'true'
