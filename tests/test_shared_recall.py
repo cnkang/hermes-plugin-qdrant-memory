@@ -208,3 +208,31 @@ def test_explicit_delivery_budget_supports_slower_local_embedding(tmp_path, monk
         assert "SQLite WAL" in p.prefetch("Alpha")
     finally:
         p.shutdown()
+
+
+def test_large_shared_text_preserves_provenance_and_complete_json(tmp_path, monkeypatch):
+    """The context size cap must not truncate away scope/version or JSON framing."""
+    p = provider(tmp_path)
+    try:
+        p._shared_recall = SharedRecall(settings(), secret_reader=lambda _: "x" * 40)
+        monkeypatch.setattr(
+            p._shared_recall,
+            "search",
+            lambda *args, **kwargs: [
+                {
+                    "text": "x" * 10000,
+                    "space_id": "alpha",
+                    "visibility": "project",
+                    "version": "v1",
+                    "memory_id": "id1",
+                    "created_by": "device-a",
+                }
+            ],
+        )
+        result = p.prefetch("Alpha")
+        assert len(result) <= 4000
+        rows = json.loads(result.split("\n")[-1])
+        assert rows[0]["space_id"] == "alpha" and rows[0]["version"] == "v1"
+        assert rows[0]["created_by"] == "device-a"
+    finally:
+        p.shutdown()

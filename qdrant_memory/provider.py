@@ -447,7 +447,8 @@ class QdrantMemoryProvider(MemoryProvider):
             ):
                 return ""
         if rows:
-            return (private[:2000] + self._shared_recall.render(rows))[:4000]
+            private = private[:2000]
+            return private + self._shared_recall.render(rows, max_chars=4000 - len(private))
         return private
 
     def _read_shared(self, query, session, *, budget=None):
