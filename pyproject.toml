@@ -17,6 +17,7 @@ qdrant-memory = "qdrant_memory.standalone:main"
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.30,<3"]
+remote = ["mcp>=1.30,<3", "uvicorn>=0.35,<1"]
 local = ["fastembed==0.9.0"]
 
 [project.urls]

@@ -196,6 +196,31 @@ def parser():
     shared = commands.add_parser("shared-serve", help="Own an opt-in local shared memory service")
     shared.add_argument("--policy", type=Path, required=True)
     shared.add_argument("--port", type=int, default=8765)
+    remote = commands.add_parser("remote-serve", help="Opt-in HTTPS-proxied Streamable HTTP Owner")
+    remote.add_argument("--policy", type=Path, required=True)
+    remote.add_argument("--port", type=int, default=8766)
+    remote.add_argument("--local-port", type=int, default=8765)
+    remote.add_argument("--allowed-host", action="append", required=True)
+    remote.add_argument(
+        "--enable-lifecycle",
+        action="store_true",
+        help="Explicitly enable Owner-side automatic extraction",
+    )
+    remote_bridge = commands.add_parser("remote-mcp", help="Bridge stdio to an HTTPS MCP Owner")
+    remote_bridge.add_argument("--url", required=True)
+    remote_bridge.add_argument("--token-env", default="QDRANT_MEMORY_REMOTE_TOKEN")
+    remote_bridge.add_argument("--ca-file", type=Path)
+    for mode in ("remote-call", "remote-event"):
+        remote_request = commands.add_parser(mode, help="Use an explicitly configured HTTPS Owner")
+        remote_request.add_argument("--url", required=True)
+        remote_request.add_argument("--token-env", default="QDRANT_MEMORY_REMOTE_TOKEN")
+        remote_request.add_argument("--ca-file", type=Path)
+        if mode == "remote-call":
+            remote_request.add_argument("--tool", required=True)
+        else:
+            remote_request.add_argument(
+                "--action", choices=["submit", "status", "cancel"], default="submit"
+            )
     shared_doctor = commands.add_parser(
         "shared-doctor", help="Inspect shared deployment safety without modifying memory"
     )
@@ -238,6 +263,48 @@ def main(argv=None):
     """Print JSON results; reserve stdout exclusively for MCP protocol in MCP mode."""
     args = parser().parse_args(argv)
     try:
+        if args.qdrant_command in {"remote-call", "remote-event"}:
+            import anyio
+
+            from .remote_client import call_remote, control_event, send_event
+
+            raw = sys.stdin.buffer.read(131073)
+            if len(raw) > 131072:
+                raise ValueError("Owner request exceeds input limit")
+            value = json.loads(raw)
+            token = os.environ.get(args.token_env, "").strip()
+
+            async def request():
+                if args.qdrant_command == "remote-event":
+                    if args.action != "submit":
+                        if not isinstance(value, dict) or set(value) != {"event_id"}:
+                            raise ValueError("Lifecycle control requires only event_id")
+                        return await control_event(
+                            args.url, token, value["event_id"], args.action, ca_file=args.ca_file
+                        )
+                    return await send_event(args.url, token, value, ca_file=args.ca_file)
+                return await call_remote(args.url, token, args.tool, value, ca_file=args.ca_file)
+
+            result = anyio.run(request)
+            cli.print_json(result)
+            return 1 if "error" in result else 0
+        if args.qdrant_command == "remote-mcp":
+            from .remote_client import serve_mcp
+
+            serve_mcp(args.url, args.token_env, ca_file=args.ca_file)
+            return 0
+        if args.qdrant_command == "remote-serve":
+            from .remote_gateway import serve
+
+            serve(
+                args.home,
+                _operator_path(args.policy, reject_symlinks=True),
+                port=args.port,
+                local_port=args.local_port,
+                allowed_hosts=args.allowed_host,
+                enable_lifecycle=args.enable_lifecycle,
+            )
+            return 0
         if args.qdrant_command == "shared-device":
             from .policy_admin import revoke_device, rotate_device
             from .shared_service import load_policy_document
@@ -302,7 +369,7 @@ def main(argv=None):
         # Error text from services/configuration may contain credentials. Keep the
         # machine-readable diagnostic sanitized just like the Hermes boundary.
         print(json.dumps({"error": error}), file=sys.stderr, flush=True)
-        if args.qdrant_command not in {"mcp", "shared-mcp"}:
+        if args.qdrant_command not in {"mcp", "shared-mcp", "remote-mcp"}:
             cli.print_json({"error": error})
         return 1
 
