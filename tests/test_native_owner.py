@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +11,90 @@ from qdrant_memory.provider import QdrantMemoryProvider
 from qdrant_memory.shared_client import call
 
 from .helpers import LLM, Embedder, config
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="Protected Owner state is POSIX-only and fails closed on Windows"
+)
+def test_protected_native_gateway_lifecycle_and_shutdown(tmp_path, monkeypatch):
+    """The actual Native loopback MCP listener shares one Runtime and drains cleanly."""
+    import httpx
+
+    from qdrant_memory.config import backend_destination, embedding_config, fingerprint
+    from qdrant_memory.models import digest
+
+    from .standalone.test_device_grants import grant
+
+    monkeypatch.setattr("qdrant_memory.shared_security.registry_path", lambda: tmp_path / "claims")
+    token = "a" * 40
+    monkeypatch.setenv("QM_NATIVE", token)
+    policy = tmp_path / "native-policy.json"
+    cfg = config(
+        qdrant={"path": str(tmp_path / "vectors")},
+        native_owner={
+            "enabled": True,
+            "policy": str(policy),
+            "port": 0,
+            "remote_port": 0,
+            "allowed_hosts": ["memory.test"],
+            "private_token_env": "QM_NATIVE",
+            "enable_lifecycle": True,
+        },
+    )
+    binding = {
+        "backend": "embedded",
+        "destination": list(backend_destination(cfg["qdrant"])),
+        "collection": cfg["qdrant"]["collection"],
+        "embedding_fingerprint": fingerprint(embedding_config(cfg)),
+        "owner_profile": digest(str(tmp_path.resolve())),
+        "schema_version": 1,
+        "security_mode": "local-embedded",
+    }
+    policy.write_text(
+        json.dumps(
+            {"destination": binding, "clients": [grant(token, "mac", owner_id="hermes-user")]}
+        )
+    )
+    policy.chmod(0o600)
+    profile_config = tmp_path / "qdrant-memory.json"
+    profile_config.write_text(json.dumps(cfg))
+    profile_config.chmod(0o600)
+    p = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()), embedder=Embedder(), overrides=cfg
+    )
+    remote_thread = None
+    # Match the documented dedicated service's private startup umask. Qdrant
+    # creates its own files; admission must not chmod already exposed state.
+    previous_umask = os.umask(0o077)
+    try:
+        p.initialize("native-session", hermes_home=str(tmp_path))
+        host = p._native_owner
+        remote_thread = host.remote_thread
+        assert host.owner.runtime is p.runtime
+        host.owner.admission_check()
+        port = host.remote_socket.getsockname()[1]
+        event = {
+            "event_id": "remote-turn",
+            "session_id": "pi",
+            "kind": "turn_completed",
+            "user": "cats remote lifecycle",
+            "assistant": "ack",
+        }
+        with httpx.Client(trust_env=False) as http:
+            response = http.post(
+                f"http://127.0.0.1:{port}/events",
+                headers={"Host": "memory.test", "Authorization": "Bearer " + token},
+                json=event,
+            )
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "COMMITTED"
+        rows = call(host.url, token, "qdrant_memory_search", {"query": "cats"})["memories"]
+        assert rows[0]["text"] == "cats remote lifecycle"
+    finally:
+        p.shutdown()
+        os.umask(previous_umask)
+    assert remote_thread is not None
+    assert remote_thread.is_alive() is False
 
 
 def test_native_owner_lifecycle_project_handoff_and_private_isolation(tmp_path, monkeypatch):
