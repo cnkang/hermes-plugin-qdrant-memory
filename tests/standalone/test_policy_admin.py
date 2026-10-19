@@ -1,5 +1,7 @@
 """Offline credential administration is atomic, scoped and safe to repeat."""
 
+import os
+
 import pytest
 
 from qdrant_memory.policy_admin import revoke_device, rotate_device
@@ -12,6 +14,10 @@ def test_revoke_repeat_and_rotation_preserve_other_devices(tmp_path):
     """Losing one device does not revoke another device of the same logical agent."""
     policy = tmp_path / "policy.json"
     write_policy(policy, [grant("a" * 40, "mac"), grant("b" * 40, "linux")])
+    if os.name == "nt":
+        with pytest.raises(PermissionError):
+            revoke_device(policy, "alice", "mac")
+        return
     assert revoke_device(policy, "alice", "mac")["changed"] == 1
     assert revoke_device(policy, "alice", "mac")["changed"] == 0
     assert not load_policy(policy)[1].get("revoked")
@@ -29,6 +35,10 @@ def test_unknown_device_and_symlink_fail_without_mutation(tmp_path):
     policy = tmp_path / "policy.json"
     write_policy(policy, [grant("a" * 40, "mac")])
     original = policy.read_bytes()
+    if os.name == "nt":
+        with pytest.raises(PermissionError):
+            revoke_device(policy, "alice", "mac")
+        return
     with pytest.raises(ValueError):
         revoke_device(policy, "other-owner", "mac")
     assert policy.read_bytes() == original

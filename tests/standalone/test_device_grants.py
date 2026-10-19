@@ -103,3 +103,18 @@ def test_expired_device_denied(tmp_path):
     finally:
         rt.ledger.close()
         rt.store.close()
+
+
+def test_rebinding_private_space_cannot_expose_old_logical_identity(tmp_path):
+    """An administrator's new mapping does not silently migrate existing private data."""
+    token = "a" * 40
+    clients = [grant(token, "mac")]
+    rt = runtime(tmp_path)
+    try:
+        owner = SharedOwner(rt, clients)
+        owner.call(token, "qdrant_memory_add", {"text": "cats private", "request_id": "r1"})
+        clients[0] = grant(token, "mac", logical="other-agent")
+        assert owner.call(token, "qdrant_memory_search", {"query": "cats"})["memories"] == []
+    finally:
+        rt.ledger.close()
+        rt.store.close()

@@ -61,7 +61,7 @@ def _validate_grant(grant, seen):
         "permission",
         "visibility",
     }
-    optional = {"logical_agent_id", "device_id", "expires_at", "revoked"}
+    optional = {"logical_agent_id", "device_id", "expires_at", "revoked", "capture_rule_id"}
     if (
         not isinstance(grant, dict)
         or not required <= set(grant)
@@ -73,6 +73,12 @@ def _validate_grant(grant, seen):
         raise ValueError("Invalid shared grant values")
     if ("logical_agent_id" in grant) != ("device_id" in grant):
         raise ValueError("Logical identity and device must be configured together")
+    if "capture_rule_id" in grant and (
+        "logical_agent_id" not in grant
+        or not isinstance(grant["capture_rule_id"], str)
+        or not 0 < len(grant["capture_rule_id"]) <= 256
+    ):
+        raise ValueError("An audited capture rule requires a device identity")
     if "revoked" in grant and not isinstance(grant["revoked"], bool):
         raise ValueError("Revocation must be boolean")
     if "expires_at" in grant:
@@ -112,6 +118,7 @@ def load_policy_document(path):
     seen = set()
     spaces = {}
     devices = {}
+    principals = {}
     for grant in policy["clients"]:
         _validate_grant(grant, seen)
         if "device_id" in grant:
@@ -120,6 +127,13 @@ def load_policy_document(path):
             if device in devices and devices[device] != identity:
                 raise ValueError("Device identity cannot differ between grants")
             devices[device] = identity
+            principal = (grant["owner_id"], grant["principal"])
+            if principal in principals and principals[principal] != (
+                grant["device_id"],
+                grant["logical_agent_id"],
+            ):
+                raise ValueError("A principal cannot impersonate another device identity")
+            principals[principal] = (grant["device_id"], grant["logical_agent_id"])
         space = (grant["owner_id"], grant["space_id"])
         boundary = (
             grant["visibility"],
@@ -202,6 +216,11 @@ class SharedOwner:
     @staticmethod
     def scope(grant):
         """Map stable owner and space to an exact reserved agent partition."""
+        if grant["visibility"] == "private" and "logical_agent_id" in grant:
+            return Scope(
+                grant["owner_id"],
+                "shared:v2:" + digest([grant["space_id"], grant["logical_agent_id"]]),
+            )
         return Scope(grant["owner_id"], "shared:v1:" + grant["space_id"])
 
     @staticmethod
@@ -211,6 +230,11 @@ class SharedOwner:
             value.get("shared_protocol") == MARKER
             and value.get("space_id") == grant["space_id"]
             and value.get("visibility") == grant["visibility"]
+            and (
+                grant["visibility"] != "private"
+                or "logical_agent_id" not in grant
+                or value.get("logical_agent_id") == grant["logical_agent_id"]
+            )
         )
 
     def call(self, token, name, args):
@@ -246,6 +270,8 @@ class SharedOwner:
         }
         if args.get("category"):
             filters["category"] = args["category"]
+        if grant["visibility"] == "private" and "logical_agent_id" in grant:
+            filters["logical_agent_id"] = grant["logical_agent_id"]
         return {
             "memories": [
                 {"id": str(hit.id), "score": hit.score, **hit.payload}
@@ -266,9 +292,10 @@ class SharedOwner:
             raise SharedRecoveryRequiredError()
         if len(args["request_id"]) > 128:
             raise ValueError("Request ID too long")
-        request_key = digest(
-            [grant["owner_id"], grant["space_id"], grant["principal"], args["request_id"]]
-        )
+        identity = [grant["owner_id"], grant["space_id"], grant["principal"]]
+        if "logical_agent_id" in grant:
+            identity.extend([grant["logical_agent_id"], grant["device_id"]])
+        request_key = digest([*identity, args["request_id"]])
         input_hash = digest([name, args])
         ledger = self.runtime.ledger
         row = ledger.db.execute(
