@@ -25,7 +25,8 @@ resolutions. The notes are for contributors who build the later phases.
   proxy on the same host terminates TLS. The shutdown sequence drains both transports
   before the owner releases the lease. The owner reports readiness after both binds.
 - The remote surface must use a separate factory for shared tools only. This factory has
-  no private runtime parameter. Thus, a wiring error cannot expose the private tools.
+  no private runtime parameter, so the private tools of the owner stay out of the remote
+  path.
 - Receipts give write idempotency. They do not give replay protection. Credential expiry,
   revocation and session invalidation are necessary before public exposure.
 

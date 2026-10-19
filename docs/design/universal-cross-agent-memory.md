@@ -65,7 +65,7 @@ Device A: Codex or DSH (stdio) -- local bridge ------> Owner                 |
 Device B: remote client ---- HTTPS /mcp -------------> same Owner            |--> Qdrant
 ```
 
-The remote listener is a second transport in the owner process. Both transports get the
+The remote listener is a second listener in the owner process. Both listeners get the
 grant from the credential, and then call the same SharedOwner.call function. There is one
 ledger, one CAS path and one admission check. The shutdown sequence drains both listeners
 before the owner releases the lease. The owner reports readiness only after both
@@ -130,12 +130,12 @@ value.
 | Threat | Control |
 |---|---|
 | Accidental public bind | The listener accepts a loopback address or a Unix socket only. A bind to a different interface causes an error at startup. |
-| Proxy header spoofing | The configuration pins the trusted proxy addresses. The software validates the Forwarded, Host and Origin headers. It removes forwarded headers from client requests. |
-| Token replay | Each device has its own credential. Receipts deduplicate writes by principal and request ID. This method gives idempotency, but not replay protection. The software checks expiry and revocation for each request. |
+| Proxy header spoofing | The configuration pins the trusted proxy addresses. The proxy validates the Forwarded, Host and Origin headers and removes forwarded headers from client requests. The owner also checks the Host and Origin values. |
+| Token replay | Each device has its own credential. Receipts deduplicate writes by principal and request ID. This method gives idempotency, but not replay protection. The owner checks expiry and revocation for each request, and a revoked credential also invalidates its sessions. |
 | Revocation latency | The policy reloads on SIGHUP or on an mtime change. A revoked token fails on the next request. A restart is not necessary. |
 | Same-agent impersonation | The policy supplies logical_agent_id. The request cannot supply it. |
 | Cross-space leakage | Each query contains the owner, the space and the visibility. A shared record must have the shared_protocol marker. |
-| Reserved namespace abuse | The configuration load rejects the prefix shared:v1: in a private scope.agent_id. |
+| Reserved namespace abuse | The configuration load rejects the reserved prefix in a private `scope.agent_id` value. |
 | Resource exhaustion | Limits apply to authentication attempts, body size, concurrency and request time. The shutdown sequence drains the connections. |
 | Ledger divergence | One owner is active. A client-mode profile refuses write credentials. No high-availability claim exists. |
 
@@ -179,7 +179,8 @@ value.
    expired server certificate. If the operator enables mutual TLS (not the default), the
    proxy also rejects an expired client certificate.
 4. Proxy trust: the proxy rejects untrusted Forwarded, Host and Origin headers. It
-   removes spoofed client headers.
+   removes spoofed client headers. The owner rejects a request with a bad Host or Origin
+   value.
 5. Authentication: a missing, malformed, expired or revoked token gives the response 401
    or 403. No token appears in the logs.
 6. Shared surface: tools/list contains the shared schemas only. A private record is not
