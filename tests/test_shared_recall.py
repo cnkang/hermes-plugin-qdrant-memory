@@ -79,6 +79,9 @@ def test_fresh_shared_delivery_and_no_private_persistence(tmp_path, monkeypatch)
         {"spaces": []},
         {"limit": True},
         {"timeout_seconds": 11},
+        {"delivery_timeout_seconds": 0.3},
+        {"delivery_timeout_seconds": True},
+        {"delivery_timeout_seconds": 0},
         {
             "spaces": [
                 {
@@ -156,4 +159,89 @@ def test_slow_shared_read_has_bounded_delivery_and_discards_late_result(tmp_path
         assert "stale shared" not in str(p._cache)
     finally:
         release.set()
+        p.shutdown()
+
+
+def test_author_switch_during_shared_io_cannot_deliver_old_private_cache(tmp_path, monkeypatch):
+    """Adding shared I/O must not extend a private cache authorization window."""
+    p = provider(tmp_path)
+    started, release = threading.Event(), threading.Event()
+    delivered = []
+    try:
+        p.sync_turn("private cats", "ack")
+        assert p.wait_idle()
+        p.queue_prefetch("cats")
+        assert p.wait_idle()
+        p._shared_recall = SharedRecall(settings(), secret_reader=lambda _: "x" * 40)
+
+        def wait(*args, **kwargs):
+            started.set()
+            release.wait(2)
+            return []
+
+        monkeypatch.setattr(p._shared_recall, "search", wait)
+        thread = threading.Thread(target=lambda: delivered.append(p.prefetch("cats")))
+        thread.start()
+        assert started.wait(2)
+        p.on_turn_start(2, "", author_id="another-user")
+        release.set()
+        thread.join(timeout=3)
+        assert delivered == [""]
+    finally:
+        release.set()
+        p.shutdown()
+
+
+def test_explicit_delivery_budget_reaches_the_bounded_wait(tmp_path, monkeypatch):
+    """Honor the operator budget independently of CI thread scheduling latency."""
+    from concurrent.futures import Future
+
+    p = provider(tmp_path)
+    try:
+        p._shared_recall = SharedRecall(
+            settings(delivery_timeout_seconds=0.2), secret_reader=lambda _: "x" * 40
+        )
+
+        completed = Future()
+        completed.set_result([{"text": "authorized shared SQLite WAL"}])
+        wait = completed.result
+        budgets = []
+
+        def record_wait(timeout=None):
+            budgets.append(timeout)
+            return wait(timeout=timeout)
+
+        monkeypatch.setattr(completed, "result", record_wait)
+        monkeypatch.setattr(p._shared_recall._executor, "submit", lambda *args: completed)
+        assert "SQLite WAL" in p.prefetch("Alpha")
+        assert budgets == [0.2]
+    finally:
+        p.shutdown()
+
+
+def test_large_shared_text_preserves_provenance_and_complete_json(tmp_path, monkeypatch):
+    """The context size cap must not truncate away scope/version or JSON framing."""
+    p = provider(tmp_path)
+    try:
+        p._shared_recall = SharedRecall(settings(), secret_reader=lambda _: "x" * 40)
+        monkeypatch.setattr(
+            p._shared_recall,
+            "search",
+            lambda *args, **kwargs: [
+                {
+                    "text": "x" * 10000,
+                    "space_id": "alpha",
+                    "visibility": "project",
+                    "version": "v1",
+                    "memory_id": "id1",
+                    "created_by": "device-a",
+                }
+            ],
+        )
+        result = p.prefetch("Alpha")
+        assert len(result) <= 4000
+        rows = json.loads(result.split("\n")[-1])
+        assert rows[0]["space_id"] == "alpha" and rows[0]["version"] == "v1"
+        assert rows[0]["created_by"] == "device-a"
+    finally:
         p.shutdown()
