@@ -66,6 +66,20 @@ def test_credential_accepts_the_documented_loopback_forms():
     assert first.space_id == second.space_id == "project-alpha"
 
 
+@pytest.mark.parametrize(
+    "netloc", ["[sensitive-host-label]:8765", "sensitive-host-label\uff1a8765"]
+)
+def test_url_parser_failures_do_not_reflect_untrusted_input(netloc):
+    """Malformed authority errors use the same redacted loopback contract."""
+    from qdrant_memory.shared_protocol import validate_loopback_url
+
+    with pytest.raises(
+        ValueError, match="^Shared service URL must be literal IPv4 loopback with port$"
+    ) as error:
+        validate_loopback_url("http://" + netloc)
+    assert "sensitive-host-label" not in str(error.value)
+
+
 def test_credential_and_hit_repr_are_redacted():
     """Never expose the bearer token or memory text through repr."""
     hit = SharedHit(
@@ -354,9 +368,14 @@ def test_client_parses_bytes_and_guards_the_error_envelope(monkeypatch):
         "http://127.0.0.1:8765", "t" * 40, "qdrant_memory_search", {"query": "q"}
     ) == {"error": {"type": "SharedClientError", "retryable": False}}
 
-    monkeypatch.setattr(client.httpx, "Client", lambda **kwargs: FakeClient(b"not-json"))
-    with pytest.raises(ValueError, match="not valid JSON"):
-        client.call("http://127.0.0.1:8765", "t" * 40, "qdrant_memory_search", {"query": "q"})
+    for body in (b"not-json", b"[" * 5000 + b"]" * 5000):
+        monkeypatch.setattr(client.httpx, "Client", lambda **kwargs: FakeClient(body))
+        # Python versions with an iterative JSON decoder can parse the nested
+        # array; it must still fail the object-envelope contract.
+        with pytest.raises(
+            ValueError, match="^Shared service response is not (valid JSON|a JSON object)$"
+        ):
+            client.call("http://127.0.0.1:8765", "t" * 40, "qdrant_memory_search", {"query": "q"})
 
     monkeypatch.setattr(client.httpx, "Client", lambda **kwargs: FakeClient(b"[1, 2]"))
     with pytest.raises(ValueError, match="not a JSON object"):
