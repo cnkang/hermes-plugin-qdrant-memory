@@ -46,9 +46,9 @@ resolutions. The notes are for contributors who build the later phases.
   in UTF-8 bytes, not characters. It must drop large or malformed records and stop with a
   safe result.
 - A recalled item keeps its provenance: the space, the visibility, the author and the
-  version. The recall cache uses a policy fingerprint. When the policy changes, the
-  fingerprint changes, and the next recall does not use the earlier entry.
-- The fingerprint cannot remove text that a host already put into the model context.
+  version. The recall cache uses the policy digest as a key. When the policy changes, the
+  digest changes, and the next recall does not use the earlier entry.
+- The digest cannot remove text that a host already put into the model context.
   After a revocation, the host must clear or rebuild the affected context before the next
   model call. If the implementation does not include this step, the smaller guarantee
   applies: a later recall does not find the entry. The design does not claim that
@@ -58,7 +58,7 @@ resolutions. The notes are for contributors who build the later phases.
 
 - A device behind NAT cannot receive connections. The solution is an owner that clients
   can reach. A tunnel is an optional third-party component, not a product requirement.
-- One supported topology is an owner and a proxy on the same host with an embedded or
-  self-hosted database. In a container deployment, the two containers share a network
-  namespace, or the proxy uses a shared mount for the Unix socket. A two-container HTTPS
-  test with no cloud account examines this topology.
+- One supported topology is an owner and a proxy on one host with an embedded or
+  self-hosted database. In a container deployment, the owner and the proxy run in one
+  container, and the socket stays inside that container. A two-container HTTPS test with
+  no cloud account examines this topology.
