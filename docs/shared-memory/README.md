@@ -1,5 +1,10 @@
 # One Memory, Multiple Agents — opt-in shared owner
 
+Before production deployment, read the [protected destination and doctor guide](deployment-security.md)
+and [threat model](threat-model-v1.md). Destination protection is an unpublished
+opt-in addition; Runtime 0.4.0 supports the original service only. Qdrant write
+credentials must belong exclusively to the Owner among application clients.
+
 Several independent agents can use one canonical store through a single Runtime
 owner. This checkout implements a local authenticated service and stdio MCP bridge.
 Existing Hermes Native Provider, standalone stdio MCP, DSH and WorkBuddy defaults

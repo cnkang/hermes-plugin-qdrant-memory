@@ -1,5 +1,10 @@
 # Hermes Qdrant 记忆插件
 
+当前源码新增的可选目的地保护与 `shared-doctor` 尚未发布，见
+[部署安全指南](docs/shared-memory/deployment-security.md)和
+[威胁模型](docs/shared-memory/threat-model-v1.md)。本地锁无法阻止持有独立数据库写凭据的远程进程；
+生产部署必须单独配置 Qdrant 凭据和网络隔离。现有发布版安装命令保持不变。
+
 ## One Memory, Multiple Agents — 可选的共享 owner
 
 Runtime 0.4.0 新增显式启用的本地认证共享 owner 与 stdio 桥接，多个 Agent 可访问授权空间，旧记录继续私有。Hermes Native Provider 和原私有默认行为保持不变。见[中文操作指南](docs/shared-memory/README.zh-CN.md)、[架构](docs/shared-memory/architecture.md)和[验证报告](docs/shared-memory/report.md)。Native Provider 自动共享提取尚未实现。

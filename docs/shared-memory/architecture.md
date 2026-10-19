@@ -1,5 +1,17 @@
 # ADR: One Memory, Multiple Agents (released in Runtime 0.4.0)
 
+## Addendum: protected destination admission (unpublished)
+
+The optional destination binding and account-local claim extend cooperating
+Runtime lease admission across profile homes. They preserve the destination
+namespace, shared protocol, Qdrant payloads and Ledger schema. See the
+[threat model](threat-model-v1.md) and [deployment contract](deployment-security.md).
+The claim is trusted local configuration, never a payload ownership marker or
+distributed fence. An Owner's exclusive account lock cannot enroll while an
+updated private writer holds its shared account lock. Persistent claims then
+reject ordinary writer admission until an explicit offline operator transition.
+The existing profile lease remains held through worker/request drain.
+
 Decision date: 2026-10-17. Status: implemented opt-in MVP, release gates recorded
 in the [validation report](report.md). Hermes compatibility is the first acceptance gate.
 
