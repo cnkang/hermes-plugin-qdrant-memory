@@ -13,8 +13,8 @@ numpy==2.4.6 ; python_full_version < '3.12'
 numpy==2.5.3 ; python_full_version >= '3.12'
 portalocker==3.2.0
 protobuf==7.36.2
-pydantic==2.14.0
-pydantic-core==2.50.0
+pydantic==2.14.1
+pydantic-core==2.50.1
 pywin32==312 ; sys_platform == 'win32'
 qdrant-client==1.19.1
 typing-extensions==4.16.0
