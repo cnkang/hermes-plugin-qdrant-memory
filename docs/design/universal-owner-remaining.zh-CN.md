@@ -1,5 +1,7 @@
 # 对照任务书：仍未完成的工作
 
+最新交付与仍未关闭的验收项见 [分批交付报告](universal-owner-batches.zh-CN.md)。
+
 > 本文是推进前的差距快照；本轮已完成的修复、事件管理、Cloud lane 与模型诊断更新，
 > 见 [后续任务推进报告](universal-owner-follow-up.zh-CN.md)。保留原 FAIL 证据，不把它当作新提交结果。
 
