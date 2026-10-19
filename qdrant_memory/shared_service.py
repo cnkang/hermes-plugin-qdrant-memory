@@ -160,11 +160,14 @@ def load_policy_document(path):
 class SharedOwner:
     """Authorize every operation and coordinate durable plans under the Runtime lock."""
 
-    def __init__(self, runtime, grants, *, admission_check=None, grant_loader=None):
+    def __init__(
+        self, runtime, grants, *, admission_check=None, grant_loader=None, execution_context=None
+    ):
         """Recover prepared requests before accepting any new client work."""
         self.runtime, self.grants = runtime, grants
         self.admission_check = admission_check
         self.grant_loader = grant_loader
+        self.execution_context = execution_context
         self.blocked = False
         ledger = runtime.ledger
         with ledger.lock, ledger.db:
@@ -239,6 +242,12 @@ class SharedOwner:
 
     def call(self, token, name, args):
         """Audit allow/deny without credentials, text, query, IDs or exception messages."""
+        if self.execution_context is not None:
+            return self.execution_context.copy().run(self._authorized_call, token, name, args)
+        return self._authorized_call(token, name, args)
+
+    def _authorized_call(self, token, name, args):
+        """Run under the owning Host profile context when the Owner is Native."""
         grant = None
         outcome = "deny"
         try:

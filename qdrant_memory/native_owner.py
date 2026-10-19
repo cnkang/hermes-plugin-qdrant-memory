@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from threading import Thread
 
 from .config import secret
 from .shared_service import SharedOwner, load_policy, load_policy_document, make_server
@@ -64,6 +63,8 @@ class NativeOwner:
 
     def __init__(self, runtime, settings, user_id):
         """Recover requests and resolve the explicitly selected Native private grant."""
+        from contextvars import copy_context
+
         self.settings = settings
         binding = settings["document"].get("destination")
 
@@ -77,6 +78,7 @@ class NativeOwner:
             settings["document"]["clients"],
             grant_loader=lambda: load_policy(settings["policy"]),
             admission_check=admission if binding is not None else None,
+            execution_context=copy_context(),
         )
         grant = self.owner.authenticate(secret(settings["private_token_env"]))
         if (
@@ -94,14 +96,17 @@ class NativeOwner:
 
     def start(self):
         """Bind loopback only after recovery and complete initialization."""
+        from agent.memory_provider import spawn_context_thread
+
         self.server = make_server(self.owner, self.settings["port"])
         self.url = f"http://127.0.0.1:{self.server.server_port}"
-        self.thread = Thread(target=self.server.serve_forever, name="native-memory-owner")
+        self.thread = spawn_context_thread(
+            self.server.serve_forever, name="native-memory-owner", daemon=False
+        )
         self.thread.start()
         if "remote_port" in self.settings:
             import socket
             import time
-            from contextvars import copy_context
 
             import uvicorn
 
@@ -121,10 +126,11 @@ class NativeOwner:
                     limit_concurrency=64,
                 )
             )
-            context = copy_context()
-            self.remote_thread = Thread(
-                target=lambda: context.run(self.remote.run, sockets=[self.remote_socket]),
+            self.remote_thread = spawn_context_thread(
+                self.remote.run,
                 name="native-memory-mcp",
+                kwargs={"sockets": [self.remote_socket]},
+                daemon=False,
             )
             self.remote_thread.start()
             deadline = time.monotonic() + 10
