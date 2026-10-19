@@ -398,6 +398,30 @@ def test_local_writer_probe_reports_unverified_when_the_platform_refuses(profile
     assert statuses["owner_state"] == "PASS"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Protected mode requires POSIX permissions")
+def test_local_writer_probe_is_unverified_when_the_lock_file_cannot_be_opened(profile, monkeypatch):
+    """A read-only mount cannot answer the probe; the check stays inconclusive."""
+    from qdrant_memory.shared_security import doctor
+
+    home, _ = profile
+    command(profile, "init")
+    path, binding = protected_policy(home)
+    make_private(home)
+    cfg = load_standalone_config(home)
+    WriterLease.for_config(home, cfg, destination_policy=binding).close()
+
+    original_open = Path.open
+
+    def refuse(self, *args, **kwargs):
+        if self.suffix == ".lock":
+            raise OSError(errno.EROFS, "Read-only file system")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", refuse)
+    statuses = {c["code"]: c["status"] for c in doctor(home, path)["checks"]}
+    assert statuses["local_writer"] == "UNVERIFIED"
+
+
 @pytest.mark.parametrize("mismatch", [None, "dimensions", "fingerprint", "schema", "missing"])
 def test_remote_doctor_checks_existing_schema_without_mutation(profile, monkeypatch, mismatch):
     """The remote read interface validates identity and never initializes or repairs it."""

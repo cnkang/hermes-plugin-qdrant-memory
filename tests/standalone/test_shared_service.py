@@ -603,7 +603,14 @@ def test_bridge_preserves_identity_across_clients_and_restart(profile):
                     if item["id"] == added["id"]
                 )
                 assert (row["created_by"], row["updated_by"]) == ("hermes", "dsh")
-                for field in ("principal", "owner_id", "agent_id", "space_id", "created_by"):
+                for field in (
+                    "principal",
+                    "owner_id",
+                    "agent_id",
+                    "space_id",
+                    "created_by",
+                    "updated_by",
+                ):
                     forged = await session.call_tool(
                         "qdrant_memory_add",
                         {"text": "forged", "request_id": "forge-" + field, field: "dsh"},
@@ -613,6 +620,13 @@ def test_bridge_preserves_identity_across_clients_and_restart(profile):
     with owner_process(profile) as (url, _):
         added = asyncio.run(add_as_hermes(url))
         asyncio.run(update_as_dsh(url, added))
+    with closing(sqlite3.connect(home / "qdrant-memory" / "state.db")) as ledger:
+        receipts = [
+            row[0]
+            for row in ledger.execute("SELECT principal FROM shared_requests_v1 ORDER BY rowid")
+        ]
+    # Both bridge writes leave an attributable receipt: add by hermes, update by dsh.
+    assert receipts == ["hermes", "dsh"]
     with owner_process(profile) as (url, _):
         row = next(
             item
