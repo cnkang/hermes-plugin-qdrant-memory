@@ -234,7 +234,8 @@ external HTTPS requires an explicitly configured same-host proxy.
 
 The original Phase 1b cache plan is superseded for shared data: fresh Owner
 authorization is required at delivery. Late results are discarded, only one
-read may be in flight, and private recall waits at most 50 ms for shared data.
+read may be in flight, and private recall defaults to a 50 ms wait for shared
+data (explicit configuration may raise the bounded wait to 250 ms).
 Scope and generation are checked again after I/O, including the private result.
 Pi uses the actual public ephemeral context hook and never persists shared
 recall into history. Already delivered model context cannot be remotely erased.

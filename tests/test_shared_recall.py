@@ -79,6 +79,9 @@ def test_fresh_shared_delivery_and_no_private_persistence(tmp_path, monkeypatch)
         {"spaces": []},
         {"limit": True},
         {"timeout_seconds": 11},
+        {"delivery_timeout_seconds": 0.3},
+        {"delivery_timeout_seconds": True},
+        {"delivery_timeout_seconds": 0},
         {
             "spaces": [
                 {
@@ -186,4 +189,22 @@ def test_author_switch_during_shared_io_cannot_deliver_old_private_cache(tmp_pat
         assert delivered == [""]
     finally:
         release.set()
+        p.shutdown()
+
+
+def test_explicit_delivery_budget_supports_slower_local_embedding(tmp_path, monkeypatch):
+    """Operators may opt into a small bounded wait for real local embedding latency."""
+    p = provider(tmp_path)
+    try:
+        p._shared_recall = SharedRecall(
+            settings(delivery_timeout_seconds=0.2), secret_reader=lambda _: "x" * 40
+        )
+
+        def slower(*args):
+            time.sleep(0.08)
+            return [{"text": "authorized shared SQLite WAL"}]
+
+        monkeypatch.setattr(p._shared_recall, "_search", slower)
+        assert "SQLite WAL" in p.prefetch("Alpha")
+    finally:
         p.shutdown()

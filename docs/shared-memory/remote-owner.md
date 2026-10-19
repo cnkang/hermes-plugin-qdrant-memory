@@ -89,7 +89,11 @@ already durably accepted finishes its recorded plan. A policy replacement cannot
 erase a previously delivered model context. The Host must clear or rebuild that
 context. New recall always reauthenticates; Pi never persists shared recall in
 session history. Native shared recall discards late reads, allows one in-flight
-read, and adds at most 50 ms delivery wait; slow shared results are omitted.
+read, and defaults to a 50 ms delivery wait; slow shared results are omitted.
+For a slower local embedder, explicit `shared_read.delivery_timeout_seconds`
+may increase that wait up to 0.25 seconds. The measured qwen3-embedding:4b shared
+search p95 was about 94 ms on this test machine, so a 0.15–0.20 second budget may
+be needed. This is a latency/freshness tradeoff, not permission caching.
 
 ## Standalone deployment
 
@@ -116,15 +120,18 @@ the lease. Do not configure a short supervisor kill timeout that abandons writes
 An Nginx TLS-only example (replace the certificate paths, account and hostname):
 
 ```nginx
+limit_req_zone $binary_remote_addr zone=memory_pre_auth:10m rate=10r/s;
 server {
     listen 443 ssl;
     server_name memory.example.com;
+    if ($host != memory.example.com) { return 444; }
     ssl_certificate /etc/ssl/memory/fullchain.pem;
     ssl_certificate_key /etc/ssl/memory/privkey.pem;
     access_log off;
     client_max_body_size 128k;
     client_body_timeout 10s;
     location ~ ^/(mcp|events)$ {
+        limit_req zone=memory_pre_auth burst=20 nodelay;
         if ($http_forwarded != '') { return 403; }
         if ($http_x_forwarded_host != '') { return 403; }
         proxy_set_header Host memory.example.com;

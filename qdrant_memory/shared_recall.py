@@ -21,13 +21,18 @@ def validate_shared_read(value):
         "spaces",
         "limit",
         "timeout_seconds",
+        "delivery_timeout_seconds",
         "include_tool_search",
     }:
         raise ValueError("Invalid shared_read fields")
     for key in ("enabled", "include_tool_search"):
         if not isinstance(value.get(key, False), bool):
             raise ValueError("Shared read flags must be boolean")
-    for key, default, maximum in (("limit", 4, 20), ("timeout_seconds", 2, 10)):
+    for key, default, maximum in (
+        ("limit", 4, 20),
+        ("timeout_seconds", 2, 10),
+        ("delivery_timeout_seconds", 0.05, 0.25),
+    ):
         number = value.get(key, default)
         if (
             isinstance(number, bool)

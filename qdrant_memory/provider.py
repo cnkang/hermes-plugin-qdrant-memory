@@ -433,7 +433,11 @@ class QdrantMemoryProvider(MemoryProvider):
             scope = self._scope(session)
             generation = self._generations.get(session, 0)
             private = self._private_prefetch(query, session_id=session)
-        rows = self._read_shared(query, session, budget=0.05)
+        rows = self._read_shared(
+            query,
+            session,
+            budget=self._shared_recall.settings.get("delivery_timeout_seconds", 0.05),
+        )
         with self._condition:
             if (
                 session in self._blocked_sessions
