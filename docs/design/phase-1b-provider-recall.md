@@ -1,13 +1,13 @@
 # Phase 1b — Shared recall in the native provider
 
-Status: design for review (revision 2). Date: 2026-10-19. This document adds to
+Status: implemented source preview (revision 3). Date: 2026-10-20. This document adds to
 [universal-cross-agent-memory.md](universal-cross-agent-memory.md).
 
 ## 0. Dependency
 
-This phase uses the reader that Phase 1a adds (`qdrant_memory/shared_reader.py` and
-`qdrant_memory/shared_protocol.py`). The branch for this phase is stacked on the Phase 1a
-branch. Do not merge this phase before Phase 1a.
+This phase uses the reader in main (`qdrant_memory/shared_reader.py` and
+`qdrant_memory/shared_protocol.py`), including the parser-redaction fixes from PR 63.
+It is the first review layer of the Universal Owner PR stack.
 
 ## 1. Goal
 
@@ -23,8 +23,8 @@ The provider reads a new `shared_read` block:
 | `enabled` | false | — | Turn shared recall on. |
 | `spaces` | [] | 8 items | The granted spaces. |
 | `limit` | 4 | 20 | The maximum number of shared items in one recall. |
-| `timeout_seconds` | 2 | 10 | The complete shared read must finish in this time. |
-| `cache_ttl_seconds` | 300 | 3600 | The maximum age of a cached recall. |
+| `timeout_seconds` | 2 | 10 | Upper bound for a shared read; reduced by a caller delivery budget. |
+| `delivery_timeout_seconds` | 0.05 | 0.25 | Maximum synchronous recall wait; network deadlines use the smaller budget. |
 | `include_tool_search` | false | — | Also add shared items to the `qdrant_memory_search` tool result. |
 
 Each item in `spaces` has these fields:
@@ -43,31 +43,34 @@ The configuration load rejects these cases:
 - A visibility is `private` or not in the list above.
 - Two items have the same space.
 - A URL is not a literal loopback URL.
-- `limit`, `timeout_seconds` or `cache_ttl_seconds` is out of range.
-- The private `scope.agent_id` starts with `shared:v1:`.
+- `limit`, `timeout_seconds` or `delivery_timeout_seconds` is out of range.
+- An unsupported setting such as `cache_ttl_seconds` is present.
+- The private `scope.agent_id` starts with `shared:v1:` or `shared:v2:`.
 
 The token stays in the environment. The provider never writes the token to a file, a log
 or an error message.
 
 ## 3. Read path
 
-The background recall job does these steps:
+The existing background job still fills only the private cache. When the feature is
+enabled, synchronous `prefetch` does these steps:
 
-1. Run the private search. Do not change this step.
-2. If `shared_read.enabled` is false, store the private text as it does today and stop.
-3. Read the shared spaces with the configured limit and timeout. The read runs in a
-   separate single-thread executor. The job waits at most `timeout_seconds` for the
-   complete read.
-4. Merge the results. Private items come first. Shared items follow, and each one has the
-   label `[shared:<space_id>]`.
-5. Limit the merged text to 4000 characters.
-6. Store the merged text in the recall cache.
+1. Snapshot the private cached text, trusted scope and session generation.
+2. Start one shared read in a separate single-thread executor, using the smaller of
+   `timeout_seconds` and `delivery_timeout_seconds` as its wait/network deadline.
+3. If another shared read is still outstanding, return without queueing stale work.
+4. After the wait, check the trusted scope and generation again. An author/session
+   change discards the entire earlier result, including its private text.
+5. Put private text first (at most 2000 characters), then a framed JSON array of shared
+   items, keeping the complete output within 4000 characters. Each item retains its
+   space, visibility, version and provenance; long text is truncated inside the JSON.
+6. Discard late shared results. Do not store shared text in the private cache or store.
 
 The reader revalidates each item against the configured space, the visibility and the
 `shared_protocol` marker. An item that fails the check is not used.
 
-A shared read does not run during shutdown. The job checks the stop flag before it starts
-the read.
+A shared read does not start after shutdown. Closing the reader stops admission;
+outstanding read-only I/O cannot access the private Runtime resources.
 
 ## 4. Tool search
 
@@ -75,7 +78,7 @@ the read.
 `include_tool_search` is false.
 
 When the flag is true, the result gets one more key, `shared`, with the same item shape
-and the space label. The private part of the result does not change. A shared failure
+and space/provenance fields. The private part of the result does not change. A shared failure
 does not change the private part and does not fail the call.
 
 ## 5. Failure behavior
@@ -97,19 +100,11 @@ does not remove private recall.
 When the feature is off, the cache entry is `(scope, text)` and `prefetch` compares the
 scope only, as it does today.
 
-When the feature is on, the entry is `(scope, digest, expires_at, text)`. `prefetch`
-returns the text only when the scope matches, the digest matches and the entry has not
-expired. A mismatch gives an empty result, and the normal prefetch flow fills the cache
-again.
-
-The digest is a SHA-256 hash of the `shared_read` block with the token names, the URLs,
-the spaces, the visibility and the limits. It does not contain a token value.
-
-A local cache cannot see a revocation on the owner. The cache lifetime is therefore the
-maximum staleness: `cache_ttl_seconds`. A revocation takes effect on the next recall that
-reaches the owner, and no later than the end of the cache lifetime. This phase does not
-claim that a revocation removes text that a host already put into the model context. The
-host must clear or rebuild the affected context, as the Phase 0 notes state.
+When the feature is on, the private entry still contains only private text. Shared
+results are never cached. Each delivered shared recall requires a fresh Owner request
+and matching trusted session identity before and after I/O. Revocation/deletion therefore
+takes effect on the next request reaching the Owner. This does not remove text that a
+host already put into model context; the host must clear or rebuild that context.
 
 ## 7. Write path
 
@@ -121,17 +116,20 @@ shared data.
 
 1. With the feature off, the recall text and the cache shape are identical to the current
    behavior.
-2. With the feature on, the text contains the private items first and the labeled shared
-   items after them.
+2. With the feature on, private items precede a complete shared JSON array with provenance.
 3. A timeout, an error, a malformed response and a partial failure each give the expected
    result and increase the counter.
 4. The configuration load rejects each case in Section 2.
-5. The private `scope.agent_id` `shared:v1:project` is rejected.
-6. A digest change and an expired entry each cause a cache miss.
+5. Private configuration rejects both reserved Owner namespace prefixes.
+6. Revoked/deleted shared results are absent from the next freshly authorized recall;
+   author changes during I/O cannot deliver earlier private text.
 7. The provider makes no write call during shared recall.
 8. Shared text is absent from the private store, the ledger and the events.
 9. Shutdown does not start a shared read.
 10. With `include_tool_search` off, the tool result is identical to the current result.
+11. The configured delivery budget reaches the bounded wait without relying on thread
+    scheduling; late results are discarded and do not accumulate in a queue.
+12. Long shared text keeps complete JSON framing and provenance under the context limit.
 
 ## 9. Non-goals
 

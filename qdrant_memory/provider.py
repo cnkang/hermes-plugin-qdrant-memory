@@ -87,8 +87,6 @@ class QdrantMemoryProvider(MemoryProvider):
         """
         self.home = kwargs.get("hermes_home") or str(active_home())
         self.cfg = load_config(self.home, self.overrides)
-        if (self.cfg["scope"]["agent_id"] or "").startswith("shared:v1:"):
-            raise ValueError("Native private scope cannot use the shared namespace")
         if self.cfg.get("shared_read", {}).get("enabled", False):
             from .config import secret
             from .shared_recall import SharedRecall

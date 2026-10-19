@@ -13,6 +13,15 @@ from .helpers import config
 from .test_provider import provider
 
 
+@pytest.mark.parametrize("agent_id", ["shared:v1:project", "shared:v2:logical"])
+def test_private_config_rejects_reserved_owner_scope(agent_id):
+    """Every config consumer must reject operator-selected Owner partitions."""
+    cfg = config()
+    cfg["scope"]["agent_id"] = agent_id
+    with pytest.raises(ValueError, match="shared namespace"):
+        validate(cfg)
+
+
 def settings(**extra):
     """Return an explicitly authorized project reader configuration."""
     return {
@@ -53,6 +62,14 @@ def test_fresh_shared_delivery_and_no_private_persistence(tmp_path, monkeypatch)
     p = provider(tmp_path)
     try:
         p._shared_recall = SharedRecall(settings(), secret_reader=lambda _: "x" * 40)
+        from concurrent.futures import Future
+
+        def completed(fn, *args):
+            future = Future()
+            future.set_result(fn(*args))
+            return future
+
+        monkeypatch.setattr(p._shared_recall._executor, "submit", completed)
         p.sync_turn("private cats", "ack")
         assert p.wait_idle()
         p.queue_prefetch("cats")
@@ -79,6 +96,7 @@ def test_fresh_shared_delivery_and_no_private_persistence(tmp_path, monkeypatch)
         {"spaces": []},
         {"limit": True},
         {"timeout_seconds": 11},
+        {"cache_ttl_seconds": 300},
         {"delivery_timeout_seconds": 0.3},
         {"delivery_timeout_seconds": True},
         {"delivery_timeout_seconds": 0},

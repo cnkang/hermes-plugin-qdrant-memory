@@ -208,6 +208,8 @@ def validate_search_scope(cfg):
         raise ValueError("A nonempty user_id is required")
     if cfg["scope"]["agent_id"] is not None and not isinstance(cfg["scope"]["agent_id"], str):
         raise ValueError("agent_id must be a string or null")
+    if (cfg["scope"]["agent_id"] or "").startswith(("shared:v1:", "shared:v2:")):
+        raise ValueError("Private scope cannot use the shared namespace")
 
 
 def load_config(
