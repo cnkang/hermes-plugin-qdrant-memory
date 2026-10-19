@@ -65,11 +65,11 @@ Device A: Codex or DSH (stdio) -- local bridge ------> Owner                 |
 Device B: remote client ---- HTTPS /mcp -------------> same Owner            |--> Qdrant
 ```
 
-The owner supplies two listeners: the loopback JSON API and the remote MCP listener. Both
+The owner holds two listeners: the loopback JSON API and the remote MCP listener. Both
 listeners get the grant from the credential, and then call the same SharedOwner.call
-function. There is one ledger, one CAS path and one admission check. The shutdown
-sequence drains both listeners before the owner releases the lease. The owner reports
-readiness only after both listeners are bound.
+function. There is one ledger, one CAS path and one admission check. When the remote
+listener is enabled, the owner reports readiness only after both listeners are bound, and
+the shutdown sequence drains both listeners before the owner releases the lease.
 
 The transport name is Streamable HTTP.
 
@@ -189,6 +189,8 @@ value.
 7. Isolation: a token for space X cannot read space Y. Legacy records without the marker
    stay invisible.
 8. Recovery: a crash during a write gives the same receipt state as the loopback path.
+   In the default mode, readiness does not wait for a remote socket. In the enabled mode,
+   readiness waits for both binds, and the shutdown drains both listeners.
 9. Non-regression: the existing stdio MCP, scope, ledger and reset tests do not change.
 10. End-to-end: the owner and the proxy run in one container. A client container connects
     to the proxy through real TLS. The owner uses embedded Qdrant. No cloud account is

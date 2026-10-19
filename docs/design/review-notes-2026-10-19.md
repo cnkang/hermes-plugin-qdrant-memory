@@ -23,12 +23,11 @@ resolutions. The notes are for contributors who build the later phases.
   not use the security exception of the loopback code.
 - Resolution: the listener binds a loopback address or a Unix socket only. A reverse
   proxy on the same host terminates TLS. The owner then holds two listeners, the loopback
-  API and the remote listener. The shutdown sequence drains both listeners before the
-  owner releases the lease. The owner reports readiness after both binds.
-- Resolution: the remote path uses a shared-only factory. The private factory stays out
-  of the remote path. A test item checks the factory parameter.
-- The remote path uses a shared-only factory. This factory has no private runtime
-  parameter, and the private factory stays out of the remote path.
+  API and the remote listener. In the enabled mode, the owner reports readiness after both
+  binds, and the shutdown drains both listeners before the lease is released.
+- Resolution: the remote path uses a shared-only factory. This factory has no private
+  runtime parameter, and the private factory stays out of the remote path. A test item
+  checks the parameter.
 - Receipts give write idempotency. They do not give replay protection. Credential expiry,
   revocation and session invalidation are necessary before public exposure.
 
