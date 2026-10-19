@@ -1,5 +1,7 @@
 # One Memory, Multiple Agents：跨 Agent 共享记忆（可选启用）
 
+生产部署前请阅读[目的地保护、诊断与部署指南](deployment-security.md)和[威胁模型](threat-model-v1.md)。保护策略与 `shared-doctor` 尚未发布，不能直接用于 Runtime 0.4.0。Agent 只应持有 Owner 客户端令牌，不应持有 Qdrant 写凭据。本地锁无法约束远程管理员或同等系统权限。
+
 多个独立 Agent 可以通过同一个持有 Runtime、Ledger 和 WriterLease 的本地服务访问同一份记忆。
 它是显式选择启用的新模式；Hermes Native Provider、自动提取、现有 stdio MCP、DSH 和 WorkBuddy
 私有配置均不自动切换。Hermes 兼容性是首要验收门槛。

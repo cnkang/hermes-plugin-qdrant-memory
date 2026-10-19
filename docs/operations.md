@@ -1,5 +1,12 @@
 # Operations
 
+Protected shared destinations require their Owner policy and reject ordinary
+writer admission, including maintenance. Follow the explicit offline maintenance,
+claim retirement and coherent backup procedure in the
+[deployment guide](shared-memory/deployment-security.md); do not remove a claim
+merely to bypass a conflict. `shared-doctor --policy POLICY` is read-only and
+returns exit 2 for unverifiable controls. It never performs recovery or resets.
+
 See [standalone CLI and MCP](standalone.md) for the additive host-independent
 interface, shared durable core, fixed operator scope and its validation boundary.
 

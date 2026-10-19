@@ -1,5 +1,11 @@
 # Security and deployment boundaries
 
+For the optional protected Shared Owner, see the [versioned threat model](shared-memory/threat-model-v1.md)
+and [deployment security and diagnostics](shared-memory/deployment-security.md).
+Its account-local claim does not fence remote database writers. Direct Qdrant
+writes bypass Ledger and application revision checks. Effective database key
+scope remains UNVERIFIED in the doctor, even when a connection succeeds.
+
 This guide covers the Hermes memory plugin and its optional standalone CLI/MCP
 interfaces. For vulnerability reporting, see [Security Policy](../SECURITY.md).
 For configuration and recovery, see [configuration](configuration.md),

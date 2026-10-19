@@ -1,5 +1,10 @@
 # Qdrant Memory for Hermes
 
+Shared deployment hardening in this checkout is documented in the
+[protected destination guide](docs/shared-memory/deployment-security.md) and
+[versioned threat model](docs/shared-memory/threat-model-v1.md). These additions
+are unpublished; current release installation commands remain unchanged.
+
 ## One Memory, Multiple Agents — opt-in shared owner
 
 Runtime 0.4.0 adds an opt-in authenticated local shared owner and stdio bridge. Multiple agents can share an explicitly authorized space while legacy records remain private. Hermes Native Provider and existing private defaults remain unchanged. See [setup, Hermes/DSH walkthrough and limits](docs/shared-memory/README.md), [architecture](docs/shared-memory/architecture.md), and [validation](docs/shared-memory/report.md). Native Provider automatic shared extraction is planned, not implemented.
