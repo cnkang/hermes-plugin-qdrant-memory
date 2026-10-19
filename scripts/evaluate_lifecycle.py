@@ -35,6 +35,7 @@ def main():
             "model": "qwen3:8b",
             "base_url": "http://127.0.0.1:11434/v1",
             "api_key_env": "QM_SYNTHETIC_EVALUATION_UNUSED_KEY",
+            "max_output_tokens": 2048,
         }
     )
     extractor = Extractor(llm, {"mode": "inherit"})
@@ -65,11 +66,12 @@ def main():
         print(
             json.dumps(
                 {
-                    "status": "PASS" if failures == 0 else "FAIL",
+                    "status": "PASS" if failures == 0 and successes == len(CASES) else "FAIL",
                     "dataset": DATASET_VERSION,
                     "dataset_cases": len(CASES),
                     "model": "qwen3:8b",
                     "type": "real local LLM extraction",
+                    "generation": {"temperature": 0, "max_output_tokens": 2048},
                     "precision": true / max(1, true + false),
                     "positive_case_recall": recalled / max(1, positives),
                     "dataset_sha256": hashlib.sha256(
@@ -92,7 +94,7 @@ def main():
         )
     finally:
         llm.close()
-    return 1 if failures else 0
+    return 1 if failures or successes != len(CASES) else 0
 
 
 if __name__ == "__main__":

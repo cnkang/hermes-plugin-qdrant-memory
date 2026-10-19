@@ -16,6 +16,13 @@ class OwnerLLM:
         if cfg.get("mode") != "override" or cfg.get("provider") != "openai-compatible":
             raise ValueError("Lifecycle Owner requires an explicit openai-compatible LLM override")
         self.model = cfg.get("model")
+        self.max_output_tokens = cfg.get("max_output_tokens", 800)
+        if (
+            isinstance(self.max_output_tokens, bool)
+            or not isinstance(self.max_output_tokens, int)
+            or not 1 <= self.max_output_tokens <= 8192
+        ):
+            raise ValueError("Owner output budget must be an integer between 1 and 8192")
         self.url = cfg.get("base_url", "").rstrip("/") + "/chat/completions"
         key = os.environ.get(cfg.get("api_key_env", "QDRANT_MEMORY_LLM_API_KEY"))
         validate_url(self.url, api_key=key, require_tls=True)
@@ -43,7 +50,7 @@ class OwnerLLM:
                     {"role": "user", "content": json.dumps(input, ensure_ascii=False)},
                 ],
                 "temperature": 0,
-                "max_tokens": 800,
+                "max_tokens": self.max_output_tokens,
                 "response_format": {
                     "type": "json_schema",
                     "json_schema": {"name": "qdrant_memory", "strict": True, "schema": json_schema},
@@ -52,5 +59,8 @@ class OwnerLLM:
         )
         if response.status_code != 200:
             raise RuntimeError("Owner extraction provider request failed")
-        value = response.json()["choices"][0]["message"]["content"]
+        choice = response.json()["choices"][0]
+        if choice.get("finish_reason") == "length":
+            raise ValueError("Owner extraction output was truncated; retain the event")
+        value = choice["message"]["content"]
         return SimpleNamespace(parsed=json.loads(value))

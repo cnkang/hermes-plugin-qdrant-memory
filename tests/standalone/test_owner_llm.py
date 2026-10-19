@@ -80,3 +80,49 @@ def test_owner_llm_requires_explicit_encrypted_external_configuration():
                 "base_url": "http://remote.example/v1",
             }
         )
+
+
+def test_truncated_structured_output_is_not_accepted(monkeypatch):
+    """Even valid partial JSON must not acknowledge a token-truncated extraction."""
+    cfg = {
+        "mode": "override",
+        "provider": "openai-compatible",
+        "model": "fixture",
+        "base_url": "http://127.0.0.1:1/v1",
+        "max_output_tokens": 2048,
+    }
+    llm = OwnerLLM(cfg)
+    llm.client.close()
+    budgets = []
+
+    def response(request):
+        budgets.append(json.loads(request.content)["max_tokens"])
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"finish_reason": "length", "message": {"content": '{"memories": []}'}}]
+            },
+        )
+
+    llm.client = httpx.Client(transport=httpx.MockTransport(response))
+    try:
+        with pytest.raises(ValueError, match="truncated"):
+            Extractor(llm, cfg).extract({"user": "anonymous fixture", "assistant": "ack"})
+        assert budgets == [2048]
+    finally:
+        llm.close()
+
+
+@pytest.mark.parametrize("budget", [0, True, -1, 8193, 1.5])
+def test_output_budget_is_explicit_and_bounded(budget):
+    """An operator cannot accidentally select an unlimited extraction request."""
+    cfg = {
+        "mode": "override",
+        "provider": "openai-compatible",
+        "model": "fixture",
+        "base_url": "http://127.0.0.1:1/v1",
+        "max_output_tokens": budget,
+    }
+    with pytest.raises(ValueError):
+        llm = OwnerLLM(cfg)
+        llm.close()
