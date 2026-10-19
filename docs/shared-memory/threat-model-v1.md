@@ -38,6 +38,7 @@ The account-local claim is a local admission record, never a database lock.
 | Container on Qdrant network without key | Database auth can deny requests | Enable Qdrant authentication and scoped credentials | Network reachability alone must not authorize writes; verify deployment |
 | Container sharing Owner data volume | May access ledger, policy or secrets | Mount Owner state only into Owner container; restrictive UID and permissions | A container with equivalent volume/OS access can bypass all local checks |
 | Request replay / reused operation ID | Durable input-bound receipts and immutable plans | Same protocol retained | Exact replay returns receipt; changed input conflicts; retention/backup must preserve ledger |
+| Attribution loss between token and record | Valid token authorizes the call, but the caller identity is dropped before persistence | Identity is resolved only from the server grant, is part of the request key, and is written to the payload and receipt | Distinct tokens per client; do not share one token across agents | A shared token makes attribution ambiguous; reads have no per-record actor history; this is not a complete audit trail |
 | External overwrite of revision/payload | Stale observed versions conflict through Owner | Database write isolation prevents unauthorized direct updates where enforced | External writes that preserve revisions or race after checks cannot reliably be detected; CAS is application-level |
 
 No protection is claimed against a malicious administrator, theft of the Owner's

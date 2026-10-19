@@ -72,10 +72,10 @@ qdrant-memory --home /srv/memory-owner shared-serve --policy /srv/memory-owner/p
 
 For CLI invocation, the policy must resolve inside the current working directory,
 just like explicit maintenance input/output files. Start from the private Owner
-directory or another deliberately chosen enclosing directory. Absolute paths,
-parent segments and symlinks that resolve outside that directory are rejected
-before reading policy content; policy paths also reject symlink/reparse aliases.
-Existing services launched from an unrelated
+directory or another deliberately chosen enclosing directory. Paths that resolve
+outside that directory are rejected before reading policy content, including
+absolute paths, parent segments and symlinks; policy paths also reject
+symlink/reparse aliases. Existing services launched from an unrelated
 directory must update their working directory; no grant or memory migration is
 needed. Programmatic policy loading retains its explicit trusted-operator API.
 
@@ -103,6 +103,28 @@ then explicitly retire that claim before maintenance. Re-enroll the reviewed
 Owner policy before reopening clients. There is no automatic migration, reset,
 claim removal or temporary maintenance bypass.
 
+## Identity and attribution
+
+Each client token resolves to one `principal` that the private policy defines.
+The bridge never accepts identity from tool arguments: `principal`, `owner_id`,
+`agent_id`, `space_id`, `created_by` and `updated_by` are not part of the shared
+tool schema and a request that carries them is rejected.
+
+Memory provenance records two fields. `created_by` keeps the first writer of the
+record. `updated_by` is the client that produced the current revision. A
+duplicate add returns `SKIP` and does not rewrite either field.
+
+Distinct attribution requires distinct tokens with distinct principals. Two
+clients that share one token cannot be told apart. The policy validates that
+every grant has a non-empty principal, so an empty subject cannot be written.
+
+Authentication, authorization, memory provenance and durable operation auditing
+are separate guarantees. Durable request receipts record the authenticated
+principal for each admitted mutation, including `SKIP` and `DELETE` outcomes.
+The sanitized stderr audit states allow or deny with a digest of the principal.
+The Runtime does not provide a complete historical audit of reads, and it does
+not retain a queryable per-operation history beyond those receipts.
+
 ## Diagnostic contract
 
 `shared-doctor --policy POLICY` emits JSON with `status` and a `checks` array.
@@ -110,8 +132,10 @@ Each check has a stable `code`, `status` and sanitized `message`. Status values:
 `PASS`, `FAIL`, `UNVERIFIED`; exit codes respectively 0, 1, 2, with FAIL taking
 precedence. Policy/config parse failure produces a structured `configuration`
 failure. Other codes include `policy`, `destination`, `owner_state`, `recovery`,
-`local_ownership`, `local_writer`, `database_schema`, `loopback`,
-`service_readiness`, `credential_isolation` and `backup`.
+`local_ownership`, `local_writer`, `database_schema`, `loopback_design`,
+`service_readiness`, `credential_isolation` and `backup`. `loopback_design`
+states a code invariant about the supported bind address. It does not inspect a
+running listener.
 
 No tokens, credential hashes, memory text, endpoint URLs or profile paths are
 included. Diagnostics never acquire a write session, recover work, initialize a
@@ -219,10 +243,12 @@ cleanup. The service receives only the collection-scoped Owner key. To provision
 a completely disposable local TLS/JWT fixture without production credentials:
 
 ```sh
-python scripts/test_shared_security_docker.py qdrant/qdrant:v1.15.5
+python scripts/test_shared_security_docker.py "$QDRANT_TEST_IMAGE"
 ```
 
-The image must already be installed; the runner never pulls images. It generates
+The image must already be installed; the runner never pulls images. Use the
+digest pinned in `.github/workflows/shared-security.yml` for reproducible runs.
+It generates
 short-lived fixture keys and a one-day test certificate, binds only loopback,
 removes its container and temporary credentials, and prints no keys. Select a
 reviewed image compatible with the installed qdrant-client for your test matrix.

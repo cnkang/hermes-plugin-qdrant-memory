@@ -6,6 +6,7 @@ import json
 import os
 import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -174,6 +175,7 @@ def client(profile, url, identity, tool, **arguments):
 
 def test_independent_clients_isolation_versions_and_restart(profile):
     """A saves, B reads/updates; private/foreign/read-only grants fail closed."""
+    home, _ = profile
     command(profile, "init")
     legacy = command(profile, "add", "--text", "legacy private")
     with owner_process(profile) as (url, _):
@@ -182,6 +184,14 @@ def test_independent_clients_isolation_versions_and_restart(profile):
         hits = client(profile, url, "dsh", "search", query="Project uses SQLite")["memories"]
         assert [h["id"] for h in hits] == [added["id"]]
         assert hits[0]["created_by"] == "hermes"
+        receipts = closing(sqlite3.connect(home / "qdrant-memory" / "state.db"))
+        with receipts as ledger:
+            recorded = {
+                row[0]: row[1]
+                for row in ledger.execute("SELECT request_key, principal FROM shared_requests_v1")
+            }
+        assert "hermes" in recorded.values()
+        assert "dsh" not in recorded.values()
         updated = client(
             profile,
             url,
@@ -492,9 +502,12 @@ def test_disconnected_write_and_real_mcp_bridge(profile):
                     await b.initialize()
                     result = await b.call_tool("qdrant_memory_search", {"query": "MCP cross agent"})
                     assert not result.model_dump(by_alias=True)["isError"]
-                    assert identifier in {
-                        h["id"] for h in json.loads(result.content[0].text)["memories"]
-                    }
+                    found = json.loads(result.content[0].text)["memories"]
+                    assert identifier in {h["id"] for h in found}
+                    # Attribution follows the token, not the transport: the record
+                    # written through the stdio bridge belongs to the writer identity.
+                    attributed = next(h for h in found if h["id"] == identifier)
+                    assert attributed["created_by"] == "hermes"
                     forged = await b.call_tool(
                         "qdrant_memory_search", {"query": "x", "agent_id": "hermes"}
                     )
@@ -529,6 +542,159 @@ def test_legacy_matching_scope_stays_private_and_poisoned_writer_blocks(profile)
         with pytest.raises(SharedRecoveryRequiredError):
             owner.call(TOKENS["dsh"], "qdrant_memory_add", {"text": "blocked", "request_id": "f2"})
         runtime.store.upsert = original
+
+
+def test_bridge_preserves_identity_across_clients_and_restart(profile):
+    """The stdio bridge carries the token principal into provenance and survives restart."""
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    command(profile, "init")
+    home, env = profile
+
+    def parameters(url, identity):
+        return StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "qdrant_memory.standalone", "shared-mcp", "--url", url],
+            env={**env, "QDRANT_MEMORY_SHARED_TOKEN": TOKENS[identity]},
+        )
+
+    async def add_as_hermes(url):
+        async with stdio_client(parameters(url, "hermes")) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                saved = await session.call_tool(
+                    "qdrant_memory_add",
+                    {"text": "bridge identity fact", "request_id": "id-add"},
+                )
+                assert not saved.model_dump(by_alias=True)["isError"]
+                added = json.loads(saved.content[0].text)
+                found = await session.call_tool(
+                    "qdrant_memory_search", {"query": "bridge identity fact"}
+                )
+                row = next(
+                    item
+                    for item in json.loads(found.content[0].text)["memories"]
+                    if item["id"] == added["id"]
+                )
+                assert (row["created_by"], row["updated_by"]) == ("hermes", "hermes")
+                return added
+
+    async def update_as_dsh(url, added):
+        async with stdio_client(parameters(url, "dsh")) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                updated = await session.call_tool(
+                    "qdrant_memory_update",
+                    {
+                        "id": added["id"],
+                        "text": "bridge identity fact revised",
+                        "expected_version": added["version"],
+                        "request_id": "id-update",
+                    },
+                )
+                assert not updated.model_dump(by_alias=True)["isError"]
+                found = await session.call_tool(
+                    "qdrant_memory_search", {"query": "bridge identity fact revised"}
+                )
+                row = next(
+                    item
+                    for item in json.loads(found.content[0].text)["memories"]
+                    if item["id"] == added["id"]
+                )
+                assert (row["created_by"], row["updated_by"]) == ("hermes", "dsh")
+                for field in ("principal", "owner_id", "agent_id", "space_id", "created_by"):
+                    forged = await session.call_tool(
+                        "qdrant_memory_add",
+                        {"text": "forged", "request_id": "forge-" + field, field: "dsh"},
+                    )
+                    assert forged.model_dump(by_alias=True)["isError"], field
+
+    with owner_process(profile) as (url, _):
+        added = asyncio.run(add_as_hermes(url))
+        asyncio.run(update_as_dsh(url, added))
+    with owner_process(profile) as (url, _):
+        row = next(
+            item
+            for item in client(
+                profile, url, "hermes", "search", query="bridge identity fact revised"
+            )["memories"]
+            if item["id"] == added["id"]
+        )
+        assert (row["created_by"], row["updated_by"]) == ("hermes", "dsh")
+        # A distinct principal can reuse the same request ID without collision.
+        assert (
+            client(profile, url, "dsh", "add", text="separate fact", request_id="id-add").get(
+                "action"
+            )
+            == "ADD"
+        )
+
+
+def test_receipts_attribute_skip_and_delete_without_rewriting_provenance(profile):
+    """SKIP keeps the original writer, and delete receipts stay attributable."""
+    home, _ = profile
+    command(profile, "init")
+    with owner_process(profile) as (url, _):
+        added = client(profile, url, "hermes", "add", text="skip target", request_id="s1")
+        assert added["action"] == "ADD"
+        duplicate = client(profile, url, "dsh", "add", text="skip target", request_id="s2")
+        assert duplicate["action"] == "SKIP"
+        row = next(
+            item
+            for item in client(profile, url, "hermes", "search", query="skip target")["memories"]
+            if item["id"] == added["id"]
+        )
+        assert (row["created_by"], row["updated_by"]) == ("hermes", "hermes")
+        assert (
+            client(
+                profile,
+                url,
+                "dsh",
+                "delete",
+                id=added["id"],
+                expected_version=row["version"],
+                request_id="s3",
+            )["action"]
+            == "DELETE"
+        )
+        assert not client(profile, url, "hermes", "search", query="skip target")["memories"]
+    with closing(sqlite3.connect(home / "qdrant-memory" / "state.db")) as ledger:
+        principals = [
+            row[0]
+            for row in ledger.execute("SELECT principal FROM shared_requests_v1 ORDER BY rowid")
+        ]
+    # ADD by hermes, SKIP by dsh, DELETE by dsh: each receipt keeps its caller.
+    assert principals == ["hermes", "dsh", "dsh"]
+
+
+def test_receipt_schema_upgrade_keeps_existing_rows(profile):
+    """Receipts written before attribution existed survive the additive column."""
+    command(profile, "init")
+    home, _ = profile
+    db_path = home / "qdrant-memory" / "state.db"
+    grants = load_policy(policy(home))
+    with open_runtime(home) as runtime:
+        with closing(sqlite3.connect(db_path)) as db:
+            with db:
+                db.execute(
+                    "CREATE TABLE shared_requests_v1 ("
+                    "collection TEXT NOT NULL, request_key TEXT NOT NULL,"
+                    " input_hash TEXT NOT NULL, plan TEXT NOT NULL,"
+                    " response TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0,"
+                    " PRIMARY KEY(collection, request_key))"
+                )
+                db.execute(
+                    "INSERT INTO shared_requests_v1 VALUES(?,?,?,?,?,1)",
+                    (runtime.ledger.collection, "legacy-key", "legacy-hash", "null", "{}"),
+                )
+        SharedOwner(runtime, grants)
+    with closing(sqlite3.connect(db_path)) as db:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(shared_requests_v1)")}
+        assert "principal" in columns
+        assert db.execute(
+            "SELECT principal FROM shared_requests_v1 WHERE request_key='legacy-key'"
+        ).fetchone() == ("",)
 
 
 def test_superseded_operation_records_conflict_without_blocking(profile):

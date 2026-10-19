@@ -124,8 +124,16 @@ class SharedOwner:
         with ledger.lock, ledger.db:
             ledger.db.execute("""CREATE TABLE IF NOT EXISTS shared_requests_v1 (
                 collection TEXT NOT NULL, request_key TEXT NOT NULL, input_hash TEXT NOT NULL,
+                principal TEXT NOT NULL DEFAULT '',
                 plan TEXT NOT NULL, response TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY(collection, request_key))""")
+            # Additive upgrade: existing profiles keep their receipts and gain
+            # attribution for requests admitted after this revision.
+            columns = {row[1] for row in ledger.db.execute("PRAGMA table_info(shared_requests_v1)")}
+            if "principal" not in columns:
+                ledger.db.execute(
+                    "ALTER TABLE shared_requests_v1 ADD COLUMN principal TEXT NOT NULL DEFAULT ''"
+                )
         with runtime.lock:
             rows = ledger.db.execute(
                 "SELECT * FROM shared_requests_v1 WHERE collection=? AND done=0 ORDER BY rowid",
@@ -233,11 +241,14 @@ class SharedOwner:
         # Restart can recreate the same operation even if killed between these steps.
         with ledger.lock, ledger.db:
             ledger.db.execute(
-                "INSERT INTO shared_requests_v1 VALUES(?,?,?,?,?,0)",
+                "INSERT INTO shared_requests_v1"
+                "(collection,request_key,input_hash,principal,plan,response,done)"
+                " VALUES(?,?,?,?,?,?,0)",
                 (
                     ledger.collection,
                     request_key,
                     input_hash,
+                    grant["principal"],
                     json.dumps(plan),
                     json.dumps(result),
                 ),

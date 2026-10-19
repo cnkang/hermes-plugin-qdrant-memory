@@ -375,6 +375,29 @@ def test_doctor_distinguishes_registered_idle_and_active_owner(profile):
     assert idle["credential_isolation"] == "UNVERIFIED"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Protected mode requires POSIX permissions")
+def test_local_writer_probe_reports_unverified_when_the_platform_refuses(profile, monkeypatch):
+    """A lock probe that the OS rejects is inconclusive, never a failed check."""
+    import portalocker
+
+    from qdrant_memory.shared_security import doctor
+
+    home, _ = profile
+    command(profile, "init")
+    path, binding = protected_policy(home)
+    make_private(home)
+    cfg = load_standalone_config(home)
+    WriterLease.for_config(home, cfg, destination_policy=binding).close()
+
+    def refuse(*_args, **_kwargs):
+        raise OSError(errno.EBADF, "Bad file descriptor")
+
+    monkeypatch.setattr(portalocker, "lock", refuse)
+    statuses = {c["code"]: c["status"] for c in doctor(home, path)["checks"]}
+    assert statuses["local_writer"] == "UNVERIFIED"
+    assert statuses["owner_state"] == "PASS"
+
+
 @pytest.mark.parametrize("mismatch", [None, "dimensions", "fingerprint", "schema", "missing"])
 def test_remote_doctor_checks_existing_schema_without_mutation(profile, monkeypatch, mismatch):
     """The remote read interface validates identity and never initializes or repairs it."""

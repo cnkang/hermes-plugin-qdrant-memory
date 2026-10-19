@@ -293,7 +293,11 @@ def doctor(home, policy_path):
         lambda: _database(cfg),
         "Remote collection schema and fingerprint must match; embedded inspection is deferred to startup.",
     )
-    add("loopback", "PASS", "The supported shared service binds literal IPv4 loopback only.")
+    add(
+        "loopback_design",
+        "PASS",
+        "The supported service binds literal IPv4 loopback in code; this check does not inspect a running listener.",
+    )
     add(
         "service_readiness",
         "UNVERIFIED",
@@ -329,10 +333,16 @@ def _local_writer(cfg):
     if not path.exists():
         return "UNVERIFIED"
     private_entry(path)
-    with path.open("rb") as stream:
+    try:
+        stream = path.open("r+b")
+    except OSError:
+        # A read-only mount cannot answer the probe; do not report a failure.
+        return "UNVERIFIED"
+    with stream:
         try:
             portalocker.lock(stream, portalocker.LOCK_EX | portalocker.LOCK_NB)
-        except portalocker.LockException:
+        except (portalocker.LockException, OSError):
+            # An occupied lock or a platform that refuses the probe is not a defect.
             return "UNVERIFIED"
     return "PASS"
 
