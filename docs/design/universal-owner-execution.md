@@ -9,7 +9,7 @@ replacement for the accepted Phase 0 ADR.
 - Runtime main `68a9ed1`; released package 0.4.0 predates destination hardening.
 - Open Runtime PR #63, `feat/shared-reader`, head `281ab77`: reuse its reader;
   do not duplicate it or merge the PR. Local `design/phase-1b` also contains a
-  Phase 1b design. Preserve that branch; continue on `codex/universal-owner`.
+  Phase 1b design. Preserve that branch; continue on `the integration branch`.
 - MCP main `60d0cda`, source 0.2.2, GitHub release is draft.
 - Skill main `d6062f0`, skill 0.3.1. No other open PRs at audit time.
 - Local tests initially failed collection without the real Hermes checkout on

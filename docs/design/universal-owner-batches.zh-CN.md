@@ -20,7 +20,7 @@ MCP 的预览 CI 固定引用 Runtime `b01bb5a...`，不再引用修正前的开
 审查修正使用追加提交和逐层 merge commit 同步，没有 force push 或重写已推送历史。
 没有合并 PR、发布版本、安装线上服务、使用生产凭据或进行破坏性迁移。
 
-原始 Runtime 工作目录的 `codex/universal-owner` 保留为开发历史快照，含一个本地报告提交；
+原始 Runtime 工作目录的 `the integration branch` 保留为开发历史快照，含一个本地报告提交；
 该报告已进入 #69。后续研发应以 #69 的完整功能分支为准，不能把旧快照当成最新实现。
 四个独立工作树位于 `/Volumes/2T/development/.worktrees/qdrant-owner-stack*`，保留供审查。
 没有清理或覆盖原始仓库的本地工作。
