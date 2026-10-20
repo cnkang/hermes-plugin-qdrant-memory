@@ -251,7 +251,7 @@ class NativeOwner:
         return result
 
     def reauthorize_pending(self):
-        """After explicit operator retry, recover unadmitted turns into private only."""
+        """Recover same-scope input, cancelling foreign unadmitted input after retry."""
         import json
 
         ledger = self.owner.runtime.ledger
@@ -260,10 +260,9 @@ class NativeOwner:
             if value.get("source") != "native_owner_unadmitted":
                 continue
             if value.get("scope") != self.scope.as_dict():
-                raise PermissionError(
-                    "Pending Native event belongs to another logical identity: "
-                    + row["event_id"]
-                    + "; restore its original scope or explicitly discard the unadmitted input offline"
-                )
+                # Never bind unadmitted input to a different identity. Cancellation,
+                # payload erasure and its counter share one guarded CAS transaction.
+                ledger.discard_unadmitted_event(row["event_id"])
+                continue
             captured = self.events(value, include_shared=False)[0]
             ledger.prepare_event(row["event_id"], captured)

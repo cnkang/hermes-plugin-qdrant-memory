@@ -464,7 +464,7 @@ class Ledger:
             )
 
     def discard_unadmitted_event(self, key):
-        """Explicit operator disposal of raw Native input; prepared work cannot cancel."""
+        """Atomically discard raw Native input; prepared work cannot cancel."""
         with self.lock:
             row = self.row("events", key)
             if (
