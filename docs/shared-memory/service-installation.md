@@ -1,55 +1,73 @@
 # Dedicated Owner service and rollback (source preview)
 
-The sample `docs/examples/universal-owner/qdrant-memory-owner.service` runs one
-standalone Owner as a dedicated Linux account with private startup permissions.
-It is a template: no service, firewall or real account is created automatically.
-macOS launchd and Windows service/UI acceptance remain separate verification.
+The sample `docs/examples/universal-owner/qdrant-memory-owner.service` runs one standalone Owner under a dedicated Linux account.
+The template uses private file permissions at startup.
+It does not create a service, firewall rule, or account.
+macOS launchd, Windows services, and user interfaces require separate tests.
+Published Runtime 0.4.0 does not include these preview features.
 
-Before installation, the operator must:
+## Prepare the service
 
-1. Create the `qdrant-memory` account with home `/var/lib/qdrant-memory`; restrict the
-   home/state directories to that account (0700) and configuration/policy to 0600.
-   Its account home must match the protected destination's account-local registry.
-2. Install the reviewed Runtime `[remote]` optional extra into a versioned virtualenv
-   under `/opt/qdrant-memory`; do not replace a running environment in place.
-   Source preview features are absent from published Runtime 0.4.0.
-3. Prepare the explicit backend config, embedding fingerprint, device policy and
-   protected destination enrollment with all competing writers stopped. Use an
-   Embedded directory only from this Owner process, or an HTTPS Qdrant endpoint
-   with the appropriate collection-scoped database key.
-4. Store only needed runtime secrets in `/etc/qdrant-memory/owner.env` with root-only
-   0600 permissions. Systemd reads this file; do not place tokens in command arguments.
-5. Replace the sample hostname/path settings, install the service unit, and put the
-   same-host TLS proxy from `remote-owner.md` in front of port 8766. Neither Owner
-   listener binds publicly. Validate the unit locally before enabling it.
+1. Create the `qdrant-memory` account with home `/var/lib/qdrant-memory`.
+   Set the home and state directory permissions to 0700.
+   Set the configuration and policy file permissions to 0600.
+   Keep the account home consistent with the protected destination registry.
+2. Install the selected Runtime with its `[remote]` extra in a versioned virtual environment under `/opt/qdrant-memory`.
+   Do not replace an environment while its service runs.
+3. Stop all other writers before you configure the backend, embedding fingerprint, device policy, and protected destination.
+   Give only this Owner process access to an Embedded directory.
+   For a Qdrant server, use HTTPS and a database key with access to the required collection.
+4. Store only necessary Runtime secrets in `/etc/qdrant-memory/owner.env`.
+   Set root ownership and 0600 permissions on this file.
+   Systemd reads this file.
+   Do not put tokens in command arguments.
+5. Replace the example hostname and paths.
+   Install the service unit.
+   Configure the TLS proxy from [Remote Owner](remote-owner.md) on the same host, ahead of port 8766.
+   Keep both Owner listeners on loopback addresses.
+   Check the unit before you enable it.
 
-The sample umask applies before Qdrant/SQLite create files. Existing exposed files
-are rejected; the Owner does not silently chmod them. Re-provisioning exposed state
-requires an authorized offline procedure, never deleting lock/claim/WAL files.
-The writable path contains both state and the service account's ownership registry;
-the unit intentionally cannot write into other users' profiles.
+The sample umask applies before Qdrant and SQLite create files.
+The Owner rejects existing files with unsafe permissions.
+It does not change their permissions automatically.
+Use an authorized offline procedure to replace unsafe state.
+Do not delete lock files, ownership claims, or write-ahead log (WAL) files.
+The writable path contains state and the service account's ownership registry.
+The unit cannot write to other users' profiles.
 
-Lifecycle capture stays off in this template. To opt in, configure an explicit
-Owner LLM override and audit project capture rules before adding `--enable-lifecycle`.
-`max_output_tokens` defaults to 800 and accepts an explicit integer up to 8192;
-thinking models may need a larger budget, such as 2048. A token-truncated response
-is a failed durable event, never an empty successful extraction. A larger budget
-does not prove extraction quality; run the fixed anonymous diagnostic separately.
+## Enable lifecycle capture
 
-For an upgrade/rollback rehearsal in a disposable environment:
+The template keeps lifecycle capture off.
+Configure an explicit Owner LLM override before you add `--enable-lifecycle`.
+Examine the project capture rules before you enable capture.
 
-1. Stop admitting new requests at the proxy and stop the service; let active work
-   drain. The 180-second stop timeout is deliberately not a short worker kill.
-2. Back up Owner config, policy, Ledger and the corresponding Qdrant data together,
-   preserving ownership/modes and the embedding/schema identity. Do not combine a
-   new Ledger with an unrelated database snapshot.
-3. Select a reviewed virtualenv, validate config/claims, start the single Owner and
-   reconcile pending/failed durable work before reopening the proxy. Verify scoped
-   discovery/read, a synthetic CAS write, denial and idempotent retry.
-4. If rolling back, stop again and restore the matching version/config/Ledger/data
-   snapshot as one set. If an old version cannot read a new feature's state, restore
-   the prior complete snapshot; do not edit statuses or delete ownership files.
+`max_output_tokens` has a default value of 800.
+It accepts an explicit integer up to 8192.
+Reasoning models can need a larger value, such as 2048.
+The Owner records a response that exceeds its token limit as a failed durable event.
+It does not record that response as successful extraction with no facts.
+A larger token limit does not establish extraction quality.
+Run the fixed anonymous model evaluation separately.
 
-These steps and the unit's CLI grammar are reviewed examples, not evidence of a
-completed systemd production installation. No public deployment or real rollback
-has been performed by this development task without explicit authorization.
+## Rehearse an upgrade or rollback
+
+Use a disposable test environment for this procedure.
+
+1. Stop new requests at the proxy.
+   Stop the service and let active work finish.
+   The service allows 180 seconds for shutdown.
+2. Back up the Owner configuration, policy, Ledger, and corresponding Qdrant data together.
+   Preserve ownership, permissions, the embedding identity, and the schema identity.
+   Do not combine a new Ledger with an unrelated database snapshot.
+3. Select the required virtual environment.
+   Check the configuration and ownership claims.
+   Start one Owner.
+   Reconcile pending and failed durable work before you reopen the proxy.
+   Check scoped discovery, reads, a synthetic CAS write, denial, and idempotent retry.
+4. For rollback, stop the service again.
+   Restore the matching version, configuration, Ledger, and data snapshot as one set.
+   If an older version cannot read the new state, restore the previous complete snapshot.
+   Do not change Ledger statuses or delete ownership files.
+
+These instructions and the service unit are examples.
+They do not establish that a production installation, public deployment, or real rollback passed validation.

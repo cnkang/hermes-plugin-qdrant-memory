@@ -1,57 +1,55 @@
-# Universal Owner implementation and acceptance ledger
+# Universal Owner implementation and acceptance
 
-Date: 2026-10-19. Requirements: the supplied universal cross-agent/cross-device
-development prompt, all sections 1–14. This is an implementation ledger, not a
-replacement for the accepted Phase 0 ADR.
+This document describes implementation boundaries and acceptance requirements.
+Read the architecture decisions in [Universal cross-agent memory](universal-cross-agent-memory.md) first.
+Published Runtime 0.4.0 does not include these source preview features.
+Do not use historical source version strings as proof of feature support.
 
-## Baseline and dependencies
+## Shared recall
 
-- Runtime main `68a9ed1`; released package 0.4.0 predates destination hardening.
-- Open Runtime PR #63, `feat/shared-reader`, head `281ab77`: reuse its reader;
-  do not duplicate it or merge the PR. A Phase 1b design is recorded in
-  `docs/design/phase-1b-provider-recall.md`. Continue on the integration branch.
-- MCP main `60d0cda`, source 0.2.2, GitHub release is draft.
-- Skill main `d6062f0`, skill 0.3.1. No other open PRs at audit time.
-- Local tests initially failed collection without the real Hermes checkout on
-  PYTHONPATH. This is an environment failure, not a passing baseline.
+The shared reader supplements the private Provider.
+It does not create another writer to the Owner destination.
+The tests cover private isolation, partial failure, provenance, time limits, and cache invalidation.
+Read [Provider recall](phase-1b-provider-recall.md) for the design.
 
-## Work order and acceptance
+The Owner must check authorization before it delivers shared recall.
+It must omit cached shared content when it cannot confirm current authorization.
+The Owner cannot erase model context that it already delivered.
+Do not describe revocation as removal of previously delivered context.
 
-1. Phase 1b: tests first in `tests/test_shared_recall.py`; opt-in validated
-   configuration in `shared_recall.py`; wire read-only recall into `provider.py`.
-   Keep private extraction durable and default output unchanged. No second
-   writer to an Owner destination. Test private isolation, partial failure,
-   provenance, time bounds, cache invalidation and no shared writes.
-2. Phase 3 prerequisite: tests first for versioned device grants; compatibility
-   reading of six-field grants; private identity consistency, per-device
-   attribution, expiry and live revocation. Operator updates must fail closed.
-3. Phase 2a: official SDK Streamable HTTP factory receives an Owner only.
-   Authentication per request, no trusted identity arguments, strict Host/Origin,
-   loopback bind, bounded admission and body size. Static provisioned credentials
-   only; OAuth interoperability remains unsupported until separately tested.
-   Real TLS and two-container tests are distinct from in-process ASGI tests.
-4. Phase 4: inspect public host hooks before choosing an adapter. Keep unsupported
-   hosts explicit MCP only. No invented lifecycle and no transcript crawling.
-5. Phase 5: integrate tests into existing workflows, provide TLS/proxy deployment,
-   cross-repository examples and Chinese evidence report. Never equate SDK tests
-   with Host UI acceptance or Cloud storage tests with HTTPS MCP acceptance.
+## Device identity
 
-## Delivery rules
+Versioned device grants preserve compatibility with legacy grants that have six fields.
+The tests cover private identity, device attribution, expiry, and live revocation.
+Invalid operator updates must deny access.
+Agents cannot supply trusted identity through tool arguments.
 
-Each implementation unit gets a separate commit after its regressions pass.
-Keep current release pins until a compatible Runtime is actually published.
-No release, merge, production configuration, production secrets or migration.
-Record PASS/FAIL/SKIPPED/UNVERIFIED with commands and actual coverage.
+## HTTPS MCP
 
-## Unresolved acceptance risks
+The official SDK Streamable HTTP server receives the existing Owner.
+The gateway authenticates each request and checks Host and Origin.
+It uses loopback listeners and limits concurrent admission and request body size.
+Administrators provide the service credentials before use.
+The preview does not support OAuth interoperability.
 
-The Phase 1b design permits bounded cache staleness, whereas the task requires
-deleted/revoked shared memories not to be reinjected. Shared recall therefore
-needs fresh authorization at delivery, or must omit shared cached content.
-Already delivered model context cannot be remotely erased. A new implementation
-must state this boundary and cannot advertise immediate context revocation.
+Real TLS tests and tests across two containers provide separate evidence from in-process ASGI tests.
+Cloud storage tests do not establish HTTPS MCP compatibility.
+Read [Remote Owner](../shared-memory/remote-owner.md) for configuration and security boundaries.
 
-The Native private writer plus an additive shared reader covers two distinct
-destinations. It does not by itself implement Native lifecycle writes through
-one Owner. That requires a durable Owner event API and host adapter, and must be
-tracked separately from read-only Phase 1b.
+## Automatic memory
+
+Native Owner uses the existing Provider, Runtime, Ledger, and worker.
+Its durable event API applies authorization before extraction and persistence.
+A private writer with an additional shared reader alone does not provide this lifecycle.
+
+Automatic adapters must use official host lifecycle hooks.
+Unsupported hosts require explicit MCP use or assisted operation.
+Adapters must not scan unrelated transcripts.
+SDK tests do not establish host user interface acceptance.
+
+## Test evidence
+
+Record PASS, FAIL, SKIPPED, and UNVERIFIED separately.
+Record the commands, source identifiers, and test scope with each result.
+Keep distribution release references until a compatible Runtime release is available.
+Public examples must not contain credentials or private environment details.
