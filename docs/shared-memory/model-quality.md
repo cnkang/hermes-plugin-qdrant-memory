@@ -108,3 +108,20 @@ that annotated query, not a production hallucination or overall injection rate.
 The v1 and mutation corpora retain separate versions and hashes; v1 evidence
 does not prove the optional extension ran. The manual model workflow explicitly
 enables this extension. Its actual-run evidence must be recorded separately.
+
+For focused development, `--scenarios-only` executes only the mutation corpus.
+Its report explicitly states `evaluation_mode=mutations-only`, zero baseline
+cases/queries and `baseline_executed=false`. A diagnostic PASS does not certify
+the v1 baseline. The manual workflow requires both baseline and mutation PASS.
+
+Explicit supersession uses a `replacement_intent` extraction flag. It requests
+relation review of up to five existing candidates in the same authorized scope,
+including below the ordinary similarity cutoff. The original user statement is
+provided as untrusted evidence; only factual `SUPERSEDES` can authorize choosing
+an update instead of an add. The flag never changes the grant, target scope or
+write permissions. New extraction schemas require every property, following the
+[strict Structured Outputs contract](https://developers.openai.com/api/docs/guides/structured-outputs).
+Missing/false flags in legacy durable candidates retain the old review policy.
+Embeddings and stored payload schema stay
+unchanged. This path can add up to five relation-model calls for an explicitly
+replacing fact; measured latency must be reported rather than hidden.
