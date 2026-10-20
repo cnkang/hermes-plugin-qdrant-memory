@@ -14,7 +14,7 @@
   "schema_sha256": "899554d36c07fe2a187db77e73fae61cbadaff9c664ca4da7a4dfa1d13ae6814",
   "source_sha256": {
     "scripts/evaluate_owner_lifecycle.py": "e19f79456dcfe6266f112f1ca48f87fa9070f7f7bbcdd8bcc3f4533b832c5953",
-    "scripts/pi_lifecycle_quality.mjs": "0ab9265fcf2dec46b4565882d0d710de0acc4c082eca9fa5b7d972192cb6b5f4",
+    "scripts/pi_lifecycle_quality.mjs": "0ebd6fcfaf2177083efea18fa64f7ee32a87f176f0c45025723839d3093a19ef",
     "scripts/evaluate_owner_mutations.py": "3baa2a5c7c64f2a4c0b78e51efc042aa93132716b6816240747b56d005ea8ed0",
     "qdrant_memory/__init__.py": "022dd19a7ee11a7e7ffe1f3a3bbf5262e40f20a8eaba572a88c8274b36fb2055",
     "qdrant_memory/cli.py": "d13f1e06d6878a8a98141ca7725ad968a723b19cbdd1c836f8923d4900ecb5df",
@@ -85,21 +85,21 @@
     },
     "obsolete_hits": 0,
     "observed_hits": 8,
-    "obsolete_hit_rate": 0,
+    "obsolete_hit_rate": 0.0,
     "unreplaced_candidate_score": null,
     "capture_latency": {
       "samples": 4,
-      "p50_ms": 16185.336916998494,
-      "p95_ms": 34899.95429100236
+      "p50_ms": 15906.892291968688,
+      "p95_ms": 34216.15616703639
     },
     "cas_winners": 1,
     "cas_conflicts": 1,
-    "recovery_success_rate": 1
+    "recovery_success_rate": 1.0
   },
-  "precision": 1,
-  "positive_case_recall": 1,
-  "recall_at_5": 1,
-  "mrr": 1,
+  "precision": 1.0,
+  "positive_case_recall": 1.0,
+  "recall_at_5": 1.0,
+  "mrr": 1.0,
   "rank_limit": 5,
   "true_positives": 16,
   "false_positives": 0,
@@ -121,10 +121,10 @@
   ],
   "restart_model_calls": 0,
   "post_restart_quality": {
-    "precision": 1,
-    "positive_case_recall": 1,
-    "recall_at_5": 1,
-    "mrr": 1,
+    "precision": 1.0,
+    "positive_case_recall": 1.0,
+    "recall_at_5": 1.0,
+    "mrr": 1.0,
     "rank_limit": 5,
     "true_positives": 16,
     "false_positives": 0,
@@ -145,17 +145,17 @@
     "injected_memories": 38,
     "incorrect_memories": 0,
     "scope_violations": 0,
-    "incorrect_memory_injection_rate": 0
+    "incorrect_memory_injection_rate": 0.0
   },
   "retrieval_latency": {
     "samples": 64,
-    "p50_ms": 53.192291990853846,
-    "p95_ms": 65.28466701274738
+    "p50_ms": 51.585499953944236,
+    "p95_ms": 68.73387499945238
   },
   "model_latency": {
     "samples": 29,
-    "p50_ms": 12680.680125020444,
-    "p95_ms": 17164.20029103756
+    "p50_ms": 12471.056333044544,
+    "p95_ms": 17142.042833962478
   },
   "provider_error_types": {},
   "recording_error_types": {}
