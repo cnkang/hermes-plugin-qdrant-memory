@@ -49,6 +49,13 @@ Committed evidence:
 - `owner-model-quality-drained-evidence.json`: current baseline PASS after awaiting
   the public Host admission barrier before the Provider idle barrier. All 24
   captures and 32 queries, replay and restart checks ran with real local models.
+- `owner-mutation-initial-failure.json`: first full v1 + mutation run before the
+  replacement-intent, Host-admission barrier and denial-probe fixes. It records
+  FAIL and predates the `baseline_executed`/`evaluation_mode` fields; it is not
+  passing evidence for the current candidate.
+- `owner-mutation-quality-evidence.json`: full v1 + mutation PASS after those
+  fixes, with baseline execution, source/prompt/schema/corpus hashes, actual
+  capture latency, concurrent CAS outcomes and restart recovery measurements.
 
 The `owner-model-quality.yml` workflow uses a disposable Linux test runner with the `qdrant-memory-models` label.
 An operator must provision this runner explicitly.
