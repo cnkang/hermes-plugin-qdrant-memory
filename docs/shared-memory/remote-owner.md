@@ -263,3 +263,9 @@ macOS/Linux are the primary targets. Existing platform CI exercises portable
 contracts on Windows. Protected public service/admin remains unsupported there.
 Real Cloud, production TLS deployment, real model quality and user Host UI
 acceptance require independent evidence. No production-readiness claim is made.
+
+Native lifecycle turns, builtin memory notifications and mixed-history checkpoints
+also require the Owner scope. A different or neutral mixed scope is recorded as a
+failed `native_owner_unadmitted` event and raises `PermissionError`; it cannot fall
+back to local Runtime writes. Operator retry cannot reattribute such an event to
+another identity.

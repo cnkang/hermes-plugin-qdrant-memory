@@ -323,7 +323,8 @@ def test_native_owner_lifecycle_project_handoff_and_private_isolation(tmp_path, 
         p.shutdown()
 
 
-def test_native_owner_denies_tool_calls_outside_the_owner_scope(tmp_path, monkeypatch):
+@pytest.mark.parametrize("kind", ["turn", "builtin", "checkpoint"])
+def test_native_owner_denies_tool_calls_outside_the_owner_scope(tmp_path, monkeypatch, kind):
     """A foreign identity is denied instead of writing through the private dispatch."""
     from .standalone.test_device_grants import grant
 
@@ -361,6 +362,22 @@ def test_native_owner_denies_tool_calls_outside_the_owner_scope(tmp_path, monkey
         assert denied["error"]["type"] == "PermissionError"
         # The local dispatch fallback is unreachable, so nothing is written.
         assert p.store.count() == 1
+        # Automatic hooks obey the same authority, including mixed-history checkpoints.
+        with pytest.raises(PermissionError, match="limited to its owner scope"):
+            if kind == "turn":
+                p.sync_turn("cats foreign lifecycle", "ack")
+            elif kind == "builtin":
+                p.on_memory_write("add", "memory", "cats foreign lifecycle")
+            else:
+                p.on_pre_compress([{"role": "user", "content": "cats mixed history"}])
+        assert p.wait_idle()
+        assert p.store.count() == 1
+        failed = list(p.ledger.iter_rows("events", status="FAILED"))
+        assert len(failed) == 1
+        unadmitted = json.loads(failed[0]["payload_json"])
+        assert unadmitted["source"] == "native_owner_unadmitted"
+        if kind == "checkpoint":
+            assert unadmitted["scope"]["user_id"] == "__mixed__"
         assert p._native_owner.owner.blocked is False
     finally:
         p.shutdown()
