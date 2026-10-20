@@ -38,6 +38,31 @@ def settings(**extra):
     }
 
 
+def test_worker_preserves_each_callers_secret_scope(monkeypatch):
+    """A reused executor must resolve secrets in each request's own profile context."""
+    from contextvars import ContextVar
+
+    scoped_token = ContextVar("profile_token", default="wrong-profile" * 4)
+    sent = []
+
+    def call(url, token, name, arguments, **kwargs):
+        sent.append(token)
+        return {"memories": []}
+
+    monkeypatch.setattr("qdrant_memory.shared_client.call", call)
+    reader = SharedRecall(settings(), secret_reader=lambda _: scoped_token.get())
+    try:
+        for token in ("a" * 40, "b" * 40):
+            context_token = scoped_token.set(token)
+            try:
+                assert reader.search("cats") == []
+            finally:
+                scoped_token.reset(context_token)
+        assert sent == ["a" * 40, "b" * 40]
+    finally:
+        reader.close()
+
+
 def test_fresh_shared_delivery_and_no_private_persistence(tmp_path, monkeypatch):
     """A revoked/deleted result must not survive in the provider recall cache."""
     calls = []
