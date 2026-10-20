@@ -70,6 +70,7 @@ PYTHONPATH="$PWD:/path/to/hermes-agent" python scripts/evaluate_owner_lifecycle.
 | [owner-mutation-identity-evidence.json](owner-mutation-identity-evidence.json) | 新的完整基线与 mutation PASS，存储的写入者为 `pi`，独立授权的读取者为 `hermes`。 |
 | [owner-model-context-evidence.json](owner-model-context-evidence.json) | 首次观测真实 Pi 模型输入的完整运行。 |
 | [owner-model-context-reviewed-evidence.json](owner-model-context-reviewed-evidence.json) | 上下文评估器复审后的完整重跑。测量了 12 次真实 Pi 模型输入和 38 条注入记忆。 |
+| [owner-reviewed-policy-initial-failure.json](owner-reviewed-policy-initial-failure.json) | 事实对隔离后的首次完整运行。替换检查失败，基线与上下文检查通过。不能作为通过验收的证据。 |
 | [owner-model-stack-evidence.json](owner-model-stack-evidence.json) | 新的完整真实模型 PASS，包含被评估栈的源文件指纹。 |
 
 排空后的基线通过真实本地模型执行全部 24 次捕获、32 个查询、重放检查及重启检查。
