@@ -5,6 +5,7 @@ import math
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from contextvars import copy_context
 from dataclasses import asdict
 from threading import Lock
 
@@ -90,7 +91,9 @@ class SharedRecall:
         if budget is not None:
             timeout = min(timeout, budget)
         try:
-            future = self._executor.submit(self._search, query, time.monotonic() + timeout)
+            future = self._executor.submit(
+                copy_context().run, self._search, query, time.monotonic() + timeout
+            )
         except RuntimeError:
             self._slot.release()
             return []
