@@ -45,6 +45,14 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
           QUALITY_OUTPUT: ${{ runner.temp }}/owner-quality-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: .quality/venv/bin/python scripts/evaluate_owner_lifecycle.py --adapter-root .quality/mcp --scenarios tests/quality/lifecycle-mutations-v1.json --output "$QUALITY_OUTPUT"
+      - name: Require full baseline and mutation evidence
+        env:
+          QUALITY_OUTPUT: ${{ runner.temp }}/owner-quality-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: >-
+          .quality/venv/bin/python -c "import json,os;
+          d=json.load(open(os.environ['QUALITY_OUTPUT']));
+          assert d['status']=='PASS' and d['baseline_executed'] is True;
+          assert d['mutation_scenarios']['status']=='PASS'"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:

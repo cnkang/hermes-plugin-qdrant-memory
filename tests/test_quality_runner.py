@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
+import pytest
 
 
 def runner():
@@ -35,13 +36,15 @@ def test_recording_error_preserves_successful_model_result():
     assert observer.recording_errors == {"KeyError": 1}
 
 
-def test_model_probe_failure_produces_redacted_fail_artifact(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("only", [False, True])
+def test_model_probe_failure_produces_redacted_fail_artifact(tmp_path, monkeypatch, capsys, only):
     """Unavailable Ollama still returns a machine-readable FAIL without unsafe messages."""
     module = runner()
     output = tmp_path / "evidence.json"
-    monkeypatch.setattr(
-        "sys.argv", ["evaluate", "--adapter-root", str(tmp_path), "--output", str(output)]
-    )
+    arguments = ["evaluate", "--adapter-root", str(tmp_path), "--output", str(output)]
+    if only:
+        arguments += ["--scenarios", "synthetic.json", "--scenarios-only"]
+    monkeypatch.setattr("sys.argv", arguments)
     monkeypatch.delenv("QM_QUALITY_UNUSED_KEY", raising=False)
 
     def fail(**kwargs):
@@ -52,6 +55,8 @@ def test_model_probe_failure_produces_redacted_fail_artifact(tmp_path, monkeypat
     report = json.loads(output.read_text())
     assert report["status"] == "FAIL"
     assert report["failure_type"] == "ConnectError"
+    assert report["baseline_executed"] is False
+    assert report["evaluation_mode"] == ("mutations-only" if only else "full")
     assert "synthetic-secret-must-not-leak" not in output.read_text() + capsys.readouterr().out
 
 

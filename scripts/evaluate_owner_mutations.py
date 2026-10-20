@@ -2,6 +2,8 @@
 
 import json
 import secrets
+import ssl
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import anyio
@@ -10,6 +12,7 @@ import httpx
 from qdrant_memory.quality_metrics import (
     MUTATION_CHECKS,
     durable_snapshot,
+    latency_summary,
     matches,
     score_mutations,
 )
@@ -34,12 +37,48 @@ def is_denied(value):
     return False
 
 
+def probe_denial(url, certificate, token):
+    """Observe HTTP authentication when an SDK discards the original status in MCPError."""
+    try:
+        with httpx.Client(
+            verify=ssl.create_default_context(cafile=certificate),
+            trust_env=False,
+            follow_redirects=False,
+            timeout=10,
+        ) as client:
+            response = client.post(
+                url,
+                headers={
+                    "Authorization": "Bearer " + token,
+                    "Accept": "application/json, text/event-stream",
+                },
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "owner-quality-denial", "version": "1"},
+                    },
+                },
+            )
+        return response.status_code in (401, 403)
+    except httpx.HTTPError:
+        return False
+
+
 def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
     """Drive multilingual Host turns, scoped tools, concurrent CAS and persistent restart."""
     checks = dict.fromkeys(MUTATION_CHECKS, False)
     cases = {row["id"]: row for row in plan["cases"]}
+    capture_latencies = []
+    cas_winners = cas_conflicts = 0
     facts = {row["id"]: row["expected"][0] for row in plan["cases"]}
     policy_path = home / "policy.json"
+    if not policy_path.exists():
+        policy_path.write_text(json.dumps(core.policy(tokens)))
+        policy_path.chmod(0o600)
     provider, manager = core.start_host(home, policy_path, recorder)
 
     def tool(url, cert, token, name, arguments):
@@ -55,7 +94,9 @@ def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
         try:
             return is_denied(tool(url, cert, token, name, arguments))
         except Exception as error:
-            return is_denied(error)
+            # SDK 2 can replace HTTP 401 with generic MCPError(-32603). Require
+            # an independently observed authentication response, never error prose.
+            return is_denied(error) or probe_denial(url, cert, token)
 
     def find(hits, key):
         """Select a returned annotated fact without directly reading the database."""
@@ -64,11 +105,17 @@ def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
     def turn(key, number):
         """Invoke actual Hermes MemoryManager callbacks across two sessions."""
         row = cases[key]
+        started = time.monotonic()
         provider.on_session_switch(row["session"])
         provider.on_turn_start(number, row["user"], session_id=row["session"])
         manager.sync_all(row["user"], "ack", session_id=row["session"])
-        if not provider.wait_idle(120) or provider._native_owner.owner.blocked:
+        if (
+            not manager.flush_pending(timeout=10)
+            or not provider.wait_idle(120)
+            or provider._native_owner.owner.blocked
+        ):
             raise RuntimeError("Mutation lifecycle failed or recovery gate blocked")
+        capture_latencies.append((time.monotonic() - started) * 1000)
 
     delete_args, deletion, deleted_id = None, None, None
     winner, winning_args, winning_token = None, None, None
@@ -94,9 +141,15 @@ def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
                 and new["version"] > old["version"]
                 and obsolete == 0
             )
+            old_similarity = None
+            if old and new and old["id"] != new["id"]:
+                reviewed = core.remote_query(url, cert, tokens["SECOND"], new["text"])
+                old_similarity = next(
+                    (hit["score"] for hit in reviewed if hit["id"] == old["id"]), None
+                )
 
             for route, token in (("pi", tokens["PI"]), ("project", tokens["PROJECT"])):
-                core.pi_capture(
+                observed = core.pi_capture(
                     adapter,
                     home / ("mutation-" + route),
                     [row for row in cases.values() if row["route"] == route],
@@ -104,6 +157,9 @@ def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
                     cert,
                     token,
                     tokens["READER"],
+                )
+                capture_latencies.extend(
+                    row["ms"] for row in observed["latencies"] if row["mode"] == "remote-event"
                 )
             private = core.remote_query(url, cert, tokens["PI"], "Project Acacia 用户文档语言")
             language = find(private, "language-zh")
@@ -182,6 +238,7 @@ def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
                 conflicts = sum(
                     value.get("error", {}).get("type") == "SharedConflictError" for value in results
                 )
+                cas_winners, cas_conflicts = len(winners), conflicts
                 checks["cas_one_winner"] = len(winners) == conflicts == 1
                 if len(winners) == 1:
                     index = winners[0]
@@ -235,4 +292,15 @@ def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
     finally:
         manager.shutdown_all()
     checks["restart_no_model_calls"] = len(recorder.latencies) == calls
-    return score_mutations(checks, obsolete_hits=obsolete, observed_hits=len(after))
+    report = score_mutations(checks, obsolete_hits=obsolete, observed_hits=len(after))
+    report["unreplaced_candidate_score"] = old_similarity
+    report["capture_latency"] = latency_summary(capture_latencies)
+    report["cas_winners"], report["cas_conflicts"] = cas_winners, cas_conflicts
+    report["recovery_success_rate"] = (
+        sum(
+            checks[key] is True
+            for key in ("delete_replay", "restart_durable", "restart_no_model_calls")
+        )
+        / 3
+    )
+    return report

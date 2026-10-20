@@ -389,7 +389,14 @@ def main():
     parser.add_argument("--adapter-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scenarios", type=Path, help="Optional frozen mutation/isolation corpus")
+    parser.add_argument(
+        "--scenarios-only",
+        action="store_true",
+        help="Diagnostic mutation run; does not execute or certify the v1 baseline",
+    )
     args = parser.parse_args()
+    if args.scenarios_only and not args.scenarios:
+        parser.error("--scenarios-only requires --scenarios")
     dataset_bytes = (ROOT / "tests" / "quality" / "lifecycle-v1.json").read_bytes()
     data = json.loads(dataset_bytes)
     validate_gold(data)
@@ -399,11 +406,13 @@ def main():
     tokens = {key: secrets.token_hex(32) for key in ("NATIVE", "SECOND", "PI", "PROJECT", "READER")}
     report = {
         "status": "FAIL",
+        "baseline_executed": False,
+        "evaluation_mode": "mutations-only" if args.scenarios_only else "full",
         "dataset": data["version"],
         "dataset_sha256": digest(dataset_bytes),
         "models": {},
-        "cases": len(data["cases"]),
-        "queries": len(data["queries"]),
+        "cases": 0 if args.scenarios_only else len(data["cases"]),
+        "queries": 0 if args.scenarios_only else len(data["queries"]),
         "prompt_sha256": digest(inspect.getsource(Extractor.extract).encode()),
         "schema_sha256": digest(json.dumps(MEMORY_SCHEMA, sort_keys=True).encode()),
         "source_sha256": {
@@ -451,13 +460,19 @@ def main():
             with patch.dict(os.environ, env):
                 scoped = set_secret_scope(env, profile_home=str(home))
                 try:
-                    evidence = evaluate(data, args.adapter_root.resolve(), home, recorder, tokens)
+                    evidence = None
+                    if not args.scenarios_only:
+                        evidence = evaluate(
+                            data, args.adapter_root.resolve(), home, recorder, tokens
+                        )
+                        report["baseline_executed"] = True
                     if args.scenarios:
                         scenario_bytes = args.scenarios.read_bytes()
                         scenario = json.loads(scenario_bytes)
                         validate_gold(scenario)
                         report["scenarios_version"] = scenario["version"]
                         report["scenarios_sha256"] = digest(scenario_bytes)
+                        report["scenario_cases"] = len(scenario["cases"])
                         recorder.case_ids.update(
                             {row["user"]: row["id"] for row in scenario["cases"]}
                         )
@@ -474,39 +489,44 @@ def main():
                                     "remote_query",
                                     "pi_capture",
                                     "digest",
+                                    "policy",
                                 )
                             }
                         )
                         report["mutation_scenarios"] = extension["evaluate_mutations"](
                             core, scenario, home, recorder, tokens, args.adapter_root.resolve()
                         )
-                        evidence["extractions"] = {
-                            key: value
-                            for key, value in recorder.extractions.items()
-                            if key in {row["id"] for row in data["cases"]}
-                        }
+                        if evidence is not None:
+                            evidence["extractions"] = {
+                                key: value
+                                for key, value in recorder.extractions.items()
+                                if key in {row["id"] for row in data["cases"]}
+                            }
                 finally:
                     reset_secret_scope(scoped)
-            report.update(score_run(data, evidence))
-            report.update(
-                {
-                    key: evidence[key]
-                    for key in (
-                        "scope_leaks",
-                        "provider_failures",
-                        "replay_safe",
-                        "restart_safe",
-                        "restart_raw_equal",
-                        "restart_changed_fields",
-                        "restart_model_calls",
-                        "post_restart_quality",
-                        "retrieval_latency",
-                    )
-                }
-            )
+            if evidence is not None:
+                report.update(score_run(data, evidence))
+                report.update(
+                    {
+                        key: evidence[key]
+                        for key in (
+                            "scope_leaks",
+                            "provider_failures",
+                            "replay_safe",
+                            "restart_safe",
+                            "restart_raw_equal",
+                            "restart_changed_fields",
+                            "restart_model_calls",
+                            "post_restart_quality",
+                            "retrieval_latency",
+                        )
+                    }
+                )
+            else:
+                report["status"] = report["mutation_scenarios"]["status"]
             report["provider_failures"] = sum(recorder.errors.values())
             if (
-                report["post_restart_quality"]["status"] != "PASS"
+                (evidence is not None and report["post_restart_quality"]["status"] != "PASS")
                 or recorder.recording_errors
                 or recorder.errors
                 or (args.scenarios and report["mutation_scenarios"]["status"] != "PASS")
@@ -518,6 +538,30 @@ def main():
             {"file": Path(frame.filename).name, "line": frame.lineno, "function": frame.name}
             for frame in traceback.extract_tb(exc.__traceback__)[-5:]
         ]
+        report["failure_stages"] = [
+            {"file": Path(frame.filename).name, "line": frame.lineno, "function": frame.name}
+            for frame in traceback.extract_tb(exc.__traceback__)
+            if Path(frame.filename).name.startswith("evaluate_owner")
+        ]
+        pending, seen, causes = [exc], set(), []
+        while pending and len(causes) < 20:
+            cause = pending.pop()
+            if id(cause) in seen:
+                continue
+            seen.add(id(cause))
+            causes.append(
+                {
+                    "type": type(cause).__name__,
+                    "http_status": getattr(getattr(cause, "response", None), "status_code", None),
+                    "mcp_code": getattr(getattr(cause, "error", None), "code", None),
+                }
+            )
+            if isinstance(cause, BaseExceptionGroup):
+                pending.extend(cause.exceptions)
+            for attribute in ("__cause__", "__context__"):
+                if getattr(cause, attribute, None) is not None:
+                    pending.append(getattr(cause, attribute))
+        report["failure_causes"] = causes
     finally:
         if llm is not None:
             llm.close()
