@@ -260,6 +260,10 @@ class NativeOwner:
             if value.get("source") != "native_owner_unadmitted":
                 continue
             if value.get("scope") != self.scope.as_dict():
-                raise PermissionError("Pending Native event belongs to another logical identity")
+                raise PermissionError(
+                    "Pending Native event belongs to another logical identity: "
+                    + row["event_id"]
+                    + "; restore its original scope or explicitly discard the unadmitted input offline"
+                )
             captured = self.events(value, include_shared=False)[0]
             ledger.prepare_event(row["event_id"], captured)

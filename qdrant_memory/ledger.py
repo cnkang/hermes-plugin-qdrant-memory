@@ -463,6 +463,41 @@ class Ledger:
                 ),
             )
 
+    def discard_unadmitted_event(self, key):
+        """Explicit operator disposal of raw Native input; prepared work cannot cancel."""
+        with self.lock:
+            row = self.row("events", key)
+            if (
+                row is None
+                or row["collection"] != self.collection
+                or row["status"] not in {"PENDING", "FAILED", "CANCELLED"}
+            ):
+                raise ValueError("Only an unprepared Native admission failure can be discarded")
+            if row["status"] == "CANCELLED":
+                return {"event_id": key, "status": "CANCELLED", "discarded": False}
+            value = json.loads(row["payload_json"])
+            if (
+                not isinstance(value, dict)
+                or value.get("source") != "native_owner_unadmitted"
+                or any(
+                    field in value for field in ("candidates", "operation_keys", "owner_authority")
+                )
+            ):
+                raise ValueError("Only an unprepared Native admission failure can be discarded")
+            with self.db:
+                updated = self.db.execute(
+                    "UPDATE events SET status='CANCELLED',payload_json='{}',last_error=NULL,committed_at=? "
+                    "WHERE event_id=? AND collection=? AND status=? AND payload_json=?",
+                    (now(), key, self.collection, row["status"], row["payload_json"]),
+                ).rowcount
+                if updated != 1:
+                    raise ValueError("Native input changed; inspect it again before discarding")
+                self.db.execute(
+                    "INSERT INTO counters VALUES(?,1,?) ON CONFLICT(name,collection) DO UPDATE SET value=value+1",
+                    ("native_unadmitted_discarded", self.collection),
+                )
+            return {"event_id": key, "status": "CANCELLED", "discarded": True}
+
     def retry_failed(self):
         """Requeue failed events and operations only for this destination."""
         with self.lock, self.db:
@@ -556,7 +591,7 @@ class Ledger:
         if event_keys is None:
             event_count = self.db.execute(
                 """UPDATE events SET payload_json='{}'
-                WHERE collection=? AND status IN ('COMMITTED','SUPERSEDED')
+                WHERE collection=? AND status IN ('COMMITTED','SUPERSEDED','CANCELLED')
                 AND payload_json!='{}'""",
                 (self.collection,),
             ).rowcount
@@ -565,7 +600,7 @@ class Ledger:
                 self.db.execute(
                     """UPDATE events SET payload_json='{}'
                     WHERE event_id=? AND collection=?
-                    AND status IN ('COMMITTED','SUPERSEDED')
+                    AND status IN ('COMMITTED','SUPERSEDED','CANCELLED')
                     AND payload_json!='{}'""",
                     (key, self.collection),
                 ).rowcount
