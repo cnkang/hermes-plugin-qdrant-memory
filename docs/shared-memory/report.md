@@ -5,7 +5,7 @@ For the subsequent unpublished destination protection work, see the separate
 and [deployment security contract](deployment-security.md). The original 0.4.0
 evidence below does not establish the new database-isolation guarantees.
 
-Date: 2026-10-17 (Asia/Shanghai). Feature status: **released in Runtime 0.4.0, opt-in local MVP**.
+Date: 2026-10-17. Feature status: **released in Runtime 0.4.0, opt-in local MVP**.
 Hermes compatibility is the first release gate. No package, tag, Release or
 Registry publication, automatic profile reconfiguration or production-data
 migration was performed. All test records and collections were synthetic and
