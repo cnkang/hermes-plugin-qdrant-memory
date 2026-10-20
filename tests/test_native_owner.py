@@ -85,7 +85,16 @@ def test_unsafe_native_admission_is_rejected_before_storage(tmp_path, change, pr
         overrides=cfg,
     )
     try:
-        with pytest.raises(ValueError, match=expected):
+        # Windows rejects every protected destination before POSIX-only port
+        # admission. Assert that precise fail-closed boundary without skipping.
+        windows_protected = protected and os.name == "nt"
+        error = PermissionError if windows_protected else ValueError
+        message = (
+            "Protected mode requires verified POSIX ownership and permissions"
+            if windows_protected
+            else expected
+        )
+        with pytest.raises(error, match=message):
             p.initialize("invalid-native", hermes_home=str(tmp_path))
         assert vectors.exists() is False
     finally:
