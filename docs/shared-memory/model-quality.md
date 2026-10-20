@@ -35,6 +35,16 @@ The output path must be new. Each run uses a private temporary home, synthetic
 credentials and temporary Embedded Qdrant data, then closes and removes them.
 Reports contain metrics and hashes, not tokens or memory text. Failures return a
 nonzero exit status; a failed evaluation must remain recorded as FAIL.
+Observation/recording errors are separate from model-provider failures and also
+fail the gate. Restart and receipt replay must not increase model calls. Model
+discovery or setup failures still produce a redacted FAIL artifact.
+
+Committed evidence:
+
+- `owner-model-quality-evidence.json`: fingerprinted baseline before the evaluator
+  review fixes; raw restart differences were limited to computed scores.
+- `owner-model-quality-reviewed-evidence.json`: final run after the evaluator fixes,
+  including explicit post-restart model-call and recording-error measurements.
 
 `owner-model-quality.yml` is a manual lane for an explicitly provisioned,
 disposable Linux test runner labelled `qdrant-memory-models`. It has no PR/fork
