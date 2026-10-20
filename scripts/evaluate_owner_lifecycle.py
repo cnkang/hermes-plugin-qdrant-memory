@@ -539,7 +539,11 @@ def main():
                     }
                 )
             else:
-                report["status"] = report["mutation_scenarios"]["status"]
+                report["status"] = (
+                    "DIAGNOSTIC_PASS"
+                    if report["mutation_scenarios"]["status"] == "PASS"
+                    else "FAIL"
+                )
             report["provider_failures"] = sum(recorder.errors.values())
             if (
                 (evidence is not None and report["post_restart_quality"]["status"] != "PASS")
@@ -550,6 +554,7 @@ def main():
             ):
                 report["status"] = "FAIL"
     except Exception as exc:
+        report["status"] = "FAIL"
         report["failure_type"] = type(exc).__name__
         report["failure_location"] = [
             {"file": Path(frame.filename).name, "line": frame.lineno, "function": frame.name}
@@ -588,7 +593,7 @@ def main():
     with args.output.open("x", encoding="utf-8") as output:
         json.dump(report, output, ensure_ascii=False, indent=2)
     print(json.dumps(report, ensure_ascii=False))
-    return 0 if report["status"] == "PASS" else 1
+    return 0 if report["status"] in {"PASS", "DIAGNOSTIC_PASS"} else 1
 
 
 if __name__ == "__main__":
