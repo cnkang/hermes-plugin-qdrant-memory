@@ -270,11 +270,17 @@ failed `native_owner_unadmitted` event and raises `PermissionError`; it cannot f
 back to local Runtime writes. Operator retry cannot reattribute such an event to
 another identity.
 
-If retry leaves startup blocked by an event from another logical scope, the
-`PermissionError` includes its opaque Ledger event ID. Restore the original
-scope/policy to recover that input, or explicitly choose to discard that one
-never-admitted input. Startup does not discard or reattribute it automatically.
-Stop every Owner for the profile before using the offline operator command:
+After operator retry, startup cancels pending `native_owner_unadmitted` input
+whose scope differs from the current Owner. It never reattributes that input.
+Only raw input without candidates, operation keys or Owner authority qualifies;
+its `CANCELLED` receipt, erased payload and `native_unadmitted_discarded` counter
+commit atomically. Repeated startup does not count the same cancellation again.
+Same-scope input still reauthorizes into private memory, and admitted/prepared
+work retains its recovery protections. Failed events still require the existing
+explicit operator retry; this does not bypass the failure gate.
+
+An operator can also discard a specific unadmitted event before restart. Stop
+every Owner for the profile before using the offline command:
 
 ```sh
 qdrant-memory --home /path/to/owner-profile discard-unadmitted-event \
@@ -294,4 +300,5 @@ compare-and-set on the original status and payload, retains a `CANCELLED` receip
 and clears the raw payload. Repeating the same disposal is a no-op. Prepared or
 uncertain work must reconcile instead; this command cannot clear its recovery
 gate, reset a destination or delete saved memories. It is an operator CLI,
-never an Agent MCP tool or an automatic lifecycle action.
+never an Agent MCP tool. Automatic startup cancellation is limited to the
+foreign, never-admitted input described above.
