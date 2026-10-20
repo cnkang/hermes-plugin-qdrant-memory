@@ -100,3 +100,46 @@ def test_changed_upstream_dependency_shape_requires_review(compat, monkeypatch):
     monkeypatch.setattr(compat, "SOURCE_SHA256", hashlib.sha256(source).hexdigest())
     with pytest.raises(ValueError, match="Unexpected upstream Pillow"):
         compat.build_wheel(source)
+
+
+@pytest.mark.parametrize("location", ["comment", "other-package", "hash-suffix"])
+def test_lock_hash_must_belong_to_the_fastembed_requirement(
+    compat, monkeypatch, tmp_path, location
+):
+    """An unrelated or merely prefixed hash must not validate the CPU lock entry."""
+    source = source_fixture()
+    monkeypatch.setattr(compat, "SOURCE_SHA256", hashlib.sha256(source).hexdigest())
+    digest = hashlib.sha256(compat.build_wheel(source)).hexdigest()
+    source_path = tmp_path / "source.whl"
+    source_path.write_bytes(source)
+    lock = tmp_path / "requirements.txt"
+    expected = f"--hash=sha256:{digest}"
+    misplaced = {
+        "comment": f"# {expected}\nfastembed==0.9.0 --hash=sha256:wrong\n",
+        "other-package": f"other==1 {expected}\nfastembed==0.9.0 --hash=sha256:wrong\n",
+        "hash-suffix": f"fastembed==0.9.0 {expected}bad\n",
+    }
+    lock.write_text(misplaced[location])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(SCRIPT),
+            "--source-wheel",
+            str(source_path),
+            "--output-dir",
+            str(tmp_path / "output"),
+            "--check-lock",
+            str(lock),
+        ],
+    )
+    assert compat.main() == 1
+    assert not list((tmp_path / "output").glob("*.whl"))
+
+
+def test_lock_hash_accepts_only_the_complete_fastembed_continuation(compat):
+    """Accept the generated pip lock syntax without relying on unrelated comments."""
+    digest = "a" * 64
+    text = "# ignored\nother==1 --hash=sha256:other\nfastembed==0.9.0 \\\n"
+    text += f"    --hash=sha256:{digest}\n    # via the local extra\n"
+    compat.require_locked_hash(text, digest)
