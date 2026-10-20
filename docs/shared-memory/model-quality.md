@@ -1,74 +1,125 @@
 # Optional real-model lifecycle quality
 
-This source-preview evaluation uses the existing Owner Runtime, actual Hermes
-MemoryManager callbacks, actual Pi SDK sessions, and official HTTPS MCP clients.
-It does not implement a second extraction or memory-write path. The Pi assistant
-only acknowledges each turn deterministically. Extraction and embeddings use real
-already-installed local models (`qwen3:8b`, `qwen3-embedding:4b`) through Ollama on
-loopback HTTP. No API key, Cloud service or model download is required.
+[English](model-quality.md) | [简体中文](model-quality.zh-CN.md)
 
-The frozen anonymous corpus is in `tests/quality/lifecycle-v1.json`. It contains
-24 turns across private Hermes, private Pi and an explicitly authorized project
-scope. It also contains 16 annotated positive facts, 8 negative turns and 32
-retrieval queries. Concept
-groups allow paraphrases without using another model as judge. Exact corpus and
-model digests are recorded. This small synthetic corpus is a regression benchmark,
-not an estimate of production accuracy or a user-interface acceptance test.
+## Evaluation boundary
 
-The gate requires precision >= 0.95, positive-case recall >= 0.90, Recall@5 >= 0.90
-and MRR@5 >= 0.80. It also requires zero scope leaks, zero provider failures, safe
-replay and persistence across Owner restart. Missing observations fail the gate. After restart all 32
-queries run again. IDs and every returned payload field must remain identical.
-Computed similarity scores are excluded from payload comparison, but ranking is
-scored again and raw comparison diagnostics remain in the report. Event receipts
-must be unchanged and replay must not call the model again. Retrieval and model
-latency summaries use measured p50 and nearest-rank p95.
+This source preview evaluates the existing Owner Runtime through actual Hermes MemoryManager callbacks, Pi SDK sessions, and official HTTPS MCP clients.
+The Owner Runtime controls memory extraction and writes. The evaluation uses its existing extraction and write paths.
+MCP means Model Context Protocol. SDK means software development kit.
 
-From this checkout, with Python 3.11, `.[remote]`, Hermes test dependencies and
-the MCP checkout's locked Pi dependencies installed:
+The Pi assistant gives a fixed acknowledgement for each turn.
+Extraction and embeddings use installed local models through Ollama on loopback HTTP.
+An embedding represents text as a numeric vector.
+The models are `qwen3:8b` and `qwen3-embedding:4b`.
+The evaluation needs no API key, Cloud service, or model download.
+
+## Frozen baseline and quality gate
+
+The frozen anonymous corpus is [lifecycle-v1.json](../../tests/quality/lifecycle-v1.json).
+It contains 24 turns across private Hermes, private Pi, and an explicitly authorized project scope.
+It includes 16 annotated positive facts, 8 negative turns, and 32 retrieval queries.
+Concept groups accept paraphrases without another model acting as a judge. Reports record exact corpus and model digests.
+This small synthetic corpus measures regressions. It does not estimate production accuracy or certify a user interface.
+
+The gate requires these minimum scores:
+
+| Metric | Meaning | Minimum |
+| --- | --- | --- |
+| Precision | Correct extracted facts divided by extracted facts | 0.95 |
+| Positive-case recall | Positive cases with a correct extracted fact divided by positive cases | 0.90 |
+| Recall@5 | Expected facts found within the first five search results | 0.90 |
+| MRR@5 | Mean reciprocal rank of the first correct result within five results | 0.80 |
+
+The gate also requires zero scope leaks, zero provider failures, safe replay, and persistence across Owner restart.
+Missing observations fail the gate. After restart, the evaluator repeats all 32 queries.
+Record IDs and every returned payload field must remain identical.
+The comparison excludes computed similarity scores. The evaluator scores ranking again and retains raw comparison diagnostics.
+Event receipts must remain unchanged, and replay must not call the model again.
+
+Latency summaries report measured p50 and nearest-rank p95 for retrieval and model calls.
+These percentiles describe the median and the 95th percentile.
+
+## Run the evaluation
+
+Use Python 3.11.
+Install `.[remote]`, the Hermes test dependencies, and the MCP checkout's locked Pi dependencies.
+Run this command from the Runtime checkout:
 
 ```sh
 PYTHONPATH="$PWD:/path/to/hermes-agent" python scripts/evaluate_owner_lifecycle.py \
   --adapter-root /path/to/qdrant-memory-mcp --output /tmp/owner-quality-new.json
 ```
 
-The output path must be new. Each run uses a private temporary home, synthetic
-credentials and temporary Embedded Qdrant data, then closes and removes them.
-Reports contain metrics and hashes, not tokens or memory text. Failures return a
-nonzero exit status. A failed evaluation must remain recorded as FAIL.
-Observation/recording errors are separate from model-provider failures and also
-fail the gate. Restart and receipt replay must not increase model calls. Model
-discovery or setup failures still produce a redacted FAIL artifact.
+Use a new output path.
+Each run creates a private temporary home, synthetic credentials, and temporary Embedded Qdrant data.
+The run closes these resources and removes the temporary data.
+Reports contain metrics and hashes, without tokens or memory text.
 
-Committed evidence:
+Failures return a nonzero exit status and remain recorded as FAIL.
+Observation and recording errors differ from model-provider failures. Both fail the gate.
+Restart and receipt replay must not increase model calls.
+Model discovery and setup failures also produce a redacted FAIL artifact.
 
-- `owner-model-quality-evidence.json`: fingerprinted baseline before the evaluator
-  review fixes. Raw restart differences were limited to computed scores.
-- `owner-model-quality-reviewed-evidence.json`: earlier run after the evaluator fixes,
-  including explicit post-restart model-call and recording-error measurements.
-- `owner-model-quality-drained-evidence.json`: current baseline PASS after awaiting
-  the public Host admission barrier before the Provider idle barrier. All 24
-  captures and 32 queries, replay and restart checks ran with real local models.
-- `owner-mutation-initial-failure.json`: first full v1 + mutation run before the
-  replacement-intent, Host-admission barrier and denial-probe fixes. It records
-  FAIL and predates the `baseline_executed`/`evaluation_mode` fields; it is not
-  passing evidence for the current candidate.
-- `owner-mutation-quality-evidence.json`: historical full run whose cross-Agent
-  handoff claim is withdrawn: both read and write credentials belonged to `pi`.
-  Its raw PASS is retained for traceability, not current acceptance. The revised
-  scorer requires distinct logical-Agent identities from the stored provenance
-  and the actual reader grant; missing or equal identities fail closed.
-- `owner-mutation-identity-evidence.json`: fresh full baseline + mutation PASS,
-  with stored writer `pi` and independently authorized reader `hermes`. All
-  eleven checks passed, obsolete hits were 0/8, concurrent CAS had one winner
-  and one conflict, and restart/replay/revocation checks passed.
+## Committed evidence
+
+| Evidence | Meaning |
+| --- | --- |
+| [owner-model-quality-evidence.json](owner-model-quality-evidence.json) | Baseline before evaluator review fixes. Raw restart differences affected computed scores only. |
+| [owner-model-quality-reviewed-evidence.json](owner-model-quality-reviewed-evidence.json) | Earlier run after evaluator fixes. Includes explicit post-restart model-call and recording-error measurements. |
+| [owner-model-quality-drained-evidence.json](owner-model-quality-drained-evidence.json) | Baseline-only PASS after the public Host admission barrier completed before the Provider idle barrier. |
+| [owner-mutation-initial-failure.json](owner-mutation-initial-failure.json) | First full baseline and mutation run. FAIL before replacement-intent, Host-admission barrier, and denial-probe fixes. |
+| [owner-mutation-quality-evidence.json](owner-mutation-quality-evidence.json) | Historical raw PASS. The cross-Agent handoff claim is withdrawn because both credentials belonged to `pi`. |
+| [owner-mutation-identity-evidence.json](owner-mutation-identity-evidence.json) | Fresh full baseline and mutation PASS with stored writer `pi` and independently authorized reader `hermes`. |
+| [owner-model-context-evidence.json](owner-model-context-evidence.json) | First full run that observes actual Pi model input. |
+| [owner-model-context-reviewed-evidence.json](owner-model-context-reviewed-evidence.json) | Full rerun after context evaluator review. Measures 12 actual Pi model inputs and 38 injected memories. |
+| [owner-reviewed-policy-initial-failure.json](owner-reviewed-policy-initial-failure.json) | First full run after fact-pair isolation. Supersession failed. Baseline and context checks passed. Not passing acceptance evidence. |
+| [owner-model-stack-evidence.json](owner-model-stack-evidence.json) | Fresh full real-model PASS with source-file fingerprints for the evaluated stack. |
+
+The drained baseline ran all 24 captures, 32 queries, replay checks, and restart checks with real local models.
+A Host admission barrier confirms callback delivery. A Provider idle barrier confirms that admitted work has finished.
+
+The initial mutation failure predates the `baseline_executed` and `evaluation_mode` fields.
+It does not provide passing evidence for the current candidate.
+The historical mutation PASS remains available for traceability, without current acceptance status.
+Its `superseded` and `withdrawn_conclusions` fields mark the withdrawn claim. The original measurements remain unchanged.
+
+The policy-review failure predates the opaque CAS token check. The earlier evaluator compared hash strings by order.
+CAS tokens have no order. Supersession requires the same record ID and a different token, with no obsolete result.
+
+The revised scorer checks stored provenance and the actual reader grant for distinct logical-Agent identities.
+Missing or equal identities fail the gate.
+The identity run passed all eleven checks, with 0 obsolete hits from 8 observed hits.
+Concurrent compare-and-swap (CAS) produced one winning update and one conflict. Restart, replay, and revocation checks also passed.
+CAS accepts an update only when the supplied version matches the stored version.
+
+The first context-observation run measured 12 actual Pi model inputs and 38 injected memories.
+It recorded zero annotated errors and zero scope violations. All baseline and mutation gates also passed.
+
+The stack run covered 24 baseline turns and 32 queries.
+Precision, positive-case recall, Recall@5, and MRR@5 each scored 1.0. All eleven mutation checks passed.
+It measured 12 actual Pi model inputs and 38 injected memories, with zero incorrect injections and zero scope violations.
+Restart added zero model calls.
+Source-file fingerprints bind this evidence to evaluated files. They do not certify a Git commit, production accuracy, or remote CI execution.
+
+## Driver contract
+
+`pi-quality-driver.yml` defines a contract job on a standard GitHub-hosted runner.
+The job uses the fixed Pi SDK and actual extension with a synthetic Owner transport.
+It repeats prompts and delays delivery across cases.
+Each receipt must keep its original event-to-case association.
+
+The job rejects skipped or absent tests.
+This workflow never selects the model runner.
+Its result needs a completed CI run.
+
+## Manual workflow
 
 The `owner-model-quality.yml` workflow uses a disposable Linux test runner with the `qdrant-memory-models` label.
 An operator must provision this runner explicitly.
 The workflow has no pull-request or fork trigger and uses no production credentials.
 It checks out immutable Hermes and MCP candidates and requires installed local models.
-Workflow configuration alone does not prove execution.
-Runner registration and remote execution require separate operator actions.
+Workflow configuration alone does not prove execution. Runner registration and remote execution require separate operator actions.
 
 Ordinary test CI also runs the scorer unit tests.
 
@@ -89,67 +140,66 @@ uv pip compile pyproject.toml requirements-quality.in --extra remote \
 
 Review the resulting versions and hashes before you use the new snapshot.
 
-## Driver contract
+## Actual model-input observation
 
-`pi-quality-driver.yml` defines a contract job on a standard GitHub-hosted runner.
-The job uses the fixed Pi SDK and actual extension with a synthetic Owner transport.
-It repeats prompts and delays delivery across cases.
-Each receipt must keep its original event-to-case association.
+The Pi quality driver observes actual model input at `streamSimple`, after lifecycle context hooks run.
+The `context_quality` result measures incorrect annotated memory injection separately from extraction precision and retrieval.
+Injection means adding recalled memory to model input.
 
-The job rejects skipped or absent tests.
-This workflow never selects the model runner.
-Its result needs a completed CI run.
+Missing or duplicate case observations fail the gate.
+No measured injections, unknown facts, or incorrect space or visibility also fail the gate.
+The read credential grants project access only, including turns that capture into Pi's private write scope.
+Injected facts must match the project annotations. This measurement does not assess unrestricted private recall or production factual accuracy.
+Malformed memory JSON aborts the driver and produces a redacted FAIL artifact. It cannot count as zero errors.
 
 ## Mutation and multilingual extension
 
-The Pi quality driver also observes the actual model input at `streamSimple`,
-after lifecycle context hooks have run. `context_quality` measures incorrect
-annotated memory injection separately from extraction precision and retrieval.
-Missing/duplicate case observations, no measured injections, unknown facts and
-wrong space/visibility fail the gate. The read credential is project-only even
-when the turn captures into Pi's private write scope: injected facts must match
-the project annotations. This does not measure unrestricted private recall or
-production factual accuracy. Malformed memory JSON aborts the driver and produces
-a redacted FAIL artifact; it is intentionally not recorded as zero errors.
+Add `--scenarios tests/quality/lifecycle-mutations-v1.json` to run the frozen mutation corpus after the baseline capture, retrieval, and restart gate.
+Chinese Hermes turns in separate sessions measure explicit supersession and continuation by the same logical Agent on a second device.
+Supersession replaces an existing fact with a newer fact.
+Actual Pi hooks capture a Chinese documentation preference and an authorized project architecture decision.
 
-`owner-model-context-evidence.json` records the first full run with this observer.
-The run had 12 actual Pi model inputs and 38 injected memories. It had zero
-annotated errors and zero scope violations. All baseline and mutation gates also
-passed.
+Explicit deletion, replay, and concurrent CAS use verified HTTPS MCP.
+Two independently authenticated logical Agents attempt to update one project-memory version concurrently.
+The gate requires exactly one update and one conflict.
+A project read grant must reject deletion and must fail authentication after revocation.
+Another restart checks durable deletion, winning receipts, revocation, retained facts, and zero additional model calls.
+Generic network failure cannot count as authorization denial.
 
-Pass `--scenarios tests/quality/lifecycle-mutations-v1.json` to additionally run
-the frozen mutation corpus after the v1 capture/retrieval/restart gate. It uses
-Chinese Hermes turns in separate sessions to measure explicit supersession and
-same-logical-Agent continuation from a second device. Actual Pi hooks capture a
-Chinese documentation preference and an authorized project architecture decision.
+A missing or false scenario fails the extension.
+An obsolete superseded fact in the measured latest-fact search also fails the extension.
+The `obsolete_hit_rate` metric describes only that annotated query. It does not measure production hallucination or overall injection rate.
+The baseline and mutation corpora have separate versions and hashes. Baseline evidence alone does not prove extension execution.
 
-All explicit deletion, replay and concurrent CAS operations go through verified
-HTTPS MCP. Two independently authenticated logical Agents race one project-memory
-version: exactly one update and one conflict are required. A project read grant
-must be unable to delete, then must fail authentication after revocation. Another
-restart verifies durable deletion, winning receipts, revocation, retained facts
-and zero additional model calls. Generic network failure cannot count as denial.
+The manual model workflow enables this extension explicitly. Record evidence from its actual execution separately.
 
-The extension fails if any scenario is missing/false or an old superseded fact
-remains in the measured latest-fact search. `obsolete_hit_rate` describes only
-that annotated query, not a production hallucination or overall injection rate.
-The v1 and mutation corpora retain separate versions and hashes; v1 evidence
-does not prove the optional extension ran. The manual model workflow explicitly
-enables this extension. Its actual-run evidence must be recorded separately.
+Use `--scenarios-only` for a focused mutation run.
+Its report states `evaluation_mode=mutations-only`, zero baseline cases and queries, and `baseline_executed=false`.
+A successful diagnostic reports top-level `status=DIAGNOSTIC_PASS` and `mutation_scenarios.status=PASS`.
+Exit status 0 indicates diagnostic success only. It does not certify the v1 baseline.
+Failures and exceptions report `status=FAIL` and return exit status 1.
 
-For focused development, `--scenarios-only` executes only the mutation corpus.
-Its report explicitly states `evaluation_mode=mutations-only`, zero baseline
-cases/queries and `baseline_executed=false`. A diagnostic PASS does not certify
-the v1 baseline. The manual workflow requires both baseline and mutation PASS.
+A successful full run reports top-level `status=PASS` and `baseline_executed=true`.
+The manual workflow requires both fields and mutation `PASS` for acceptance.
+It does not accept `DIAGNOSTIC_PASS` as a full quality result.
 
-Explicit supersession uses a `replacement_intent` extraction flag. It requests
-relation review of up to five existing candidates in the same authorized scope,
-including below the ordinary similarity cutoff. The original user statement is
-provided as untrusted evidence; only factual `SUPERSEDES` can authorize choosing
-an update instead of an add. The flag never changes the grant, target scope or
-write permissions. New extraction schemas require every property, following the
-[strict Structured Outputs contract](https://developers.openai.com/api/docs/guides/structured-outputs).
-Missing/false flags in legacy durable candidates retain the old review policy.
-Embeddings and stored payload schema stay
-unchanged. This path can add up to five relation-model calls for an explicitly
-replacing fact; measured latency must be reported rather than hidden.
+The manual workflow also tests a turn that replaces facts about two different projects.
+It runs the exact-ID update contract with both a deterministic facade and the installed local model.
+The model probe uses Ollama's native test API with thinking disabled. It does not change production model routing.
+The workflow rejects skipped model probes and stores their JUnit results.
+
+## Explicit supersession
+
+The `replacement_intent` extraction flag requests relation review of up to five existing candidates in the same authorized scope.
+The review can include candidates below the ordinary similarity cutoff. The original user statement supplies untrusted evidence.
+Only the factual `SUPERSEDES` relation can authorize an update instead of an add.
+The new fact must describe the same subject and attribute and give the replacement value.
+
+The full user statement supplies intent evidence. It cannot make a fact about another subject replace the candidate.
+The first relation check excludes the full statement. Only a `CONFLICT` result can request a second check with intent evidence.
+The flag cannot change the grant, target scope, or write permissions.
+
+New extraction schemas require every property under the [strict Structured Outputs contract](https://developers.openai.com/api/docs/guides/structured-outputs).
+Legacy durable candidates with missing or false flags keep the previous review policy.
+Embeddings and the stored payload schema remain unchanged. An explicit replacement can require up to ten relation-model calls.
+Report the measured latency, including these calls.
