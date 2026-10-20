@@ -14,7 +14,7 @@ jobs:
   quality:
     # Dedicated disposable test runner: never register a production/model host here.
     # No pull_request trigger can send untrusted fork code to this runner.
-    if: github.repository == 'cnkang/hermes-plugin-qdrant-memory'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'cnkang/hermes-plugin-qdrant-memory'
     runs-on: [self-hosted, linux, qdrant-memory-models]
     timeout-minutes: 30
     steps:

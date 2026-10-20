@@ -15,12 +15,12 @@ let input = "";
 for await (const chunk of process.stdin) input += chunk;
 const cases = JSON.parse(input);
 const captures = [], latencies = [];
-let current;
+const eventCases = new Map();
 const request = async (mode, value, env) => {
   const started = performance.now();
   try {
     const result = await ownerRequest(mode, value, env);
-    if (mode === "remote-event") captures.push({ case_id: current, event: value, receipt: result, status: result.status });
+    if (mode === "remote-event") captures.push({ event: value, receipt: result, status: result.status });
     return result;
   } finally { latencies.push({ mode, ms: performance.now() - started }); }
 };
@@ -45,14 +45,29 @@ const loader = new DefaultResourceLoader({ cwd: home, agentDir: home, settingsMa
   extensionFactories: [createOwnerMemoryExtension({ env: { ...process.env,
     QDRANT_MEMORY_AUTO_CAPTURE: "1", QDRANT_MEMORY_AUTO_RECALL: "1" }, request })] });
 await loader.reload();
+const sessionManager = SessionManager.inMemory(home);
 const { session } = await createAgentSession({ cwd: home, agentDir: home, resourceLoader: loader,
   modelRuntime, model: modelRuntime.getModel("fixture", "fixture"), settingsManager,
-  sessionManager: SessionManager.inMemory(home), tools: [], thinkingLevel: "off" });
+  sessionManager, tools: [], thinkingLevel: "off" });
 try {
+  let entryCursor = sessionManager.getEntries().length;
   for (const row of cases) {
-    current = row.id;
     await session.prompt(row.user);
+    const entries = sessionManager.getEntries();
+    for (const entry of entries.slice(entryCursor)) {
+      if (entry.type !== "custom" || entry.customType !== "qdrant-owner-event") continue;
+      const id = entry.data?.event?.event_id;
+      if (typeof id !== "string" || !id) throw new Error("Captured event ID is required");
+      if (eventCases.has(id) && eventCases.get(id) !== row.id) throw new Error("Conflicting event case association");
+      eventCases.set(id, row.id);
+    }
+    entryCursor = entries.length;
   }
+  const attributedCaptures = captures.map(capture => {
+    const id = capture.event.event_id;
+    if (!eventCases.has(id)) throw new Error("Capture receipt has no originating case");
+    return { case_id: eventCases.get(id), ...capture };
+  });
   const historyLeak = session.agent.state.messages.some(row => row.customType === "qdrant-owner-recall");
-  process.stdout.write(JSON.stringify({ captures, latencies, history_leak: historyLeak }) + "\n");
+  process.stdout.write(JSON.stringify({ captures: attributedCaptures, latencies, history_leak: historyLeak }) + "\n");
 } finally { session.dispose(); }
