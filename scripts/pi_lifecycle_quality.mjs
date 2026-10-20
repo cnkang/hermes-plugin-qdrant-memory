@@ -1,5 +1,6 @@
 /** Actual Pi hooks; assistant is deterministic, Owner extraction/embeddings are real. */
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 const [adapterRoot, home] = process.argv.slice(2);
@@ -34,8 +35,9 @@ function assistant(model) {
 }
 const modelRuntime = await ModelRuntime.create({ authPath: path.join(home, "auth.json"), modelsPath: null,
   modelsStorePath: path.join(home, "models.json"), refreshOnCreate: false, allowModelNetwork: false });
+// The local SDK fixture requires a nonempty key; generate it per run, never use a real credential.
 modelRuntime.registerProvider("fixture", { api: "openai-completions", baseUrl: "http://127.0.0.1:1",
-  apiKey: "synthetic-assistant-fixture", streamSimple: assistant, models: [{ id: "fixture", name: "fixture",
+  apiKey: randomBytes(24).toString("hex"), streamSimple: assistant, models: [{ id: "fixture", name: "fixture",
     reasoning: false, input: ["text"], contextWindow: 32768, maxTokens: 4096,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] });
 const settingsManager = SettingsManager.inMemory({});
