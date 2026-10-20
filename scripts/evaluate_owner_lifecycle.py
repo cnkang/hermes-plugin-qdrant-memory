@@ -298,7 +298,11 @@ def evaluate(data, adapter, home, recorder, tokens):
             provider.on_session_switch(row["session"])
             provider.on_turn_start(index + 1, row["user"], session_id=row["session"])
             manager.sync_all(row["user"], "ack", session_id=row["session"])
-            if not provider.wait_idle(120) or provider._native_owner.owner.blocked:
+            if (
+                not manager.flush_pending(timeout=10)
+                or not provider.wait_idle(120)
+                or provider._native_owner.owner.blocked
+            ):
                 raise RuntimeError("Native lifecycle failed or recovery gate blocked")
         with tls_owner(provider, home) as (url, cert):
             for route, token in (("project", tokens["PROJECT"]), ("pi", tokens["PI"])):
