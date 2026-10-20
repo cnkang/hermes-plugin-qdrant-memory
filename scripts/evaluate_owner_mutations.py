@@ -120,6 +120,7 @@ def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
     delete_args, deletion, deleted_id = None, None, None
     winner, winning_args, winning_token = None, None, None
     after, obsolete = [], 0
+    writer_agent, reader_agent = None, None
     try:
         with core.tls_owner(provider, home) as (url, cert):
             turn("change-old", 1)
@@ -164,11 +165,36 @@ def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
             private = core.remote_query(url, cert, tokens["PI"], "Project Acacia 用户文档语言")
             language = find(private, "language-zh")
             checks["multilingual"] = language is not None
-            shared = core.remote_query(
-                url, cert, tokens["READER"], "Project Sequoia deployment region"
+            document = json.loads(policy_path.read_text())
+            second = secrets.token_hex(32)
+            grant = next(
+                row
+                for row in document["clients"]
+                if row["token_sha256"] == core.digest(tokens["PROJECT"].encode())
             )
+            peer = next(
+                row
+                for row in document["clients"]
+                if row["token_sha256"] == core.digest(tokens["NATIVE"].encode())
+            )
+            reader_agent = peer["logical_agent_id"]
+            document["clients"].append(
+                {
+                    **grant,
+                    "token_sha256": core.digest(second.encode()),
+                    "principal": "hermes-project",
+                    "logical_agent_id": reader_agent,
+                    "device_id": "hermes-project",
+                }
+            )
+            policy_path.write_text(json.dumps(document))
+            shared = core.remote_query(url, cert, second, "Project Sequoia deployment region")
             decision = find(shared, "handoff-decision")
-            checks["cross_agent_handoff"] = decision is not None
+            if decision:
+                writer_agent = decision.get("logical_agent_id")
+            checks["cross_agent_handoff"] = bool(
+                writer_agent and reader_agent and writer_agent != reader_agent
+            )
 
             if language:
                 deleted_id = language["id"]
@@ -199,23 +225,6 @@ def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
                 checks["readonly_denied"] = denied(
                     url, cert, tokens["READER"], "qdrant_memory_delete", readonly_args
                 )
-                document = json.loads(policy_path.read_text())
-                second = secrets.token_hex(32)
-                grant = next(
-                    row
-                    for row in document["clients"]
-                    if row["token_sha256"] == core.digest(tokens["PROJECT"].encode())
-                )
-                document["clients"].append(
-                    {
-                        **grant,
-                        "token_sha256": core.digest(second.encode()),
-                        "principal": "hermes-project",
-                        "logical_agent_id": "hermes",
-                        "device_id": "hermes-project",
-                    }
-                )
-                policy_path.write_text(json.dumps(document))
                 arguments = [
                     {
                         "id": decision["id"],
@@ -292,7 +301,13 @@ def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
     finally:
         manager.shutdown_all()
     checks["restart_no_model_calls"] = len(recorder.latencies) == calls
-    report = score_mutations(checks, obsolete_hits=obsolete, observed_hits=len(after))
+    report = score_mutations(
+        checks,
+        obsolete_hits=obsolete,
+        observed_hits=len(after),
+        writer_agent=writer_agent,
+        reader_agent=reader_agent,
+    )
     report["unreplaced_candidate_score"] = old_similarity
     report["capture_latency"] = latency_summary(capture_latencies)
     report["cas_winners"], report["cas_conflicts"] = cas_winners, cas_conflicts
