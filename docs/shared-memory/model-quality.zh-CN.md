@@ -91,6 +91,17 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 重启新增模型调用为零。
 源文件指纹将证据绑定到被评估文件，不认证 Git 提交、生产准确率或远端 CI 执行。
 
+## 驱动契约
+
+`pi-quality-driver.yml` 在标准 GitHub 托管 runner 上定义契约检查 job。
+该 job 使用固定版本的 Pi SDK、真实扩展和合成 Owner 传输层。
+它重复提示文本，并把部分交付延迟到后续 case。
+每条 receipt 必须保留原始 event 与 case 的关联。
+
+该 job 拒绝跳过或未执行测试的结果。
+此工作流不会选择模型 runner。
+它的实际结果需要已完成的 CI run。
+
 ## 手动工作流
 
 `owner-model-quality.yml` 工作流使用带 `qdrant-memory-models` 标签的一次性 Linux 测试 runner。
