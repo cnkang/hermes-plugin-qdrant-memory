@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import json
 import os
+import runpy
 import secrets
 import socket
 import subprocess
@@ -387,6 +388,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adapter-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--scenarios", type=Path, help="Optional frozen mutation/isolation corpus")
     args = parser.parse_args()
     dataset_bytes = (ROOT / "tests" / "quality" / "lifecycle-v1.json").read_bytes()
     data = json.loads(dataset_bytes)
@@ -409,6 +411,7 @@ def main():
             for path in [
                 ROOT / "scripts" / "evaluate_owner_lifecycle.py",
                 ROOT / "scripts" / "pi_lifecycle_quality.mjs",
+                *sorted((ROOT / "scripts").glob("evaluate_owner_mutations.py")),
                 *sorted((ROOT / "qdrant_memory").glob("*.py")),
             ]
         },
@@ -449,6 +452,39 @@ def main():
                 scoped = set_secret_scope(env, profile_home=str(home))
                 try:
                     evidence = evaluate(data, args.adapter_root.resolve(), home, recorder, tokens)
+                    if args.scenarios:
+                        scenario_bytes = args.scenarios.read_bytes()
+                        scenario = json.loads(scenario_bytes)
+                        validate_gold(scenario)
+                        report["scenarios_version"] = scenario["version"]
+                        report["scenarios_sha256"] = digest(scenario_bytes)
+                        recorder.case_ids.update(
+                            {row["user"]: row["id"] for row in scenario["cases"]}
+                        )
+                        extension = runpy.run_path(
+                            str(ROOT / "scripts" / "evaluate_owner_mutations.py")
+                        )
+                        core = SimpleNamespace(
+                            **{
+                                name: globals()[name]
+                                for name in (
+                                    "start_host",
+                                    "tls_owner",
+                                    "call_remote",
+                                    "remote_query",
+                                    "pi_capture",
+                                    "digest",
+                                )
+                            }
+                        )
+                        report["mutation_scenarios"] = extension["evaluate_mutations"](
+                            core, scenario, home, recorder, tokens, args.adapter_root.resolve()
+                        )
+                        evidence["extractions"] = {
+                            key: value
+                            for key, value in recorder.extractions.items()
+                            if key in {row["id"] for row in data["cases"]}
+                        }
                 finally:
                     reset_secret_scope(scoped)
             report.update(score_run(data, evidence))
@@ -468,7 +504,13 @@ def main():
                     )
                 }
             )
-            if report["post_restart_quality"]["status"] != "PASS" or recorder.recording_errors:
+            report["provider_failures"] = sum(recorder.errors.values())
+            if (
+                report["post_restart_quality"]["status"] != "PASS"
+                or recorder.recording_errors
+                or recorder.errors
+                or (args.scenarios and report["mutation_scenarios"]["status"] != "PASS")
+            ):
                 report["status"] = "FAIL"
     except Exception as exc:
         report["failure_type"] = type(exc).__name__

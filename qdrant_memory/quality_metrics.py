@@ -165,3 +165,39 @@ def durable_snapshot(hits):
             raise ValueError("Duplicate identity in restart evidence")
         result[identity] = {key: value for key, value in hit.items() if key != "score"}
     return result
+
+
+MUTATION_CHECKS = (
+    "same_agent_continuation",
+    "supersession",
+    "multilingual",
+    "cross_agent_handoff",
+    "readonly_denied",
+    "delete_replay",
+    "deleted_absent",
+    "revocation_denied",
+    "cas_one_winner",
+    "restart_durable",
+    "restart_no_model_calls",
+)
+
+
+def score_mutations(checks, *, obsolete_hits, observed_hits):
+    """Require all mutation/isolation scenarios and observed absence of obsolete recall."""
+    complete = set(checks) == set(MUTATION_CHECKS)
+    valid_counts = (
+        type(obsolete_hits) is int
+        and type(observed_hits) is int
+        and 0 <= obsolete_hits <= observed_hits
+        and observed_hits > 0
+    )
+    passing = complete and all(value is True for value in checks.values())
+    passing = passing and valid_counts and obsolete_hits == 0
+    return {
+        "status": "PASS" if passing else "FAIL",
+        "complete": complete,
+        "checks": checks,
+        "obsolete_hits": obsolete_hits,
+        "observed_hits": observed_hits,
+        "obsolete_hit_rate": obsolete_hits / observed_hits if valid_counts else None,
+    }

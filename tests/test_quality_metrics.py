@@ -147,3 +147,24 @@ def test_corpus_is_fixed_complete_and_annotated():
     assert len(validate_gold(data)) == 16
     assert len(data["queries"]) == 32
     assert {case["route"] for case in data["cases"]} == {"native", "project", "pi"}
+
+
+def test_mutation_scenarios_require_every_check_and_zero_obsolete_hits():
+    """Quality cannot pass after an omitted scenario, a stale fact or failed revocation."""
+    from qdrant_memory.quality_metrics import MUTATION_CHECKS, score_mutations
+
+    checks = dict.fromkeys(MUTATION_CHECKS, True)
+    assert score_mutations(checks, obsolete_hits=0, observed_hits=1)["status"] == "PASS"
+    for key in MUTATION_CHECKS:
+        assert (
+            score_mutations(
+                {k: v for k, v in checks.items() if k != key}, obsolete_hits=0, observed_hits=1
+            )["status"]
+            == "FAIL"
+        )
+        assert (
+            score_mutations({**checks, key: False}, obsolete_hits=0, observed_hits=1)["status"]
+            == "FAIL"
+        )
+    assert score_mutations(checks, obsolete_hits=1, observed_hits=2)["status"] == "FAIL"
+    assert score_mutations(checks, obsolete_hits=0, observed_hits=0)["status"] == "FAIL"

@@ -39,12 +39,12 @@ jobs:
           bash scripts/install_quality_dependencies.sh .quality/venv
           npm ci --prefix .quality/mcp/integrations/agent-hosts --ignore-scripts --no-audit --no-fund
       - name: Require scorer contracts before the actual model run
-        run: .quality/venv/bin/python -m pytest tests/test_quality_metrics.py -q
+        run: .quality/venv/bin/python -m pytest tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_quality_mutations.py -q
       - name: Actual local-model Hermes and Pi lifecycle quality
         env:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
           QUALITY_OUTPUT: ${{ runner.temp }}/owner-quality-${{ github.run_id }}-${{ github.run_attempt }}.json
-        run: .quality/venv/bin/python scripts/evaluate_owner_lifecycle.py --adapter-root .quality/mcp --output "$QUALITY_OUTPUT"
+        run: .quality/venv/bin/python scripts/evaluate_owner_lifecycle.py --adapter-root .quality/mcp --scenarios tests/quality/lifecycle-mutations-v1.json --output "$QUALITY_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
