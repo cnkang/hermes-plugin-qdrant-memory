@@ -91,6 +91,18 @@ def build_wheel(source):
     return output.getvalue()
 
 
+def require_locked_hash(text, digest):
+    """Match a complete hash token only inside the pinned FastEmbed requirement."""
+    lines = [line.split("#", 1)[0].rstrip() for line in text.splitlines()]
+    requirements = "\n".join(line for line in lines if line.strip()).replace("\\\n", " ")
+    for requirement in requirements.splitlines():
+        tokens = requirement.split()
+        if tokens and tokens[0] == f"fastembed=={BASE_VERSION}":
+            if f"--hash=sha256:{digest}" in tokens[1:]:
+                return
+    raise ValueError("Compatibility wheel hash missing from FastEmbed CPU lock entry")
+
+
 def main():
     """Build a hash-checked wheel before resolving either CI dependency snapshot."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -111,8 +123,8 @@ def main():
             raise ValueError("Source wheel exceeds size limit")
         wheel = build_wheel(source)
         digest = hashlib.sha256(wheel).hexdigest()
-        if args.check_lock and f"--hash=sha256:{digest}" not in args.check_lock.read_text():
-            raise ValueError("Compatibility wheel hash missing from CPU security snapshot")
+        if args.check_lock:
+            require_locked_hash(args.check_lock.read_text(), digest)
         args.output_dir.mkdir(parents=True, exist_ok=True)
         (args.output_dir / WHEEL_NAME).write_bytes(wheel)
         print(f"{WHEEL_NAME} sha256:{digest}")
