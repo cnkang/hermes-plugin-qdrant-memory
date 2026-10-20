@@ -1,6 +1,8 @@
 """Explicit intent and automatic factual adjudication remain separate policies."""
 
+import json
 import math
+from types import SimpleNamespace
 
 import pytest
 
@@ -8,6 +10,86 @@ from qdrant_memory.models import Scope
 from qdrant_memory.tools import dispatch
 
 from .helpers import LLM, runtime
+
+
+def test_extraction_schema_keeps_strict_provider_objects_closed_and_required():
+    """Strict OpenAI-compatible structured output requires every property to be required."""
+    from qdrant_memory.extraction import MEMORY_SCHEMA
+
+    item = MEMORY_SCHEMA["properties"]["memories"]["items"]
+    assert set(item["properties"]) == set(item["required"])
+    assert item["additionalProperties"] is False
+
+
+@pytest.mark.parametrize("replacement", [True, False])
+def test_explicit_replacement_reviews_low_similarity_candidates_in_scope(tmp_path, replacement):
+    """A replacement can reach its fact below the cutoff without changing ordinary adds."""
+    old = "Project Willow prefers cats"
+    updated = "Project Willow prefers dogs"
+    statement = "For Project Willow, replace the previous cats preference with dogs."
+
+    class ReplacementLLM(LLM):
+        """Classify only a replacement supported by the original user statement."""
+
+        def complete_structured(self, **kwargs):
+            """Return a normalized candidate and scoped factual relations."""
+            self.calls.append(kwargs)
+            value = json.loads(kwargs["input"][0]["text"])
+            if kwargs["purpose"].endswith("relation"):
+                relation = (
+                    "SUPERSEDES"
+                    if value["old"] == old and value.get("user_statement") == statement
+                    else "UNRELATED"
+                )
+                return SimpleNamespace(parsed={"relation": relation})
+            return SimpleNamespace(
+                parsed={
+                    "memories": [
+                        {
+                            "text": updated,
+                            "category": [],
+                            "importance": 0.8,
+                            "replacement_intent": replacement,
+                        }
+                    ]
+                }
+            )
+
+    llm = ReplacementLLM()
+    rt = runtime(tmp_path, llm=llm)
+    scope = Scope("alice", "hermes")
+    foreign = Scope("mallory", "hermes")
+    try:
+        first = rt.add(old, scope)
+        rt.add("Project Birch prefers dogs", scope)
+        rt.add("foreign dogs preference", foreign)
+        assert (
+            rt.store.search(updated, scope, top_k=5)[1].score
+            < rt.cfg["dedupe"]["similarity_review_threshold"]
+        )
+        key = rt.ledger.enqueue_event(
+            {
+                "kind": "turn",
+                "scope": scope.as_dict(),
+                "source": "conversation",
+                "session_id": "s",
+                "user": statement,
+                "assistant": "ack",
+            }
+        )
+        rt.process_event(key)
+        assert rt.store.count(scope) == (2 if replacement else 3)
+        assert rt.store.get(first["id"], scope).payload["text"] == (updated if replacement else old)
+        relations = [
+            json.loads(call["input"][0]["text"])
+            for call in llm.calls
+            if call["purpose"].endswith("relation")
+        ]
+        assert all("foreign" not in call["old"] for call in relations)
+        assert rt.store.count(foreign) == 1
+    finally:
+        rt.store.close()
+        rt.ledger.close()
 
 
 @pytest.mark.parametrize("score", [0.92, 0.97, 1.0])

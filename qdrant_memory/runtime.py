@@ -250,6 +250,11 @@ class Runtime:
                 self.extractor,
                 self.cfg["dedupe"],
                 **({"filters": filters} if filters else {}),
+                **(
+                    {"replacement_context": event.get("user", "")}
+                    if candidate.get("replacement_intent") is True
+                    else {}
+                ),
             )
             self.decisions[action] += 1
             self.ledger.increment(action)
