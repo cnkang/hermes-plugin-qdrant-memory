@@ -38,7 +38,7 @@
     "qdrant_memory/policy_admin.py": "d5032fb84c53ceb61ba6ead4044d91e6c4619768c7611b2a9948d034a415e1dd",
     "qdrant_memory/private_paths.py": "33425c0fe8675764ec48e7716d9ca2fa989cc6f1e791bb7470ee8f45ea5302d1",
     "qdrant_memory/progress.py": "69f50140f0335f092521168a65cbec3890396b37dad0117fec46dfe3c3ce03a6",
-    "qdrant_memory/provider.py": "0a99394234de6484c42d3585c1da4149f0a9163ed725cb8afe2c72036222a495",
+    "qdrant_memory/provider.py": "4b42346562ebe2f535aa23dc10df7e9865fea3a84a969cde5a5384d494b4dec9",
     "qdrant_memory/qdrant_store.py": "7486164aa2c155ee8649520ca61cd7600cebebf88c0357678eaf80f9dffa5dc9",
     "qdrant_memory/quality_metrics.py": "ddfe7e749878ec9ef37c1c2afaab7106d79344217e807ada3522a3267db76579",
     "qdrant_memory/remote_client.py": "ee8a745dfd25833db9d65d406d51df26ad5f94d7c3c3831c5da12926a639a67c",
@@ -89,8 +89,8 @@
     "unreplaced_candidate_score": null,
     "capture_latency": {
       "samples": 4,
-      "p50_ms": 16105.76237499481,
-      "p95_ms": 33744.98804198811
+      "p50_ms": 16185.336916998494,
+      "p95_ms": 34899.95429100236
     },
     "cas_winners": 1,
     "cas_conflicts": 1,
@@ -149,13 +149,13 @@
   },
   "retrieval_latency": {
     "samples": 64,
-    "p50_ms": 50.7932499749586,
-    "p95_ms": 71.96983299218118
+    "p50_ms": 53.192291990853846,
+    "p95_ms": 65.28466701274738
   },
   "model_latency": {
     "samples": 29,
-    "p50_ms": 12690.620792040136,
-    "p95_ms": 16737.00345796533
+    "p50_ms": 12680.680125020444,
+    "p95_ms": 17164.20029103756
   },
   "provider_error_types": {},
   "recording_error_types": {}
