@@ -7,16 +7,17 @@ only acknowledges each turn deterministically; extraction and embeddings use rea
 already-installed local models (`qwen3:8b`, `qwen3-embedding:4b`) through Ollama on
 loopback HTTP. No API key, Cloud service or model download is required.
 
-The frozen anonymous corpus in `tests/quality/lifecycle-v1.json` contains 24 turns
-across private Hermes, private Pi and an explicitly authorized project scope,
-16 annotated positive facts, 8 negative turns and 32 retrieval queries. Concept
+The frozen anonymous corpus is in `tests/quality/lifecycle-v1.json`. It contains
+24 turns across private Hermes, private Pi and an explicitly authorized project
+scope. It also contains 16 annotated positive facts, 8 negative turns and 32
+retrieval queries. Concept
 groups allow paraphrases without using another model as judge. Exact corpus and
 model digests are recorded. This small synthetic corpus is a regression benchmark,
 not an estimate of production accuracy or a user-interface acceptance test.
 
-The gate requires precision >= 0.95, positive-case recall >= 0.90, Recall@5 >= 0.90,
-MRR@5 >= 0.80, zero scope leaks and provider failures, safe replay, and persistence
-across Owner restart. Missing observations fail the gate. After restart all 32
+The gate requires precision >= 0.95, positive-case recall >= 0.90, Recall@5 >= 0.90
+and MRR@5 >= 0.80. It also requires zero scope leaks, zero provider failures, safe
+replay and persistence across Owner restart. Missing observations fail the gate. After restart all 32
 queries run again; IDs and every returned payload field must remain identical.
 Computed similarity scores are excluded from payload comparison, but ranking is
 scored again and raw comparison diagnostics remain in the report. Event receipts
