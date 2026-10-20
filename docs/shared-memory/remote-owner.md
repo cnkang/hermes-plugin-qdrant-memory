@@ -196,6 +196,10 @@ It requires the protected remote listener and defaults off. Do not register a
 second MCP memory interface in the same Native profile.
 
 Native Owner private recall revalidates its current device grant before delivery.
+In Native mode the Owner grant is the only authority for the memory tools: a
+session whose scope is not the Owner scope is denied with a permission error
+instead of falling back to the private local dispatch, so no other identity can
+write into the granted private partition outside that grant.
 A Runtime mutation generation invalidates private cached recall before any write
 attempt, including remote deletion and uncertain acknowledgements. Failed Native
 storage operations gate Owner writes and automatic recall, retaining queued raw
