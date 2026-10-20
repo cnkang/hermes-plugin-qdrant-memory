@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -42,6 +43,7 @@ remote_gateway.serve(root, root / 'policy', port=0, local_port=0, allowed_hosts=
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         text=True,
+        cwd=Path(__file__).resolve().parents[1],
     )
     lines = queue.Queue()
     reader = threading.Thread(target=lambda: lines.put(process.stdout.readline()), daemon=True)
