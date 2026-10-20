@@ -14,6 +14,13 @@ CASES = [("success", "success", "success", "success", "success", "success", "suc
 ]
 
 
+def test_required_gate_cannot_skip_on_workflow_cancellation():
+    """A skipped required job permits merge, so cancellation must still run the gate."""
+    path = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+    gate = YAML(typ="safe").load(path.read_text(encoding="utf-8"))["jobs"]["scan-gate"]
+    assert gate["if"] == "always()", "The required gate must run even after cancellation"
+
+
 @pytest.mark.parametrize("lint,tests,mcp,host_pins,sonar,snyk,snyk_code,expected", CASES)
 @pytest.mark.skipif(os.name == "nt", reason="The checked workflow step is POSIX Bash.")
 def test_required_gate_executes_actual_workflow_step(

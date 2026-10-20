@@ -394,7 +394,8 @@ jobs:
   scan-gate:
     name: Required security scan gate
     needs: [lint, tests, mcp-coverage, host-pins, sonarcloud, snyk, snyk-code]
-    if: always() && !cancelled()
+    # A skipped required job permits merge. Cancellation must still fail this gate.
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
