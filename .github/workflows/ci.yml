@@ -394,7 +394,7 @@ jobs:
   scan-gate:
     name: Required security scan gate
     needs: [lint, tests, mcp-coverage, host-pins, sonarcloud, snyk, snyk-code]
-    if: always()
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
