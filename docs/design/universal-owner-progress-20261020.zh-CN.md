@@ -78,7 +78,7 @@ CodeRabbit 重审 #69 提出 1 major issue。原 `NativeOwner.events()` 对外�
 
 最终模型证据：[reviewed evidence](../shared-memory/owner-model-quality-reviewed-evidence.json)；前一版指纹化基线：[baseline evidence](../shared-memory/owner-model-quality-evidence.json)。最终实测检索 p50 **51.79 ms**、p95 **86.25 ms**；Owner 模型推理 p50 **10.29 s**、p95 **13.04 s**。这是本机固定匿名语料的结果，不是生产 SLA。模型 digest、语料 SHA、prompt/schema 和源文件指纹均在 JSON 内。
 
-2026-10-20 04:30 UTC 左右的待检查 head：#67 `6659d46`、#68 `14e36d0`、#69 `341cdda`、MCP #32 `be6e653`、Skill #29 `f066ed0`；#70 随证据提交更新。新 head 检查仍排队/运行，不因历史绿色结果自动合并。原 Runtime 工作区仍保留既有 `codex/universal-owner` 本地 ahead 1 提交；MCP/Skill 工作区本轮提交推送后干净。
+2026-10-20 04:30 UTC 左右的待检查 head：#67 `6659d46`、#68 `14e36d0`、#69 `341cdda`、MCP #32 `be6e653`、Skill #29 `f066ed0`；#70 随证据提交更新。新 head 检查仍排队/运行，不因历史绿色结果自动合并。原 Runtime 工作区仍保留既有 `the integration branch` 本地 ahead 1 提交；MCP/Skill 工作区本轮提交推送后干净。
 
 ## 安全与兼容性
 
