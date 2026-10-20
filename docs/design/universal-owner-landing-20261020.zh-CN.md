@@ -1,6 +1,6 @@
 # Universal Owner 验证记录
 
-日期：2026-10-20。本文记录源码预览的验证范围，不代表正式发行版或生产环境验收。
+日期：2026-10-21。本文记录源码预览的验证范围，不代表正式发行版或生产环境验收。
 英文功能说明见 [Remote Owner](../shared-memory/remote-owner.md)。
 本文是独立验证记录，不是该英文指南的译本。
 
@@ -40,7 +40,7 @@ FAILED 工作仍需显式操作员重试。
 | 测试 | 结果 | 覆盖范围 |
 |---|---|---|
 | Native 与 Pillow 13 组合版本完整测试 | 731 PASS、9 SKIPPED | SDK 2.x，包含取消门禁与锁外授权回归 |
-| 质量扩展完整测试 | 758 PASS、9 SKIPPED | 包含上下文评分、变更场景和 Pi 事件归属契约 |
+| 质量扩展完整测试 | 786 PASS、10 SKIPPED | 包含上下文评分、变更场景、Pi 事件归属与替换关系回归 |
 | Native 与维护定向测试 | 44 PASS | 自动取消、同作用域继续处理、prepared 保护、回滚与擦除 |
 | 锁外授权定向测试 | 13 PASS | 真实 policy 加载屏障、身份与代次变更、数据变更、撤权 |
 | Python 3.14 / SDK 1.x 相关测试 | 52 PASS | Native 授权与必需安全门禁 |
@@ -48,12 +48,14 @@ FAILED 工作仍需显式操作员重试。
 | 实际 Hermes 到 Pi 交接 | 1 PASS | 固定版本宿主、确定性模型、验证证书的 HTTPS MCP |
 | 实际模型完整评估 | PASS | 24 次基线捕获、32 次查询、11 项变更检查 |
 
-完整测试的 SKIPPED 项需独立环境执行。
+完整测试的 SKIPPED 项需独立环境执行。其中实际模型关系回归已单独启用并通过。
 测试保留了既有 Embedded payload-index 警告。
 这些记录不替代最终提交的 GitHub CI。
 
 实际模型证据见 [owner-model-stack-evidence.json](../shared-memory/owner-model-stack-evidence.json)。
-锁外授权修复后的复测证据包含 43 项源码 hash 和 Pi extension hash，均与对应实现匹配。
+最终复测证据包含 43 项源码 hash 和 Pi extension hash，均与对应实现匹配。
+评估使用修复后的关系判断和 CAS 评分，完整基线、变更与上下文评估均为 PASS。
+CAS 版本是无序令牌。替换评分要求同一记录的令牌发生变化，并且旧事实查询无命中。
 四项基线质量指标均为 1.0。
 实际 Pi 观察到 12 次模型输入和 38 条注入记忆。
 标注错误与空间越权均为 0，重启没有增加模型调用。
@@ -68,10 +70,15 @@ CodeRabbit 后续审查覆盖本轮 7 个修改文件，结果为 0 issues。
 该结果不代表整个系统获得安全认证。
 
 历史证据中的首次替换场景 FAIL 保留。
+关系判断修复后的首次完整 FAIL 也保留，详见模型质量指南。
 早期同逻辑 Agent 的交接结果不能用作跨 Agent 验收。
 当前评分要求存储的写者与实际读者属于不同逻辑 Agent。
 
 ## 依赖兼容性
+
+[PR #69](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/69) 已以 rebase 合并。
+合并提交为 `21623289efd508a9ded7db0e73974fb3ce7e1a9b`。
+合并前最终提交有 86 SUCCESS、1 Sourcery SKIPPED，无未解决审查线程。
 
 [PR #74](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/74) 已以 rebase 合并。
 被检查提交为 `591ee1e920514fdc863b7ab7e6011312242bbe07`。

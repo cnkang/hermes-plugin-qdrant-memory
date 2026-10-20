@@ -13,16 +13,16 @@
   "prompt_sha256": "27754444f81ab1836d60ecfea7aa0e0188719a343e737f5fb98fd14c8d807402",
   "schema_sha256": "899554d36c07fe2a187db77e73fae61cbadaff9c664ca4da7a4dfa1d13ae6814",
   "source_sha256": {
-    "scripts/evaluate_owner_lifecycle.py": "e19f79456dcfe6266f112f1ca48f87fa9070f7f7bbcdd8bcc3f4533b832c5953",
+    "scripts/evaluate_owner_lifecycle.py": "925f7520e02de3e84d56a2b7da791395176f5ab2ae930d2f254d3986310d9412",
     "scripts/pi_lifecycle_quality.mjs": "0ebd6fcfaf2177083efea18fa64f7ee32a87f176f0c45025723839d3093a19ef",
-    "scripts/evaluate_owner_mutations.py": "3baa2a5c7c64f2a4c0b78e51efc042aa93132716b6816240747b56d005ea8ed0",
+    "scripts/evaluate_owner_mutations.py": "73dc822a1e3bf2f9a27d614787e5815ee5d333251f0d61bfde75672631b3da8f",
     "qdrant_memory/__init__.py": "022dd19a7ee11a7e7ffe1f3a3bbf5262e40f20a8eaba572a88c8274b36fb2055",
     "qdrant_memory/cli.py": "d13f1e06d6878a8a98141ca7725ad968a723b19cbdd1c836f8923d4900ecb5df",
     "qdrant_memory/config.py": "6bb6cddc86abce58859fc74712d6950cf4aa741b9f0ebbc2772fc1c07bf3b530",
     "qdrant_memory/config_schema.py": "9657f928592421dea50111cd85996db129173379ba4f8f1b6780bd4d3bae2884",
     "qdrant_memory/dedupe.py": "6abf82aff7635693e7296a9d528cd2f5531124fb6769f94093dc3102f15765b1",
     "qdrant_memory/embedding.py": "28e173e008b2c6380dc830e0dc51502b687c01b0c569ad49d18e9b4469e6a5a5",
-    "qdrant_memory/extraction.py": "4c5047a0fad89d3017fc297bf90a61c831dd708a68c22130024861ae86f168c1",
+    "qdrant_memory/extraction.py": "989bc992cfc912f81f29b4f1d950a263c216be6eacebf2ada5c5fd0899c0fbe2",
     "qdrant_memory/inventory.py": "53cfccc64b66dab27affc7a2b063a31b79e12d89fd6f6ba92783257950ce43fc",
     "qdrant_memory/ledger.py": "4a106dbda664d834f67f60fb8683340b248f68174add70b825d3b7a36f51fdd3",
     "qdrant_memory/local_embedding.py": "2ca8b1eddf7d2e33c9db0cbd86213b71745d15882bc0a0a53eb852c6d8c5a753",
@@ -89,8 +89,8 @@
     "unreplaced_candidate_score": null,
     "capture_latency": {
       "samples": 4,
-      "p50_ms": 15906.892291968688,
-      "p95_ms": 34216.15616703639
+      "p50_ms": 16514.72175004892,
+      "p95_ms": 35235.456291993614
     },
     "cas_winners": 1,
     "cas_conflicts": 1,
@@ -149,13 +149,13 @@
   },
   "retrieval_latency": {
     "samples": 64,
-    "p50_ms": 51.585499953944236,
-    "p95_ms": 68.73387499945238
+    "p50_ms": 51.447125035338104,
+    "p95_ms": 68.20887501817197
   },
   "model_latency": {
     "samples": 29,
-    "p50_ms": 12471.056333044544,
-    "p95_ms": 17142.042833962478
+    "p50_ms": 12482.60508297244,
+    "p95_ms": 17802.370207966305
   },
   "provider_error_types": {},
   "recording_error_types": {}
