@@ -38,13 +38,13 @@ by that controller.
 ## Repository baseline and versions
 
 All three initial worktrees were clean. Existing branches were preserved and new
-`codex/shared-destination-security` branches were based on fetched main branches.
+the destination security branches were based on fetched main branches.
 
 | Repository | Initial local branch / HEAD | Fetched implementation baseline |
 |---|---|---|
 | Runtime | main / `1f6db227aa09f8ebd71618c6ec95ec4d7e138077` | `352fed94a3c7c4b261ded43975227265a7ce6309` |
-| MCP | codex/defensive-hardening / `2e4da5526a454cacea5e34f7272a80446c4d243f` | `d708ca570980fbd3dba09d4b08679d9d8bc9a2a5` |
-| Skills | codex/defensive-hardening / `4276afd5151fb335d4bbe53ab0be76d77e11635a` | `a3524b8ad3a2d66fb478e275531d929d1a345dc2` |
+| MCP | the hardening branch / `2e4da5526a454cacea5e34f7272a80446c4d243f` | `d708ca570980fbd3dba09d4b08679d9d8bc9a2a5` |
+| Skills | the hardening branch / `4276afd5151fb335d4bbe53ab0be76d77e11635a` | `a3524b8ad3a2d66fb478e275531d929d1a345dc2` |
 
 Verified public baselines: Runtime/tag 0.4.0, MCP/tag 0.2.1, DSH bundle 0.1.2,
 DSH client/host fixtures 0.2.1-rc.2, managed Launcher 0.1.0-rc.3 and canonical
@@ -69,8 +69,8 @@ New implementation commit: `005c8d7f69a10d445da3f1fa26ca6e2b27114298`.
 | Files | Change |
 |---|---|
 | qdrant_memory/shared_security.py | Strict optional destination binding, private state/claim checks, account registry and non-mutating doctor |
-| qdrant_memory/ownership.py | Shared account locks for ordinary writers and exclusive protected Owner locks; durable claims reject conflicting profiles |
-| qdrant_memory/shared_service.py | Compatible optional policy envelope; protected umask and per-write state validation |
+| qdrant_memory/ownership.py | Shared account locks for ordinary writers and exclusive protected Owner locks. Durable claims reject conflicting profiles |
+| qdrant_memory/shared_service.py | Compatible optional policy envelope. Protected umask and per-write state validation |
 | qdrant_memory/standalone.py | Protected admission before recovery, expected schema check and shared-doctor command |
 | tests/security/ | Negative binding, privacy, conflicting writer, replay/recovery, schema, redaction and database authorization contracts |
 | scripts/test_shared_security_docker.py | Disposable loopback TLS/JWT fixture with separate bootstrap and Owner credentials |
@@ -128,7 +128,7 @@ checkout, and each Python is selected from its isolated test environment.
 | Runtime: `PYTHONPATH="$HERMES_CHECKOUT" python -m pytest tests -q --tb=short` | 521 passed, 7 optional live-environment skips before final account-lookup compatibility test was added |
 | Final ownership regression: `PYTHONPATH="$HERMES_CHECKOUT" python -m pytest tests/test_writer_ownership.py tests/test_backend_contracts.py tests/security/test_shared_security.py -q --tb=short` | 29 passed, including all 18 final deterministic protection cases |
 | SDK 2: `python -m pytest tests/security/test_shared_security.py tests/standalone -q --tb=short` | 110 passed, no skips |
-| Authenticated database: `python scripts/test_shared_security_docker.py qdrant/qdrant:v1.15.5` | 1 passed, no warnings with matching client; includes real Owner/client writes, denied writes and read-only doctor |
+| Authenticated database: `python scripts/test_shared_security_docker.py qdrant/qdrant:v1.15.5` | 1 passed, no warnings with matching client. Includes real Owner/client writes, denied writes and read-only doctor |
 | MCP: `python -m pytest tests -q --tb=short` | 144 passed |
 | DSH: `DSH_TEST_MODULES=... QDRANT_TEST_SKILL_ROOT=... python -m pytest tests/dsh_acceptance.py -q --tb=short` | 3 passed, official client persistence and CLI/bundle lifecycle |
 | Launcher: `node --test tests/test_managed_bootstrap.mjs tests/test_managed_launcher.mjs` | 39 passed |
@@ -136,7 +136,7 @@ checkout, and each Python is selected from its isolated test environment.
 | Skills package/test suite per validate workflow | 275 passed, 34 explicit optional host/runtime/installed-agent skips |
 | Skills current Runtime/shared contract | 26 passed with opt-in variables enabled |
 | Skills Hermes paths/runtime E2E | 5 passed with opt-in variables enabled |
-| Runtime/MCP: `python -m build`; `python -m twine check --strict ...` | Wheel and sdist built; strict metadata checks passed |
+| Runtime/MCP: `python -m build`. `python -m twine check --strict ...` | Wheel and sdist built. Strict metadata checks passed |
 | MCP: `python scripts/verify_metadata.py` | Metadata, pins, ownership marker, schema and metadata-only artifacts passed |
 | Runtime: `python scripts/check_host_pins.py --host "$HERMES_CHECKOUT"` | Both shared host pins compatible |
 | Ruff check / format and Git whitespace checks | Passed |

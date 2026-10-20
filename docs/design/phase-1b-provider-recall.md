@@ -23,8 +23,8 @@ The provider reads a new `shared_read` block:
 | `enabled` | false | — | Turn shared recall on. |
 | `spaces` | [] | 8 items | The granted spaces. |
 | `limit` | 4 | 20 | The maximum number of shared items in one recall. |
-| `timeout_seconds` | 2 | 10 | Upper bound for a shared read; reduced by a caller delivery budget. |
-| `delivery_timeout_seconds` | 0.05 | 0.25 | Maximum synchronous recall wait; network deadlines use the smaller budget. |
+| `timeout_seconds` | 2 | 10 | Upper bound for a shared read. Reduced by a caller delivery budget. |
+| `delivery_timeout_seconds` | 0.05 | 0.25 | Maximum synchronous recall wait. Network deadlines use the smaller budget. |
 | `include_tool_search` | false | — | Also add shared items to the `qdrant_memory_search` tool result. |
 
 Each item in `spaces` has these fields:
