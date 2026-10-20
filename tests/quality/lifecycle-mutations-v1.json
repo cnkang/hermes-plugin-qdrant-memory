@@ -1,0 +1,32 @@
+{
+  "version": "anonymous-owner-mutations-2026-10-20-v1",
+  "description": "Synthetic multilingual supersession, cross-agent decision, explicit deletion, revocation and concurrent CAS; no production data.",
+  "cases": [
+    {
+      "id": "change-old", "session": "mutation-native-a", "route": "native",
+      "user": "Project Willow 的缓存有效期为300秒，这是已确认的项目决策。",
+      "expected": [{"id": "willow-old", "terms": [["Willow"], ["300"]]}]
+    },
+    {
+      "id": "change-new", "session": "mutation-native-b", "route": "native",
+      "user": "Project Willow 的缓存策略已经变更：原来的300秒设置已废弃，请将缓存有效期改为900秒。",
+      "expected": [{"id": "willow-new", "terms": [["Willow"], ["900"]]}]
+    },
+    {
+      "id": "language-zh", "session": "mutation-pi", "route": "pi",
+      "user": "Project Acacia 的用户文档必须使用简体中文编写，这是我明确的长期偏好。",
+      "expected": [{"id": "acacia-language", "terms": [["Acacia"], ["简体中文", "Simplified Chinese"]]}]
+    },
+    {
+      "id": "handoff-decision", "session": "mutation-project", "route": "project",
+      "user": "Project Sequoia's approved deployment region is Tokyo, following the team's final architecture decision.",
+      "expected": [{"id": "sequoia-region", "terms": [["Sequoia"], ["Tokyo"]]}]
+    }
+  ],
+  "queries": [
+    {"id": "old", "expected": "willow-old"},
+    {"id": "new", "expected": "willow-new"},
+    {"id": "language", "expected": "acacia-language"},
+    {"id": "decision", "expected": "sequoia-region"}
+  ]
+}
