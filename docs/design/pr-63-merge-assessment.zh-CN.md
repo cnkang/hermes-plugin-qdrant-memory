@@ -33,7 +33,7 @@ PR 先前被更新/重放至 `5f2f179cbb8df084f465948d80b7e6754ee01e73`，已包
 
 对应评审线程已标记解决，PR 描述已同步真实测试结果和非 Draft 状态。本次没有以
 resolve thread 代替新批准，也没有撤销或伪造 CodeRabbit 的旧 CHANGES_REQUESTED review。
-修复另已同步到 `the integration branch`（`9aaff09`），避免后续集成丢失。
+修复另已同步到 the integration branch（`9aaff09`），避免后续集成丢失。
 
 ## 验证证据
 
