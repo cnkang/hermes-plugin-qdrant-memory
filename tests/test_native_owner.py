@@ -283,6 +283,49 @@ def test_native_owner_lifecycle_project_handoff_and_private_isolation(tmp_path, 
         p.shutdown()
 
 
+def test_native_owner_denies_tool_calls_outside_the_owner_scope(tmp_path, monkeypatch):
+    """A foreign identity is denied instead of writing through the private dispatch."""
+    from .standalone.test_device_grants import grant
+
+    token = "n" * 40
+    monkeypatch.setenv("QM_NATIVE_SCOPE", token)
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"clients": [grant(token, "native", owner_id="hermes-user")]}))
+    policy.chmod(0o600)
+    cfg = config(
+        native_owner={
+            "enabled": True,
+            "policy": str(policy),
+            "port": 0,
+            "private_token_env": "QM_NATIVE_SCOPE",
+        }
+    )
+    p = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()), embedder=Embedder(), overrides=cfg
+    )
+    p.initialize("first", hermes_home=str(tmp_path))
+    try:
+        # The Owner scope still serves its own authorized tools.
+        assert "error" not in json.loads(
+            p.handle_tool_call(
+                "qdrant_memory_add", {"text": "cats owner scope", "request_id": "owner-add"}
+            )
+        )
+        # Another human takes over the session.
+        p.on_session_switch("first", user_id="mallory")
+        denied = json.loads(
+            p.handle_tool_call(
+                "qdrant_memory_add", {"text": "cats foreign scope", "request_id": "foreign-add"}
+            )
+        )
+        assert denied["error"]["type"] == "PermissionError"
+        # The local dispatch fallback is unreachable, so nothing is written.
+        assert p.store.count() == 1
+        assert p._native_owner.owner.blocked is False
+    finally:
+        p.shutdown()
+
+
 def test_extraction_failure_gates_owner_before_any_operation(tmp_path, monkeypatch):
     """A durable FAILED event cannot be overtaken merely because it has no operations."""
     from .standalone.test_device_grants import grant
