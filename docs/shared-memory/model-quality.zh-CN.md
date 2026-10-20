@@ -75,9 +75,11 @@ PYTHONPATH="$PWD:/path/to/hermes-agent" python scripts/evaluate_owner_lifecycle.
 
 排空后的基线通过真实本地模型执行全部 24 次捕获、32 个查询、重放检查及重启检查。
 Host 准入屏障确认回调已交付；Provider 空闲屏障确认已准入工作完成。
+
 首次 mutation 失败记录早于 `baseline_executed` 和 `evaluation_mode` 字段。
 它不能作为当前候选的通过证据。历史 mutation PASS 保留用于追溯，不代表当前验收通过。
 其 `superseded` 和 `withdrawn_conclusions` 字段标记已撤回的结论。原始测量保持不变。
+
 策略复审失败记录早于不透明 CAS 标识检查修复。此前评估器按大小比较 hash 字符串。
 CAS 标识没有大小顺序。替换必须保持同一记录 ID、使用不同标识，并且没有过时结果。
 
@@ -147,6 +149,7 @@ Pi 质量驱动器在生命周期上下文 hook 执行后，通过 `streamSimple
 基线和 mutation 语料分别保留版本及哈希。仅有基线证据不能证明扩展已执行。
 
 手动模型工作流显式启用此扩展。单独记录其实际执行证据。
+
 使用 `--scenarios-only` 单独运行 mutation。
 报告注明 `evaluation_mode=mutations-only`、基线案例和查询均为零，以及 `baseline_executed=false`。
 诊断成功时，顶层报告 `status=DIAGNOSTIC_PASS`，并保留 `mutation_scenarios.status=PASS`。
@@ -168,6 +171,7 @@ Pi 质量驱动器在生命周期上下文 hook 执行后，通过 `streamSimple
 复核可包含低于普通相似度阈值的候选。原始用户语句仅作为不可信证据。
 只有事实层面的 `SUPERSEDES` 关系才能授权以更新代替新增。
 新事实必须描述同一主体和属性，并给出替换值。
+
 完整用户语句提供意图证据，不能使另一主体的事实替换当前候选。
 首次关系检查不包含完整语句。只有 `CONFLICT` 结果才能请求带有意图证据的第二次检查。
 此标志不能改变授权、目标作用域或写入权限。
