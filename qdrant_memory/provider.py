@@ -87,11 +87,12 @@ class QdrantMemoryProvider(MemoryProvider):
         """
         self.home = kwargs.get("hermes_home") or str(active_home())
         self.cfg = load_config(self.home, self.overrides)
-        if self.cfg.get("shared_read", {}).get("enabled", False):
+        shared_read = self.cfg.get("shared_read") or {}
+        if shared_read.get("enabled", False):
             from .config import secret
             from .shared_recall import SharedRecall
 
-            self._shared_recall = SharedRecall(self.cfg["shared_read"], secret_reader=secret)
+            self._shared_recall = SharedRecall(shared_read, secret_reader=secret)
         self.session_id = session_id
         self._primary = kwargs.get("agent_context", "primary") == "primary"
         self.default_scope = Scope(**self.cfg["scope"])

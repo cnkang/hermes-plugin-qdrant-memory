@@ -63,6 +63,21 @@ def test_worker_preserves_each_callers_secret_scope(monkeypatch):
         reader.close()
 
 
+def test_explicit_null_shared_read_keeps_default_private_provider(tmp_path):
+    """A validated null optional block must behave like omitted configuration."""
+    (tmp_path / "qdrant-memory.json").write_text(json.dumps({"shared_read": None}))
+    p = provider(tmp_path)
+    try:
+        assert p._shared_recall is None
+        p.sync_turn("cats private", "ack")
+        assert p.wait_idle()
+        p.queue_prefetch("cats")
+        assert p.wait_idle()
+        assert "cats private" in p.prefetch("cats")
+    finally:
+        p.shutdown()
+
+
 def test_fresh_shared_delivery_and_no_private_persistence(tmp_path, monkeypatch):
     """A revoked/deleted result must not survive in the provider recall cache."""
     calls = []
