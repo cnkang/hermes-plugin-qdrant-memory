@@ -1,4 +1,9 @@
 {
+  "superseded": true,
+  "superseded_by": "owner-mutation-identity-evidence.json",
+  "withdrawn_conclusions": {
+    "mutation_scenarios.checks.cross_agent_handoff": "Withdrawn: both writer and reader credentials belonged to logical Agent pi. This run does not prove cross-Agent handoff."
+  },
   "status": "PASS",
   "baseline_executed": true,
   "evaluation_mode": "full",
