@@ -269,3 +269,29 @@ also require the Owner scope. A different or neutral mixed scope is recorded as 
 failed `native_owner_unadmitted` event and raises `PermissionError`; it cannot fall
 back to local Runtime writes. Operator retry cannot reattribute such an event to
 another identity.
+
+If retry leaves startup blocked by an event from another logical scope, the
+`PermissionError` includes its opaque Ledger event ID. Restore the original
+scope/policy to recover that input, or explicitly choose to discard that one
+never-admitted input. Startup does not discard or reattribute it automatically.
+Stop every Owner for the profile before using the offline operator command:
+
+```sh
+qdrant-memory --home /path/to/owner-profile discard-unadmitted-event \
+  --event-id EVENT_ID --confirm-discard
+```
+
+The standalone distribution installs this `qdrant-memory` entry point; `--home`
+is a global option before the subcommand. For a host-only plugin installation,
+select the intended Hermes profile first, then use
+`hermes qdrant-memory discard-unadmitted-event --event-id EVENT_ID --confirm-discard`.
+
+This requires the existing profile's exclusive writer lease and does not open
+Qdrant, an embedding service or the LLM. It resolves no service credentials.
+Only a `PENDING`/`FAILED` `native_owner_unadmitted` event without candidates,
+operation keys or Owner authority can be discarded. The change uses a
+compare-and-set on the original status and payload, retains a `CANCELLED` receipt,
+and clears the raw payload. Repeating the same disposal is a no-op. Prepared or
+uncertain work must reconcile instead; this command cannot clear its recovery
+gate, reset a destination or delete saved memories. It is an operator CLI,
+never an Agent MCP tool or an automatic lifecycle action.

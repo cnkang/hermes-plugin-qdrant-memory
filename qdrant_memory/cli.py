@@ -117,6 +117,13 @@ def register_cli(subparser):
                 help="Existing collection: use after validation, or delete all data and rebuild",
             )
         parser.set_defaults(func=main)
+    parser = commands.add_parser(
+        "discard-unadmitted-event", help="Explicitly discard one never-admitted Native raw event"
+    )
+    parser.add_argument("--collection")
+    parser.add_argument("--event-id", required=True)
+    parser.add_argument("--confirm-discard", action="store_true", required=True)
+    parser.set_defaults(func=main)
     parser = commands.add_parser("migrate")
     parser.add_argument("source", choices=["mem0"])
     group = parser.add_mutually_exclusive_group(required=True)
@@ -619,7 +626,9 @@ def _command_config(args, home, config_loader, progress):
         overrides["limits"] = {"oversize_policy": args.oversize}
     report(progress, "Loading configuration")
     return (config_loader or load_config)(
-        home, overrides, resolve_secrets=args.qdrant_command != "status"
+        home,
+        overrides,
+        resolve_secrets=args.qdrant_command not in {"status", "discard-unadmitted-event"},
     )
 
 
@@ -740,6 +749,8 @@ def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=No
     """
     home = Path(home or active_home())
     command = args.qdrant_command
+    if command == "discard-unadmitted-event" and not getattr(args, "confirm_discard", False):
+        raise ValueError("Explicit --confirm-discard is required")
     cfg = _command_config(args, home, config_loader, progress)
     if command == "status":
         return local_status(cfg, home)
@@ -748,10 +759,16 @@ def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=No
         return _migration_preview(source[0], cfg, progress)
     pending_reset = _check_recovery(home, cfg, command)
     with ExitStack() as resources:
-        if command in {"init", "migrate", "retry", "delete-all"}:
+        if command in {"init", "migrate", "retry", "delete-all", "discard-unadmitted-event"}:
             report(progress, "Acquiring writer lock")
             lease = WriterLease.for_config(home, cfg)
             resources.callback(lease.close)
+        if command == "discard-unadmitted-event":
+            if not (home / "qdrant-memory" / "state.db").is_file():
+                raise FileNotFoundError("No existing Native admission ledger")
+            ledger = Ledger(home, ledger_namespace(cfg))
+            resources.callback(ledger.close)
+            return ledger.discard_unadmitted_event(args.event_id)
         if command in {"init", "migrate", "delete-all"}:
             from .shared_state import require_no_pending_shared
 
