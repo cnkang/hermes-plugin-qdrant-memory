@@ -194,7 +194,9 @@ class NativeOwner:
     def events(self, value, *, include_shared=True):
         """Bind new permitted turns to private and explicitly approved project spaces."""
         if value["scope"] != self.scope.as_dict():
-            return [value]
+            # Includes neutral mixed-history checkpoints: no local write fallback
+            # may bypass the sole Native grant. The Provider records unadmitted failure.
+            raise PermissionError("Native Owner memory is limited to its owner scope")
         names = [self.settings["private_token_env"]]
         if include_shared and value["kind"] == "turn":
             names += self.settings.get("shared_capture_token_envs", [])
