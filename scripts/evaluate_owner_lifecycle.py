@@ -316,7 +316,9 @@ def evaluate(data, adapter, home, recorder, tokens):
                     tokens["READER"],
                 )
                 if route == "project":
-                    captured = observed["captures"][0]
+                    captured = next(
+                        row for row in observed["captures"] if row["status"] == "COMMITTED"
+                    )
             ranked, latencies, leaks, snapshots = read_quality(data, url, cert, tokens)
             before = len(recorder.latencies)
             replayed = event_replay(url, cert, tokens["PROJECT"], captured["event"])
