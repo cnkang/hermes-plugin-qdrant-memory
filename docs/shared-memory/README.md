@@ -71,7 +71,11 @@ ACLs on Windows). `visibility: project` is another explicitly granted space. `vi
 must have one principal per owner/space. A credential grants exactly one
 configured space. Use a different credential/process for other spaces.
 
+Start the Owner from the private directory that contains the policy.
+The resolved `--policy` path must stay within the current working directory.
+
 ```sh
+cd /absolute/path
 /absolute/path/shared-runtime-env/bin/qdrant-memory \
   --home /absolute/path/shared-owner shared-serve \
   --policy /absolute/path/policy.json --port 8765

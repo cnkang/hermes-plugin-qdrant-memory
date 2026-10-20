@@ -25,9 +25,11 @@ python3 -m venv /absolute/path/shared-runtime-env
 
 按英文指南的 Python 示例生成高熵 token 和 `policy.json`，文件仅所有者可读写，不能进入 Git。
 每个 Agent 使用不同 token。policy 保存 SHA256，不保存 token 明文。Windows 由操作员设置私有 ACL。
+先进入包含 policy 的私有目录。`--policy` 解析后的路径必须位于当前工作目录内。
 然后启动 Owner：
 
 ```sh
+cd /absolute/path
 /absolute/path/shared-runtime-env/bin/qdrant-memory \
   --home /absolute/path/shared-owner shared-serve \
   --policy /absolute/path/policy.json --port 8765
