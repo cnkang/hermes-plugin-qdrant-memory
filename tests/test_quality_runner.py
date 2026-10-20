@@ -66,6 +66,7 @@ def test_project_replay_uses_committed_receipt_after_pending_observation(tmp_pat
     monkeypatch.setitem(scope, "read_quality", lambda *_args: ({}, [], 0, {}))
     monkeypatch.setitem(scope, "remote_query", lambda *_args: [])
     monkeypatch.setitem(scope, "score_run", lambda *_args: {})
+    monkeypatch.setitem(scope, "score_contexts", lambda *_args, **_kwargs: {})
 
     def driver(*_args, input, **_kwargs):
         """Retain both observations of the same durable event, like the Pi driver."""
