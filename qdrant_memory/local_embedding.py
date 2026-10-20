@@ -5,6 +5,7 @@ from importlib.metadata import version
 from .config import fingerprint
 from .embedding import validate_vectors
 from .local_model import (
+    FASTEMBED_COMPAT_VERSION,
     FASTEMBED_VERSION,
     MAX_TOKENS,
     MODEL_NAME,
@@ -24,7 +25,7 @@ class LocalEmbeddingInputTooLongError(ValueError):
 def require_local_dependencies():
     """Fail before downloading when the explicitly requested local extra is absent."""
     try:
-        if version("fastembed") != FASTEMBED_VERSION:
+        if version("fastembed") not in (FASTEMBED_VERSION, FASTEMBED_COMPAT_VERSION):
             raise LocalEmbeddingUnavailableError("Install the supported local extra")
         from fastembed import TextEmbedding
         from tokenizers import Tokenizer

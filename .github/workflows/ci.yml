@@ -327,7 +327,10 @@ jobs:
         run: snyk monitor --file=requirements.txt --package-manager=pip --command=.scan-env/bin/python
       - name: Install and verify optional CPU security snapshot
         run: |
-          .scan-env/bin/python -m pip install --require-hashes --only-binary=:all: -r requirements-local.txt
+          # Temporary, provenance-checked metadata patch; track fastembed#830.
+          # Keep hash enforcement and pip check; remove with the upstream upgrade.
+          .scan-env/bin/python scripts/build_fastembed_compat.py --output-dir .ci-wheels --check-lock requirements-local.txt
+          .scan-env/bin/python -m pip install --require-hashes --only-binary=:all: --find-links .ci-wheels -r requirements-local.txt
           .scan-env/bin/python -m pip check
       - name: Scan optional CPU dependencies
         env:
