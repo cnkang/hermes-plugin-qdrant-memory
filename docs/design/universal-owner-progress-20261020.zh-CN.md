@@ -4,10 +4,10 @@
 
 ## 本轮结果
 
-- 已核查维护者后续提交，保留所有本地工作和历史分支，没有重复覆盖其修复。
+- 此快照记录对应源码与测试结果，不代表最新提交状态。
 - Runtime [#66](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/66) 已通过正常 **rebase merge** 合入 main；合并提交 `e909eac28a64b073cbca6e4aaed04b55df1e5843`，时间 2026-10-20 04:19:33 UTC。合并前精确 head `5bb615a1fa84928480988ccc8fbc2252e83df053` 有 80 项成功检查、1 项跳过，唯一 CodeRabbit 有效反馈已修复并关闭线程。
 - GitHub 对 #66 仍显示来自旧 head 的 CHANGES_REQUESTED；没有把它描述成新批准，也没有 dismiss review。仓库保护要求 `Required security scan gate`，没有额外批准票要求。使用 `--rebase --match-head-commit` 正常合并，未使用管理员绕过、修改保护或降低门禁。
-- Runtime [#69](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/69) 按用户要求继续不合并。限额等待后已重新执行 CodeRabbit，发现并修复另一条 Native 生命周期授权回退路径。
+- Runtime [#69](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/69) 在此快照中尚未合并。CodeRabbit 反馈发现的另一条 Native 生命周期授权回退路径已修复。
 - MCP [#32](https://github.com/cnkang/qdrant-memory-mcp/pull/32) 四项反馈全部确认有效、修复、推送并关闭线程。修复提交 `8b206568210219674e8ea45ce606c8c3572afa57` 的 66 项远端检查成功；后续仅更新 Runtime 测试源固定版本，其新 CI 单独等待。
 - 新建 Phase 5 [#70](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/70)，包含真实模型多轮自动记忆质量门禁；最终本地模型验收已 PASS，保持 Draft 等待新 head CI。
 
@@ -91,8 +91,8 @@ CodeRabbit 重审 #69 提出 1 major issue。原 `NativeOwner.events()` 对外�
 ## 剩余工作与 PR 顺序
 
 1. #67 在 main base 的精确 head CI 成功后正常 rebase 合并，随后更新 #68 base/依赖并重检；不拿旧 head 的绿色结果替代。
-2. #68 完成新 base 门禁和反馈核验后合并。#69 始终遵循用户的暂缓合并要求，保留新授权修复及检查结果。
+2. #68 完成新 base 门禁和反馈核验后合并。#69 的授权修复仍需对应提交的检查结果。
 3. #32、Skill #29 等 Runtime 源依赖就绪，最新 head CI 与有效反馈关闭后再按兼容边界落地；不发正式版本。
-4. #70 先保存最终模型证据并通过新 head CI，再转 Ready；待 #69 解禁后按栈顺序合并。
+4. #70 的模型证据与新 head CI 完成后，按依赖顺序验收。
 5. 可选 Cloud、专用模型 Runner、公网部署/UI 验收需要相应非生产环境；继续明确标注 SKIPPED/UNVERIFIED。OAuth/OIDC 保持独立后续 PR，不宣称已完成。
-6. 独立依赖 PR #64 保持单独审查，未把它作为本次功能落地的捷径。
+6. 独立依赖 PR #64 的历史状态单独记录，不作为本快照功能验证证据。
