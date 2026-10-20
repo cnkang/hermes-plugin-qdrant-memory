@@ -39,9 +39,11 @@ FAILED 工作仍需显式操作员重试。
 
 | 测试 | 结果 | 覆盖范围 |
 |---|---|---|
-| Native 与 Pillow 13 组合版本完整测试 | 717 PASS、9 SKIPPED | SDK 2.x 与完整 Hermes 测试依赖 |
-| 质量扩展完整测试 | 743 PASS、9 SKIPPED | 包含上下文评分与变更场景契约 |
+| Native 与 Pillow 13 组合版本完整测试 | 731 PASS、9 SKIPPED | SDK 2.x，包含取消门禁与锁外授权回归 |
+| 质量扩展完整测试 | 757 PASS、9 SKIPPED | 包含上下文评分与变更场景契约 |
 | Native 与维护定向测试 | 44 PASS | 自动取消、同作用域继续处理、prepared 保护、回滚与擦除 |
+| 锁外授权定向测试 | 13 PASS | 真实 policy 加载屏障、身份与代次变更、数据变更、撤权 |
+| Python 3.14 / SDK 1.x 相关测试 | 52 PASS | Native 授权与必需安全门禁 |
 | 实际 Pi 测试 | 11 PASS | 真实 SDK 会话、UTF-8 分块、并发 drain |
 | 实际 Hermes 到 Pi 交接 | 1 PASS | 固定版本宿主、确定性模型、验证证书的 HTTPS MCP |
 | 实际模型完整评估 | PASS | 24 次基线捕获、32 次查询、11 项变更检查 |
@@ -51,12 +53,19 @@ FAILED 工作仍需显式操作员重试。
 这些记录不替代最终提交的 GitHub CI。
 
 实际模型证据见 [owner-model-stack-evidence.json](../shared-memory/owner-model-stack-evidence.json)。
-证据包含 43 项源码 hash 和 Pi extension hash。
+锁外授权修复后的复测证据包含 43 项源码 hash 和 Pi extension hash，均与对应实现匹配。
 四项基线质量指标均为 1.0。
 实际 Pi 观察到 12 次模型输入和 38 条注入记忆。
 标注错误与空间越权均为 0，重启没有增加模型调用。
 并发 CAS 有一个成功更新和一个冲突，过时事实命中为 0/8。
 这些指标仅适用于固定匿名语料，不估计生产准确率。
+
+必需安全门禁在 workflow 取消后仍运行，取消的上游结果不能成为成功验收。
+中英文启动示例均要求 policy 解析后的路径位于当前工作目录内。
+Native 授权在 Provider 锁外读取 policy，交付前仍复查身份、代次、数据版本和撤权。
+修复前 12 项锁屏障测试失败，修复后全部通过。
+CodeRabbit 后续审查覆盖本轮 7 个修改文件，结果为 0 issues。
+该结果不代表整个系统获得安全认证。
 
 历史证据中的首次替换场景 FAIL 保留。
 早期同逻辑 Agent 的交接结果不能用作跨 Agent 验收。
