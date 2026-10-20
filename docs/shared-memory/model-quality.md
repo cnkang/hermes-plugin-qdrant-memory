@@ -112,9 +112,10 @@ the project annotations. This does not measure unrestricted private recall or
 production factual accuracy. Malformed memory JSON aborts the driver and produces
 a redacted FAIL artifact; it is intentionally not recorded as zero errors.
 
-`owner-model-context-evidence.json` records the first full run with this observer:
-12 actual Pi model inputs, 38 injected memories, zero annotated errors or scope
-violations; all baseline and mutation gates also passed.
+`owner-model-context-evidence.json` records the first full run with this observer.
+The run had 12 actual Pi model inputs and 38 injected memories. It had zero
+annotated errors and zero scope violations. All baseline and mutation gates also
+passed.
 
 Pass `--scenarios tests/quality/lifecycle-mutations-v1.json` to additionally run
 the frozen mutation corpus after the v1 capture/retrieval/restart gate. It uses
