@@ -2,13 +2,21 @@
 
 日期：2026-10-20。对象：[PR #63](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/63)。
 
+> **状态更新（2026-10-20 复核）：本文是合并前的历史评估记录。PR #63 已由远端合并进
+> main，本文的"可以合并"结论与合并建议已被该次合并取代，不再是待执行动作。**
+> 合并事实：2026-10-19 22:55:07 UTC 合并，merge commit 为
+> `ebfceefc146c3b0f038d4f871d6ff7c380272da8`，合并后 main 的 head 即为该 commit。
+> 本次复核没有执行 merge、auto-merge、发布或修改分支保护。
+
 ## 结论
 
-**最新核验：可以合并，建议优先合并这个独立基础 PR。必要安全门禁成功，CodeRabbit 已批准，未解决线程为 0，GitHub 显示 CLEAN / MERGEABLE。**
-本次没有执行 merge、auto-merge、发布或修改分支保护。
+**合并前核验（历史记录）：可以合并，建议优先合并这个独立基础 PR。必要安全门禁成功，CodeRabbit 已批准，未解决线程为 0，GitHub 显示 CLEAN / MERGEABLE。**
+该建议已被执行：PR #63 于 2026-10-19 22:55:07 UTC 由远端合并进 main
+（merge commit `ebfceefc146c3b0f038d4f871d6ff7c380272da8`）。本文其余内容保留为
+合并当时的判断与证据，不改写为事后叙述。
 
-main `80816294611c1c0b896784cc12f86e72115699c6` 尚无 `shared_reader.py`。大研发分支
-虽然已包含相同 Reader 实现，但它尚未进入 main，因此 #63 不属于重复或应关闭的 PR。
+评估当时 main 为 `80816294611c1c0b896784cc12f86e72115699c6`，尚无 `shared_reader.py`。大研发分支
+虽然已包含相同 Reader 实现，但它当时尚未进入 main，因此 #63 不属于重复或应关闭的 PR。
 Reader 是 Native 共享召回的前置能力，单独审查和落地比合并整个研发分支更合适。
 
 ## 现场状态与修复
@@ -52,9 +60,9 @@ PYTHONPATH=/path/to/hermes-agent .venv/bin/python -m pytest -q
 
 ## 合并门禁与后续顺序
 
-最新核验 head 仍为 **672952d231d6f161dea5231d6fa30adf3fee3239**，base 仍为
+合并前核验 head 为 **672952d231d6f161dea5231d6fa30adf3fee3239**，base 为
 `80816294611c1c0b896784cc12f86e72115699c6`，没有新增未审查提交。
-GitHub 显示 `CLEAN` / `MERGEABLE` / `APPROVED`，非 Draft，未解决评审线程为 0。
+当时 GitHub 显示 `CLEAN` / `MERGEABLE` / `APPROVED`，非 Draft，未解决评审线程为 0。
 CodeRabbit 于 2026-10-19 22:44:45 UTC 批准了该完整 head；旧请求修改已被新批准取代。
 分支保护要求的 `Required security scan gate` 已成功，未修改或绕过保护规则。
 完整 CI、SonarCloud、Snyk、CodeQL、三平台合同、SDK1/SDK2 standalone、CPU 模型、
@@ -64,7 +72,8 @@ packaging 和 protected TLS/JWT 均成功。Sourcery review 为 SKIPPED，不冒
 - [本次共享安全检查](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39296958063)
 - [本次 standalone 矩阵](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39296957943)
 
-此前等待的必要 CI 和评审条件现已满足，建议维护者合并 #63。本次仅检查，没有执行合并。
+合并门禁已由远端在 2026-10-19 22:55:07 UTC 满足并完成合并，merge commit 为
+`ebfceefc146c3b0f038d4f871d6ff7c380272da8`；本文当时只做检查，没有执行合并。
 此 PR 不会自动启用 Native 共享、自动提取或公网服务；这些继续按后续独立 PR 审查。
 合并之后重新整理 universal-owner 的后续提交，避免重放已有 Reader；PR #64 的依赖
 更新独立验证，不作为绕过本 PR 门禁的理由。
