@@ -14,23 +14,49 @@ from .helpers import LLM, Embedder, config
 
 
 @pytest.mark.parametrize(
-    "change",
+    "change,protected,expected",
     [
-        {"unexpected": True},
-        {"port": True},
-        {"private_token_env": "BAD-name"},
-        {"enable_lifecycle": "true"},
-        {"enable_lifecycle": True},
-        {"remote_port": 0},
-        {"remote_port": True},
-        {"remote_port": 65536},
+        ({"unexpected": True}, False, "Unsupported native_owner setting"),
+        ({"port": True}, False, "Invalid Native Owner loopback port"),
+        (
+            {"private_token_env": "BAD-name"},
+            False,
+            "Native Owner requires credential environment names",
+        ),
+        ({"enable_lifecycle": "true"}, False, "Native lifecycle flag must be boolean"),
+        (
+            {"enable_lifecycle": True},
+            False,
+            "Native lifecycle events require the protected MCP gateway",
+        ),
+        # A remote listener without a protected destination is the unsafe case here.
+        (
+            {"remote_port": 0},
+            False,
+            "Native remote MCP requires a protected policy and a loopback port",
+        ),
+        # A protected destination leaves the invalid port as the only reason to deny.
+        (
+            {"remote_port": True},
+            True,
+            "Native remote MCP requires a protected policy and a loopback port",
+        ),
+        (
+            {"remote_port": 65536},
+            True,
+            "Native remote MCP requires a protected policy and a loopback port",
+        ),
     ],
 )
-def test_unsafe_native_admission_is_rejected_before_storage(tmp_path, change):
+def test_unsafe_native_admission_is_rejected_before_storage(tmp_path, change, protected, expected):
     """A malformed or unprotected listener cannot open a private database first."""
+    from qdrant_memory.config import backend_destination, embedding_config, fingerprint
+    from qdrant_memory.models import digest
+
+    from .standalone.test_device_grants import grant
+
+    vectors = tmp_path / "vectors"
     policy = tmp_path / "policy.json"
-    policy.write_text(json.dumps({"clients": []}))
-    policy.chmod(0o600)
     settings = {
         "enabled": True,
         "policy": str(policy),
@@ -38,14 +64,28 @@ def test_unsafe_native_admission_is_rejected_before_storage(tmp_path, change):
         "private_token_env": "QM_NATIVE",
         **change,
     }
-    vectors = tmp_path / "vectors"
+    cfg = config(qdrant={"path": str(vectors)}, native_owner=settings)
+    # A valid grant keeps a generic policy error from masking the gate under test.
+    document = {"clients": [grant("n" * 40, "native", owner_id="hermes-user")]}
+    if protected:
+        document["destination"] = {
+            "backend": "embedded",
+            "destination": list(backend_destination(cfg["qdrant"])),
+            "collection": cfg["qdrant"]["collection"],
+            "embedding_fingerprint": fingerprint(embedding_config(cfg)),
+            "owner_profile": digest(str(tmp_path.resolve())),
+            "schema_version": 1,
+            "security_mode": "local-embedded",
+        }
+    policy.write_text(json.dumps(document))
+    policy.chmod(0o600)
     p = QdrantMemoryProvider(
         plugin_context=SimpleNamespace(llm=LLM()),
         embedder=Embedder(),
-        overrides=config(qdrant={"path": str(vectors)}, native_owner=settings),
+        overrides=cfg,
     )
     try:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=expected):
             p.initialize("invalid-native", hermes_home=str(tmp_path))
         assert vectors.exists() is False
     finally:
