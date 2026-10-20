@@ -88,10 +88,11 @@ All existing maintenance/migration grammar is available, including `status`,
 `init`, `stats`, `doctor`, `verify`, `retry`, `list`, `export`, `delete-all` and
 `migrate mem0`. These commands are trusted operator operations and retain their
 scope-selection/confirmation/export-overwrite rules. The new standalone CLI
-contains explicit `--source-json`, `--source-config` and `--output` paths within
-the operator invocation working directory, resolving symlinks and parent
-segments before reading content or contacting storage. Invoke the command from
-an explicitly authorized source/export directory (for example, `cd /path/to`)
+contains explicit `--source-json`, `--source-config` and `--output` paths. These
+paths must stay within the operator invocation working directory. The CLI
+resolves symlinks and parent segments before it reads content or contacts
+storage. Invoke the command from an explicitly authorized source/export
+directory (for example, `cd /path/to`)
 to import sources outside the profile. The working directory is chosen by the
 trusted operator/host launcher. It must not be derived from an untrusted file
 argument. This is argument containment, not an operating-system sandbox. The
@@ -155,12 +156,13 @@ profiles at the same remote collection and assume simultaneous writes are safe.
 
 `tests/standalone` preserves eight installed CLI/MCP subprocess contracts and
 also exercises public Python APIs plus official in-process MCP protocol clients
-for schema/path refusal and startup/cleanup failures. It uses real embedded Qdrant,
-a deterministic localhost embedding HTTP service, durable scoped CRUD/restart,
-foreign-ID refusal, invalid-config side-effect prevention, writer exclusion,
-reset/deletion recovery, migration/export boundaries and official MCP client
-initialize/list/call. Subprocesses actively forbid Hermes imports and discard
-Hermes environment settings. The required standalone workflow runs this suite
+for schema/path refusal and startup/cleanup failures. It uses real embedded Qdrant
+and a deterministic localhost embedding HTTP service. It also covers durable
+scoped CRUD/restart, foreign-ID refusal, invalid-config side-effect prevention and
+writer exclusion. Reset/deletion recovery, migration/export boundaries and
+official MCP client initialize/list/call are included. Subprocesses actively
+forbid Hermes imports and discard Hermes environment settings. The required
+standalone workflow runs this suite
 on Linux, macOS and Windows with Python 3.11 and 3.14 without a Hermes checkout.
 CI results determine platform certification. Configuring any MCP client is
 protocol compatibility, not proof that every host/model behaves equivalently.

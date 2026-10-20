@@ -63,5 +63,6 @@ resolutions. The notes are for contributors who change these files.
   credential of each space or the real record shape. It used a version value that the
   owner cannot produce.
 - Resolution: the tests state the contract. They check the request name and the
-  credential for each space, use the real record shape, and cover the URL cases, the
-  number cases, the duplicate case, the size limits and the error paths.
+  credential for each space. They use the real record shape. They also cover the
+  URL cases, the number cases, the duplicate case, the size limits and the error
+  paths.

@@ -131,5 +131,6 @@ shared data.
 
 ## 9. Non-goals
 
-This phase does not include shared writes, automatic extraction into shared spaces, the
-remote transport, the identity model or a change to the private memory pipeline.
+This phase does not include shared writes or automatic extraction into shared spaces. It
+does not include the remote transport or the identity model. It does not change the
+private memory pipeline.

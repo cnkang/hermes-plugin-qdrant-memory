@@ -58,10 +58,11 @@ The [versioned threat model](threat-model-v1.md) covers application grants,
 OS/process ownership, database authorization, network restrictions and operational
 guarantees, including remote/admin/same-account bypasses.
 
-Existing controls retained: profile WriterLease, immutable durable plans,
-idempotent receipts, recovery interlocks, read-only/fixed-scope grants, stale
-revision rejection, private legacy record isolation, collection fingerprint and
-vector validation, loopback transport limits and drain-before-lease-release.
+Existing controls are retained. They include profile WriterLease, immutable
+durable plans, idempotent receipts and recovery interlocks. They also include
+read-only/fixed-scope grants, stale revision rejection, private legacy record
+isolation, collection fingerprint and vector validation, loopback transport
+limits and drain-before-lease-release.
 
 New implementation commit: `005c8d7f69a10d445da3f1fa26ca6e2b27114298`.
 

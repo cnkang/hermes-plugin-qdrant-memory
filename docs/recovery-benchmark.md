@@ -33,12 +33,13 @@ inferred from these figures.
 
 The legacy comparison substitutes the former list-materializing reader into
 the **same current `Runtime.recover()`**. Both actual recovery measurements
-execute current commit, delete-fence lookup, metric recording, acknowledgement,
-and logical payload scrubbing, using a constant-memory `FakeStore` that confirms
-writes without network or embeddings. SQLite remains in WAL mode with
-`synchronous=FULL`. Per-operation metric and finish transactions are included
-in recovery duration. This isolates reader allocation differences. It is not a
-benchmark of the entire historical implementation or real-service throughput.
+execute the current commit, delete-fence lookup, metric recording,
+acknowledgement and logical payload scrubbing. They use a constant-memory
+`FakeStore` that confirms writes without network or embeddings. SQLite remains
+in WAL mode with `synchronous=FULL`. Per-operation metric and finish
+transactions are included in recovery duration. This isolates reader allocation
+differences. It is not a benchmark of the entire historical implementation or
+real-service throughput.
 
 ## Read allocation and duration
 
@@ -123,8 +124,8 @@ Terminal operation identities and delete-fence metadata remain necessary for
 idempotency and preventing stale replay. Completed manifests retain migration
 audit/resume metadata. Pending/failed payloads remain necessary for recovery.
 This change performs no automatic history deletion or retention compaction.
-Operators should provision and monitor database plus WAL/SHM space, account for
-backups and snapshots, and use the maintenance guidance in
+Operators should provision and monitor database plus WAL/SHM space. They must
+account for backups and snapshots. They should use the maintenance guidance in
 [operations](operations.md) and the privacy boundaries in
 [security](security.md). Logical scrub and checkpointing cannot erase historical
 backups, filesystem snapshots, or all old SQLite pages.

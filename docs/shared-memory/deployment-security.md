@@ -97,18 +97,18 @@ enabling protection in such an environment. An existing unsafe registry is
 rejected, never bypassed by private admission.
 
 Do not delete claims to bypass a conflict. For deliberate profile relocation or
-offline maintenance, stop all writers, restrict database credentials, back up both
-state stores and the registry, inspect the opaque claim against trusted config,
-then explicitly retire that claim before maintenance. Re-enroll the reviewed
-Owner policy before reopening clients. There is no automatic migration, reset,
-claim removal or temporary maintenance bypass.
+offline maintenance, stop all writers and restrict database credentials. Back up
+both state stores and the registry. Inspect the opaque claim against trusted
+config. Then explicitly retire that claim before maintenance. Re-enroll the
+reviewed Owner policy before reopening clients. There is no automatic migration,
+reset, claim removal or temporary maintenance bypass.
 
 ## Identity and attribution
 
 Each client token resolves to one `principal` that the private policy defines.
-The bridge never accepts identity from tool arguments: `principal`, `owner_id`,
-`agent_id`, `space_id`, `created_by` and `updated_by` are not part of the shared
-tool schema and a request that carries them is rejected.
+The bridge never accepts identity from tool arguments. The fields `principal`,
+`owner_id`, `agent_id`, `space_id`, `created_by` and `updated_by` are not part of
+the shared tool schema. A request that carries them is rejected.
 
 Memory provenance records two fields. `created_by` keeps the first writer of the
 record. `updated_by` is the client that produced the current revision. A
@@ -169,7 +169,7 @@ instance key is read-only across collections, not a collection-restricted key.
 
 Collection creation requires global access. Pre-provision the collection and its
 compatible Runtime identity/indexes in a separate controlled administrative setup
-step, then remove the administrative key from the Owner environment before
+step. Then remove the administrative key from the Owner environment before
 starting the long-running service. Do not broaden the Owner key to make `init`
 create collections. Owner startup validates an existing collection with `create=False`.
 
@@ -185,7 +185,7 @@ does not satisfy collection-level write isolation.
 The current private API is loopback-only. Two isolated containers cannot connect
 to each other's loopback. Changing its bind to `0.0.0.0` is not a supported solution.
 For a working current deployment, run Qdrant in one container on a private internal
-network, and run the Owner plus its local stdio bridge processes in a second
+network. Run the Owner plus its local stdio bridge processes in a second
 container/network namespace. Agent hosts must launch bridges inside that Owner
 namespace through an appropriately controlled local execution mechanism. A remote
 agent connection to the Owner API is not supported.
@@ -198,9 +198,10 @@ as `unless-stopped`, a private umask and readiness-aware bridge startup. Stop an
 drain before upgrading. Pin reviewed images and preserve volumes and claims.
 Back up both volumes while quiescent and test restore. A Compose example with
 independent agent containers calling loopback would not work, so none is offered.
-Authenticated cross-container transport requires a separate v0.5.0 design:
-explicit transport trust boundary, TLS, endpoint verification, credential lifecycle,
-readiness, denial tests and a compatible client migration plan.
+Authenticated cross-container transport requires a separate v0.5.0 design. That
+design needs an explicit transport trust boundary, TLS, endpoint verification, a
+credential lifecycle, readiness, denial tests and a compatible client migration
+plan.
 
 ## D. Qdrant Cloud
 
@@ -220,11 +221,11 @@ backups alongside the corresponding Cloud snapshot and document restore ordering
 ## Backups and validation
 
 Stop admission, drain requests and stop Owner. With every other database writer
-excluded, capture a consistent Qdrant snapshot (or stopped embedded directory),
-the complete Owner state including SQLite/WAL where applicable, config, private
-policy and account registry. Encrypt backups and restrict access. Restore the
-matching pair, correct ownership, validate policy/schema and recover before
-admitting clients. Restoring only Qdrant or only Ledger can invalidate receipts
+excluded, capture a consistent Qdrant snapshot (or stopped embedded directory).
+Also capture the complete Owner state including SQLite/WAL where applicable,
+config, private policy and account registry. Encrypt backups and restrict access.
+Restore the matching pair, correct ownership, validate policy/schema and recover
+before admitting clients. Restoring only Qdrant or only Ledger can invalidate receipts
 and replay assumptions. Test restores in an isolated destination before production.
 
 The opt-in `tests/security/test_shared_security_live.py` gate requires

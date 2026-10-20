@@ -12,16 +12,18 @@ FastEmbed 0.9.0 declares Pillow below 13, while Pillow 12.3.0 has security
 advisories fixed in 13.0.0. Until upstream
 [fastembed#830](https://github.com/qdrant/fastembed/pull/830) is released, CI builds
 `0.9.0+qm.pillow13` with `scripts/build_fastembed_compat.py`. The builder downloads
-the official 0.9.0 wheel over HTTPS and checks its fixed SHA-256 before changing
-only distribution metadata: its local version, Pillow's upper bound to `<14`,
-provenance and wheel RECORD. Inference files, license and the Hub `<2` constraint
-stay unchanged. The wheel is deterministic across Python/OS versions, and its
-output hash is pinned in the CPU snapshot. `==0.9.0` accepts this explicitly
-identified local build under PEP 440. No official package is republished.
+the official 0.9.0 wheel over HTTPS. It checks the fixed SHA-256 of the wheel.
+Then it changes only distribution metadata: the local version, the Pillow upper
+bound to `<14`, the provenance and the wheel RECORD. Inference files, license and
+the Hub `<2` constraint stay unchanged. The wheel is deterministic across Python/OS
+versions, and its output hash is pinned in the CPU snapshot. `==0.9.0` accepts
+this explicitly identified local build under PEP 440. No official package is
+republished.
 
-All three CPU CI lanes build it, install with `--find-links .ci-wheels`, require
-Pillow 13.0.0 and the exact compatibility version, run `pip check`, and execute
-the existing real offline CPU model, CRUD, restart, retrieval and MCP contracts.
+All three CPU CI lanes build it. They install with `--find-links .ci-wheels` and
+require Pillow 13.0.0 and the exact compatibility version. They run `pip check`
+and the existing contracts: the real offline CPU model, CRUD, restart, retrieval
+and MCP.
 The Snyk job installs and scans the same hash-checked snapshot. Hub stays at
 1.33.0: upgrading it to 2 is a separate compatibility change. The runtime only
 accepts the exact official or temporary version, never arbitrary local builds.
@@ -54,16 +56,17 @@ The validation workflows have a separate, bounded retry controller for confirmed
 transient failures downloading GitHub Action archives during `Set up job`.
 It permits at most two additional run attempts (three attempts total), and
 requests only failed jobs. All failed jobs must have stopped before any workflow
-step executed, with both a download failure and a transient DNS, timeout or
-service-unavailable error in their logs. Test/quality-gate failures, permanent
+step executed. Their logs must show a download failure and a transient DNS,
+timeout or service-unavailable error. Test/quality-gate failures, permanent
 404s, foreign heads and missing evidence do not qualify.
 
 The controller reads fresh run/attempt metadata, serializes events per run and
 checks again before requesting a rerun. It needs `actions: write` only to request
 the rerun. It never checks out or executes the triggering head, consumes its
-artifacts or evaluates its logs. Its script is fetched from the retry workflow's
-own trusted SHA, with three bounded download attempts, and no external actions
-are required to bootstrap that controller. Release/publish workflows are excluded.
+artifacts or evaluates its logs. The controller fetches its script from the
+retry workflow's own trusted SHA. The fetch permits three download attempts at
+most. No external action is necessary to bootstrap the controller.
+Release/publish workflows are excluded.
 
 GitHub activates `workflow_run` workflows only after their file exists on the
 default branch. Adding this controller in a PR does not activate it before merge.
@@ -113,10 +116,11 @@ excludes them.
 Fork PRs run
 tests without scanner credentials. Their scanner jobs are skipped by conditions.
 A missing required token fails a scanner job only when that job is scheduled.
-The `Required security scan gate` runs with `always()` and fails for any failed,
-cancelled or skipped prerequisite (lint, tests, MCP protocol coverage, host pin compatibility, SonarCloud and both Snyk jobs), including
-safely skipped fork scans. Dependabot pull requests are the one deliberate
-exception. They run lint, tests and the platform matrix. Their credentialed
+The `Required security scan gate` runs for every completed run. It fails for any
+failed or skipped prerequisite: lint, tests, MCP protocol coverage, host pin
+compatibility, SonarCloud and both Snyk jobs. The gate also fails on safely skipped
+fork scans. Dependabot pull requests are the one deliberate exception. They run
+lint, tests and the platform matrix. Their credentialed
 scanner jobs are skipped because Dependabot runs cannot read repository
 secrets, and the gate accepts exactly those skips for `dependabot[bot]`. The
 credentialed scans run on the resulting push to `main` after merge. Make this
@@ -150,25 +154,25 @@ secrets.
 `.github/workflows/upstream-compat.yml` runs weekly and through manual dispatch. It
 checks out the current Hermes `main` and records the checked-out Hermes SHA and
 plugin SHA in the run summary. It then uses the host's canonical test runner for
-directory discovery/CLI, setup, checkpoint/session lifecycle, shutdown, provider and
-recovery contracts on Python 3.11 and 3.14. A separate direct pytest step checks the
-host `MemoryManager.sync_all()` admission and shutdown boundary with
-`HERMES_QDRANT_REQUIRE_HOST_SYNC=1`. The canonical runner clears unlisted environment
-variables, so this required contract runs outside that runner. The dependency builder
-remains pinned to the known PM commit while the tested host source follows `main`.
-This workflow has read-only repository permissions, uses no credentials, and adds
-the `MemoryManager.sync_all()` boundary checks on top of the required latest-main
-lane. A green historical run applies only to the exact Hermes SHA printed in that
-run summary.
+directory discovery and CLI, setup, checkpoint and session lifecycle, shutdown,
+provider and recovery contracts. These tests run on Python 3.11 and 3.14. A
+separate direct pytest step checks the host `MemoryManager.sync_all()` admission
+and shutdown boundary with `HERMES_QDRANT_REQUIRE_HOST_SYNC=1`. The canonical
+runner clears unlisted environment variables, so this required contract runs
+outside that runner. The dependency builder remains pinned to the known PM commit
+while the tested host source follows `main`. This workflow has read-only repository
+permissions, uses no credentials, and adds the `MemoryManager.sync_all()` boundary
+checks on top of the required latest-main lane. A green historical run applies only
+to the exact Hermes SHA printed in that run summary.
 
 ## Host pin compatibility
 
-The **Host pin compatibility** job reconciles every host pin for a package
-this plugin also requires, including pins in optional extras and dependency
-groups, with the plugin's dependency specifiers on the minimum and latest host
-checkouts. It runs under Python 3.11 and 3.14 and records each resolved host
-revision in the run summary. It then co-resolves the host pins for shared
-packages together with the plugin's optional extras through the pinned
+The **Host pin compatibility** job reconciles every host pin with the plugin's
+dependency specifiers. It covers each package that the plugin also requires,
+including pins in optional extras and dependency groups. It checks the minimum and
+the latest host checkouts. It runs under Python 3.11 and 3.14 and records each
+resolved host revision in the run summary. It then co-resolves the host pins for
+shared packages together with the plugin's optional extras through the pinned
 dependency builder. A pin outside the plugin's range, or a resolution that
 cannot satisfy both sides, fails the job. This mirrors the dependency manager's
 install-time co-resolution of the plugin inside the host workspace. The

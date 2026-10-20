@@ -30,14 +30,14 @@ Hermes integration in this repository. Examples: credential handling and
 scope leaks, prompt-injection paths through stored memory, unsafe defaults, or
 path and permission issues.
 
-Out of scope: vulnerabilities in Hermes Agent itself (report them to
-`NousResearch/hermes-agent`), in Qdrant (report them through the
-[Qdrant bug bounty program](https://qdrant.tech/security/bug-bounty-program/)),
-in Ollama (report them through the
-[Ollama security policy](https://github.com/ollama/ollama/security/policy)),
-or in services you configure. Reports that require pre-existing local shell access or
-a compromised host are usually out of scope. This project does not run a bug
-bounty program.
+Out of scope are vulnerabilities in Hermes Agent itself, in Qdrant, in Ollama
+and in services you configure. Report Hermes Agent issues to
+`NousResearch/hermes-agent`. Report Qdrant issues through the
+[Qdrant bug bounty program](https://qdrant.tech/security/bug-bounty-program/).
+Report Ollama issues through the
+[Ollama security policy](https://github.com/ollama/ollama/security/policy).
+Reports that require pre-existing local shell access or a compromised host are
+usually out of scope. This project does not run a bug bounty program.
 
 ## Handling expectations
 

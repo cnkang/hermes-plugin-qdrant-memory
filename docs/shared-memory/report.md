@@ -88,15 +88,15 @@ under one owner. Official MCP SDK stdio sessions with different Hermes-fallback
 and DSH principal credentials verify the protocol-level cross-agent scenario.
 
 **Implemented but not fully host-validated:** manual shared MCP configs for DSH,
-WorkBuddy and Codex, plus the Hermes MCP fallback in a profile without the Native
-Provider interface. Actual application UI and bundle import acceptance is not
-claimed by SDK process tests. Existing managed private configurations remain
-unchanged.
+WorkBuddy and Codex. The same status applies to the Hermes MCP fallback in a
+profile without the Native Provider interface. Actual application UI and bundle
+import acceptance is not claimed by SDK process tests. Existing managed private
+configurations remain unchanged.
 
-**Designed, not implemented:** Native Provider automatic shared extraction,
-per-turn human/space consent in the native lifecycle, direct read-only Qdrant
+**Designed, not implemented:** Native Provider automatic shared extraction and
+per-turn human/space consent in the native lifecycle. Direct read-only Qdrant
 clients, remote-agent OAuth/API, grant management UI and receipt retention
-compaction.
+compaction are also not implemented.
 
 **Rejected/deferred:** independent embedded processes, automatic legacy sharing,
 automatic collection/model migration, public endpoints and distributed
@@ -178,20 +178,21 @@ HERMES_PYTHON=/absolute/path/.test-env/bin/python scripts/run_tests.sh \
 .lint-env/bin/ruff format --check .
 ```
 
-Initial environment/setup failures were resolved before final acceptance:
-missing build artifacts in distribution tests, incomplete host sparse modules,
-SDK result alias access in a new test, and the upstream checkpoint exception
-relocation. No Native Provider behavior was changed to hide those failures.
+Initial environment/setup failures were resolved before final acceptance. The
+failures were missing build artifacts in distribution tests and incomplete host
+sparse modules. They also included SDK result alias access in a new test and the
+upstream checkpoint exception relocation. No Native Provider behavior was changed
+to hide those failures.
 No live Cloud account or optional downloaded FastEmbed CPU model was exercised.
 Hosted SonarCloud, Snyk and the complete OS/Python CI matrix run in the
 repositories' hosted checks.
 
-Pass/fail criteria: zero failed final acceptance cases, zero unauthorized
-search/ID mutations, all read-only writes denied, exactly one winner per stale
-revision race, identical IDs/revisions after crash replay, second same-profile
-owner rejected, existing Hermes native lifecycle and standalone contracts pass.
-Host UI and remote multi-writer claims remain disabled until independently
-accepted.
+Pass/fail criteria: zero failed final acceptance cases and zero unauthorized
+search/ID mutations. Every read-only write must be denied. Each stale revision
+race must have exactly one winner. Crash replay must give identical IDs and
+revisions. A second same-profile owner must be rejected. The existing Hermes
+native lifecycle and standalone contracts must pass. Host UI and remote
+multi-writer claims remain disabled until independently accepted.
 
 ## 8. Benchmarks and quality
 
@@ -240,11 +241,11 @@ benchmarked.
 
 English and Chinese Runtime READMEs now link the shared preview. The new
 [English operations guide](README.md), [中文指南](README.zh-CN.md) and ADR cover
-private/shared/read-only/project spaces, installation/configuration, fixed
-identity, single-owner coordination, embeddings, supervision, backup/recovery,
-upgrade/rollback, multi-host limits, error handling and the explicit
-Hermes-fallback → DSH walkthrough. Existing DSH/WorkBuddy defaults are
-unchanged.
+private, shared, read-only and project spaces. They also cover installation,
+configuration, fixed identity, single-owner coordination, embeddings,
+supervision, backup/recovery and upgrade/rollback. Multi-host limits, error
+handling and the explicit Hermes-fallback → DSH walkthrough are included.
+Existing DSH/WorkBuddy defaults are unchanged.
 
 The [official Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) provides
 semantic storage/retrieval, persistent Qdrant backends and metadata filtering.
@@ -277,7 +278,7 @@ repositories. This report records the local and acceptance evidence.
 2. Runtime **0.4.0** publishes the opt-in shared service. The companion MCP
    distribution and the skill publish separately. The shared-only
    revision/retry schema is an explicit additive mode.
-3. Publish Runtime only through normal release procedures, then update the
+3. Publish Runtime only through normal release procedures. Then update the
    metadata distribution and managed immutable artifact pins to the actual
    released version, never to an unpublished moving branch. Run DSH, WorkBuddy
    and Codex UI and bundle import acceptance before labeling managed sharing
@@ -297,6 +298,6 @@ and rollback. It must not be implicit on service startup.
 ## 12. Change set
 
 This report covers the changes delivered through the pull requests in the three
-repositories, including the host configurations, the canonical skill guidance
-and the accompanying documentation updates. Runtime 0.4.0 publishes this change
-set. The companion MCP distribution and the skill publish separately.
+repositories. These changes include the host configurations, the canonical skill
+guidance and the accompanying documentation updates. Runtime 0.4.0 publishes
+this change set. The companion MCP distribution and the skill publish separately.

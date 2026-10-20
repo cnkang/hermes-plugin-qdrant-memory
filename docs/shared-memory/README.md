@@ -181,9 +181,9 @@ For stale-version conflict, re-read and obtain intent for the new edit. Use a
 new request ID only for that newly authorized operation. Never guess a new version.
 
 The owner replays pending Runtime operations and unfinished request plans before
-readiness. On terminal failure it blocks new writes and requires intervention:
-stop the owner, restore the Qdrant/embedding dependency, run the existing operator
-`qdrant-memory --home OWNER retry`, and restart. No second owner should run
+readiness. On terminal failure it blocks new writes and requires intervention.
+Stop the owner. Restore the Qdrant/embedding dependency. Run the existing
+operator `qdrant-memory --home OWNER retry`. Then restart. No second owner should run
 maintenance concurrently. While shared plans are unfinished, ordinary tool
 sessions and mutating init/delete/import commands fail closed. Operator retry
 remains available, followed by owner restart to reconcile receipts. Pending destructive intents and raw host extraction

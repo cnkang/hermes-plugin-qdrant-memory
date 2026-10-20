@@ -69,7 +69,7 @@ In the default mode, the owner holds the loopback JSON API only. In the enabled 
 owner holds two listeners, the loopback JSON API and the remote MCP listener. Both
 listeners get the grant from the credential, and then call the same SharedOwner.call
 function. There is one ledger, one CAS path and one admission check. In the enabled mode,
-the owner reports readiness only after both listeners are bound, and the shutdown
+the owner reports readiness only after both listeners are bound. The shutdown
 sequence drains both listeners before the owner releases the lease.
 
 The transport name is Streamable HTTP.
@@ -208,5 +208,5 @@ Phase 2b stays blocked until the identity work exists.
 ## 12. Non-goals
 
 This design does not include multi-owner high availability, distributed locking, a
-management UI, a memory graph, automatic migration of legacy private records, or SSH and
-VPN as a requirement.
+management UI or a memory graph. It does not include automatic migration of legacy
+private records. SSH and VPN are not requirements.
