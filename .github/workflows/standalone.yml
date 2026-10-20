@@ -36,7 +36,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install standalone package without a Hermes checkout
-        run: python -m pip install ".[mcp]" "pytest>=8,<10" "${{ matrix.mcp.requirement }}"
+        run: python -m pip install ".[remote]" "pytest>=8,<10" "${{ matrix.mcp.requirement }}"
       - name: Require standalone subprocess, public API and official MCP contracts
         run: python -m pytest -q tests/standalone --junitxml=standalone-results.xml
       - name: Reject skipped or incomplete acceptance

@@ -50,6 +50,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Require real TLS MCP across isolated container networks
+        shell: bash
         env:
           MCP_REQUIREMENT: ${{ matrix.sdk }}
         run: python scripts/test_remote_mcp_docker.py "$MCP_REQUIREMENT" | tee remote-https-evidence.jsonl
