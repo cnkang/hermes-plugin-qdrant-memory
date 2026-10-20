@@ -1,5 +1,19 @@
 # CI services
 
+## Optional CPU dependency snapshot
+
+The Linux Python 3.11 CPU lane installs `requirements-local.txt` with hashes
+before the optional provider tests, without requiring Snyk credentials. This
+checks the same frozen snapshot used by the security job, including Dependabot
+PRs; resolving `.[local]` alone does not validate that snapshot. All CPU lanes
+also run `pip check` after installing their test dependencies.
+
+FastEmbed 0.9.0 requires Hugging Face Hub below 2 and Pillow below 13. The
+snapshot therefore retains Hub 1.33.0 and Pillow 12.3.0; updating those majors
+requires a compatible provider update and renewed model/fingerprint acceptance.
+Pydantic 2.14.1 and pydantic-core 2.50.1 from dependency PR #64 remain included.
+Hash enforcement and dependency security scans are not bypassed.
+
 ## Transient runner download retries
 
 The validation workflows have a separate, bounded retry controller for confirmed
