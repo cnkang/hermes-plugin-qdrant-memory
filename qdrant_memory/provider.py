@@ -677,10 +677,13 @@ class QdrantMemoryProvider(MemoryProvider):
                 with self._condition:
                     if not self._accepting:
                         raise RuntimeError("Provider is shut down")
-                if (
-                    self._native_owner is not None
-                    and self._scope(session) == self._native_owner.scope
-                ):
+                if self._native_owner is not None:
+                    # The Owner grant is the only authority in Native mode. Another
+                    # identity is denied instead of falling back to the private local
+                    # dispatch, which would write into the Owner's granted partition
+                    # outside its grant and outside its recovery gate.
+                    if self._scope(session) != self._native_owner.scope:
+                        raise PermissionError("Native Owner memory is limited to its owner scope")
                     result = self._native_owner.owner.call(
                         self._native_owner.token(), tool_name, args
                     )
