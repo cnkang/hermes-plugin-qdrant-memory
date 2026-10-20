@@ -33,6 +33,7 @@ from qdrant_memory.quality_metrics import (
     durable_snapshot,
     latency_summary,
     matches,
+    score_contexts,
     score_run,
     validate_gold,
 )
@@ -290,10 +291,17 @@ def read_quality(data, url, cert, tokens):
 def evaluate(data, adapter, home, recorder, tokens):
     """Run actual multi-turn capture, retrieval, replay and persistent-owner restart."""
     policy_path = home / "policy.json"
-    policy_path.write_text(json.dumps(policy(tokens)), encoding="utf-8")
+    document = policy(tokens)
+    reader_grant = next(
+        row
+        for row in document["clients"]
+        if row["token_sha256"] == digest(tokens["READER"].encode())
+    )
+    policy_path.write_text(json.dumps(document), encoding="utf-8")
     policy_path.chmod(0o600)
     provider, manager = start_host(home, policy_path, recorder)
     baseline, captured, replay_safe = None, None, False
+    context_observations = []
     try:
         for index, row in enumerate(case for case in data["cases"] if case["route"] == "native"):
             provider.on_session_switch(row["session"])
@@ -320,6 +328,7 @@ def evaluate(data, adapter, home, recorder, tokens):
                     captured = next(
                         row for row in observed["captures"] if row["status"] == "COMMITTED"
                     )
+                context_observations.extend(observed.get("contexts", []))
             ranked, latencies, leaks, snapshots = read_quality(data, url, cert, tokens)
             before = len(recorder.latencies)
             replayed = event_replay(url, cert, tokens["PROJECT"], captured["event"])
@@ -360,6 +369,12 @@ def evaluate(data, adapter, home, recorder, tokens):
         manager.shutdown_all()
     return {
         "extractions": recorder.extractions,
+        "context_quality": score_contexts(
+            data,
+            context_observations,
+            space_id=reader_grant["space_id"],
+            visibility=reader_grant["visibility"],
+        ),
         "retrievals": ranked,
         "scope_leaks": leaks,
         "provider_failures": sum(recorder.errors.values()),
@@ -518,6 +533,7 @@ def main():
                             "restart_changed_fields",
                             "restart_model_calls",
                             "post_restart_quality",
+                            "context_quality",
                             "retrieval_latency",
                         )
                     }
@@ -527,6 +543,7 @@ def main():
             report["provider_failures"] = sum(recorder.errors.values())
             if (
                 (evidence is not None and report["post_restart_quality"]["status"] != "PASS")
+                or (evidence is not None and report["context_quality"]["status"] != "PASS")
                 or recorder.recording_errors
                 or recorder.errors
                 or (args.scenarios and report["mutation_scenarios"]["status"] != "PASS")

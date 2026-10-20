@@ -173,6 +173,43 @@ def test_mutation_scenarios_require_every_check_and_zero_obsolete_hits():
     assert score_mutations(checks, obsolete_hits=0, observed_hits=0)["status"] == "FAIL"
 
 
+def test_context_injection_requires_observed_authorized_annotated_facts():
+    """Score actual model input, rejecting missing observations and wrong facts/scopes."""
+    from qdrant_memory.quality_metrics import score_contexts
+
+    gold = dataset()
+    gold["cases"][0]["route"] = "project"
+    gold["cases"][1]["route"] = "pi"
+    fact = {"text": "SQLite WAL", "space_id": "alpha", "visibility": "project"}
+    observations = [
+        {"case_id": "fact", "memories": []},
+        {"case_id": "transient", "memories": [fact]},
+    ]
+
+    def score(rows):
+        return score_contexts(gold, rows, space_id="alpha", visibility="project")
+
+    assert score(observations)["status"] == "PASS"
+    assert score(observations)["incorrect_memory_injection_rate"] == 0
+    for changed in (
+        {"text": "invented dogs"},
+        {"space_id": "private"},
+        {"visibility": "private"},
+    ):
+        result = score(
+            [observations[0], {"case_id": "transient", "memories": [{**fact, **changed}]}]
+        )
+        assert result["status"] == "FAIL"
+        assert result["incorrect_memory_injection_rate"] == 1
+        assert result["scope_violations"] == int("text" not in changed)
+    invalid = score([observations[0], {"case_id": "transient", "memories": [None]}])
+    assert invalid["status"] == "FAIL"
+    assert invalid["incorrect_memories"] == 1
+    for rows in ([], observations[:1], [observations[0], observations[0]]):
+        assert score(rows)["status"] == "FAIL"
+    assert score([observations[0], {"case_id": "transient", "memories": []}])["status"] == "FAIL"
+
+
 def test_cross_agent_handoff_requires_distinct_actor_evidence():
     """A claimed handoff without logical-Agent identities must fail closed."""
     from qdrant_memory.quality_metrics import MUTATION_CHECKS, score_mutations

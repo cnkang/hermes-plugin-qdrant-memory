@@ -144,6 +144,49 @@ def score_run(dataset, evidence):
     return result
 
 
+def score_contexts(data, observations, *, space_id, visibility):
+    """Score actual Pi input against project facts using the project-only READER grant.
+
+    Private-write Pi turns also read project memory in this fixed evaluation;
+    this scorer does not claim to validate private-memory context injection.
+    """
+    validate_gold(data)
+    expected = {row["id"] for row in data["cases"] if row.get("route") in {"pi", "project"}}
+    facts = [
+        fact for row in data["cases"] if row.get("route") == "project" for fact in row["expected"]
+    ]
+    rows = observations if isinstance(observations, list) else []
+    identities = [row.get("case_id") for row in rows if isinstance(row, dict)]
+    complete = bool(expected) and len(identities) == len(rows) == len(expected)
+    complete = complete and set(identities) == expected
+    injected = incorrect = scope_violations = 0
+    for observation in rows:
+        memories = observation.get("memories") if isinstance(observation, dict) else None
+        if not isinstance(memories, list):
+            complete = False
+            continue
+        for memory in memories:
+            injected += 1
+            if not isinstance(memory, dict):
+                incorrect += 1
+                continue
+            scope_ok = memory.get("space_id") == space_id and memory.get("visibility") == visibility
+            scope_violations += not scope_ok
+            known = isinstance(memory.get("text"), str) and any(
+                matches(memory["text"], fact) for fact in facts
+            )
+            incorrect += not (scope_ok and known)
+    return {
+        "status": "PASS" if complete and injected > 0 and incorrect == 0 else "FAIL",
+        "complete": complete,
+        "observed_turns": len(rows),
+        "injected_memories": injected,
+        "incorrect_memories": incorrect,
+        "scope_violations": scope_violations,
+        "incorrect_memory_injection_rate": incorrect / injected if injected else None,
+    }
+
+
 def latency_summary(values):
     """Report nearest-rank p95; an unmeasured series never becomes zero latency."""
     if not values:

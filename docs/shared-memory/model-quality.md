@@ -102,6 +102,20 @@ Its result needs a completed CI run.
 
 ## Mutation and multilingual extension
 
+The Pi quality driver also observes the actual model input at `streamSimple`,
+after lifecycle context hooks have run. `context_quality` measures incorrect
+annotated memory injection separately from extraction precision and retrieval.
+Missing/duplicate case observations, no measured injections, unknown facts and
+wrong space/visibility fail the gate. The read credential is project-only even
+when the turn captures into Pi's private write scope: injected facts must match
+the project annotations. This does not measure unrestricted private recall or
+production factual accuracy. Malformed memory JSON aborts the driver and produces
+a redacted FAIL artifact; it is intentionally not recorded as zero errors.
+
+`owner-model-context-evidence.json` records the first full run with this observer:
+12 actual Pi model inputs, 38 injected memories, zero annotated errors or scope
+violations; all baseline and mutation gates also passed.
+
 Pass `--scenarios tests/quality/lifecycle-mutations-v1.json` to additionally run
 the frozen mutation corpus after the v1 capture/retrieval/restart gate. It uses
 Chinese Hermes turns in separate sessions to measure explicit supersession and
