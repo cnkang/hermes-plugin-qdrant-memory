@@ -63,14 +63,13 @@ enabled, synchronous `prefetch` does these steps:
    change discards the entire earlier result, including its private text.
 5. Put private text first (at most 2000 characters), then a framed JSON array of shared
    items, keeping the complete output within 4000 characters. Each item retains its
-   space, visibility, version and provenance; long text is truncated inside the JSON.
+   space, visibility, version and provenance. Long text is truncated inside the JSON.
 6. Discard late shared results. Do not store shared text in the private cache or store.
 
 The reader revalidates each item against the configured space, the visibility and the
 `shared_protocol` marker. An item that fails the check is not used.
 
-A shared read does not start after shutdown. Closing the reader stops admission;
-outstanding read-only I/O cannot access the private Runtime resources.
+A shared read does not start after shutdown. Closing the reader stops admission. Outstanding read-only I/O cannot access the private Runtime resources.
 
 ## 4. Tool search
 
@@ -104,7 +103,7 @@ When the feature is on, the private entry still contains only private text. Shar
 results are never cached. Each delivered shared recall requires a fresh Owner request
 and matching trusted session identity before and after I/O. Revocation/deletion therefore
 takes effect on the next request reaching the Owner. This does not remove text that a
-host already put into model context; the host must clear or rebuild that context.
+host already put into model context. The host must clear or rebuild that context.
 
 ## 7. Write path
 
@@ -121,14 +120,13 @@ shared data.
    result and increase the counter.
 4. The configuration load rejects each case in Section 2.
 5. Private configuration rejects both reserved Owner namespace prefixes.
-6. Revoked/deleted shared results are absent from the next freshly authorized recall;
-   author changes during I/O cannot deliver earlier private text.
+6. Revoked/deleted shared results are absent from the next freshly authorized recall. Author changes during I/O cannot deliver earlier private text.
 7. The provider makes no write call during shared recall.
 8. Shared text is absent from the private store, the ledger and the events.
 9. Shutdown does not start a shared read.
 10. With `include_tool_search` off, the tool result is identical to the current result.
 11. The configured delivery budget reaches the bounded wait without relying on thread
-    scheduling; late results are discarded and do not accumulate in a queue.
+    scheduling. Late results are discarded and do not accumulate in a queue.
 12. Long shared text keeps complete JSON framing and provenance under the context limit.
 
 ## 9. Non-goals

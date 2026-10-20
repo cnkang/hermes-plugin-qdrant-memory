@@ -3,7 +3,7 @@
 Shared deployment hardening in this checkout is documented in the
 [protected destination guide](docs/shared-memory/deployment-security.md) and
 [versioned threat model](docs/shared-memory/threat-model-v1.md). These additions
-are unpublished; current release installation commands remain unchanged.
+are unpublished. Current release installation commands remain unchanged.
 
 ## One Memory, Multiple Agents — opt-in shared owner
 

@@ -127,15 +127,7 @@ All reads and writes use the Runtime RLock. Update/delete requires the exact
 revision read previously. New revisions survive recovery. Delete/recreate uses a
 fresh revision to avoid ABA. A stale write returns explicit `SharedConflictError`.
 
-Before any Qdrant write, a complete immutable plan, the authenticated principal
-and the response are durably persisted in an additive destination-namespaced
-SQLite request table, so receipts stay attributable after the fact. Runtime then
-prepares and commits the operation with the original retry/ack path. Restart
-recovers pending operations and plans before readiness. Completed plans are
-scrubbed. Request hashes/receipts remain to reconcile ambiguous retries. Reusing
-an ID for different input conflicts. A historical receipt does not assert
-current state. A superseded operation resolves as a recorded non-retryable
-conflict and does not block service readiness.
+Before any Qdrant write, a complete immutable plan, the authenticated principal and the response are durably persisted in an additive destination-namespaced SQLite request table. Receipts stay attributable after the fact. Runtime then prepares and commits the operation with the original retry/ack path. Restart recovers pending operations and plans before readiness. Completed plans are scrubbed. Request hashes/receipts remain to reconcile ambiguous retries. Reusing an ID for different input conflicts. A historical receipt does not assert current state. A superseded operation resolves as a recorded non-retryable conflict and does not block service readiness.
 
 After uncertain failure, new writes stop. Terminal Runtime failures require
 operator retry, followed by owner reconciliation. A disconnected client never

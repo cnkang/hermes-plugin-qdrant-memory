@@ -11,4 +11,4 @@
 - [ ] Docs and `CHANGELOG.md` updated for user-visible changes.
 - [ ] No credentials, tokens, or private memory contents appear in logs, code
       or this description.
-- [ ] Security issues were reported privately via `SECURITY.md`, not here.
+- [ ] Security issues were reported privately through `SECURITY.md`, not here.

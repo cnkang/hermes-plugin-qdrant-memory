@@ -16,7 +16,7 @@ Owner or the MCP transport. No SSH, VPN, account service or Docker is required
 for normal deployment. Docker is used for isolated acceptance only.
 
 The existing `shared-serve` private API stays literal loopback. The new listener
-also binds literal loopback; only a same-host TLS proxy is reachable remotely.
+also binds literal loopback. Only a same-host TLS proxy is reachable remotely.
 Native Hermes may itself host the Owner using its existing Runtime and host LLM.
 Alternatively, a dedicated standalone Owner can serve all explicit clients and
 the opt-in Pi lifecycle adapter with an explicitly configured extraction LLM.
@@ -32,7 +32,7 @@ an open or unauthenticated endpoint. Browser Origin requests are rejected.
 
 Generate separate high-entropy credentials through a secret manager. A grant
 contains the existing six string fields plus `logical_agent_id` and `device_id`.
-Optional `expires_at` is a Unix timestamp; `revoked` is boolean. Only the SHA-256
+Optional `expires_at` is a Unix timestamp. `revoked` is boolean. Only the SHA-256
 token hash belongs in the policy. Example (hash is a placeholder):
 
 ```json
@@ -52,7 +52,7 @@ token hash belongs in the policy. Example (hash is a placeholder):
 ```
 
 The destination field above must be the real binding object described in
-[deployment security](deployment-security.md); a string is deliberately invalid.
+[deployment security](deployment-security.md). A string is deliberately invalid.
 The administrative `shared-device validate` command rejects placeholders.
 Use a second independent credential/principal/device with the same owner,
 logical agent and private space for B2. A different logical agent must use a
@@ -65,7 +65,7 @@ logical identity included in its key. They do not expose old Native private or
 legacy-null records. There is no automatic import or migration. Changing a
 logical identity cannot publish that identity's prior private records.
 
-From the private policy directory (POSIX mode 0700; policy mode 0600):
+From the private policy directory (POSIX mode 0700. Policy mode 0600):
 
 ```sh
 qdrant-memory shared-device validate --policy ./owner-policy.json
@@ -73,23 +73,15 @@ qdrant-memory shared-device revoke --policy ./owner-policy.json --owner-id alice
 qdrant-memory shared-device rotate --policy ./owner-policy.json --owner-id alice --device-id device-b --output ./new-device.token
 ```
 
-Revocation is repeatable and affects every grant of the selected device.
-Rotation currently requires exactly one active grant of that device. For a
-multi-space device, provision replacement grants explicitly and revoke the old
-device; do not reuse one credential for different spaces. The token output must
-not exist. Rotation writes the new private token file before atomically replacing
-the policy, so a crash can leave an unused token file, never an active token with
-no recoverable copy. Retrying to an existing output refuses overwrite. Admin
-commands serialize cooperating updates and fsync the replacement. Windows
-protected administration remains unsupported and fails closed.
+Revocation is repeatable and affects every grant of the selected device. Rotation currently requires exactly one active grant of that device. For a multi-space device, provision replacement grants explicitly and revoke the old device. Do not reuse one credential for different spaces. The token output must not exist. Rotation writes the new private token file before atomically replacing the policy. A crash can leave an unused token file, never an active token with no recoverable copy. Retrying to an existing output refuses overwrite. Admin commands serialize cooperating updates and fsync the replacement. Windows protected administration remains unsupported and fails closed.
 
 Every request reloads and validates policy. A missing, malformed or unsafe policy
-denies admission. Revocation/expiry applies at authentication/admission; work
+denies admission. Revocation/expiry applies at authentication/admission. Work
 already durably accepted finishes its recorded plan. A policy replacement cannot
 erase a previously delivered model context. The Host must clear or rebuild that
-context. New recall always reauthenticates; Pi never persists shared recall in
+context. New recall always reauthenticates. Pi never persists shared recall in
 session history. Native shared recall discards late reads, allows one in-flight
-read, and defaults to a 50 ms delivery wait; slow shared results are omitted.
+read, and defaults to a 50 ms delivery wait. Slow shared results are omitted.
 For a slower local embedder, explicit `shared_read.delivery_timeout_seconds`
 may increase that wait up to 0.25 seconds. The measured qwen3-embedding:4b shared
 search p95 was about 94 ms on this test machine, so a 0.15–0.20 second budget may
@@ -99,7 +91,7 @@ be needed. This is a latency/freshness tradeoff, not permission caching.
 
 Use a dedicated unprivileged OS account, private directories, a service manager
 with `UMask=0077`, and the existing protected destination policy. Initialize a new
-test profile explicitly; do not point it at a production collection or migrate
+test profile explicitly. Do not point it at a production collection or migrate
 existing data automatically. Existing destination claims, embedding fingerprints,
 schema checks, limits and recovery gates remain mandatory.
 
@@ -146,16 +138,15 @@ server {
 }
 ```
 
-Do not enable Uvicorn forwarded-header trust. Pin Host authorities exactly;
-wildcards are rejected. Origin is rejected, and forwarded metadata is never an
+Do not enable Uvicorn forwarded-header trust. Pin Host authorities exactly. Wildcards are rejected. Origin is rejected, and forwarded metadata is never an
 identity source. The Gateway bounds bodies to 128 KiB, concurrent admission to
 32 after authentication, four per principal, body-read inactivity to 10 seconds,
 and 240 requests per minute per authenticated principal. Authentication work has
 a separate worker limit. Unauthenticated requests cannot consume authenticated
 body slots or quotas. Per-source limits and TLS/header timeouts at the proxy are
-required; application quotas do not prevent network-layer denial of service. Logs must not retain
+required. Application quotas do not prevent network-layer denial of service. Logs must not retain
 Authorization, query text, raw memory or exception bodies. HTTP client redirects
-and ambient proxy settings are disabled; TLS validation cannot be disabled.
+and ambient proxy settings are disabled. TLS validation cannot be disabled.
 
 For a direct HTTP-capable MCP Host, configure `https://memory.example.com/mcp`
 and its independent Bearer service credential using the Host's secure settings.
@@ -166,8 +157,8 @@ qdrant-memory remote-mcp --url https://memory.example.com/mcp \
   --token-env QDRANT_MEMORY_REMOTE_TOKEN
 ```
 
-The token is injected via the Host's secret environment, never command arguments.
-`--ca-file` adds explicit trust for a private CA; it never disables verification.
+The token is injected through the Host's secret environment, never command arguments.
+`--ca-file` adds explicit trust for a private CA. It never disables verification.
 This is MCP-to-MCP using the official SDK, not exposure of `/v1/tool`.
 
 ## Native Hermes Owner
@@ -188,11 +179,10 @@ Use one MemoryProvider. In the Native profile's configuration, explicitly set:
 
 The private token must bind the configured human owner, one logical Hermes agent
 and a writable private space. Project capture tokens must also carry a nonempty
-administrator-authored `capture_rule_id`; the configuration list is a second
+administrator-authored `capture_rule_id`. The configuration list is a second
 explicit opt-in. Without that list, extraction stays private. The host's normal
 LLM routing is inherited. This role uses the existing Native worker, Ledger,
-Runtime and WriterLease. New private data occupies the device-granted partition;
-old private data is preserved and is not silently imported. Turning the role off
+Runtime and WriterLease. New private data occupies the device-granted partition. Old private data is preserved and is not silently imported. Turning the role off
 restores the original private partition. Keep the configuration and its policy
 together for consistent restore/rollback.
 
@@ -216,14 +206,14 @@ denial counter records the skipped rule. Other devices' writes remain available.
 When the private credential itself is denied, the raw turn is retained FAILED
 without blocking unrelated clients. Restore authorization, stop the Owner,
 run the existing explicit operator `retry`, then restart. Reauthorization of an
-unadmitted turn recovers private data only; it never retroactively publishes
+unadmitted turn recovers private data only. It never retroactively publishes
 that turn into a project. An identity mismatch fails closed.
 
 ## Non-Hermes automatic extraction
 
 For a standalone Owner, `--enable-lifecycle` is explicit and off by default. It
 requires a configured LLM override, for example an Owner-local Ollama OpenAI
-compatible endpoint; real model compatibility remains a separate acceptance:
+compatible endpoint. Real model compatibility remains a separate acceptance:
 
 ```json
 {
@@ -239,10 +229,9 @@ compatible endpoint; real model compatibility remains a separate acceptance:
 
 Extraction reuses `Extractor`, Runtime dedupe, operations and the Ledger. Raw
 events are durable before extraction, response loss replays the event receipt,
-and failed extraction is retained for operator retry. Default capture is private;
-project/shared capture additionally requires the grant's audited capture rule.
+and failed extraction is retained for operator retry. Default capture is private. Project/shared capture additionally requires the grant's audited capture rule.
 The `/events` extension is separate from MCP and does not invent a fifth CRUD
-tool. Current event contract is `turn_completed`; other proposed lifecycle event
+tool. Current event contract is `turn_completed`. Other proposed lifecycle event
 kinds are not supported yet. A 128-event pending/failed backlog gate applies.
 
 ## Compatibility, backup and rollback
@@ -251,7 +240,7 @@ Local evidence covers Python 3.14 + MCP SDK 1.30.0 and Python 3.11 + SDK 2.3.0.
 The official manager handles transport negotiation, including legacy initialized
 2025-11-25 requests. Real SDK 1.x and 2.x HTTPS clients are separately tested.
 Exhaustive mixed-SDK/Host interoperability and OAuth Host modes are not claimed.
-The code retains SDK 1.x decorator and SDK 2.x constructor APIs; only the remote
+The code retains SDK 1.x decorator and SDK 2.x constructor APIs. Only the remote
 bridge switches between SDK-required httpx and httpx2 client types.
 
 Before upgrading, stop the single Owner, drain requests, then take a consistent
@@ -265,6 +254,6 @@ additive lifecycle tables cannot be interpreted by 0.4.0. Roll back to the saved
 pre-upgrade snapshot/config, not by deleting claims, WAL, locks or new tables.
 
 macOS/Linux are the primary targets. Existing platform CI exercises portable
-contracts on Windows; protected public service/admin remains unsupported there.
+contracts on Windows. Protected public service/admin remains unsupported there.
 Real Cloud, production TLS deployment, real model quality and user Host UI
 acceptance require independent evidence. No production-readiness claim is made.

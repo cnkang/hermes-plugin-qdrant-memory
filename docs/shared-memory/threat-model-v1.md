@@ -14,7 +14,7 @@ the memory schema or implement distributed fencing.
    private modes, regular files and symlink checks protect state from other users.
 3. **Database access:** collection-scoped Qdrant credentials determine who can
    bypass the application. Only the Owner should hold application write access.
-4. **Network isolation:** agents can reach the loopback Owner API; access to Qdrant
+4. **Network isolation:** agents can reach the loopback Owner API. Access to Qdrant
    is restricted independently by firewall, container network or Cloud controls.
 5. **Operational guarantees:** operators provision keys, stop old writers, manage
    administrators, protect backups and restore coherent database/ledger state.
@@ -54,4 +54,4 @@ administrator capabilities. The selected policy combines local fail-closed
 admission with independently enforced database privileges. Existing private and
 legacy shared policy formats continue to work unless they target an enrolled
 protected destination. Protected mode is opt-in and currently requires POSIX
-permission verification; Windows private/shared compatibility remains supported.
+permission verification. Windows private/shared compatibility remains supported.

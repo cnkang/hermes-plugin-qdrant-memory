@@ -123,7 +123,7 @@ because it increases the visible data. Phase 3 designs this mapping. The mapping
 necessary before public exposure.
 
 Attribution stays at the principal level. Thus, receipts and created_by/updated_by show
-the device that did the operation. logical_agent_id is a group key, not an attribution
+the device that did the operation. Logical_agent_id is a group key, not an attribution
 value.
 
 ## 7. Threat model delta

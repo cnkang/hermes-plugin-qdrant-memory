@@ -65,14 +65,13 @@ retryability rather than API keys or remote response bodies.
 ### Deployment checklist for private state
 
 - Place the entire profile, embedded collection and backup destination on
-  encrypted storage. Include SQLite WAL/SHM sidecars in the protected boundary;
-  encrypting only an exported file does not protect the live ledger.
+  encrypted storage. Include SQLite WAL/SHM sidecars in the protected boundary. Encrypting only an exported file does not protect the live ledger.
 - On Windows, provision a private ACL before initialization and check inherited
   permissions on the profile, model cache and backups. POSIX modes do not
   establish a Windows access policy.
 - Define a backup expiry period appropriate to the data and apply it to all
   copies. Take a consistent backup after stopping every writer, or use a
-  supported database backup mechanism; copying a live SQLite file alone can
+  supported database backup mechanism. Copying a live SQLite file alone can
   omit admitted work.
 - Monitor pending/failed work and storage growth. Resolve recovery through the
   supported CLI before any lifecycle cleanup. Never delete ledger rows, deletion

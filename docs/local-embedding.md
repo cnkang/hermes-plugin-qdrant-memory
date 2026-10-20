@@ -69,7 +69,7 @@ name, supply `--embedding-api-key-env VARIABLE_NAME`.
 
 Use a different profile and `--agent-id` for each client. `--user-id` defaults to
 `local-user`. Self-hosted/Cloud Qdrant storage continues to use the existing
-[configuration workflow](configuration.md); this setup command creates only a
+[configuration workflow](configuration.md). This setup command creates only a
 new embedded destination. A remote embedding choice is distinct from remote
 Qdrant storage.
 
@@ -102,7 +102,7 @@ Managed cache/profile paths must be canonical absolute paths without symlinks
 or Windows reparse points, including intermediate directories.
 
 Preparation requires network access and may take several minutes. Start MCP
-after preparation and setup complete; do not place the download inside a
+after preparation and setup complete. Do not place the download inside a
 30-second connection handshake. Normal provider startup verifies cached files
 and performs no downloads. Prepared CPU inference works offline and does not
 send memory/query text to an embedding service.
@@ -110,7 +110,7 @@ send memory/query text to an embedding service.
 Downloads use a provisioning lock and a private staging directory. The complete
 cache is published only after every file passes validation. Failed preparation
 can be retried with the same command. A corrupt completed cache is rejected and
-left untouched; it is not silently replaced. Select a new cache directory for
+left untouched. It is not silently replaced. Select a new cache directory for
 explicit re-preparation, preserving the old files for diagnosis or recovery.
 
 ## Safety, limits and recovery
@@ -127,7 +127,7 @@ explicit re-preparation, preserving the old files for diagnosis or recovery.
 - Choosing CPU for a collection created with Ollama or another model is not a
   migration. Existing incompatible collections fail compatibility checks.
 - `LocalModelNotPreparedError`: run explicit preparation with the correct cache.
-- `LocalModelIntegrityError`: do not bypass checks; explicitly prepare a new cache.
+- `LocalModelIntegrityError`: do not bypass checks. Explicitly prepare a new cache.
 - `LocalEmbeddingUnavailableError`: install the reviewed `local` extra.
 - `ManagedProfileConflictError`: retain the existing profile and choose a new
   directory, or use the existing advanced configuration/maintenance workflow.
@@ -141,7 +141,7 @@ extraction, new network listener or cloud credential custody is introduced.
 Real local CPU inference and offline official-MCP CRUD/restart tests are separate
 from package installation and real WorkBuddy GUI acceptance. The optional local
 embedding workflow tests native Linux x64, Windows x64 and macOS Apple Silicon
-with Python 3.11. macOS Intel is best-effort compatibility and is not a release
+with Python 3.11. MacOS Intel is best-effort compatibility and is not a release
 gate or a formally supported CPU platform. A successful dependency resolution
 alone is not a platform support claim. ARM64 variants outside macOS require
 separate acceptance.

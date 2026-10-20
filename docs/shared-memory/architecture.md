@@ -145,7 +145,7 @@ MCP or an OAuth resource server. It binds literal IPv4 loopback only, validates
 Host/Origin, rejects browser origins, transfer encoding and oversized requests,
 bounds idle sockets and worker count, and disables request logging. Clients
 reject non-loopback URLs, environment proxies and redirects. Secrets are supplied
-via environment variables. Policy stores only the SHA256 of high-entropy tokens
+through environment variables. Policy stores only the SHA256 of high-entropy tokens
 and requires owner-only POSIX permissions. Windows requires operator-managed ACLs.
 Audit stderr records hashed principals and allow/deny only. It contains no
 memory text, credentials or raw errors. Policy changes/revocation require restart. Protect/supervise the
