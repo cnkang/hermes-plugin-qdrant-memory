@@ -58,6 +58,10 @@ Committed evidence:
   Its raw PASS is retained for traceability, not current acceptance. The revised
   scorer requires distinct logical-Agent identities from the stored provenance
   and the actual reader grant; missing or equal identities fail closed.
+- `owner-mutation-identity-evidence.json`: fresh full baseline + mutation PASS,
+  with stored writer `pi` and independently authorized reader `hermes`. All
+  eleven checks passed, obsolete hits were 0/8, concurrent CAS had one winner
+  and one conflict, and restart/replay/revocation checks passed.
 
 The `owner-model-quality.yml` workflow uses a disposable Linux test runner with the `qdrant-memory-models` label.
 An operator must provision this runner explicitly.
