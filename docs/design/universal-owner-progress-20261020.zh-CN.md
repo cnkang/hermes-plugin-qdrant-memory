@@ -1,7 +1,7 @@
 # Universal Owner 研发与验收进展
 
 > 历史快照：本文的 #69 暂缓、Draft 状态与旧 HEAD 不代表当前状态。
-> 最新验证、用户后续合并授权和有效身份取证见 [研发与合并记录](universal-owner-landing-20261020.zh-CN.md)。
+> 最新验证与有效身份取证见 [验证记录](universal-owner-landing-20261020.zh-CN.md)。
 
 日期：2026-10-20，Asia/Singapore。本文记录本轮代码与远端核验事实；历史绿色 CI 不代替新提交检查。
 
