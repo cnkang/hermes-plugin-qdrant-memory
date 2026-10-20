@@ -56,3 +56,14 @@ trigger and uses no production credentials. It checks out immutable Hermes and
 MCP candidates and requires already-installed local models. Registering that
 runner and executing the remote lane are separate operator tasks; defining the
 workflow does not prove it ran. Scorer unit tests also run in ordinary test CI.
+
+## Driver contract
+
+`pi-quality-driver.yml` defines a contract job on a standard GitHub-hosted runner.
+The job uses the fixed Pi SDK and actual extension with a synthetic Owner transport.
+It repeats prompts and delays delivery across cases.
+Each receipt must keep its original event-to-case association.
+
+The job rejects skipped or absent tests.
+This workflow never selects the model runner.
+Its result needs a completed CI run.
