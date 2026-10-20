@@ -11,13 +11,13 @@
 
 三个工作区起始均干净，未覆盖用户未提交内容。Runtime 起始分支是
 `design/phase-1b`，包含已有 SharedReader 和未合并的 Phase 1b 设计；它们被保留，
-研发另开 `codex/universal-owner`，整合了最新 main 的 Phase 0 文档。
+研发另开 `the integration branch`，整合了最新 main 的 Phase 0 文档。
 
 | 仓库 | 核验的 main | 发布事实 | 当前研发分支 |
 |---|---|---|---|
-| Runtime | 起始 `68a9ed1a89c64b19a22fbc637f050785515fc387`；结束 `80816294611c1c0b896784cc12f86e72115699c6` | PyPI/GitHub 0.4.0；硬化及本次新能力不在已发布 0.4.0 内 | `codex/universal-owner` |
-| MCP | `60d0cda936dc248ba26a7a1c12ba84ea3643f6ec` | PyPI 0.2.2 已于 10-19 10:32 UTC 上传；GitHub Release 仍 Draft | `codex/owner-lifecycle-adapters` |
-| Skill | `d6062f07f35a741d5058712ab5e9966b39f87e00` | Skill 0.3.1，snapshot skills-20261019.1 | `codex/universal-owner-guidance` |
+| Runtime | 起始 `68a9ed1a89c64b19a22fbc637f050785515fc387`；结束 `80816294611c1c0b896784cc12f86e72115699c6` | PyPI/GitHub 0.4.0；硬化及本次新能力不在已发布 0.4.0 内 | `the integration branch` |
+| MCP | `60d0cda936dc248ba26a7a1c12ba84ea3643f6ec` | PyPI 0.2.2 已于 10-19 10:32 UTC 上传；GitHub Release 仍 Draft | `the MCP integration branch` |
+| Skill | `d6062f07f35a741d5058712ab5e9966b39f87e00` | Skill 0.3.1，snapshot skills-20261019.1 | `the Skill guidance branch` |
 
 开发开始时只有 [PR #63 SharedReader](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/63)
 未合并，已复用它的库，未重复实现或合并。结束核验又发现
@@ -242,9 +242,9 @@ durable lifecycle、`f7e9480` MCP transport、`51d6338` Native Owner、`3233ee5`
 
 可审阅分支：
 
-- [Runtime](https://github.com/cnkang/hermes-plugin-qdrant-memory/tree/codex/universal-owner)
-- [MCP / Pi adapter](https://github.com/cnkang/qdrant-memory-mcp/tree/codex/owner-lifecycle-adapters)
-- [Skill](https://github.com/cnkang/skills/tree/codex/universal-owner-guidance/qdrant-memory)
+- [Runtime](https://github.com/cnkang/hermes-plugin-qdrant-memory)
+- [MCP / Pi adapter](https://github.com/cnkang/qdrant-memory-mcp)
+- [Skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)
 
 最终本地确定性/协议测试通过不抵消上述质量 FAIL、Cloud SKIPPED 和部署 UNVERIFIED。
 

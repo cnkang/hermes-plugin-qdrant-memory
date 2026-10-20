@@ -14,11 +14,11 @@ Actions job/step 日志及 Sonar API。**项目尚未完成全部 DoD，当前�
 - **PR #63 已合并**：2026-10-19 22:55:07 UTC，main 为
   `ebfceefc146c3b0f038d4f871d6ff7c380272da8`。这不是本轮执行的合并。
   SharedReader 及两处解析错误脱敏修复已进入 main，不再列为待完成。
-- Runtime 大研发分支 `codex/universal-owner` 本地 `1179ed6`，远端功能快照
+- Runtime 大研发分支 `the integration branch` 本地 `1179ed6`，远端功能快照
   `37b0715`；本地仅多一个先前的合并评估文档提交。工作区核验时干净。
   Native Owner、Remote MCP、设备身份、lifecycle 等主要新能力仍未进入 main。
-- MCP `codex/owner-lifecycle-adapters` 为 `eecaf67`；Skill
-  `codex/universal-owner-guidance` 为 `e04ba35`，工作区均干净。两仓库相关研发分支
+- MCP `the MCP integration branch` 为 `eecaf67`；Skill
+  `the Skill guidance branch` 为 `e04ba35`，工作区均干净。两仓库相关研发分支
   尚无功能 PR；Runtime 当前仅剩开放的依赖 PR #64。
 - 正式 Runtime 仍 0.4.0，MCP 源码依赖仍固定 `hermes-plugin-qdrant-memory[mcp]==0.4.0`，
   MCP GitHub 0.2.2 Release 仍 Draft，Skill snapshot 仍 skills-20261019.1。
