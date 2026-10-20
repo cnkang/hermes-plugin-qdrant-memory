@@ -1,0 +1,466 @@
+"""Opt-in anonymous multi-turn Hermes/Pi evaluation against installed local models."""
+
+import argparse
+import hashlib
+import inspect
+import json
+import os
+import secrets
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import traceback
+from collections import Counter
+from contextlib import contextmanager
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import anyio
+import httpx
+import uvicorn
+
+from qdrant_memory.config import DEFAULTS, embedding_config, merge
+from qdrant_memory.embedding import HTTPEmbeddingProvider
+from qdrant_memory.extraction import MEMORY_SCHEMA, Extractor
+from qdrant_memory.owner_lifecycle import OwnerLifecycle
+from qdrant_memory.owner_llm import OwnerLLM
+from qdrant_memory.quality_metrics import (
+    durable_snapshot,
+    latency_summary,
+    matches,
+    score_run,
+    validate_gold,
+)
+from qdrant_memory.remote_client import call_remote, send_event
+from qdrant_memory.remote_gateway import create_gateway
+
+ROOT = Path(__file__).resolve().parents[1]
+MODEL = "qwen3:8b"
+EMBEDDING = "qwen3-embedding:4b"
+
+
+def digest(value):
+    """Fingerprint evaluation inputs without exposing their contents."""
+    return hashlib.sha256(value).hexdigest()
+
+
+class RecordingLLM:
+    """Observe actual model output while delegating all decisions to the existing facade."""
+
+    def __init__(self, delegate, cases):
+        """Bind a real facade and the anonymous case IDs being observed."""
+        self.delegate = delegate
+        self.case_ids = {case["user"]: case["id"] for case in cases}
+        self.extractions, self.latencies, self.errors = {}, [], Counter()
+        self.lock = threading.Lock()
+
+    def complete_structured(self, **kwargs):
+        """Record extraction observations and latency, preserving facade failures."""
+        started = time.monotonic()
+        try:
+            result = self.delegate.complete_structured(**kwargs)
+            if kwargs["purpose"] == "qdrant-memory.extract":
+                event = json.loads(kwargs["input"][0]["text"])
+                key = self.case_ids[event["user"]]
+                with self.lock:
+                    self.extractions[key] = [row["text"] for row in result.parsed["memories"]]
+            return result
+        except Exception as exc:
+            with self.lock:
+                self.errors[type(exc).__name__] += 1
+            raise
+        finally:
+            with self.lock:
+                self.latencies.append((time.monotonic() - started) * 1000)
+
+
+def policy(tokens):
+    """Authorize two native devices and independently scoped Pi credentials."""
+    specs = {
+        "NATIVE": ("hermes", "native-a", "native-private", "private", "write"),
+        "SECOND": ("hermes", "native-b", "native-private", "private", "write"),
+        "PI": ("pi", "pi-a", "pi-private", "private", "write"),
+        "PROJECT": ("pi", "pi-project", "alpha", "project", "write"),
+        "READER": ("pi", "pi-a", "alpha", "project", "read"),
+    }
+    clients = []
+    for name, token in tokens.items():
+        logical, device, space, visibility, permission = specs[name]
+        grant = {
+            "token_sha256": digest(token.encode()),
+            "principal": device,
+            "owner_id": "evaluation-user",
+            "logical_agent_id": logical,
+            "device_id": device,
+            "space_id": space,
+            "visibility": visibility,
+            "permission": permission,
+        }
+        if name == "PROJECT":
+            grant["capture_rule_id"] = "anonymous-evaluation-project-opt-in"
+        clients.append(grant)
+    return {"clients": clients}
+
+
+def start_host(home, policy_path, recorder):
+    """Start the actual Hermes provider and MemoryManager with the existing Runtime."""
+    from agent.memory_manager import MemoryManager
+
+    from qdrant_memory.provider import QdrantMemoryProvider
+
+    cfg = merge(
+        DEFAULTS,
+        {
+            "scope": {"user_id": "evaluation-user", "agent_id": None},
+            "qdrant": {"path": str(home / "vectors")},
+            "embedding": {
+                "provider": "ollama",
+                "model": EMBEDDING,
+                "dimensions": 2560,
+                "base_url": "http://127.0.0.1:11434",
+                "timeout_seconds": 30,
+            },
+            "native_owner": {
+                "enabled": True,
+                "policy": str(policy_path),
+                "port": 0,
+                "private_token_env": "QM_QUALITY_NATIVE",
+            },
+        },
+    )
+    embedder = HTTPEmbeddingProvider(embedding_config(cfg), secret_reader=lambda _: None)
+    provider = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=recorder), embedder=embedder, overrides=cfg
+    )
+    try:
+        provider.initialize("native-0", hermes_home=str(home))
+    except BaseException:
+        provider.shutdown()
+        raise
+    manager = MemoryManager()
+    manager.add_provider(provider)
+    return provider, manager
+
+
+@contextmanager
+def tls_owner(provider, home):
+    """Bind a temporary loopback TLS server; no public listener or Cloud credentials."""
+    cert, key = home / "cert.pem", home / "key.pem"
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "1",
+            "-subj",
+            "/CN=127.0.0.1",
+            "-addext",
+            "subjectAltName=IP:127.0.0.1",
+            "-keyout",
+            str(key),
+            "-out",
+            str(cert),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(64)
+        authority = f"127.0.0.1:{sock.getsockname()[1]}"
+        owner = provider._native_owner.owner
+        app = create_gateway(owner, allowed_hosts=[authority], lifecycle=OwnerLifecycle(owner))
+        service = uvicorn.Server(
+            uvicorn.Config(
+                app,
+                ssl_certfile=str(cert),
+                ssl_keyfile=str(key),
+                proxy_headers=False,
+                access_log=False,
+                log_level="critical",
+                timeout_graceful_shutdown=35,
+            )
+        )
+        thread = threading.Thread(target=service.run, kwargs={"sockets": [sock]})
+        thread.start()
+        try:
+            deadline = time.monotonic() + 15
+            while not service.started and thread.is_alive() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            if not service.started:
+                raise RuntimeError("Evaluation TLS listener failed startup")
+            yield f"https://{authority}/mcp", cert
+        finally:
+            service.should_exit = True
+            thread.join(timeout=40)
+            if thread.is_alive():
+                raise RuntimeError("Evaluation Owner did not drain")
+
+
+def remote_query(url, certificate, token, query):
+    """Retrieve only through official HTTPS MCP and the selected grant."""
+
+    async def call():
+        return await call_remote(
+            url, token, "qdrant_memory_search", {"query": query}, ca_file=certificate
+        )
+
+    return anyio.run(call)["memories"]
+
+
+def event_replay(url, certificate, token, event):
+    """Replay an original Pi event through the existing authorized event endpoint."""
+
+    async def call():
+        return await send_event(url, token, event, ca_file=certificate)
+
+    return anyio.run(call)
+
+
+def pi_capture(adapter, home, rows, url, certificate, token, recall_token):
+    """Require actual Pi session hooks and an acknowledged capture for every turn."""
+    home.mkdir()
+    env = {
+        **os.environ,
+        "QDRANT_MEMORY_OWNER_URL": url,
+        "QDRANT_MEMORY_CA_FILE": str(certificate),
+        "QDRANT_MEMORY_RUNTIME_PYTHON": sys.executable,
+        "QDRANT_MEMORY_REMOTE_TOKEN": token,
+        "QDRANT_MEMORY_RECALL_TOKEN": recall_token,
+        "PYTHONPATH": str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""),
+    }
+    result = subprocess.run(
+        ["node", str(ROOT / "scripts" / "pi_lifecycle_quality.mjs"), str(adapter), str(home)],
+        input=json.dumps(rows),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    if result.returncode:
+        raise RuntimeError("Actual Pi quality driver failed")
+    observed = json.loads(result.stdout.splitlines()[-1])
+    committed = {row["case_id"] for row in observed["captures"] if row["status"] == "COMMITTED"}
+    if committed != {row["id"] for row in rows} or observed["history_leak"]:
+        raise RuntimeError("Pi capture incomplete or shared recall persisted in history")
+    return observed
+
+
+def read_quality(data, url, cert, tokens):
+    """Measure annotated ranking and cross-agent private leakage via MCP."""
+    facts = validate_gold(data)
+    routes = {fact["id"]: case["route"] for case in data["cases"] for fact in case["expected"]}
+    credentials = {"native": tokens["SECOND"], "pi": tokens["PI"], "project": tokens["READER"]}
+    ranked, latencies, leaks, snapshots = {}, [], 0, {}
+    for query in data["queries"]:
+        started = time.monotonic()
+        hits = remote_query(url, cert, credentials[query["route"]], query["query"])
+        latencies.append((time.monotonic() - started) * 1000)
+        snapshots[query["id"]] = durable_snapshot(hits)
+        found = []
+        for hit in hits:
+            matching = [key for key, fact in facts.items() if matches(hit["text"], fact)]
+            found.append(matching[0] if len(matching) == 1 else None)
+            leaks += any(routes[key] != query["route"] for key in matching)
+        ranked[query["id"]] = found
+        # A different logical private Agent must not return the requested private fact.
+        if query["route"] != "project":
+            other = tokens["PI"] if query["route"] == "native" else tokens["SECOND"]
+            denied = remote_query(url, cert, other, query["query"])
+            leaks += sum(matches(hit["text"], facts[query["expected"]]) for hit in denied)
+    return ranked, latencies, leaks, snapshots
+
+
+def evaluate(data, adapter, home, recorder, tokens):
+    """Run actual multi-turn capture, retrieval, replay and persistent-owner restart."""
+    policy_path = home / "policy.json"
+    policy_path.write_text(json.dumps(policy(tokens)), encoding="utf-8")
+    policy_path.chmod(0o600)
+    provider, manager = start_host(home, policy_path, recorder)
+    baseline, captured, replay_safe = None, None, False
+    try:
+        for index, row in enumerate(case for case in data["cases"] if case["route"] == "native"):
+            provider.on_session_switch(row["session"])
+            provider.on_turn_start(index + 1, row["user"], session_id=row["session"])
+            manager.sync_all(row["user"], "ack", session_id=row["session"])
+            if not provider.wait_idle(120) or provider._native_owner.owner.blocked:
+                raise RuntimeError("Native lifecycle failed or recovery gate blocked")
+        with tls_owner(provider, home) as (url, cert):
+            for route, token in (("project", tokens["PROJECT"]), ("pi", tokens["PI"])):
+                observed = pi_capture(
+                    adapter,
+                    home / route,
+                    [row for row in data["cases"] if row["route"] == route],
+                    url,
+                    cert,
+                    token,
+                    tokens["READER"],
+                )
+                if route == "project":
+                    captured = observed["captures"][0]
+            ranked, latencies, leaks, snapshots = read_quality(data, url, cert, tokens)
+            before = len(recorder.latencies)
+            replayed = event_replay(url, cert, tokens["PROJECT"], captured["event"])
+            replay_safe = replayed == captured["receipt"] and len(recorder.latencies) == before
+            baseline = remote_query(url, cert, tokens["SECOND"], "Cedar database")
+    finally:
+        manager.shutdown_all()
+    provider, manager = start_host(home, policy_path, recorder)
+    try:
+        with tls_owner(provider, home) as (url, cert):
+            restored = remote_query(url, cert, tokens["SECOND"], "Cedar database")
+            receipt = event_replay(url, cert, tokens["PROJECT"], captured["event"])
+            after_ranked, after_latency, after_leaks, after_snapshots = read_quality(
+                data, url, cert, tokens
+            )
+            latencies.extend(after_latency)
+            leaks += after_leaks
+            restart_safe = (
+                snapshots == after_snapshots
+                and durable_snapshot(restored) == durable_snapshot(baseline)
+                and receipt == captured["receipt"]
+            )
+            # Preserve raw comparison diagnostics without writing memory text.
+            changed_fields = sorted(
+                {
+                    key
+                    for left, right in zip(baseline, restored)
+                    for key in left.keys() | right.keys()
+                    if left.get(key) != right.get(key)
+                }
+            )
+    finally:
+        manager.shutdown_all()
+    return {
+        "extractions": recorder.extractions,
+        "retrievals": ranked,
+        "scope_leaks": leaks,
+        "provider_failures": sum(recorder.errors.values()),
+        "replay_safe": replay_safe,
+        "restart_safe": restart_safe,
+        "restart_raw_equal": restored == baseline,
+        "restart_changed_fields": changed_fields,
+        "post_restart_quality": score_run(
+            data,
+            {
+                "extractions": recorder.extractions,
+                "retrievals": after_ranked,
+                "scope_leaks": after_leaks,
+                "provider_failures": sum(recorder.errors.values()),
+                "replay_safe": replay_safe,
+                "restart_safe": restart_safe,
+            },
+        ),
+        "retrieval_latency": latency_summary(latencies),
+    }
+
+
+def main():
+    """Run only installed local models and write a new, redacted evidence artifact."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--adapter-root", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    dataset_bytes = (ROOT / "tests" / "quality" / "lifecycle-v1.json").read_bytes()
+    data = json.loads(dataset_bytes)
+    validate_gold(data)
+    if args.output.exists():
+        raise FileExistsError("Choose a new evaluation output path")
+    if os.environ.get("QM_QUALITY_UNUSED_KEY"):
+        raise ValueError("Local quality evaluation refuses supplied API credentials")
+    with httpx.Client(trust_env=False, timeout=5) as http:
+        models = http.get("http://127.0.0.1:11434/api/tags").json()["models"]
+    installed = {row["name"]: row["digest"] for row in models if row["name"] in {MODEL, EMBEDDING}}
+    if set(installed) != {MODEL, EMBEDDING}:
+        raise ValueError("Evaluation requires both explicit already-installed local models")
+    llm = OwnerLLM(
+        {
+            "mode": "override",
+            "provider": "openai-compatible",
+            "model": MODEL,
+            "base_url": "http://127.0.0.1:11434/v1",
+            "max_output_tokens": 2048,
+            "api_key_env": "QM_QUALITY_UNUSED_KEY",
+        }
+    )
+    recorder = RecordingLLM(llm, data["cases"])
+    tokens = {key: secrets.token_hex(32) for key in ("NATIVE", "SECOND", "PI", "PROJECT", "READER")}
+    report = {
+        "status": "FAIL",
+        "dataset": data["version"],
+        "dataset_sha256": digest(dataset_bytes),
+        "models": installed,
+        "cases": len(data["cases"]),
+        "queries": len(data["queries"]),
+        "prompt_sha256": digest(inspect.getsource(Extractor.extract).encode()),
+        "schema_sha256": digest(json.dumps(MEMORY_SCHEMA, sort_keys=True).encode()),
+        "source_sha256": {
+            str(path.relative_to(ROOT)): digest(path.read_bytes())
+            for path in [
+                ROOT / "scripts" / "evaluate_owner_lifecycle.py",
+                ROOT / "scripts" / "pi_lifecycle_quality.mjs",
+                *sorted((ROOT / "qdrant_memory").glob("*.py")),
+            ]
+        },
+        "pi_extension_sha256": digest(
+            (args.adapter_root / "integrations" / "pi" / "owner-memory.mjs").read_bytes()
+        ),
+        "assistant": "deterministic Pi ack; real Owner LLM and embeddings",
+        "limitations": "Concept-annotated synthetic dataset; not user UI or production accuracy",
+    }
+    from agent.secret_scope import reset_secret_scope, set_secret_scope
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="qm-model-quality-") as directory:
+            home = Path(directory).resolve()
+            env = {"QM_QUALITY_" + key: value for key, value in tokens.items()}
+            with patch.dict(os.environ, env):
+                scoped = set_secret_scope(env, profile_home=str(home))
+                try:
+                    evidence = evaluate(data, args.adapter_root.resolve(), home, recorder, tokens)
+                finally:
+                    reset_secret_scope(scoped)
+            report.update(score_run(data, evidence))
+            report.update(
+                {
+                    key: evidence[key]
+                    for key in (
+                        "scope_leaks",
+                        "provider_failures",
+                        "replay_safe",
+                        "restart_safe",
+                        "restart_raw_equal",
+                        "restart_changed_fields",
+                        "post_restart_quality",
+                        "retrieval_latency",
+                    )
+                }
+            )
+            if report["post_restart_quality"]["status"] != "PASS":
+                report["status"] = "FAIL"
+    except Exception as exc:
+        report["failure_type"] = type(exc).__name__
+        report["failure_location"] = [
+            {"file": Path(frame.filename).name, "line": frame.lineno, "function": frame.name}
+            for frame in traceback.extract_tb(exc.__traceback__)[-5:]
+        ]
+    finally:
+        llm.close()
+    report["model_latency"] = latency_summary(recorder.latencies)
+    report["provider_error_types"] = dict(recorder.errors)
+    with args.output.open("x", encoding="utf-8") as output:
+        json.dump(report, output, ensure_ascii=False, indent=2)
+    print(json.dumps(report, ensure_ascii=False))
+    return 0 if report["status"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

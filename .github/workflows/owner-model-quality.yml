@@ -1,0 +1,54 @@
+name: Optional real-model Owner lifecycle quality
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-model-quality
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    # Dedicated disposable test runner: never register a production/model host here.
+    # No pull_request trigger can send untrusted fork code to this runner.
+    if: github.repository == 'cnkang/hermes-plugin-qdrant-memory'
+    runs-on: [self-hosted, linux, qdrant-memory-models]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          repository: NousResearch/hermes-agent
+          ref: 8f5693af418256b89da17ddda18a9242f113dcf6
+          path: .quality/hermes
+          persist-credentials: false
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          repository: cnkang/qdrant-memory-mcp
+          ref: 8b206568210219674e8ea45ce606c8c3572afa57
+          path: .quality/mcp
+          persist-credentials: false
+      - name: Prepare isolated test dependencies
+        shell: bash
+        run: |
+          python3.11 -m venv .quality/venv
+          .quality/venv/bin/python -m pip install '.[remote]' 'pytest>=8,<10' 'PyYAML>=6,<7' 'requests>=2,<3' 'ruamel.yaml>=0.18,<0.20'
+          npm ci --prefix .quality/mcp/integrations/agent-hosts --ignore-scripts --no-audit --no-fund
+      - name: Require scorer contracts before the actual model run
+        run: .quality/venv/bin/python -m pytest tests/test_quality_metrics.py -q
+      - name: Actual local-model Hermes and Pi lifecycle quality
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
+          QUALITY_OUTPUT: ${{ runner.temp }}/owner-quality-${{ github.run_id }}-${{ github.run_attempt }}.json
+        run: .quality/venv/bin/python scripts/evaluate_owner_lifecycle.py --adapter-root .quality/mcp --output "$QUALITY_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: owner-model-quality
+          path: ${{ runner.temp }}/owner-quality-${{ github.run_id }}-${{ github.run_attempt }}.json
+          if-no-files-found: error
