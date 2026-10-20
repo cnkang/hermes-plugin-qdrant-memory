@@ -28,9 +28,9 @@
 - Documentation: keep the version-locked installation ref and the demo script
   pin aligned with the tagged release commit.
 - CI: add a host pin compatibility job. It reconciles the plugin's dependency
-  specifiers with the tested Hermes hosts' pins on Python 3.11 and 3.14,
-  including optional extras and dependency groups, and co-resolves the shared
-  pins through the pinned dependency builder.
+  specifiers with the tested Hermes hosts' pins on Python 3.11 and 3.14. The
+  job includes optional extras and dependency groups. It also co-resolves the
+  shared pins through the pinned dependency builder.
 
 ## 0.2.2
 

@@ -99,9 +99,9 @@ coordination. Native Provider automatic shared extraction remains deferred.
 ## Evidence and limits
 
 The [validation record](validation.md#source-preview-validation-2026-10-12)
-links the tested source revision: 27 standalone contracts across Linux, macOS
-and Windows with Python 3.11/3.14, including real CLI subprocesses and official
-MCP clients. The companion skill also has isolated local Codex CLI, OpenCode
+links the tested source revision. It records 27 standalone contracts across
+Linux, macOS and Windows with Python 3.11/3.14. The contracts include real CLI
+subprocesses and official MCP clients. The companion skill also has isolated local Codex CLI, OpenCode
 and Pi integration checks and shared/private scope E2E.
 
 | Agent | Verified boundary |

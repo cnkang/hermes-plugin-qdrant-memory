@@ -139,10 +139,11 @@ server {
 ```
 
 Do not enable Uvicorn forwarded-header trust. Pin Host authorities exactly. Wildcards are rejected. Origin is rejected, and forwarded metadata is never an
-identity source. The Gateway bounds bodies to 128 KiB, concurrent admission to
-32 after authentication, four per principal, body-read inactivity to 10 seconds,
-and 240 requests per minute per authenticated principal. Authentication work has
-a separate worker limit. Unauthenticated requests cannot consume authenticated
+identity source. The Gateway bounds body size to 128 KiB. After authentication,
+it admits 32 concurrent requests and four per principal. It sets body-read
+inactivity to 10 seconds. It allows 240 requests per minute per authenticated
+principal. Authentication work has a separate worker limit. Unauthenticated
+requests cannot consume authenticated
 body slots or quotas. Per-source limits and TLS/header timeouts at the proxy are
 required. Application quotas do not prevent network-layer denial of service. Logs must not retain
 Authorization, query text, raw memory or exception bodies. HTTP client redirects
@@ -243,15 +244,16 @@ Exhaustive mixed-SDK/Host interoperability and OAuth Host modes are not claimed.
 The code retains SDK 1.x decorator and SDK 2.x constructor APIs. Only the remote
 bridge switches between SDK-required httpx and httpx2 client types.
 
-Before upgrading, stop the single Owner, drain requests, then take a consistent
-backup of the Qdrant destination, the authoritative Ledger including SQLite WAL
-state, the protected claim/registry and configuration/policy. Keep credential
-secrets in the secret manager. Never copy an open Embedded directory to another
-device or open it from a second process. For Server/Cloud, coordinate a database
-snapshot with the quiescent Ledger. Restore and verify the entire matching set
-on an isolated destination before switching clients. New device grants and
-additive lifecycle tables cannot be interpreted by 0.4.0. Roll back to the saved
-pre-upgrade snapshot/config, not by deleting claims, WAL, locks or new tables.
+Before upgrading, stop the single Owner and drain requests. Then take a
+consistent backup. Include the Qdrant destination, the authoritative Ledger with
+SQLite WAL state, the protected claim/registry and configuration/policy. Keep
+credential secrets in the secret manager. Never copy an open Embedded directory
+to another device or open it from a second process. For Server/Cloud, coordinate
+a database snapshot with the quiescent Ledger. Restore and verify the entire
+matching set on an isolated destination before switching clients. New device
+grants and additive lifecycle tables cannot be interpreted by 0.4.0. Roll back
+to the saved pre-upgrade snapshot/config, not by deleting claims, WAL, locks or
+new tables.
 
 macOS/Linux are the primary targets. Existing platform CI exercises portable
 contracts on Windows. Protected public service/admin remains unsupported there.

@@ -76,8 +76,8 @@ The local backend suite passed 342 tests using an isolated profile and
 deterministic embedding/LLM fixtures. Regression coverage includes mixed authors,
 restarts, branch/reset transitions and failed author-record writes. A fresh
 `npx skills@1.7.0` installation from GitHub at skills revision
-`acbce68b925a8f735986d15b15fb701099533a16` installed this backend revision,
-verified its package provenance, and passed CLI initialization/diagnostics/write
+`acbce68b925a8f735986d15b15fb701099533a16` installed this backend revision.
+It verified package provenance. It passed CLI initialization/diagnostics/write
 and official MCP discovery/search/delete.
 
 These tests do not use personal memory collections or paid model calls. The

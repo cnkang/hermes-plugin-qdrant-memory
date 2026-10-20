@@ -141,7 +141,7 @@ assumption. External direct writes invalidate these guarantees.
 ## Transport/security
 
 The service is an authenticated **private local JSON API**, not Streamable HTTP
-MCP or an OAuth resource server. It binds literal IPv4 loopback only, validates
+MCP or an OAuth resource server. It binds literal IPv4 loopback only. It validates
 Host/Origin, rejects browser origins, transfer encoding and oversized requests,
 bounds idle sockets and worker count, and disables request logging. Clients
 reject non-loopback URLs, environment proxies and redirects. Secrets are supplied
@@ -177,7 +177,7 @@ private, and duplicate Hermes interfaces must not be registered.
 
 A plan may be durable before its Runtime operation exists. Therefore standalone
 private tool sessions and legacy mutating maintenance (init/reset, scope delete,
-import) inspect the optional request table **after acquiring ownership** and
+import) inspect the optional request table **after acquiring ownership**. They
 refuse unfinished shared work with `SharedRecoveryRequiredError`. This uses a
 read-only SQLite connection and creates no schema/files in legacy profiles.
 Operator `retry` remains available to repair terminal Runtime failures. The
@@ -204,9 +204,10 @@ private HTTP API. The Sonar quality thresholds and all other security rules rema
 active, including SSRF analysis of the client. The policy is recorded explicitly in the repository,
 rather than hiding the finding with a source annotation.
 
-The exception depends on the literal `127.0.0.1` bind, exact Host/port validation,
-Origin rejection, fixed authenticated grants, disabled environment proxies and
-redirects, and the private OS account boundary. Tests exercise those restrictions,
-verify DNS-independent loopback binding, and verify that shutdown drains admitted
-requests before releasing ownership. Remove the exception and review TLS and
-remote authorization before adding any wildcard/remote listener or public proxy.
+The exception depends on the literal `127.0.0.1` bind, exact Host/port validation
+and Origin rejection. It also depends on fixed authenticated grants, disabled
+environment proxies and redirects, and the private OS account boundary. Tests
+exercise those restrictions, verify DNS-independent loopback binding, and verify
+that shutdown drains admitted requests before releasing ownership. Remove the
+exception and review TLS and remote authorization before adding any
+wildcard/remote listener or public proxy.
