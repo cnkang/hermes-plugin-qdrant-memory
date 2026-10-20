@@ -83,6 +83,8 @@ The initial mutation failure predates the `baseline_executed` and `evaluation_mo
 It does not provide passing evidence for the current candidate.
 The historical mutation PASS remains available for traceability, without current acceptance status.
 Its `superseded` and `withdrawn_conclusions` fields mark the withdrawn claim. The original measurements remain unchanged.
+The policy-review failure predates the opaque CAS token check. The earlier evaluator compared hash strings by order.
+CAS tokens have no order. Supersession requires the same record ID and a different token, with no obsolete result.
 
 The policy-review failure predates the opaque CAS token check. The earlier evaluator compared hash strings by order.
 CAS tokens have no order. Supersession requires the same record ID and a different token, with no obsolete result.

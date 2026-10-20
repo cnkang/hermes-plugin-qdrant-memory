@@ -78,6 +78,8 @@ Host 准入屏障确认回调已交付；Provider 空闲屏障确认已准入工
 首次 mutation 失败记录早于 `baseline_executed` 和 `evaluation_mode` 字段。
 它不能作为当前候选的通过证据。历史 mutation PASS 保留用于追溯，不代表当前验收通过。
 其 `superseded` 和 `withdrawn_conclusions` 字段标记已撤回的结论。原始测量保持不变。
+策略复审失败记录早于不透明 CAS 标识检查修复。此前评估器按大小比较 hash 字符串。
+CAS 标识没有大小顺序。替换必须保持同一记录 ID、使用不同标识，并且没有过时结果。
 
 修订后的评分器通过存储的来源信息和实际读取授权检查不同的逻辑 Agent 身份。
 身份缺失或相同会使门禁失败。
