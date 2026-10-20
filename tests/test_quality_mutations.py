@@ -14,12 +14,21 @@ import pytest
 @pytest.mark.parametrize("old_version,new_version", [("f" * 64, "0" * 64), ("0" * 64, "f" * 64)])
 @pytest.mark.parametrize("obsolete_present", [False, True])
 def test_mutation_runner_accepts_opaque_revision_changes(
-    tmp_path, old_version, new_version, obsolete_present
+    tmp_path, monkeypatch, old_version, new_version, obsolete_present
 ):
     """The production scenario accepts an in-place update in either hash order."""
     root = Path(__file__).resolve().parents[1]
     module = runpy.run_path(str(root / "scripts" / "evaluate_owner_mutations.py"))
-    plan = json.loads((root / "tests" / "quality" / "lifecycle-mutations-v1.json").read_text())
+    read_text = Path.read_text
+
+    def read_with_windows_default(path, encoding=None, errors=None):
+        """Reproduce Windows cp1252 even when the host defaults to UTF-8."""
+        return read_text(path, encoding=encoding or "cp1252", errors=errors)
+
+    monkeypatch.setattr(Path, "read_text", read_with_windows_default)
+    plan = json.loads(
+        (root / "tests" / "quality" / "lifecycle-mutations-v1.json").read_text(encoding="utf-8")
+    )
     old = {"id": "same-memory", "version": old_version, "text": "Willow cache: 300 seconds"}
     new = {"id": "same-memory", "version": new_version, "text": "Willow cache: 900 seconds"}
     tokens = {name: name for name in ("NATIVE", "SECOND", "PI", "PROJECT", "READER")}
