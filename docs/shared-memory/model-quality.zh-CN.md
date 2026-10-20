@@ -69,12 +69,14 @@ PYTHONPATH="$PWD:/path/to/hermes-agent" python scripts/evaluate_owner_lifecycle.
 | [owner-mutation-quality-evidence.json](owner-mutation-quality-evidence.json) | 历史原始 PASS。因读写凭据均属于 `pi`，跨 Agent 交接结论已撤回。 |
 | [owner-mutation-identity-evidence.json](owner-mutation-identity-evidence.json) | 新的完整基线与 mutation PASS，存储的写入者为 `pi`，独立授权的读取者为 `hermes`。 |
 | [owner-model-context-evidence.json](owner-model-context-evidence.json) | 首次观测真实 Pi 模型输入的完整运行。 |
+| [owner-model-context-reviewed-evidence.json](owner-model-context-reviewed-evidence.json) | 上下文评估器复审后的完整重跑。测量了 12 次真实 Pi 模型输入和 38 条注入记忆。 |
 | [owner-model-stack-evidence.json](owner-model-stack-evidence.json) | 新的完整真实模型 PASS，包含被评估栈的源文件指纹。 |
 
 排空后的基线通过真实本地模型执行全部 24 次捕获、32 个查询、重放检查及重启检查。
 Host 准入屏障确认回调已交付；Provider 空闲屏障确认已准入工作完成。
 首次 mutation 失败记录早于 `baseline_executed` 和 `evaluation_mode` 字段。
 它不能作为当前候选的通过证据。历史 mutation PASS 保留用于追溯，不代表当前验收通过。
+其 `superseded` 和 `withdrawn_conclusions` 字段标记已撤回的结论。原始测量保持不变。
 
 修订后的评分器通过存储的来源信息和实际读取授权检查不同的逻辑 Agent 身份。
 身份缺失或相同会使门禁失败。
@@ -144,7 +146,13 @@ Pi 质量驱动器在生命周期上下文 hook 执行后，通过 `streamSimple
 手动模型工作流显式启用此扩展。单独记录其实际执行证据。
 使用 `--scenarios-only` 单独运行 mutation。
 报告注明 `evaluation_mode=mutations-only`、基线案例和查询均为零，以及 `baseline_executed=false`。
-诊断 PASS 不认证基线。手动工作流要求基线和 mutation 均为 PASS。
+诊断成功时，顶层报告 `status=DIAGNOSTIC_PASS`，并保留 `mutation_scenarios.status=PASS`。
+退出状态 0 仅表示诊断成功，不认证 v1 基线。
+失败和异常均报告 `status=FAIL`，并返回退出状态 1。
+
+完整运行成功时，顶层报告 `status=PASS`，且 `baseline_executed=true`。
+手动工作流要求这两个字段及 mutation `PASS` 才能验收。
+它不接受 `DIAGNOSTIC_PASS` 作为完整质量结果。
 
 ## 显式事实替换
 
