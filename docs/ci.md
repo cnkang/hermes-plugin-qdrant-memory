@@ -116,10 +116,14 @@ excludes them.
 Fork PRs run
 tests without scanner credentials. Their scanner jobs are skipped by conditions.
 A missing required token fails a scanner job only when that job is scheduled.
-The `Required security scan gate` runs for every completed run. It fails for any
-failed or skipped prerequisite: lint, tests, MCP protocol coverage, host pin
-compatibility, SonarCloud and both Snyk jobs. The gate also fails on safely skipped
-fork scans. Dependabot pull requests are the one deliberate exception. They run
+The `Required security scan gate` runs even after workflow cancellation.
+It rejects failed, skipped, or cancelled prerequisites.
+It requires successful lint, tests, MCP protocol coverage, host pin compatibility, SonarCloud, and both Snyk jobs.
+[GitHub permits a merge when a required job skips execution](https://docs.github.com/en/pull-requests/reference/status-checks).
+The gate uses `always()` to prevent this result after cancellation.
+The gate also fails on safely skipped fork scans.
+
+Dependabot pull requests are the one deliberate exception. They run
 lint, tests and the platform matrix. Their credentialed
 scanner jobs are skipped because Dependabot runs cannot read repository
 secrets, and the gate accepts exactly those skips for `dependabot[bot]`. The
