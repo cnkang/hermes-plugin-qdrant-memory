@@ -68,6 +68,24 @@ def probe_denial(url, certificate, token):
         return False
 
 
+def is_supersession(old, new, obsolete_hits):
+    """Require matched facts, stable identity and a changed opaque CAS token."""
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return False
+    if any(
+        not isinstance(row.get(field), str) or not row[field].strip()
+        for row in (old, new)
+        for field in ("id", "version", "text")
+    ):
+        return False
+    return (
+        old["id"] == new["id"]
+        and new["version"] != old["version"]
+        and type(obsolete_hits) is int
+        and obsolete_hits == 0
+    )
+
+
 def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
     """Drive multilingual Host turns, scoped tools, concurrent CAS and persistent restart."""
     checks = dict.fromkeys(MUTATION_CHECKS, False)
@@ -135,13 +153,7 @@ def evaluate_mutations(core, plan, home, recorder, tokens, adapter):
                 and not matches(hit["text"], facts["change-new"])
                 for hit in after
             )
-            checks["supersession"] = bool(
-                old
-                and new
-                and old["id"] == new["id"]
-                and new["version"] > old["version"]
-                and obsolete == 0
-            )
+            checks["supersession"] = is_supersession(old, new, obsolete)
             old_similarity = None
             if old and new and old["id"] != new["id"]:
                 reviewed = core.remote_query(url, cert, tokens["SECOND"], new["text"])
