@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
           repository: cnkang/qdrant-memory-mcp
-          ref: 8b206568210219674e8ea45ce606c8c3572afa57
+          ref: 4cc2f36048ae15460f0db339523d69e1a332e093
           path: .quality/mcp
           persist-credentials: false
       - name: Prepare isolated test dependencies
