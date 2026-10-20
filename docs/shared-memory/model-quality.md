@@ -45,6 +45,9 @@ Committed evidence:
   review fixes; raw restart differences were limited to computed scores.
 - `owner-model-quality-reviewed-evidence.json`: final run after the evaluator fixes,
   including explicit post-restart model-call and recording-error measurements.
+- `owner-model-quality-drained-evidence.json`: fresh baseline PASS after awaiting
+  the public Host admission barrier before the Provider idle barrier; all 24
+  captures and 32 queries, replay and restart checks ran with real local models.
 
 `owner-model-quality.yml` is a manual lane for an explicitly provisioned,
 disposable Linux test runner labelled `qdrant-memory-models`. It has no PR/fork
