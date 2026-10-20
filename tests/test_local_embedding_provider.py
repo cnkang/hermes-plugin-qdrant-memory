@@ -125,7 +125,9 @@ def test_closed_cpu_provider_cannot_run_another_inference(backend):
     assert state.texts == []
 
 
-@pytest.mark.parametrize("installed", [None, "unsupported-version"])
+@pytest.mark.parametrize(
+    "installed", [None, "unsupported-version", "0.9.0+other", "0.9.0+qm.pillow13.1"]
+)
 def test_optional_dependency_failure_is_actionable_without_provider_fallback(
     monkeypatch, installed
 ):
@@ -141,11 +143,12 @@ def test_optional_dependency_failure_is_actionable_without_provider_fallback(
         module.require_local_dependencies()
 
 
-def test_optional_dependency_loading_uses_the_pinned_backend(monkeypatch):
+@pytest.mark.parametrize("installed", [FASTEMBED_VERSION, "0.9.0+qm.pillow13"])
+def test_optional_dependency_loading_uses_the_pinned_backend(monkeypatch, installed):
     """Load only the supported optional backend and tokenizer classes."""
     embedding_class = object()
     tokenizer_class = object()
-    monkeypatch.setattr(module, "version", lambda name: FASTEMBED_VERSION)
+    monkeypatch.setattr(module, "version", lambda name: installed)
     monkeypatch.setitem(sys.modules, "fastembed", SimpleNamespace(TextEmbedding=embedding_class))
     monkeypatch.setitem(sys.modules, "tokenizers", SimpleNamespace(Tokenizer=tokenizer_class))
     assert module.require_local_dependencies() == (embedding_class, tokenizer_class)

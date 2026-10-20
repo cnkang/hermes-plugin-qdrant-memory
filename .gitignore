@@ -7,6 +7,7 @@
 .test-env/
 .coverage-env/
 .scan-env/
+.ci-wheels/
 .lint-env/
 .min-env/
 .ruff_cache/

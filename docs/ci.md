@@ -8,9 +8,43 @@ checks the same frozen snapshot used by the security job, including Dependabot
 PRs; resolving `.[local]` alone does not validate that snapshot. All CPU lanes
 also run `pip check` after installing their test dependencies.
 
-FastEmbed 0.9.0 requires Hugging Face Hub below 2 and Pillow below 13. The
-snapshot therefore retains Hub 1.33.0 and Pillow 12.3.0; updating those majors
-requires a compatible provider update and renewed model/fingerprint acceptance.
+FastEmbed 0.9.0 declares Pillow below 13, while Pillow 12.3.0 has security
+advisories fixed in 13.0.0. Until upstream
+[fastembed#830](https://github.com/qdrant/fastembed/pull/830) is released, CI builds
+`0.9.0+qm.pillow13` with `scripts/build_fastembed_compat.py`. The builder downloads
+the official 0.9.0 wheel over HTTPS and checks its fixed SHA-256 before changing
+only distribution metadata: its local version, Pillow's upper bound to `<14`,
+provenance and wheel RECORD. Inference files, license and the Hub `<2` constraint
+stay unchanged. The wheel is deterministic across Python/OS versions, and its
+output hash is pinned in the CPU snapshot. `==0.9.0` accepts this explicitly
+identified local build under PEP 440; no official package is republished.
+
+All three CPU CI lanes build it, install with `--find-links .ci-wheels`, require
+Pillow 13.0.0 and the exact compatibility version, run `pip check`, and execute
+the existing real offline CPU model, CRUD, restart, retrieval and MCP contracts.
+The Snyk job installs and scans the same hash-checked snapshot. Hub stays at
+1.33.0: upgrading it to 2 is a separate compatibility change. The runtime only
+accepts the exact official or temporary version, never arbitrary local builds.
+Its inference fingerprint stays at the official 0.9.0 identity because the
+verified Python/model bytes are unchanged; real inference acceptance is still
+required before merge.
+
+For an equivalent disposable local check:
+
+```sh
+python scripts/build_fastembed_compat.py --output-dir .ci-wheels --check-lock requirements-local.txt
+python -m pip install --require-hashes --only-binary=:all: --find-links .ci-wheels -r requirements-local.txt
+python -m pip install --find-links .ci-wheels '.[mcp,local]' 'Pillow==13.0.0'
+python -m pip check
+```
+
+This is a temporary compatibility build, not a claim that every Pillow advisory
+is resolved. Security scans remain authoritative for their configured gate;
+findings are not automatically ignored. Remove the builder, compatibility-version
+allowance, CI find-links and temporary lock hash together once an official
+FastEmbed release supports Pillow 13 and passes the same checks. Rebuild the full
+hash snapshot and review inference identity before upgrading FastEmbed.
+
 Pydantic 2.14.1 and pydantic-core 2.50.1 from dependency PR #72 remain included
 (the replacement for the closed #64 proposal).
 Hash enforcement and dependency security scans are not bypassed.

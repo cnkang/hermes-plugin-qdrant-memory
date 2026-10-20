@@ -19,6 +19,10 @@ MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 MODEL_REPOSITORY = "Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q"
 MODEL_REVISION = "faf4aa4225822f3bc6376869cb1164e8e3feedd0"
 FASTEMBED_VERSION = "0.9.0"
+# Temporary metadata-only CI build for Pillow 13; see upstream fastembed#830.
+# Keep the inference identity unchanged: the builder verifies all upstream bytes
+# and changes distribution metadata only. Remove with the CI builder after upgrade.
+FASTEMBED_COMPAT_VERSION = "0.9.0+qm.pillow13"
 DIMENSIONS = 384
 MAX_TOKENS = 128
 # SHA-256 and exact byte length at MODEL_REVISION. No archives or remote code.

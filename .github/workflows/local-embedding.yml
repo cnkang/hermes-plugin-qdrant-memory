@@ -29,18 +29,31 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.11'
-      - name: Verify the frozen CPU security snapshot without service credentials
+      - name: Build the audited Pillow 13 compatibility wheel
+        # Build the same audited Pillow 13 compatibility wheel on all three OSes.
+        # Remove the builder/find-links after upstream fastembed#830 is released.
+        # Installation still resolves dependencies and pip check must pass.
+        run: >-
+          python scripts/build_fastembed_compat.py --output-dir .ci-wheels
+          --check-lock requirements-local.txt
+      - name: Install the frozen CPU security snapshot without service credentials
         if: matrix.os == 'ubuntu-24.04'
         run: >-
-          python -m pip install --require-hashes --only-binary=:all: -r requirements-local.txt
+          python -m pip install --require-hashes --only-binary=:all:
+          --find-links .ci-wheels -r requirements-local.txt
       - name: Install optional CPU dependencies with binary wheels
         run: >-
-          python -m pip install --only-binary=:all: ".[mcp,local]" "pytest>=8,<10"
+          python -m pip install --only-binary=:all: --find-links .ci-wheels
+          ".[mcp,local]" "Pillow==13.0.0" "pytest>=8,<10"
       - name: Verify installed dependency compatibility
         run: python -m pip check
+      - name: Require the exact Pillow 13 compatibility build
+        # Keep this separate: PowerShell must not mask a failed pip check above.
+        run: python -c "from importlib.metadata import version; assert version('pillow') == '13.0.0'; assert version('fastembed') == '0.9.0+qm.pillow13'"
       - name: Require provider choice, immutable model and setup contracts
         run: >-
           python -m pytest -q tests/test_local_embedding.py tests/test_local_model.py
+          tests/test_fastembed_compat.py tests/test_local_embedding_provider.py
           tests/standalone/test_managed_setup.py --junitxml=local-contracts.xml
       - name: Prepare pinned artifacts without an Ollama service
         shell: bash
