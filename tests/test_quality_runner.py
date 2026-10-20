@@ -2,6 +2,8 @@
 
 import json
 import runpy
+import subprocess
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -51,3 +53,50 @@ def test_model_probe_failure_produces_redacted_fail_artifact(tmp_path, monkeypat
     assert report["status"] == "FAIL"
     assert report["failure_type"] == "ConnectError"
     assert "synthetic-secret-must-not-leak" not in output.read_text() + capsys.readouterr().out
+
+
+def test_project_replay_uses_committed_receipt_after_pending_observation(tmp_path, monkeypatch):
+    """Intermediate Pi receipts cannot invalidate a later committed event replay."""
+    module = runner()
+    scope = module["evaluate"].__globals__
+    recorder = SimpleNamespace(extractions={}, latencies=[], errors={})
+    manager = SimpleNamespace(shutdown_all=lambda: None)
+    monkeypatch.setitem(scope, "start_host", lambda *_args: (object(), manager))
+    monkeypatch.setitem(scope, "tls_owner", lambda *_args: nullcontext(("url", "certificate")))
+    monkeypatch.setitem(scope, "read_quality", lambda *_args: ({}, [], 0, {}))
+    monkeypatch.setitem(scope, "remote_query", lambda *_args: [])
+    monkeypatch.setitem(scope, "score_run", lambda *_args: {})
+
+    def driver(*_args, input, **_kwargs):
+        """Retain both observations of the same durable event, like the Pi driver."""
+        case = json.loads(input)[0]
+        event = {"event_id": case["id"]}
+        captures = [
+            {
+                "case_id": case["id"],
+                "event": event,
+                "status": status,
+                "receipt": {"status": status, "event_id": case["id"]},
+            }
+            for status in ("PENDING", "COMMITTED")
+        ]
+        return subprocess.CompletedProcess(
+            [], 0, json.dumps({"captures": captures, "history_leak": False}), ""
+        )
+
+    monkeypatch.setattr(scope["subprocess"], "run", driver)
+    replays = []
+
+    async def committed(_url, _token, event, **_kwargs):
+        """The real endpoint now returns the terminal receipt for the same event."""
+        replays.append(event["event_id"])
+        return {"status": "COMMITTED", "event_id": event["event_id"]}
+
+    monkeypatch.setitem(scope, "send_event", committed)
+    data = {"cases": [{"id": route, "route": route} for route in ("project", "pi")]}
+    tokens = {name: name for name in ("PROJECT", "READER", "PI", "SECOND")}
+    result = module["evaluate"](data, tmp_path, tmp_path, recorder, tokens)
+    assert result["replay_safe"] is True
+    assert result["restart_safe"] is True
+    assert result["restart_model_calls"] == 0
+    assert replays == ["project", "project"]
