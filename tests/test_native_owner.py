@@ -13,6 +13,132 @@ from qdrant_memory.shared_client import call
 from .helpers import LLM, Embedder, config
 
 
+@pytest.fixture
+def native_recall_provider(tmp_path, monkeypatch):
+    """Create authorized cached recall with a real policy loader and Native Owner."""
+    from .standalone.test_device_grants import grant
+
+    token = "r" * 40
+    clients = [grant(token, "native", owner_id="hermes-user")]
+    policy = tmp_path / "recall-policy.json"
+    policy.write_text(json.dumps({"clients": clients}))
+    policy.chmod(0o600)
+    monkeypatch.setenv("QM_NATIVE_RECALL", token)
+    p = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()),
+        embedder=Embedder(),
+        overrides=config(
+            native_owner={
+                "enabled": True,
+                "policy": str(policy),
+                "port": 0,
+                "private_token_env": "QM_NATIVE_RECALL",
+            }
+        ),
+    )
+    p.initialize("recall", hermes_home=str(tmp_path))
+    try:
+        p.sync_turn("cats private recall", "ack")
+        assert p.wait_idle()
+        p.queue_prefetch("cats")
+        assert p.wait_idle()
+        assert "cats private recall" in p.prefetch("cats")
+        yield p, policy, clients
+    finally:
+        p.shutdown()
+
+
+@pytest.mark.parametrize("phase", ["private", "shared_private", "shared_final"])
+@pytest.mark.parametrize("change", ["none", "scope", "generation", "revision"])
+def test_native_recall_policy_io_releases_condition_and_rechecks_state(
+    native_recall_provider, monkeypatch, phase, change
+):
+    """Policy I/O permits lifecycle progress and cannot return superseded recall."""
+    from contextvars import copy_context
+    from threading import Event, Thread
+
+    from qdrant_memory.models import Scope
+    from qdrant_memory.shared_recall import SharedRecall
+
+    p, _policy, _clients = native_recall_provider
+    if phase != "private":
+        p._shared_recall = SimpleNamespace(
+            settings={},
+            search=lambda *_args, **_kwargs: [{"text": "shared fixture"}],
+            render=SharedRecall.render,
+            close=lambda: None,
+        )
+    entered, release = Event(), Event()
+    loader = p._native_owner.owner.grant_loader
+    calls = 0
+
+    def held_policy_loader():
+        """Hold an actual policy read at the selected authorization boundary."""
+        nonlocal calls
+        grants = loader()
+        calls += 1
+        if calls == (2 if phase == "shared_final" else 1):
+            entered.set()
+            assert release.wait(5), "test must release the policy loader"
+        return grants
+
+    monkeypatch.setattr(p._native_owner.owner, "grant_loader", held_policy_loader)
+    result = {}
+
+    def recall():
+        """Run the production prefetch path with the caller's profile context."""
+        try:
+            result["text"] = p.prefetch("cats")
+        except Exception as exc:
+            result["error"] = exc
+
+    worker = Thread(target=copy_context().run, args=(recall,))
+    worker.start()
+    try:
+        assert entered.wait(5), "prefetch must reach actual policy authorization"
+        acquired = p._condition.acquire(timeout=0.5)
+        try:
+            assert acquired, "policy I/O must not hold the provider condition"
+            if change == "scope":
+                p._scopes[p.session_id] = Scope("different-user", None)
+            elif change == "generation":
+                p._generations[p.session_id] = p._generations.get(p.session_id, 0) + 1
+            elif change == "revision":
+                p.runtime.mutation_revision += 1
+        finally:
+            if acquired:
+                p._condition.release()
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive()
+    assert "error" not in result, result.get("error")
+    if change == "none":
+        assert "cats private recall" in result["text"]
+        if phase != "private":
+            assert "shared fixture" in result["text"]
+    else:
+        assert result["text"] == ""
+
+
+def test_native_shared_recall_reauthorizes_after_lookup(native_recall_provider):
+    """Revocation during shared lookup denies both private and shared delivery."""
+    from qdrant_memory.shared_recall import SharedRecall
+
+    p, policy, clients = native_recall_provider
+
+    def revoke_during_lookup(*_args, **_kwargs):
+        """Change the real policy after initial private authorization."""
+        clients[0]["revoked"] = True
+        policy.write_text(json.dumps({"clients": clients}))
+        return [{"text": "must not reach the host"}]
+
+    p._shared_recall = SimpleNamespace(
+        settings={}, search=revoke_during_lookup, render=SharedRecall.render, close=lambda: None
+    )
+    assert p.prefetch("cats") == ""
+
+
 @pytest.mark.parametrize(
     "change,protected,expected",
     [
