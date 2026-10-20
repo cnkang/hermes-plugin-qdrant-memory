@@ -86,3 +86,25 @@ Each receipt must keep its original event-to-case association.
 The job rejects skipped or absent tests.
 This workflow never selects the model runner.
 Its result needs a completed CI run.
+
+## Mutation and multilingual extension
+
+Pass `--scenarios tests/quality/lifecycle-mutations-v1.json` to additionally run
+the frozen mutation corpus after the v1 capture/retrieval/restart gate. It uses
+Chinese Hermes turns in separate sessions to measure explicit supersession and
+same-logical-Agent continuation from a second device. Actual Pi hooks capture a
+Chinese documentation preference and an authorized project architecture decision.
+
+All explicit deletion, replay and concurrent CAS operations go through verified
+HTTPS MCP. Two independently authenticated logical Agents race one project-memory
+version: exactly one update and one conflict are required. A project read grant
+must be unable to delete, then must fail authentication after revocation. Another
+restart verifies durable deletion, winning receipts, revocation, retained facts
+and zero additional model calls. Generic network failure cannot count as denial.
+
+The extension fails if any scenario is missing/false or an old superseded fact
+remains in the measured latest-fact search. `obsolete_hit_rate` describes only
+that annotated query, not a production hallucination or overall injection rate.
+The v1 and mutation corpora retain separate versions and hashes; v1 evidence
+does not prove the optional extension ran. The manual model workflow explicitly
+enables this extension. Its actual-run evidence must be recorded separately.
