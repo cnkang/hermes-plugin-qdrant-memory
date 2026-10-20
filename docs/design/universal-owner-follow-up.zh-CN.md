@@ -1,9 +1,9 @@
-# 后续任务推进报告
+# Universal Owner 后续修复与验收报告
 
 最新分批 PR、review 修正与最终验证见 [分批交付报告](universal-owner-batches.zh-CN.md)。下文保留此前功能快照的证据。
 
-日期：2026-10-20。对应上一轮未完成事项核验；本轮已实际修改、测试并推送三个仓库。
-没有合并 PR、发布版本、使用生产/Cloud 凭据、部署公网服务或迁移真实数据。
+日期：2026-10-20。本文是三个仓库后续修复的历史验收快照。
+验证范围不包含生产部署、真实 Cloud 或真实数据迁移。
 
 ## 已推进的代码
 
@@ -40,7 +40,7 @@
 原子取消检测、Pi 取消重放和错误正文脱敏均有从 FAIL 到 PASS 的证据。
 
 - Runtime 最终全量：**678 PASS / 9 SKIPPED / 1 已知 warning**，总体 coverage **90%**；
-  九个条件跳过包含新 Cloud lane，未替它申请或使用凭据。
+  九个条件跳过包含新 Cloud lane，该验收未提供测试凭据。
 - SDK2 最终 standalone 全量：**174 PASS / 0 SKIPPED**；最后 CAS/脱敏修复专项 **30 PASS**。
 - MCP 分发集合：**144 PASS / 0 SKIPPED**；源码 Host 验收仍在独立零跳过 lane 必跑。
 - Node Pi 合同与实际 Pi session：**7 PASS**。
@@ -48,7 +48,7 @@
   使用实际宿主生命周期及 deterministic 模型/embedding，不是生产模型或 UI 验收。
 - Ruff check/format、actionlint、diff check：PASS。systemd 样例通过真实 CLI parser 验证；
   没有执行真实 systemd 安装／回滚，不标为部署已验收。
-- Cloud 新 lane 本地 **SKIPPED**：未取得或使用云凭据，不冒充 Cloud 已跑。
+- Cloud 新 lane 本地 **SKIPPED**：缺少测试凭据，不能作为 Cloud 执行证据。
 - Skill package validator：PASS。
 
 CodeRabbit 两轮辅助复查共提出四项有效改进：umask 清理、管理错误类型、Cloud job
@@ -56,13 +56,13 @@ CodeRabbit 两轮辅助复查共提出四项有效改进：umask 清理、管理
 均在 Runtime lock 下运行，取消 CAS 额外防止 Ledger 被其他调用者更新后仍擦除计划。
 受控交错的失败测试验证了该防线；不以取消恢复门禁解决问题。
 
-## 真实模型诊断：本轮 pilot PASS，仍不是 L3 全面完成
+## 真实模型诊断：历史 pilot PASS，仍不是 L3 全面完成
 
 模型仍为本机 `qwen3:8b`，没有下载新模型或访问付费端点。固定匿名 10 案例，
 temperature 0、输出预算 2048：precision **1.0**，positive case recall **1.0**，
 case success **1.0**，provider failures **0**；p50 **7207 ms**，p95 **25772 ms**。
 诊断退出码 0。先前 0.8571/0.8 和 JSON 解析失败属于真实失败历史，没有删除负例。
-本轮核对模型 digest 仍为 `500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41`。
+该次诊断的模型 digest 为 `500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41`。
 
 - dataset SHA256：`2e75f289a9fb44822db92a079a47afc4268bc3835298b1f59644b67498f8c74a`
 - prompt code SHA256：`5cae974f656ca5a50547253972512604daea138bd66afb2173d66cf766cbddba`
@@ -98,17 +98,16 @@ case success **1.0**，provider failures **0**；p50 **7207 ms**，p95 **25772 m
    原 42 个 Sonar issues 并非全部漏洞；复杂度/测试风格等既有余项没有通过关闭规则清除。
 2. 已合并 #63；其余功能仍在研发分支，按 Native recall、身份、Transport、Owner/lifecycle
    拆分可审查 PR。依赖 #64 独立处理，不合并到功能提交掩盖验证范围。
-3. 新 Cloud 测试已写入 workflow，但真实 scoped Cloud 运行需显式授权与 disposable
+3. 新 Cloud 测试已写入 workflow，但真实 scoped Cloud 运行需受限测试凭据与 disposable
    配置；完整 Host UI、公网部署、服务监管/升级回滚实际演练仍 UNVERIFIED。
 4. OAuth/OIDC、Protected Resource Metadata、发现/PKCE 和交互客户端模式仍未实现，
-   按任务书允许的独立阶段推进。当前仅预配置静态服务凭据模式。
+   这些互操作能力需独立设计与验收。记录时仅支持预配置静态服务凭据模式。
 5. 完整 L3 多轮质量矩阵、Native 远程自动客户端及更多官方 Host 自动 adapters 仍为后续工作；
    当前 Hermes+Pi 达到最低自动宿主范围，其他宿主继续 explicit MCP/assisted。
-6. 正式发行仍待授权：Runtime 新版本 → MCP 正式依赖/Managed lockfile → Skill。
+6. 正式发行链仍待验收：Runtime 新版本 → MCP 正式依赖/Managed lockfile → Skill。
 
 新增操作说明：[事件管理](../shared-memory/lifecycle-events.md)、
 [Cloud Owner 验收](../shared-memory/cloud-owner-acceptance.md)、
 [服务安装与回滚](../shared-memory/service-installation.md)。
 
 源码推送快照：Runtime `aa9565d`、MCP `cce1632`、Skill `fc1209b`。
-本报告及差距快照索引本地提交保存，避免仅为同步报告再次中断最终功能 SHA 的在途 CI。

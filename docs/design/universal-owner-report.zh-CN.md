@@ -3,31 +3,30 @@
 > 本文保留前轮交付快照。最新 PR #63 已合并及后续 CI 失败、剩余验收项，见
 > [当前未完成事项核验](universal-owner-remaining.zh-CN.md)，不再以本文的排队状态作为当前事实。
 
-日期：2026-10-20。范围：任务书 Phase 0–5。结论：已交付跨仓库可运行源码、
+日期：2026-10-20。范围：跨 Agent、跨设备共享与自动记忆的 Phase 0–5。结论：已交付跨仓库可运行源码、
 分阶段提交、实际网络/宿主验收和 CI；**完整 DoD 尚未全部通过，不宣称可用于生产**。
-没有发布版本、合并 PR、修改线上部署、使用生产凭据或执行数据迁移。
+该快照不是正式发行。验证范围不包含生产部署、生产凭据或真实数据迁移。
 
 ## 1. 现场核验与已有工作
 
-三个工作区起始均干净，未覆盖用户未提交内容。Runtime 起始分支是
-起始状态包含已有 SharedReader 和未合并的 Phase 1b 设计；它们被保留，
-研发另开 the integration branch，整合了最新 main 的 Phase 0 文档。
+起始源码包含已有 SharedReader 和未合并的 Phase 1b 设计。
+后续实现复用这些能力，并整合 main 的 Phase 0 文档。
 
-| 仓库 | 核验的 main | 发布事实 | 当前研发分支 |
-|---|---|---|---|
-| Runtime | 起始 `68a9ed1a89c64b19a22fbc637f050785515fc387`；结束 `80816294611c1c0b896784cc12f86e72115699c6` | PyPI/GitHub 0.4.0；硬化及本次新能力不在已发布 0.4.0 内 | the integration branch |
-| MCP | `60d0cda936dc248ba26a7a1c12ba84ea3643f6ec` | PyPI 0.2.2 已于 10-19 10:32 UTC 上传；GitHub Release 仍 Draft | the MCP integration branch |
-| Skill | `d6062f07f35a741d5058712ab5e9966b39f87e00` | Skill 0.3.1，snapshot skills-20261019.1 | the Skill guidance branch |
+| 仓库 | 核验的 main | 发布事实 |
+|---|---|---|
+| Runtime | 起始 `68a9ed1a89c64b19a22fbc637f050785515fc387`；结束 `80816294611c1c0b896784cc12f86e72115699c6` | PyPI/GitHub 0.4.0；硬化及本次新能力不在已发布 0.4.0 内 |
+| MCP | `60d0cda936dc248ba26a7a1c12ba84ea3643f6ec` | PyPI 0.2.2 已于 10-19 10:32 UTC 上传；GitHub Release 仍 Draft |
+| Skill | `d6062f07f35a741d5058712ab5e9966b39f87e00` | Skill 0.3.1，snapshot skills-20261019.1 |
 
 开发开始时只有 [PR #63 SharedReader](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/63)
 未合并，已复用它的库，未重复实现或合并。结束核验又发现
 [PR #64 Python 依赖](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/64)
 修改 requirements 文件，以及
 [PR #65 Actions 依赖](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/65)
-修改 codeql.yml。结束前再次查询发现 #65 已由其他操作于 10-19 17:20:10 UTC 合并；
+修改 codeql.yml。#65 于 10-19 17:20:10 UTC 合并；
 核实仅更新两个 CodeQL Action SHA 后，研发分支同步了最新 main。#64 尚未合并，
 依赖版本组合仍需独立验证。MCP、Skill 没有其他
-未合并 PR。已推送研发分支，未把全部 Runtime 能力混入一个巨型新 PR。
+未合并 PR。
 
 ## 2. 分阶段完成度
 
@@ -223,7 +222,7 @@ embedding/schema fingerprint 没有被绕过。服务凭据按设备独立；身
 6. 最新提交完整 CI 矩阵仍需完成；Windows public/protected admin 故意不支持并 fail closed。
 7. 多 Owner、分布式 fencing、远程 HA、自动迁移和管理 UI 不在本次安全支持范围。
 
-未把这些未完成项包装成“全部任务完成”。
+上述缺口限制该历史快照的支持范围。
 
 ## 9. 提交与后续 PR 顺序
 
@@ -238,7 +237,7 @@ durable lifecycle、`f7e9480` MCP transport、`51d6338` Native Owner、`3233ee5`
 合并早期不含修复的中间快照。#64 作为独立依赖更新审核；#65 的上游 Action 更新已同步。
 
 发布顺序必须 Runtime 新版本 → 单独更新 MCP 正式依赖/Managed lockfile → Skill 支持版本。
-当前版本号和正式发行 pins 没有改动，未创建 tag/release/publish、未合并任何 PR。
+该快照的版本号和正式发行 pins 没有改动，新增能力仍属于源码预览。
 
 代码仓库：
 

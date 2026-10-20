@@ -1,24 +1,23 @@
-# 对照任务书：仍未完成的工作
+# Universal Owner 功能与验收缺口快照
 
 最新交付与仍未关闭的验收项见 [分批交付报告](universal-owner-batches.zh-CN.md)。
 
-> 本文是推进前的差距快照；本轮已完成的修复、事件管理、Cloud lane 与模型诊断更新，
+> 本文是后续修复前的历史差距快照；后续修复、事件管理、Cloud lane 与模型诊断更新，
 > 见 [后续任务推进报告](universal-owner-follow-up.zh-CN.md)。保留原 FAIL 证据，不把它当作新提交结果。
 
-核验日期：2026-10-20。依据本轮重新提供的完整任务书、当前源码、GitHub PR/Release、
-Actions job/step 日志及 Sonar API。**项目尚未完成全部 DoD，当前不能宣称生产就绪。**
-本轮主要核验差距，没有重新执行完整本地测试，也没有把历史 PASS 当作最新 CI 成功。
+核验日期：2026-10-20。依据跨 Agent、跨设备共享与自动记忆的验收范围、当时源码、
+GitHub PR/Release、Actions job/step 日志及 Sonar API。
+**记录时项目尚未完成全部 DoD，不能宣称生产就绪。**
+此次差距核验未重新执行完整本地测试。历史 PASS 不代表新提交的 CI 成功。
 
 ## 1. 最新事实：哪些已经结束，哪些还只在研发分支
 
 - **PR #63 已合并**：2026-10-19 22:55:07 UTC，main 为
-  `ebfceefc146c3b0f038d4f871d6ff7c380272da8`。这不是本轮执行的合并。
+  `ebfceefc146c3b0f038d4f871d6ff7c380272da8`。
   SharedReader 及两处解析错误脱敏修复已进入 main，不再列为待完成。
-- Runtime 大研发分支 the integration branch 本地 `1179ed6`，远端功能快照
-  `37b0715`；本地仅多一个先前的合并评估文档提交。工作区核验时干净。
+- Runtime 功能快照为 `37b0715`；`1179ed6` 仅增加合并评估文档。
   Native Owner、Remote MCP、设备身份、lifecycle 等主要新能力仍未进入 main。
-- MCP the MCP integration branch 为 `eecaf67`；Skill
-  the Skill guidance branch 为 `e04ba35`，工作区均干净。两仓库相关研发分支
+- MCP 功能快照为 `eecaf67`；Skill 文档快照为 `e04ba35`。两仓库相关研发分支
   尚无功能 PR；Runtime 当前仅剩开放的依赖 PR #64。
 - 正式 Runtime 仍 0.4.0，MCP 源码依赖仍固定 `hermes-plugin-qdrant-memory[mcp]==0.4.0`，
   MCP GitHub 0.2.2 Release 仍 Draft，Skill snapshot 仍 skills-20261019.1。
@@ -61,13 +60,13 @@ Actions job/step 日志及 Sonar API。**项目尚未完成全部 DoD，当前�
 |---|---|---|
 | 0 | ADR、威胁边界、能力矩阵、后端/身份/协议设计 | 按 #63 已合并、最新失败 CI 更新旧报告；整理后续小范围 PR，不继续引用旧“排队”状态。 |
 | 1 | opt-in Native Owner、private+shared 召回、授权 project capture、单 Runtime/Ledger、缓存撤权/删除失效 | macOS 失败尚未关闭；主要实现未进 main。Hermes+Pi 的受控真实宿主进程验收已有，但不能代替各产品 UI 或所有本机 transport 的组合认证。 |
-| 2 | HTTPS Streamable HTTP、SDK1/2、MCP-to-MCP bridge、双网络 namespace、静态独立可撤销凭据、Nginx 示例 | OAuth/OIDC、Protected Resource Metadata、发现、resource/audience、PKCE 和交互 Host 模式未实现。可按任务书分期，但当前仅受控预配置凭据模式。公网真实部署/完整 Host 协商矩阵 UNVERIFIED。 |
+| 2 | HTTPS Streamable HTTP、SDK1/2、MCP-to-MCP bridge、双网络 namespace、静态独立可撤销凭据、Nginx 示例 | OAuth/OIDC、Protected Resource Metadata、发现、resource/audience、PKCE 和交互 Host 模式未实现。互操作能力需独立验收；记录时仅支持受控预配置凭据模式。公网真实部署/完整 Host 协商矩阵 UNVERIFIED。 |
 | 3 | logical agent/独立设备 grant、same-agent private、跨 Agent project、撤销轮换、CAS/receipt/recovery | 已有确定性、真实 Server、HTTPS 设备场景；新身份/生命周期与真实 Cloud 的组合尚未覆盖。物理多设备 UI 不是当前已证明的内容。 |
 | 4 | Hermes callbacks + Pi 官方 hooks；Owner-side durable turn_completed、幂等、128 backlog、失败恢复；Pi private capture/project recall 独立凭据 | 仍只有 turn_completed 的服务端事件接纳；缺通用待处理事件查询、授权取消/管理和更完整事件契约。Pi 会跳过 aborted/error turn，但这不等于能取消已持久接受的事件。Native 远程自动客户端角色未实现，远端可用 explicit MCP fallback。 |
 | 5 | Required 网络/Server/身份场景、真实宿主自动交接、部署说明、匿名模型诊断和 embedding pilot | 见实际 FAIL；Cloud L2 新场景、完整 L3 多轮质量门禁和用户 Host UI 证据尚缺。最终版本安装链未验收。 |
 
 Codex、DSH、WorkBuddy、OpenCode 仍需准确标为 **explicit MCP / manual-assisted**；
-不能因为能注册四工具或加载 Skill 就称为自动记忆。任务书要求至少一个非 Hermes
+不能因为能注册四工具或加载 Skill 就称为自动记忆。最低自动宿主验收范围包括至少一个非 Hermes
 自动宿主，现有 Pi 已满足这个最低范围；给所有其他宿主加自动 hooks 属于后续增强，
 并不是完成最低范围的必需前提。
 
@@ -75,8 +74,8 @@ Codex、DSH、WorkBuddy、OpenCode 仍需准确标为 **explicit MCP / manual-as
 
 当前 `cloud-smoke.yml` 仍执行既有 `test_remote_qdrant.py -k cloud`，未将新设备身份、
 Owner lifecycle 与跨客户端冲突/重启恢复组合接入 L2。已有 Cloud 基础 smoke 不能替代
-任务书要求的共享 Owner E2E。可以先独立编写 secret-gated 测试并接入既有 workflow；
-实际执行需要明确授权的 disposable 环境和凭据。本轮未读取或使用 Cloud 凭据。
+共享 Owner E2E。可以先独立编写 secret-gated 测试并接入既有 workflow；
+实际执行需要隔离的 disposable 环境和受限测试凭据。此次核验未运行真实 Cloud 验收。
 
 ### L3：现有 pilot 不能当作最终质量验收
 
@@ -111,8 +110,8 @@ Owner lifecycle 与跨客户端冲突/重启恢复组合接入 L2。已有 Cloud
 3. 补 lifecycle 事件管理/取消合同、L2 Cloud 新场景测试及 L3 多轮质量评测；改善真实
    模型诊断失败。OAuth 作为独立后续阶段，不混入第一轮 CI 修复。
 4. 做端到端安装/升级/回滚演练，逐宿主标明 UI、SDK、fixture、示例的验证等级。
-5. 所有发布与合并仍须明确授权。正确发行顺序是 Runtime 新版本 → MCP 正式依赖和
-   launcher lockfile → Skill 支持版本；未发版本身是待授权里程碑，不是一个应偷偷修复的 bug。
+5. 发行顺序是 Runtime 新版本 → MCP 正式依赖和 launcher lockfile → Skill 支持版本。
+   源码验收不能替代正式版本及安装链验收。
 
-本轮结论：**核心路径已经实现且有重要 E2E PASS，但 CI、完整 lifecycle、Cloud/L3
+历史核验结论：**核心路径已经实现且有重要 E2E PASS，但 CI、完整 lifecycle、Cloud/L3
 验收及集成交付未收尾。最优先处理真实失败，不需要重做 Owner 或记忆 Runtime。**

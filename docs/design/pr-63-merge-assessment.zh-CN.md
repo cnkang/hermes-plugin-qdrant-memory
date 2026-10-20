@@ -6,7 +6,6 @@
 > main，本文的"可以合并"结论与合并建议已被该次合并取代，不再是待执行动作。**
 > 合并事实：2026-10-19 22:55:07 UTC 合并，merge commit 为
 > `ebfceefc146c3b0f038d4f871d6ff7c380272da8`，合并后 main 的 head 即为该 commit。
-> 本次复核没有执行 merge、auto-merge、发布或修改分支保护。
 
 ## 结论
 
@@ -33,7 +32,7 @@ PR 先前被更新/重放至 `5f2f179cbb8df084f465948d80b7e6754ee01e73`，已包
 
 对应评审线程已标记解决，PR 描述已同步真实测试结果和非 Draft 状态。本次没有以
 resolve thread 代替新批准，也没有撤销或伪造 CodeRabbit 的旧 CHANGES_REQUESTED review。
-修复另已同步到 the integration branch（`9aaff09`），避免后续集成丢失。
+集成快照 `9aaff09` 同样包含这些修复。
 
 ## 验证证据
 
@@ -73,7 +72,7 @@ packaging 和 protected TLS/JWT 均成功。Sourcery review 为 SKIPPED，不冒
 - [本次 standalone 矩阵](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39296957943)
 
 合并门禁已由远端在 2026-10-19 22:55:07 UTC 满足并完成合并，merge commit 为
-`ebfceefc146c3b0f038d4f871d6ff7c380272da8`；本文当时只做检查，没有执行合并。
+`ebfceefc146c3b0f038d4f871d6ff7c380272da8`。
 此 PR 不会自动启用 Native 共享、自动提取或公网服务；这些继续按后续独立 PR 审查。
 合并之后重新整理 universal-owner 的后续提交，避免重放已有 Reader；PR #64 的依赖
 更新独立验证，不作为绕过本 PR 门禁的理由。
