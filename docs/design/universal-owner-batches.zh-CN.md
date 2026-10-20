@@ -1,8 +1,8 @@
 # Universal Owner 分批交付与验收报告
 
-记录日期：2026-10-20。正式需求仍以用户提供的开发任务书为准。
-本报告记录实际提交、推送、PR 和验证结果；六个 PR 均为 Draft，尚未合并。
-任务书整体尚未全部验收完成，不能据此发布正式版本。
+记录日期：2026-10-20。本报告是分批交付时的历史快照。
+本报告记录源码提交、PR 和验证结果；记录时六个 PR 均为 Draft，尚未合并。
+跨 Agent、跨设备共享与自动记忆的完整验收尚未完成，不能据此发布正式版本。
 
 ## 本批实际交付
 
@@ -17,13 +17,9 @@
 
 Runtime 按 #66 → #67 → #68 → #69 审查。上表是功能提交；后续报告提交不改变执行代码。
 MCP 的预览 CI 固定引用 Runtime `b01bb5a...`，不再引用修正前的开发分支。
-审查修正使用追加提交和逐层 merge commit 同步，没有 force push 或重写已推送历史。
-没有合并 PR、发布版本、安装线上服务、使用生产凭据或进行破坏性迁移。
-
-原始 Runtime 工作目录的 the integration branch 保留为开发历史快照，含一个本地报告提交；
-该报告已进入 #69。后续研发应以 #69 的完整功能分支为准，不能把旧快照当成最新实现。
-四个独立工作树保留供审查。
-没有清理或覆盖原始仓库的本地工作。
+审查修正通过追加提交和逐层 merge commit 同步。
+验证范围不包含生产部署、生产凭据或破坏性迁移。
+完整功能快照见 #69，不能把此前的开发快照当成最新实现。
 
 ## 分阶段状态
 
@@ -53,7 +49,7 @@ MCP 的预览 CI 固定引用 Runtime `b01bb5a...`，不再引用修正前的开
 
 | 检查 | 结果与边界 |
 |---|---|
-| #66 独立工作树全量 | 621 PASS / 7 SKIPPED / 1 已知 Embedded payload-index warning；发生于最后一轮 review 修正前 |
+| #66 源码全量 | 621 PASS / 7 SKIPPED / 1 已知 Embedded payload-index warning；发生于最后一轮 review 修正前 |
 | #66 最后 review 修正后相关回归 | 58 PASS / 0 SKIPPED；覆盖统一配置校验、Provider、作用域与既有共享契约 |
 | #67 新增测试 | 25 PASS / 0 SKIPPED；身份、撤销轮换、生命周期、取消 CAS、Host context、LLM |
 | #67 原有兼容测试 | 62 PASS / 0 SKIPPED；Runtime、dedupe、SharedOwner、共享契约 |
@@ -67,7 +63,7 @@ MCP 的预览 CI 固定引用 Runtime `b01bb5a...`，不再引用修正前的开
 | Ruff / 格式 / diff / workflow 语法 | 各层 staged snapshot hook PASS；最终 Runtime 122 个文件格式检查 PASS；相关 workflow actionlint PASS |
 
 两容器验收的复现命令为 `python scripts/test_remote_mcp_docker.py 'mcp>=1.30,<2'`。
-全量验证在第四层工作树运行，设置 `PYTHONPATH` 为该工作树及真实 Hermes checkout，执行
+全量验证使用 #69 源码和真实 Hermes checkout。`PYTHONPATH` 包含这两个源码目录，执行
 `python -m pytest -q --cov=qdrant_memory --cov-report=term:skip-covered --cov-report=xml:/tmp/qdrant-owner-split-coverage.xml`。
 9 个跳过项包含可选 CPU 模型缓存、独立 TLS / JWT 与真实 Server / Cloud 参数条件；
 对应远端安全通道另有实际 PASS，不能把本机 SKIPPED 混写成通过。
@@ -113,14 +109,14 @@ Runtime 0.4.0、MCP 0.2.2、Skill 0.3.1 的版本号及公开发行依赖 pin �
 
 ## 未完成事项与后续 PR
 
-1. **先关闭当前六个 Draft PR 的 review 和最终 CI 门禁。** Sonar 应对各自 head 及正确审查基线给出新结果。不得跳过安全扫描或仅因其他任务绿灯就合并。合并仍需用户明确授权。
+1. **完成六个 Draft PR 的 review 和最终 CI 门禁。** Sonar 应对各自 head 及正确审查基线给出新结果。不得跳过安全扫描或用其他检查的成功替代当前 PR 的门禁。
 2. **OAuth/OIDC 正式入网。** 当前是明确预配置的静态独立设备凭据 MVP；尚无发现元数据、授权码 / PKCE、发行方验证与客户端入网流程。需单独安全设计、失败测试及兼容实现。
 3. **完整 L3 多轮验收和持续评估。** 扩充固定匿名数据集、多轮真实 Harness 生命周期、提取 / 检索指标及可重复 CI；10-case pilot 不能替代这项。
 4. **真实隔离 Cloud Owner 验收。** 只有在提供非生产测试环境、受限凭据及专用集合后执行。缺凭据的 SKIPPED 必须保留。
 5. **其他非 Hermes Harness 的自动生命周期。** 当前已满足至少一个真实 Pi 适配的实现路径；Codex、DSH、WorkBuddy、OpenCode 的自动 hook 不得根据配置示例宣称已完成，按各 Harness 实际能力分 PR 推进。
-6. **部署与发布。** systemd 在专用非生产机器的真实启动 / 退出 / 恢复验收、最终兼容矩阵与版本协调应先完成；正式发布、合并及线上变更另需授权。
+6. **部署与发布。** systemd 在专用非生产机器的真实启动 / 退出 / 恢复验收、最终兼容矩阵与版本协调仍须完成。
 
-既有 PR 63 已由远端合并到 main，本批基于包含其脱敏修复的主分支开始；不是本次擅自合并。
-依赖更新 PR 64 仍独立开放，没有混入上述功能分支或代替它做合并。
+既有 PR 63 已合并到 main，本批基于包含其脱敏修复的主分支开始。
+记录时依赖更新 PR 64 仍独立开放，不属于上述功能分支。
 
 更早的实现与证据见 [完整阶段报告](universal-owner-report.zh-CN.md) 和 [后续开发报告](universal-owner-follow-up.zh-CN.md)。
