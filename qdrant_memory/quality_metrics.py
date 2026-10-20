@@ -182,7 +182,7 @@ MUTATION_CHECKS = (
 )
 
 
-def score_mutations(checks, *, obsolete_hits, observed_hits):
+def score_mutations(checks, *, obsolete_hits, observed_hits, writer_agent=None, reader_agent=None):
     """Require all mutation/isolation scenarios and observed absence of obsolete recall."""
     complete = set(checks) == set(MUTATION_CHECKS)
     valid_counts = (
@@ -192,11 +192,19 @@ def score_mutations(checks, *, obsolete_hits, observed_hits):
         and observed_hits > 0
     )
     passing = complete and all(value is True for value in checks.values())
-    passing = passing and valid_counts and obsolete_hits == 0
+    distinct_agents = (
+        isinstance(writer_agent, str)
+        and bool(writer_agent.strip())
+        and isinstance(reader_agent, str)
+        and bool(reader_agent.strip())
+        and writer_agent != reader_agent
+    )
+    passing = passing and valid_counts and obsolete_hits == 0 and distinct_agents
     return {
         "status": "PASS" if passing else "FAIL",
         "complete": complete,
         "checks": checks,
+        "handoff_agents": {"writer": writer_agent, "reader": reader_agent},
         "obsolete_hits": obsolete_hits,
         "observed_hits": observed_hits,
         "obsolete_hit_rate": obsolete_hits / observed_hits if valid_counts else None,

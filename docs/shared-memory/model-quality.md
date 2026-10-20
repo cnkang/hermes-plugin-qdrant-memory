@@ -53,9 +53,11 @@ Committed evidence:
   replacement-intent, Host-admission barrier and denial-probe fixes. It records
   FAIL and predates the `baseline_executed`/`evaluation_mode` fields; it is not
   passing evidence for the current candidate.
-- `owner-mutation-quality-evidence.json`: full v1 + mutation PASS after those
-  fixes, with baseline execution, source/prompt/schema/corpus hashes, actual
-  capture latency, concurrent CAS outcomes and restart recovery measurements.
+- `owner-mutation-quality-evidence.json`: historical full run whose cross-Agent
+  handoff claim is withdrawn: both read and write credentials belonged to `pi`.
+  Its raw PASS is retained for traceability, not current acceptance. The revised
+  scorer requires distinct logical-Agent identities from the stored provenance
+  and the actual reader grant; missing or equal identities fail closed.
 
 The `owner-model-quality.yml` workflow uses a disposable Linux test runner with the `qdrant-memory-models` label.
 An operator must provision this runner explicitly.

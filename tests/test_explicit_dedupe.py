@@ -63,10 +63,10 @@ def test_explicit_replacement_reviews_low_similarity_candidates_in_scope(tmp_pat
         first = rt.add(old, scope)
         rt.add("Project Birch prefers dogs", scope)
         rt.add("foreign dogs preference", foreign)
-        assert (
-            rt.store.search(updated, scope, top_k=5)[1].score
-            < rt.cfg["dedupe"]["similarity_review_threshold"]
-        )
+        hits = rt.store.search(updated, scope, top_k=5)
+        old_hit = next(hit for hit in hits if str(hit.id) == first["id"])
+        assert old_hit.score < rt.cfg["dedupe"]["similarity_review_threshold"]
+        assert str(hits[0].id) != first["id"]
         key = rt.ledger.enqueue_event(
             {
                 "kind": "turn",

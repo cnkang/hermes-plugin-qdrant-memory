@@ -151,8 +151,11 @@ def test_corpus_is_fixed_complete_and_annotated():
 
 def test_mutation_scenarios_require_every_check_and_zero_obsolete_hits():
     """Quality cannot pass after an omitted scenario, a stale fact or failed revocation."""
+    from functools import partial
+
     from qdrant_memory.quality_metrics import MUTATION_CHECKS, score_mutations
 
+    score_mutations = partial(score_mutations, writer_agent="pi", reader_agent="hermes")
     checks = dict.fromkeys(MUTATION_CHECKS, True)
     assert score_mutations(checks, obsolete_hits=0, observed_hits=1)["status"] == "PASS"
     for key in MUTATION_CHECKS:
@@ -168,3 +171,17 @@ def test_mutation_scenarios_require_every_check_and_zero_obsolete_hits():
         )
     assert score_mutations(checks, obsolete_hits=1, observed_hits=2)["status"] == "FAIL"
     assert score_mutations(checks, obsolete_hits=0, observed_hits=0)["status"] == "FAIL"
+
+
+def test_cross_agent_handoff_requires_distinct_actor_evidence():
+    """A claimed handoff without logical-Agent identities must fail closed."""
+    from qdrant_memory.quality_metrics import MUTATION_CHECKS, score_mutations
+
+    checks = dict.fromkeys(MUTATION_CHECKS, True)
+    assert score_mutations(checks, obsolete_hits=0, observed_hits=1)["status"] == "FAIL"
+    assert (
+        score_mutations(
+            checks, obsolete_hits=0, observed_hits=1, writer_agent="pi", reader_agent="pi"
+        )["status"]
+        == "FAIL"
+    )
