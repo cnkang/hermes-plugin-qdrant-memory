@@ -106,3 +106,104 @@ def test_project_replay_uses_committed_receipt_after_pending_observation(tmp_pat
     assert result["restart_safe"] is True
     assert result["restart_model_calls"] == 0
     assert replays == ["project", "project"]
+
+
+@pytest.mark.parametrize("only", [False, True])
+@pytest.mark.parametrize("problem", ["none", "mutation", "recording", "provider", "gate_exception"])
+def test_diagnostic_success_cannot_certify_baseline(tmp_path, monkeypatch, capsys, only, problem):
+    """The actual runner separates diagnostic success and preserves failure gates."""
+    module = runner()
+    globals_ = module["main"].__globals__
+    output = tmp_path / "evidence.json"
+    extension = tmp_path / "integrations" / "pi" / "owner-memory.mjs"
+    extension.parent.mkdir(parents=True)
+    extension.write_text("// Synthetic adapter identity for runner-only contracts.\n")
+    scenarios = globals_["ROOT"] / "tests" / "quality" / "lifecycle-mutations-v1.json"
+    arguments = [
+        "evaluate",
+        "--adapter-root",
+        str(tmp_path),
+        "--output",
+        str(output),
+        "--scenarios",
+        str(scenarios),
+    ]
+    if only:
+        arguments.append("--scenarios-only")
+    monkeypatch.setattr("sys.argv", arguments)
+    monkeypatch.delenv("QM_QUALITY_UNUSED_KEY", raising=False)
+
+    class InstalledModelProbe:
+        """Provide the installed-model inventory without accessing a model server."""
+
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, _url):
+            return SimpleNamespace(
+                json=lambda: {
+                    "models": [
+                        {"name": name, "digest": "synthetic-model-digest"}
+                        for name in (globals_["MODEL"], globals_["EMBEDDING"])
+                    ]
+                }
+            )
+
+    baseline_calls = []
+
+    def baseline(data, _adapter, _home, recorder, _tokens):
+        """Supply complete observations to the real scorer through its I/O boundary."""
+        baseline_calls.append(True)
+        for row in data["cases"]:
+            recorder.extractions[row["id"]] = [
+                " ".join(group[0] for group in fact["terms"]) for fact in row["expected"]
+            ]
+        return {
+            "extractions": dict(recorder.extractions),
+            "retrievals": {row["id"]: [row["expected"]] for row in data["queries"]},
+            "scope_leaks": 0,
+            "provider_failures": 0,
+            "replay_safe": True,
+            "restart_safe": True,
+            "restart_raw_equal": True,
+            "restart_changed_fields": [],
+            "restart_model_calls": 0,
+            "post_restart_quality": {} if problem == "gate_exception" else {"status": "PASS"},
+            "context_quality": {"status": "PASS"},
+            "retrieval_latency": {},
+        }
+
+    def mutations(_core, _scenario, _home, recorder, _tokens, _adapter):
+        """Supply scenario outcomes without substituting runner status decisions."""
+        if problem == "recording":
+            recorder.recording_errors["KeyError"] += 1
+        if problem == "provider":
+            recorder.errors["TimeoutError"] += 1
+        if problem == "gate_exception" and only:
+            raise RuntimeError("synthetic scenario failure")
+        return {"status": "FAIL" if problem == "mutation" else "PASS"}
+
+    monkeypatch.setattr(globals_["httpx"], "Client", InstalledModelProbe)
+    monkeypatch.setitem(globals_, "OwnerLLM", lambda *_args: SimpleNamespace(close=lambda: None))
+    monkeypatch.setitem(globals_, "evaluate", baseline)
+    monkeypatch.setattr(
+        globals_["runpy"], "run_path", lambda _path: {"evaluate_mutations": mutations}
+    )
+    exit_code = module["main"]()
+    report = json.loads(output.read_text())
+    emitted = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert bool(baseline_calls) is not only
+    assert report["baseline_executed"] is not only
+    assert report["evaluation_mode"] == ("mutations-only" if only else "full")
+    expected = "FAIL" if problem != "none" else "DIAGNOSTIC_PASS" if only else "PASS"
+    assert report["status"] == expected
+    assert exit_code == (1 if problem != "none" else 0)
+    assert emitted["status"] == expected
+    if only:
+        assert report["cases"] == report["queries"] == 0
