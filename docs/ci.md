@@ -34,7 +34,7 @@ For an equivalent disposable local check:
 ```sh
 python scripts/build_fastembed_compat.py --output-dir .ci-wheels --check-lock requirements-local.txt
 python -m pip install --require-hashes --only-binary=:all: --find-links .ci-wheels -r requirements-local.txt
-python -m pip install --find-links .ci-wheels '.[mcp,local]' 'Pillow==13.0.0'
+python -m pip install --only-binary=:all: --find-links .ci-wheels '.[mcp,local]' 'Pillow==13.0.0'
 python -m pip check
 ```
 
