@@ -453,24 +453,27 @@ class QdrantMemoryProvider(MemoryProvider):
             scope = self._scope(session)
             generation = self._generations.get(session, 0)
             revision = self.runtime.mutation_revision
-            private = self._private_prefetch(query, session_id=session)
+            native = self._native_owner
+        private = self._private_prefetch(query, session_id=session)
         rows = self._read_shared(
             query,
             session,
             budget=self._shared_recall.settings.get("delivery_timeout_seconds", 0.05),
         )
+        # Shared lookup can outlive a policy change. Reauthorize immediately
+        # before delivery, without holding the lifecycle/worker condition.
+        readable = native is None or native.can_read(scope)
         with self._condition:
             if (
                 session in self._blocked_sessions
                 or not self._accepting
                 or self._scope(session) != scope
                 or self._generations.get(session, 0) != generation
+                or self._native_owner is not native
+                or not readable
                 or (
-                    self._native_owner is not None
-                    and (
-                        self.runtime.mutation_revision != revision
-                        or not self._native_owner.can_read(scope)
-                    )
+                    native is not None
+                    and (self.runtime.mutation_revision != revision or native.owner.blocked)
                 )
             ):
                 return ""
@@ -503,17 +506,31 @@ class QdrantMemoryProvider(MemoryProvider):
         return rows
 
     def _private_prefetch(self, query, *, session_id=""):
-        """Preserve the default private cache contract without network I/O."""
+        """Authorize Native recall outside the condition, then recheck its state."""
         session = session_id or self.session_id
         with self._condition:
             if session in self._blocked_sessions:
                 return ""
             self._cache_calls += 1
+            native = self._native_owner
+            scope = self._scopes.get(session, self.default_scope)
+            generation = self._generations.get(session, 0)
+            revision = self.runtime.mutation_revision if native is not None else None
+        if native is not None and not native.can_read(scope):
+            return ""
+        with self._condition:
+            if session in self._blocked_sessions or self._native_owner is not native:
+                return ""
+            if native is not None and (
+                not self._accepting
+                or native.owner.blocked
+                or self._scopes.get(session, self.default_scope) != scope
+                or self._generations.get(session, 0) != generation
+                or self.runtime.mutation_revision != revision
+            ):
+                return ""
             cached = self._cache.get(session)
-            if self._native_owner is not None:
-                scope = self._scopes.get(session, self.default_scope)
-                if not self._native_owner.can_read(scope):
-                    return ""
+            if native is not None:
                 if cached and (len(cached) != 3 or cached[2] != self.runtime.mutation_revision):
                     return ""
             if cached and cached[0] == self._scopes.get(session, self.default_scope):
