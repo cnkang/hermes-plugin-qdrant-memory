@@ -53,7 +53,7 @@ recall a stored fact in a new session?
 During the run, the configured provider intermittently rejected
 structured-output requests. Hermes retries without the `response_format` field
 and remembers the per-route rejection ("does not accept response_format
-json_schema; sending without it"). Most extraction and relation calls
+json_schema. Sending without it"). Most extraction and relation calls
 completed (latency samples and dedupe decisions were recorded). In three cases
 an unrecognized 400 reached the plugin as a non-retryable `BadRequestError`.
 The affected events stayed `FAILED` with their bodies retained.

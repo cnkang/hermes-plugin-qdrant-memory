@@ -55,7 +55,7 @@ resolutions. The notes are for contributors who change these files.
   redacted ValueError. Decoders that accept the nested array still reject its envelope.
 - urllib parser errors for malformed IPv6 and Unicode authorities included the input.
   Resolution: normalize these failures to the redacted loopback URL error. Regression
-  cases were reproduced before the fix; URL restrictions remain unchanged.
+  cases were reproduced before the fix. URL restrictions remain unchanged.
 
 ## Tests
 

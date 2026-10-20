@@ -7,11 +7,11 @@ before atomic replacement and directory synchronization. Interrupted serializati
 sync and publication tests confirm that readers never observe partial final
 claims and that enrollment can safely be retried. Registry creation classifies
 EACCES, EPERM and EROFS consistently: legacy fallback is allowed only without a
-protected policy or an existing registry; other errors remain fail-closed.
+protected policy or an existing registry. Other errors remain fail-closed.
 
 The authenticated CI fixture is pinned to its verified image digest, shared by
 the pull and test commands. Explicit shared CLI policy paths now use the existing
-invocation-directory boundary before file access; services must start from the
+invocation-directory boundary before file access. Services must start from the
 Owner directory or a deliberately chosen enclosing directory. The deployment
 guide documents this compatibility restriction. Programmatic policy loading
 retains its trusted-operator contract.
@@ -23,16 +23,16 @@ changing recovery order or loosening quality thresholds.
 
 Final local follow-up verification: 567 tests passed, 7 optional environment
 tests skipped, with one existing embedded-index warning. Aggregate Runtime line
-coverage is 92%; shared security is 90% and writer ownership 94%. The authenticated
+coverage is 92%. Shared security is 90% and writer ownership 94%. The authenticated
 TLS/JWT gate passed with the pinned image digest and matching client version.
 Ruff and actionlint passed. Remote quality-gate closure requires the final pushed
-revision's analysis; local coverage does not substitute for that result.
+revision's analysis. Local coverage does not substitute for that result.
 
 Transient action-download retries are documented separately in [CI operations](../ci.md).
 Their 14 tests are included in the full result above. The classifier also matched
 the observed macOS bootstrap DNS failure using read-only historical run metadata
 and logs. Automatic triggering becomes available only after the controller is
-merged into the default branch; test and quality-gate failures are never retried
+merged into the default branch. Test and quality-gate failures are never retried
 by that controller.
 
 ## Repository baseline and versions
@@ -78,16 +78,16 @@ New implementation commit: `005c8d7f69a10d445da3f1fa26ca6e2b27114298`.
 The existing backend namespace, payload schema, Ledger schema and shared request
 protocol are unchanged. Policy protection is explicit opt-in. Once enrolled,
 ordinary private, provider and maintenance writers to that destination fail
-closed. POSIX ownership checks are required for protected mode; Windows existing
+closed. POSIX ownership checks are required for protected mode. Windows existing
 private/shared workflows retain their original mode. Private containers without
 a passwd record or a writable account home and no existing registry retain
-legacy lease behavior; protection requires offline account/registry provisioning.
+legacy lease behavior. Protection requires offline account/registry provisioning.
 
 Diagnostics use stable codes and PASS/FAIL/UNVERIFIED (exit 0/1/2). See the
 [full command and deployment contract](deployment-security.md). Configuration,
 state exposure, binding/schema mismatch and reliable local ownership conflicts
 are rejected without automatic repair, deletion or collection creation. Recovery
-finishes before readiness; write-state exposure after startup blocks admission.
+finishes before readiness. Write-state exposure after startup blocks admission.
 Doctor never recovers and does not open embedded storage. Active WAL/readiness,
 effective key scope, exclusive credential distribution and backup coherence are
 not inferred as PASS.
@@ -96,13 +96,13 @@ not inferred as PASS.
 
 Official Qdrant security/access-control/Cloud-key documents were checked on
 2026-10-19 and are linked in the deployment guide. Collection-granular JWT `rw`
-credentials are distinct from administrative/signing keys; a global read-only
+credentials are distinct from administrative/signing keys. A global read-only
 key is distinct from a collection-scoped key. TLS and network isolation are
 separate controls. Self-hosted JWT RBAC requires explicit configuration.
 
 The real fixture demonstrated that a collection-only key cannot create a
 collection: Qdrant returned 403 (global access required). Provisioning and cleanup
-therefore use a separate administrative test client; the running Owner receives
+therefore use a separate administrative test client. The running Owner receives
 only its collection key. With that separation, direct Owner writes and an
 authenticated shared-client write succeeded, while absent, read-only and
 unrelated-collection credentials received 401/403. Read-only reads succeeded.
@@ -119,7 +119,7 @@ with Qdrant 1.15.5 and MCP SDK 2.3.0. Fixture image digest:
 `sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863`.
 Hermes checkout: `8a7a5a905fc66ed82b922587a8e3c011e819dbb5`.
 
-Commands below are repository-relative; `HERMES_CHECKOUT` denotes the tested host
+Commands below are repository-relative. `HERMES_CHECKOUT` denotes the tested host
 checkout, and each Python is selected from its isolated test environment.
 
 | Check / command | Observed result |
@@ -145,16 +145,15 @@ An initial run without Hermes import configuration failed collection, then passe
 with the actual host. Two existing lease-injection tests required preserving the
 default no-keyword call path. Skill exact-ID denial tests were corrected to send
 valid delete arguments so they test scope authorization, not input rejection.
-MCP metadata tests initially required local wheel/sdist preparation; the built
+MCP metadata tests initially required local wheel/sdist preparation. The built
 artifacts then passed all 144 tests. Skill packaging requires reviewed files to
-be staged; with the new reference staged, its complete package suite passed.
-An initial newer-client/older-server fixture emitted a compatibility warning;
-the matching 1.15.1/1.15.5 run passed without suppressing warnings.
+be staged. With the new reference staged, its complete package suite passed.
+An initial newer-client/older-server fixture emitted a compatibility warning. The matching 1.15.1/1.15.5 run passed without suppressing warnings.
 
 Cloud credential isolation, Cloud snapshots/network controls, other OS matrices,
 and authenticated hosted SAST/dependency scans remain separate deployment/CI
 evidence. No real Cloud credentials or production collections were used. Ordinary
-CI reports the external isolation gate as UNVERIFIED when not opted in; the new
+CI reports the external isolation gate as UNVERIFIED when not opted in. The new
 Docker job verifies a real self-hosted fixture without Cloud credentials.
 
 ## Release recommendation and sequence

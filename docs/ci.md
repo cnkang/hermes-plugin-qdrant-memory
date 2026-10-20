@@ -5,7 +5,7 @@
 The Linux Python 3.11 CPU lane installs `requirements-local.txt` with hashes
 before the optional provider tests, without requiring Snyk credentials. This
 checks the same frozen snapshot used by the security job, including Dependabot
-PRs; resolving `.[local]` alone does not validate that snapshot. All CPU lanes
+PRs. Resolving `.[local]` alone does not validate that snapshot. All CPU lanes
 also run `pip check` after installing their test dependencies.
 
 FastEmbed 0.9.0 declares Pillow below 13, while Pillow 12.3.0 has security
@@ -17,7 +17,7 @@ only distribution metadata: its local version, Pillow's upper bound to `<14`,
 provenance and wheel RECORD. Inference files, license and the Hub `<2` constraint
 stay unchanged. The wheel is deterministic across Python/OS versions, and its
 output hash is pinned in the CPU snapshot. `==0.9.0` accepts this explicitly
-identified local build under PEP 440; no official package is republished.
+identified local build under PEP 440. No official package is republished.
 
 All three CPU CI lanes build it, install with `--find-links .ci-wheels`, require
 Pillow 13.0.0 and the exact compatibility version, run `pip check`, and execute
@@ -26,7 +26,7 @@ The Snyk job installs and scans the same hash-checked snapshot. Hub stays at
 1.33.0: upgrading it to 2 is a separate compatibility change. The runtime only
 accepts the exact official or temporary version, never arbitrary local builds.
 Its inference fingerprint stays at the official 0.9.0 identity because the
-verified Python/model bytes are unchanged; real inference acceptance is still
+verified Python/model bytes are unchanged. Real inference acceptance is still
 required before merge.
 
 For an equivalent disposable local check:
@@ -39,8 +39,7 @@ python -m pip check
 ```
 
 This is a temporary compatibility build, not a claim that every Pillow advisory
-is resolved. Security scans remain authoritative for their configured gate;
-findings are not automatically ignored. Remove the builder, compatibility-version
+is resolved. Security scans remain authoritative for their configured gate. Findings are not automatically ignored. Remove the builder, compatibility-version
 allowance, CI find-links and temporary lock hash together once an official
 FastEmbed release supports Pillow 13 and passes the same checks. Rebuild the full
 hash snapshot and review inference identity before upgrading FastEmbed.
@@ -67,7 +66,7 @@ own trusted SHA, with three bounded download attempts, and no external actions
 are required to bootstrap that controller. Release/publish workflows are excluded.
 
 GitHub activates `workflow_run` workflows only after their file exists on the
-default branch; adding this controller in a PR does not activate it before merge.
+default branch. Adding this controller in a PR does not activate it before merge.
 See [workflow event behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
 and [failed-job rerun API](https://docs.github.com/en/rest/actions/workflow-runs#re-run-failed-jobs-from-a-workflow-run).
 

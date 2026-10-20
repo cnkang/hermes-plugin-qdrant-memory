@@ -19,14 +19,14 @@ of this change.
 
 Private workflows and legacy grants remain supported. After explicit enrollment,
 ordinary private/provider/maintenance writers to the protected destination are
-rejected; deliberate transitions require coordinated offline operations. Protected
+rejected. Deliberate transitions require coordinated offline operations. Protected
 mode requires verified POSIX permissions. It is local admission, not distributed
 fencing: direct writes with independent database credentials bypass Ledger and
 application CAS. Key scope and administrator access remain deployment concerns.
 No memory payload, shared protocol or Ledger migration is required.
 
 Authenticated cross-container transport changes the trust boundary and is
-deferred to a separate **0.5.0** design; loopback binding remains unchanged.
+deferred to a separate **0.5.0** design. Loopback binding remains unchanged.
 
 ## 中文
 

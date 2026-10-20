@@ -14,7 +14,7 @@ cannot be rebound to a conflicting identity within the policy.
 
 Optional `expires_at`, `revoked`, and `capture_rule_id` fields are validated.
 Every request reloads the policy when a loader is configured. Shared automatic
-capture requires its own audited capture rule; permission to read a project does
+capture requires its own audited capture rule. Permission to read a project does
 not authorize capturing private host turns into that project.
 
 Use `shared-device validate --policy PATH`, or explicitly select `--owner-id` and
@@ -26,7 +26,7 @@ in command arguments or commit them to the repository.
 ## Event admission and recovery
 
 `OwnerLifecycle` is an internal adapter for trusted host hooks. Authorization
-fixes the Owner, space, visibility, logical identity, and device; submitted event
+fixes the Owner, space, visibility, logical identity, and device. Submitted event
 content cannot choose those fields. An immutable admission plan is durable before
 enqueueing, so recovery can resume a crash between admission and event creation.
 The existing Runtime performs extraction, scoped deduplication, CAS, idempotent
@@ -34,11 +34,10 @@ operations, and writes. Modern private dedupe cannot promote unmarked legacy dat
 
 Event inspection and cancellation require the original authorized device. Only
 unprepared PENDING/FAILED raw events can be cancelled. Cancellation atomically
-checks the ledger status and payload before scrubbing raw content and the receipt;
-it is terminal across retry and restart. Prepared, committed, or uncertain writes
+checks the ledger status and payload before scrubbing raw content and the receipt. It is terminal across retry and restart. Prepared, committed, or uncertain writes
 must recover instead. Cancelling a raw event does not clear a recovery gate.
 
 Explicit Owner LLM settings bound output tokens and reject truncated extraction
-responses. External private-content endpoints require TLS; local loopback model
+responses. External private-content endpoints require TLS. Local loopback model
 endpoints may use HTTP. Quoted instructions do not establish a user's preference.
 The model evaluation remains a pilot rather than production accuracy acceptance.

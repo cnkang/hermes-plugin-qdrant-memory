@@ -21,13 +21,13 @@ pipeline, ledger, retry/recovery rules and writer lease as the Hermes plugin.
 Only these four tools are advertised. No resources or prompts are advertised.
 Maintenance, export, migration, reset and bulk deletion remain operator CLI
 operations. This private adapter has no HTTP/SSE listener. Runtime 0.4.0 also
-offers a separate, opt-in authenticated loopback owner and stdio bridge; see
+offers a separate, opt-in authenticated loopback owner and stdio bridge. See
 [shared memory](shared-memory/README.md). Do not expose that owner through a
 public proxy.
 
 Every tool string is limited to 65,536 UTF-8 bytes before normalization, hashing,
 embedding or storage, across native, standalone and shared entry points. This
-transport limit also applies when payload truncation is configured; payload
+transport limit also applies when payload truncation is configured. Payload
 limits can be stricter. It does not change the four advertised tool schemas.
 
 ## Connect a client
