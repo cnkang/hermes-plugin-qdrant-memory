@@ -39,8 +39,9 @@ FAILED 工作仍需显式操作员重试。
 
 | 测试 | 结果 | 覆盖范围 |
 |---|---|---|
-| Native 与 Pillow 13 组合版本完整测试 | 731 PASS、9 SKIPPED | SDK 2.x，包含取消门禁与锁外授权回归 |
-| 质量扩展完整测试 | 786 PASS、10 SKIPPED | 包含上下文评分、变更场景、Pi 事件归属与替换关系回归 |
+| Native、Pillow 13 与 certifi 修复完整测试 | 732 PASS、9 SKIPPED | SDK 2.x，包含取消门禁、锁外授权与安全依赖回归 |
+| 质量基线完整测试 | 752 PASS、9 SKIPPED | 包含已提交 Pi 事件重放与延迟收据回归 |
+| 质量扩展完整测试 | 788 PASS、10 SKIPPED | 包含上下文评分、变更场景、Pi 事件归属与替换关系回归 |
 | Native 与维护定向测试 | 44 PASS | 自动取消、同作用域继续处理、prepared 保护、回滚与擦除 |
 | 锁外授权定向测试 | 13 PASS | 真实 policy 加载屏障、身份与代次变更、数据变更、撤权 |
 | Python 3.14 / SDK 1.x 相关测试 | 52 PASS | Native 授权与必需安全门禁 |
@@ -89,6 +90,13 @@ CodeRabbit 后续审查覆盖本轮 7 个修改文件，结果为 0 issues。
 源码 wheel 与输出 wheel 均固定 SHA-256，推理源码和许可证不变。
 CI 保留严格 hash、二进制包限制、依赖检查和安全扫描。
 上游发布兼容版本后仍需重新验证，再删除临时构建。
+
+[PR #76](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/76) 已合并。
+合并提交为 `4d63c2067fea5a82dfdea573c1f215c21767e775`。
+三份依赖锁文件使用 certifi 2026.10.19，保留 Pillow 13 的兼容构建和严格 hash 检查。
+
+重放评估选择 COMMITTED 捕获，不能用早期 PENDING 回执作为比较基准。
+Windows 中文语料读取显式使用 UTF-8，cp1252 默认编码模拟回归通过。
 
 ## 未验证范围
 

@@ -13,7 +13,7 @@
   "prompt_sha256": "27754444f81ab1836d60ecfea7aa0e0188719a343e737f5fb98fd14c8d807402",
   "schema_sha256": "899554d36c07fe2a187db77e73fae61cbadaff9c664ca4da7a4dfa1d13ae6814",
   "source_sha256": {
-    "scripts/evaluate_owner_lifecycle.py": "925f7520e02de3e84d56a2b7da791395176f5ab2ae930d2f254d3986310d9412",
+    "scripts/evaluate_owner_lifecycle.py": "a558846939e7b4bd94ebf90bb22be32f7f2e0f30dba0fc0192fc8b3016cc7947",
     "scripts/pi_lifecycle_quality.mjs": "0ebd6fcfaf2177083efea18fa64f7ee32a87f176f0c45025723839d3093a19ef",
     "scripts/evaluate_owner_mutations.py": "73dc822a1e3bf2f9a27d614787e5815ee5d333251f0d61bfde75672631b3da8f",
     "qdrant_memory/__init__.py": "022dd19a7ee11a7e7ffe1f3a3bbf5262e40f20a8eaba572a88c8274b36fb2055",
@@ -89,8 +89,8 @@
     "unreplaced_candidate_score": null,
     "capture_latency": {
       "samples": 4,
-      "p50_ms": 16514.72175004892,
-      "p95_ms": 35235.456291993614
+      "p50_ms": 16606.37004201999,
+      "p95_ms": 35138.59574997332
     },
     "cas_winners": 1,
     "cas_conflicts": 1,
@@ -149,13 +149,13 @@
   },
   "retrieval_latency": {
     "samples": 64,
-    "p50_ms": 51.447125035338104,
-    "p95_ms": 68.20887501817197
+    "p50_ms": 54.0202499832958,
+    "p95_ms": 74.96054098010063
   },
   "model_latency": {
     "samples": 29,
-    "p50_ms": 12482.60508297244,
-    "p95_ms": 17802.370207966305
+    "p50_ms": 12367.068333027419,
+    "p95_ms": 17315.009624988306
   },
   "provider_error_types": {},
   "recording_error_types": {}
