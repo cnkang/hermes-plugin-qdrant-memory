@@ -56,6 +56,7 @@ class RecordingLLM:
         self.delegate = delegate
         self.case_ids = {case["user"]: case["id"] for case in cases}
         self.extractions, self.latencies, self.errors = {}, [], Counter()
+        self.recording_errors = Counter()
         self.lock = threading.Lock()
 
     def complete_structured(self, **kwargs):
@@ -63,12 +64,6 @@ class RecordingLLM:
         started = time.monotonic()
         try:
             result = self.delegate.complete_structured(**kwargs)
-            if kwargs["purpose"] == "qdrant-memory.extract":
-                event = json.loads(kwargs["input"][0]["text"])
-                key = self.case_ids[event["user"]]
-                with self.lock:
-                    self.extractions[key] = [row["text"] for row in result.parsed["memories"]]
-            return result
         except Exception as exc:
             with self.lock:
                 self.errors[type(exc).__name__] += 1
@@ -76,6 +71,18 @@ class RecordingLLM:
         finally:
             with self.lock:
                 self.latencies.append((time.monotonic() - started) * 1000)
+        if kwargs.get("purpose") == "qdrant-memory.extract":
+            try:
+                event = json.loads(kwargs["input"][0]["text"])
+                key = self.case_ids[event["user"]]
+                rows = [row["text"] for row in result.parsed["memories"]]
+            except Exception as exc:
+                with self.lock:
+                    self.recording_errors[type(exc).__name__] += 1
+            else:
+                with self.lock:
+                    self.extractions[key] = rows
+        return result
 
 
 def policy(tokens):
@@ -201,7 +208,7 @@ def tls_owner(provider, home):
         finally:
             service.should_exit = True
             thread.join(timeout=40)
-            if thread.is_alive():
+            if thread.is_alive() and sys.exc_info()[0] is None:
                 raise RuntimeError("Evaluation Owner did not drain")
 
 
@@ -313,6 +320,7 @@ def evaluate(data, adapter, home, recorder, tokens):
             baseline = remote_query(url, cert, tokens["SECOND"], "Cedar database")
     finally:
         manager.shutdown_all()
+    calls_before_restart = len(recorder.latencies)
     provider, manager = start_host(home, policy_path, recorder)
     try:
         with tls_owner(provider, home) as (url, cert):
@@ -327,15 +335,19 @@ def evaluate(data, adapter, home, recorder, tokens):
                 snapshots == after_snapshots
                 and durable_snapshot(restored) == durable_snapshot(baseline)
                 and receipt == captured["receipt"]
+                and len(recorder.latencies) == calls_before_restart
             )
             # Preserve raw comparison diagnostics without writing memory text.
+            left = {row["id"]: row for row in baseline}
+            right = {row["id"]: row for row in restored}
             changed_fields = sorted(
                 {
                     key
-                    for left, right in zip(baseline, restored)
-                    for key in left.keys() | right.keys()
-                    if left.get(key) != right.get(key)
+                    for identity in left.keys() & right.keys()
+                    for key in left[identity].keys() | right[identity].keys()
+                    if left[identity].get(key) != right[identity].get(key)
                 }
+                | ({"missing_or_added_id"} if left.keys() != right.keys() else set())
             )
     finally:
         manager.shutdown_all()
@@ -348,6 +360,7 @@ def evaluate(data, adapter, home, recorder, tokens):
         "restart_safe": restart_safe,
         "restart_raw_equal": restored == baseline,
         "restart_changed_fields": changed_fields,
+        "restart_model_calls": len(recorder.latencies) - calls_before_restart,
         "post_restart_quality": score_run(
             data,
             {
@@ -374,30 +387,13 @@ def main():
     validate_gold(data)
     if args.output.exists():
         raise FileExistsError("Choose a new evaluation output path")
-    if os.environ.get("QM_QUALITY_UNUSED_KEY"):
-        raise ValueError("Local quality evaluation refuses supplied API credentials")
-    with httpx.Client(trust_env=False, timeout=5) as http:
-        models = http.get("http://127.0.0.1:11434/api/tags").json()["models"]
-    installed = {row["name"]: row["digest"] for row in models if row["name"] in {MODEL, EMBEDDING}}
-    if set(installed) != {MODEL, EMBEDDING}:
-        raise ValueError("Evaluation requires both explicit already-installed local models")
-    llm = OwnerLLM(
-        {
-            "mode": "override",
-            "provider": "openai-compatible",
-            "model": MODEL,
-            "base_url": "http://127.0.0.1:11434/v1",
-            "max_output_tokens": 2048,
-            "api_key_env": "QM_QUALITY_UNUSED_KEY",
-        }
-    )
-    recorder = RecordingLLM(llm, data["cases"])
+    llm, recorder = None, None
     tokens = {key: secrets.token_hex(32) for key in ("NATIVE", "SECOND", "PI", "PROJECT", "READER")}
     report = {
         "status": "FAIL",
         "dataset": data["version"],
         "dataset_sha256": digest(dataset_bytes),
-        "models": installed,
+        "models": {},
         "cases": len(data["cases"]),
         "queries": len(data["queries"]),
         "prompt_sha256": digest(inspect.getsource(Extractor.extract).encode()),
@@ -410,15 +406,36 @@ def main():
                 *sorted((ROOT / "qdrant_memory").glob("*.py")),
             ]
         },
-        "pi_extension_sha256": digest(
-            (args.adapter_root / "integrations" / "pi" / "owner-memory.mjs").read_bytes()
-        ),
         "assistant": "deterministic Pi ack; real Owner LLM and embeddings",
         "limitations": "Concept-annotated synthetic dataset; not user UI or production accuracy",
     }
-    from agent.secret_scope import reset_secret_scope, set_secret_scope
-
     try:
+        if os.environ.get("QM_QUALITY_UNUSED_KEY"):
+            raise ValueError("Local quality evaluation refuses supplied API credentials")
+        with httpx.Client(trust_env=False, timeout=5) as http:
+            models = http.get("http://127.0.0.1:11434/api/tags").json()["models"]
+        installed = {
+            row["name"]: row["digest"] for row in models if row["name"] in {MODEL, EMBEDDING}
+        }
+        report["models"] = installed
+        if set(installed) != {MODEL, EMBEDDING}:
+            raise ValueError("Evaluation requires both explicit already-installed local models")
+        report["pi_extension_sha256"] = digest(
+            (args.adapter_root / "integrations" / "pi" / "owner-memory.mjs").read_bytes()
+        )
+        llm = OwnerLLM(
+            {
+                "mode": "override",
+                "provider": "openai-compatible",
+                "model": MODEL,
+                "base_url": "http://127.0.0.1:11434/v1",
+                "max_output_tokens": 2048,
+                "api_key_env": "QM_QUALITY_UNUSED_KEY",
+            }
+        )
+        recorder = RecordingLLM(llm, data["cases"])
+        from agent.secret_scope import reset_secret_scope, set_secret_scope
+
         with tempfile.TemporaryDirectory(prefix="qm-model-quality-") as directory:
             home = Path(directory).resolve()
             env = {"QM_QUALITY_" + key: value for key, value in tokens.items()}
@@ -439,12 +456,13 @@ def main():
                         "restart_safe",
                         "restart_raw_equal",
                         "restart_changed_fields",
+                        "restart_model_calls",
                         "post_restart_quality",
                         "retrieval_latency",
                     )
                 }
             )
-            if report["post_restart_quality"]["status"] != "PASS":
+            if report["post_restart_quality"]["status"] != "PASS" or recorder.recording_errors:
                 report["status"] = "FAIL"
     except Exception as exc:
         report["failure_type"] = type(exc).__name__
@@ -453,9 +471,11 @@ def main():
             for frame in traceback.extract_tb(exc.__traceback__)[-5:]
         ]
     finally:
-        llm.close()
-    report["model_latency"] = latency_summary(recorder.latencies)
-    report["provider_error_types"] = dict(recorder.errors)
+        if llm is not None:
+            llm.close()
+    report["model_latency"] = latency_summary(recorder.latencies if recorder else [])
+    report["provider_error_types"] = dict(recorder.errors) if recorder else {}
+    report["recording_error_types"] = dict(recorder.recording_errors) if recorder else {}
     with args.output.open("x", encoding="utf-8") as output:
         json.dump(report, output, ensure_ascii=False, indent=2)
     print(json.dumps(report, ensure_ascii=False))
