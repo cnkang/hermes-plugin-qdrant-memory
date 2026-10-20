@@ -176,7 +176,7 @@ jobs:
           for sdk in 1 2; do
             upper=$((sdk + 1))
             python -m pm.build_env --out "$RUNNER_TEMP/mcp-coverage-$sdk" \
-              --requirement "hermes-plugin-qdrant-memory[mcp] @ file://$GITHUB_WORKSPACE" \
+              --requirement "hermes-plugin-qdrant-memory[remote] @ file://$GITHUB_WORKSPACE" \
               --requirement "mcp>=$sdk,<$upper" \
               --requirement 'pytest>=8,<10' --requirement 'pytest-cov>=6,<8'
             cd "$GITHUB_WORKSPACE"

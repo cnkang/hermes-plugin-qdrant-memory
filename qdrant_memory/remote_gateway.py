@@ -7,11 +7,31 @@ authorization server, and it must never be advertised as OAuth interoperability.
 import re
 import time
 from collections import deque
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 
 from .mcp_server import create_tool_server
 from .shared_service import shared_schemas
+
+
+@contextmanager
+def _graceful_sigterm():
+    """Let uvicorn's re-raised SIGTERM unwind the Owner's drain/resource stack."""
+    import signal
+    import threading
+
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    def terminate(signum, frame):
+        raise SystemExit(0)
+
+    previous = signal.signal(signal.SIGTERM, terminate)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
 
 
 async def _lifecycle_request(lifecycle, token, scope, receive, send):
@@ -280,9 +300,10 @@ def serve(home, policy_path, *, port, local_port, allowed_hosts, enable_lifecycl
                     ),
                     flush=True,
                 )
-                service.run(sockets=[sock])
-                if not service.started:
-                    raise RuntimeError("Remote MCP listener failed startup")
+                with _graceful_sigterm():
+                    service.run(sockets=[sock])
+                    if not service.started:
+                        raise RuntimeError("Remote MCP listener failed startup")
             finally:
                 local.shutdown()
                 thread.join()
