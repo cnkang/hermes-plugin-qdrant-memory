@@ -11,7 +11,7 @@
   "prompt_sha256": "5cae974f656ca5a50547253972512604daea138bd66afb2173d66cf766cbddba",
   "schema_sha256": "fefe6d2d6a321b8ff716c32df07e4527f8779ffdfe52065bfb25e627dbbedd3c",
   "source_sha256": {
-    "scripts/evaluate_owner_lifecycle.py": "b4144b53fd757f21df314918ed3559a9884a5339434d0de666690add4709c33e",
+    "scripts/evaluate_owner_lifecycle.py": "96819c2d0b99245b8d3a6ff78749e80554c3a5d7f268ec83679d01fed4ab7188",
     "scripts/pi_lifecycle_quality.mjs": "818e012e50770c72e7338553db2fb933ac6e883711c73acea30617fdb96580f3",
     "qdrant_memory/__init__.py": "022dd19a7ee11a7e7ffe1f3a3bbf5262e40f20a8eaba572a88c8274b36fb2055",
     "qdrant_memory/cli.py": "d13f1e06d6878a8a98141ca7725ad968a723b19cbdd1c836f8923d4900ecb5df",
@@ -101,13 +101,13 @@
   },
   "retrieval_latency": {
     "samples": 64,
-    "p50_ms": 52.91329202009365,
-    "p95_ms": 73.39141599368304
+    "p50_ms": 55.140749958809465,
+    "p95_ms": 67.17275001574308
   },
   "model_latency": {
     "samples": 24,
-    "p50_ms": 10187.198291998357,
-    "p95_ms": 13245.877625013236
+    "p50_ms": 10144.80279199779,
+    "p95_ms": 13681.908541009761
   },
   "provider_error_types": {},
   "recording_error_types": {}

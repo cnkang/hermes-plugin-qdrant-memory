@@ -76,9 +76,11 @@ CodeRabbit 重审 #69 提出 1 major issue。原 `NativeOwner.events()` 对外�
 
 #66 合并时要求的安全门禁均成功：[push gate](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39356293864/job/118429643413)、[PR gate](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39356298575/job/118427969442)。
 
-最终模型证据：[reviewed evidence](../shared-memory/owner-model-quality-reviewed-evidence.json)；前一版指纹化基线：[baseline evidence](../shared-memory/owner-model-quality-evidence.json)。最终实测检索 p50 **51.79 ms**、p95 **86.25 ms**；Owner 模型推理 p50 **10.29 s**、p95 **13.04 s**。这是本机固定匿名语料的结果，不是生产 SLA。模型 digest、语料 SHA、prompt/schema 和源文件指纹均在 JSON 内。
+早期复审证据：[reviewed evidence](../shared-memory/owner-model-quality-reviewed-evidence.json)；更早的指纹化基线：[baseline evidence](../shared-memory/owner-model-quality-evidence.json)。准入屏障完成后的完整基线见 [drained evidence](../shared-memory/owner-model-quality-drained-evidence.json)，后续更新也在该文件记录。
 
-2026-10-20 04:30 UTC 左右的待检查 head：#67 `6659d46`、#68 `14e36d0`、#69 `341cdda`、MCP #32 `be6e653`、Skill #29 `f066ed0`；#70 随证据提交更新。新 head 检查仍排队/运行，不因历史绿色结果自动合并。原 Runtime 工作区仍保留既有 `the integration branch` 本地 ahead 1 提交；MCP/Skill 工作区本轮提交推送后干净。
+早期 reviewed 运行的检索 p50 为 **51.79 ms**、p95 为 **86.25 ms**；Owner 模型推理 p50 为 **10.29 s**、p95 为 **13.04 s**。这些延迟仅对应 reviewed 文件，不能作为 drained 运行的指标。当前基线的指标与源码 hash 以 drained 文件为准。固定匿名语料结果不是生产 SLA。
+
+2026-10-20 04:30 UTC 左右的待检查 head：#67 `6659d46`、#68 `14e36d0`、#69 `341cdda`、MCP #32 `be6e653`、Skill #29 `f066ed0`；#70 随证据提交更新。该历史快照不代表当前状态。新 head 不能因历史绿色结果自动合并。
 
 ## 安全与兼容性
 
