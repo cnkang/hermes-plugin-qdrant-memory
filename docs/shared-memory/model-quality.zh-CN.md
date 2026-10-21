@@ -121,9 +121,10 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 | `openrouter-free`（默认） | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`，1024 维 |
 | `hosted-ollama`（实验性） | GitHub `ubuntu-24.04` | `qwen3:1.7b` | 同一个本地 0.6B 模型 |
 | `hosted-qwen35`（实验性） | GitHub `ubuntu-24.04` | `qwen3.5:2b` | 同一个本地 0.6B 模型 |
+| `hosted-qwen35-4b`（实验性） | GitHub `ubuntu-24.04` | `qwen3.5:4b` | 同一个本地 0.6B 模型 |
 | `reference` | 带 `qdrant-memory-models` 标签的一次性 Linux runner | 已安装的 `qwen3:8b` | 已安装的 `qwen3-embedding:4b`，2560 维 |
 
-前三种配置不需要 self-hosted runner。
+前四种配置不需要 self-hosted runner。
 它们从 [Ollama](https://github.com/ollama/ollama/releases) 下载固定版本的 Ollama 和固定模型清单。
 初始化检查 [model-profiles.json](../../tests/quality/model-profiles.json) 中的安装包校验和及模型摘要。
 它在回环端口 19134 启动私有进程，并在测试后停止该进程。
@@ -158,7 +159,7 @@ OpenRouter 配置要求 GitHub Environment `model-quality` 中包含测试 Secre
 每次手动触发仅运行一个选定配置，不运行模型矩阵。
 使用工作流输入选择其他固定模型配置。模型名称属于配置，不需要 Secret。
 模型变更必须提供固定的清单摘要。不接受任意未经校验的模型标签。
-两个托管 Ollama 配置使用相同的嵌入模型、生成预算和关闭思考设置进行对比。
+托管 Ollama 配置使用相同的嵌入模型、生成预算和关闭思考设置进行对比。
 最终默认本地模型取决于已完成的 CI 结果；对比配置本身不构成验收证据。
 
 [首次托管运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) 使用 `qwen3:4b-instruct-2507-q4_K_M`，结果失败。
@@ -185,6 +186,18 @@ Ollama 将其列为[关闭思考模式的 OpenAI 兼容控制](https://docs.olla
 报告记录此设置。30 秒超时、严格输出验证和质量阈值保持不变。
 当所选 provider 支持时，Owner LLM 适配器接受可选值 `none`、`minimal`、`low`、`medium`、`high` 或 `xhigh`。
 省略此选项时，请求保留 provider 默认行为。Reference 和 Free Router 配置省略此选项。
+
+[关闭思考后的 1.7B 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39580559444) 完成了基线，但质量门禁失败。
+全部 29 次模型请求成功。模型调用 p50 为 1.14 秒，p95 为 4.37 秒。
+Precision 为 1.0，但正例召回率和 Recall@5 均为 0.375。Mutation 检查也失败。
+仅有更快的有效响应，不能使该模型成为合格的默认模型。
+下一次托管对比使用 `qwen3.5:2b`。仅在 2B 候选未通过时测试 `qwen3.5:4b`。
+
+[2B 对比](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39581374057) 在基线完成前失败。
+模型成功加载并返回一次成功响应，随后后台 ValueError 阻断生命周期。
+精确的验证失败原因尚未核实。该运行没有完整质量分数，也不能证明内存不足。
+Ollama 报告生成模型加载 2,369,666,414 字节，嵌入模型加载 1,237,875,425 字节，GPU 内存为零。
+此失败满足继续进行 4B 对比的条件，不放宽任何质量门禁。
 
 ### 容器替代方案
 

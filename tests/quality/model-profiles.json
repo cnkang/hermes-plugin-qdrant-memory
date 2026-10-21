@@ -31,6 +31,16 @@
         "qwen3-embedding:0.6b": "ac6da0dfba84a81fdbfbaf330198c33cd77c4cdfc53e8bc50eb581914a15621d"
       }
     },
+    "hosted-qwen35-4b": {
+      "generation_model": "qwen3.5:4b",
+      "reasoning_effort": "none",
+      "embedding_model": "qwen3-embedding:0.6b",
+      "embedding_dimensions": 1024,
+      "local_models": {
+        "qwen3.5:4b": "d8b0f5e9760cd1682034f292d7ef72ec46f432149be0df7574bf2d6e92e38c04",
+        "qwen3-embedding:0.6b": "ac6da0dfba84a81fdbfbaf330198c33cd77c4cdfc53e8bc50eb581914a15621d"
+      }
+    },
     "openrouter-free": {
       "generation_model": "openrouter/free",
       "embedding_model": "qwen3-embedding:0.6b",

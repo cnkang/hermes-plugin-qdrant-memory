@@ -31,7 +31,7 @@ def test_hosted_models_are_separate_from_the_reference_models():
     assert all(len(value) == 64 for value in hosted["local_models"].values())
 
 
-@pytest.mark.parametrize("name", ["hosted-ollama", "hosted-qwen35"])
+@pytest.mark.parametrize("name", ["hosted-ollama", "hosted-qwen35", "hosted-qwen35-4b"])
 def test_hosted_model_digest_mismatch_is_not_accepted(name):
     """A moved model tag or unexpected cache cannot silently change the test model."""
     module = runner()
@@ -43,13 +43,16 @@ def test_hosted_model_digest_mismatch_is_not_accepted(name):
         module["select_installed_models"](profile, installed)
 
 
-def test_qwen35_comparison_keeps_the_same_embedding_and_generation_budget():
+@pytest.mark.parametrize(
+    "name,model", [("hosted-qwen35", "qwen3.5:2b"), ("hosted-qwen35-4b", "qwen3.5:4b")]
+)
+def test_qwen35_comparison_keeps_the_same_embedding_and_generation_budget(name, model):
     """Change only the generation model in the hosted comparison."""
     module = runner()
     baseline = module["model_profile"]("hosted-ollama")
-    candidate = module["model_profile"]("hosted-qwen35")
+    candidate = module["model_profile"](name)
     assert candidate["embedding"] == baseline["embedding"]
-    assert candidate["llm"] == {**baseline["llm"], "model": "qwen3.5:2b"}
+    assert candidate["llm"] == {**baseline["llm"], "model": model}
     assert len(candidate["local_models"]) == 2
 
 
