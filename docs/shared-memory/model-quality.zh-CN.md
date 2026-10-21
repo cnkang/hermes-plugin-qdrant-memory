@@ -113,7 +113,7 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 ## 小模型冒烟工作流
 
 `owner-model-smoke.yml` 在相关 pull request 和 main 变更时运行，也可手动触发。
-当前冒烟候选选择关闭思考后的 `qwen3.5:4b`，以及 384 维的 `all-minilm:22m` 嵌入模型。
+默认冒烟配置选择关闭思考后的 `qwen3.5:0.8b`，以及 384 维的 `all-minilm:22m` 嵌入模型。
 两个模型清单均固定在配置中。CI 要求五次独立生命周期运行全部通过后才能验收。
 较小的 `qwen3:0.6b` 安装包约 523 MB，但它在前两次冒烟尝试中均返回空提取而失败。
 [显式偏好尝试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39586687759) 未完成原生捕获检查。
@@ -156,13 +156,22 @@ Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,9
 陈述句 v2 比较中，[0.6B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678861759)、[0.8B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678867271) 和 [1.7B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678857488) 均失败。
 每次均在首个生命周期中因空捕获停止。HTTP 200 响应不能证明捕获成功。
 [2B 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39680318405) 提取出原生记忆，但其重要性数值未通过 Runtime 校验。
-Owner 阻止了写入。4B 候选保留相同的 v2 语料、Prompt、嵌入模型和门禁。其稳定性仍未验证。
+Owner 阻止了写入。后续 4B 候选保留相同的 v2 语料、Prompt、嵌入模型和门禁。
 
 [首次 4B 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39680955844) 也在完成生命周期前因重要性数值校验失败。
 这些运行发生在 Owner 适配器将 Schema 加入模型上下文之前。
 现在适配器除 `response_format` 外，还在系统消息中包含可信的 JSON Schema，遵循 [Ollama 结构化输出指南](https://docs.ollama.com/capabilities/structured-outputs)的建议。
 这会改变模型的实际 Prompt。提取指令、语料、Schema 和 Runtime 校验保持完整。
 此前质量与冒烟结果仅适用于其记录的源码指纹。需要新运行验证此适配器变更。
+
+此适配器修复后，[0.8B 比较](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39682043203)在 `cffe602` 上完成五次独立生命周期，每次八项检查全部通过。
+它发起十次生成调用，实际身份符合固定模型。模型摘要匹配，进程清理通过。
+Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,928 字节，GPU 字节数为零。
+这些值描述已加载模型，不代表进程内存峰值。
+[4B 比较](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39681606697)也通过五次生命周期，但生成模型加载 3,146,734,631 字节。
+[0.6B 比较](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39681613565)仍因项目捕获为空而失败。
+选择 0.8B 作为默认配置。其他配置保留为手动选项，CI 不运行模型矩阵。
+实际 Prompt 已改变，因此此前 OpenRouter 完整质量 PASS 不能认证新适配器。需在 main 上重跑完整质量评估。
 
 ## 手动质量工作流
 
