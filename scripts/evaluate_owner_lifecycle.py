@@ -44,47 +44,49 @@ from qdrant_memory.remote_gateway import create_gateway
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = "qwen3:8b"
 EMBEDDING = "qwen3-embedding:4b"
+OPENROUTER = SimpleNamespace(**runpy.run_path(str(ROOT / "scripts/quality_openrouter.py")))
 
 
-def model_profile(name):
+def model_profile(name, *, generation_model=None, embedding_model=None):
     """Keep hosted and routed model results distinct from the original reference."""
     definitions = json.loads((ROOT / "tests/quality/model-profiles.json").read_text())
     selected = definitions["profiles"][name]
     local = "http://127.0.0.1:" + ("11434" if name == "reference" else "19134")
-    external = name == "openrouter-free"
-    generation = (
-        (os.environ.get("OPENROUTER_QUALITY_MODEL") or selected["generation_model"])
-        if external
-        else selected["generation_model"]
-    )
-    if (
-        external
-        and generation != "openrouter/free"
-        and (
-            len(generation) > 200
-            or re.fullmatch(
-                r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:-]*:free", generation
-            )
-            is None
+    cloud = name.startswith("openrouter-cloud-")
+    external = name == "openrouter-free" or cloud
+    generation = selected["generation_model"]
+    remote = None
+    if cloud:
+        remote = OPENROUTER.resolve_models(
+            name.removeprefix("openrouter-cloud-"),
+            chat=generation_model or os.environ.get("OPENROUTER_CHAT_MODEL_INPUT"),
+            embedding=embedding_model or os.environ.get("OPENROUTER_EMBEDDING_MODEL_INPUT"),
         )
-    ):
-        raise ValueError("Quality CI accepts only explicit free OpenRouter model routes")
+        generation = remote["chat"]
+    elif external:
+        generation = OPENROUTER.select_chat(
+            "quality",
+            generation,
+            explicit=generation_model or os.environ.get("OPENROUTER_CHAT_MODEL_INPUT"),
+        )
     return {
         "name": name,
         "ollama_url": local,
         "local_models": selected["local_models"],
+        "expected_embedding_dimensions": remote["expected_dimensions"] if remote else None,
         "embedding": {
-            "provider": "ollama",
-            "model": selected["embedding_model"],
+            "provider": "openai-compatible" if cloud else "ollama",
+            "model": remote["embedding"] if remote else selected["embedding_model"],
             "dimensions": selected["embedding_dimensions"],
-            "base_url": local,
+            "base_url": OPENROUTER.BASE_URL if cloud else local,
             "timeout_seconds": 30,
+            **({"api_key_env": "OPENROUTER_API_KEY"} if cloud else {}),
         },
         "llm": {
             "mode": "override",
             "provider": "openai-compatible",
             "model": generation,
-            "base_url": "https://openrouter.ai/api/v1" if external else local + "/v1",
+            "base_url": OPENROUTER.BASE_URL if external else local + "/v1",
             "max_output_tokens": 2048,
             "api_key_env": "OPENROUTER_API_KEY" if external else "QM_QUALITY_UNUSED_KEY",
             **({"provider_require_parameters": True} if external else {}),

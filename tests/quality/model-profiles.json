@@ -101,6 +101,18 @@
         "qwen3-embedding:0.6b": "ac6da0dfba84a81fdbfbaf330198c33cd77c4cdfc53e8bc50eb581914a15621d"
       }
     },
+    "openrouter-cloud-smoke": {
+      "generation_model": "liquid/lfm-2.5-2.6b:free",
+      "embedding_model": "liquid/lfm-2.5-embedding-350m:free",
+      "embedding_dimensions": 1024,
+      "local_models": {}
+    },
+    "openrouter-cloud-quality": {
+      "generation_model": "google/gemma-4-26b-a4b-it:free",
+      "embedding_model": "nvidia/nemotron-3.5-embed-1b:free",
+      "embedding_dimensions": 2048,
+      "local_models": {}
+    },
     "openrouter-free": {
       "generation_model": "liquid/lfm-2.5-2.6b:free",
       "embedding_model": "qwen3-embedding:0.6b",
