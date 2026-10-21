@@ -35,7 +35,7 @@ jobs:
   quality:
     # The OpenRouter API key is available only to the explicit main-branch step.
     # The reference profile retains the separately provisioned test runner.
-    if: github.repository == 'cnkang/hermes-plugin-qdrant-memory' && ((inputs.mode == 'smoke' && contains(fromJSON('["smoke-ollama","smoke-qwen06","smoke-qwen08","smoke-qwen17","smoke-qwen2"]'), inputs.profile)) || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && ((inputs.profile != 'openrouter-free' && inputs.profile != 'reference') || github.ref == 'refs/heads/main')))
+    if: github.repository == 'cnkang/hermes-plugin-qdrant-memory' && ((inputs.mode == 'smoke' && contains(fromJSON('["smoke-ollama","smoke-qwen06","smoke-qwen08","smoke-qwen17","smoke-qwen2","smoke-qwen4"]'), inputs.profile)) || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && ((inputs.profile != 'openrouter-free' && inputs.profile != 'reference') || github.ref == 'refs/heads/main')))
     runs-on: ${{ fromJSON(inputs.profile == 'reference' && '["self-hosted","linux","qdrant-memory-models"]' || '"ubuntu-24.04"') }}
     environment: ${{ inputs.profile == 'openrouter-free' && 'model-quality' || 'model-smoke' }}
     timeout-minutes: ${{ inputs.mode == 'smoke' && 30 || 90 }}
@@ -50,7 +50,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import os
-          allowed = {'smoke-ollama', 'smoke-qwen06', 'smoke-qwen08', 'smoke-qwen17', 'smoke-qwen2'}
+          allowed = {'smoke-ollama', 'smoke-qwen06', 'smoke-qwen08', 'smoke-qwen17', 'smoke-qwen2', 'smoke-qwen4'}
           if os.environ['MODEL_PROFILE'] not in allowed:
               raise SystemExit('Unsupported local smoke profile')
           PY

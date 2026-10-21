@@ -7,7 +7,7 @@ on:
         description: One fixed local smoke profile; default permits the configured override
         type: choice
         default: smoke-ollama
-        options: [smoke-ollama, smoke-qwen06, smoke-qwen08, smoke-qwen17, smoke-qwen2]
+        options: [smoke-ollama, smoke-qwen06, smoke-qwen08, smoke-qwen17, smoke-qwen2, smoke-qwen4]
   pull_request:
     paths:
       - qdrant_memory/**

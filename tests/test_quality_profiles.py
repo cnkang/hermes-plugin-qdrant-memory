@@ -25,7 +25,7 @@ def runner():
 def test_smoke_profile_uses_small_fixed_local_models():
     """Smoke does not require external credentials or the quality embedding model."""
     profile = runner()["model_profile"]("smoke-ollama")
-    assert profile["llm"]["model"] == "qwen3.5:2b"
+    assert profile["llm"]["model"] == "qwen3.5:4b"
     assert profile["llm"]["reasoning_effort"] == "none"
     assert profile["embedding"]["model"] == "all-minilm:22m"
     assert profile["embedding"]["dimensions"] == 384
@@ -39,6 +39,7 @@ def test_smoke_profile_uses_small_fixed_local_models():
         ("smoke-qwen08", "qwen3.5:0.8b"),
         ("smoke-qwen17", "qwen3:1.7b"),
         ("smoke-qwen2", "qwen3.5:2b"),
+        ("smoke-qwen4", "qwen3.5:4b"),
     ],
 )
 def test_smoke_comparisons_keep_one_model_and_the_same_embedding(name, model):
@@ -114,7 +115,7 @@ def test_openrouter_quality_route_can_select_an_explicit_free_model(monkeypatch,
     monkeypatch.setenv("OPENROUTER_QUALITY_MODEL", model)
     profile = runner()["model_profile"]("openrouter-free")
     assert profile["llm"]["model"] == model
-    assert runner()["model_profile"]("smoke-ollama")["llm"]["model"] == "qwen3.5:2b"
+    assert runner()["model_profile"]("smoke-ollama")["llm"]["model"] == "qwen3.5:4b"
 
 
 @pytest.mark.parametrize("model", ["openai/gpt-4.1", "https://untrusted.invalid", "x:free\nsecret"])
