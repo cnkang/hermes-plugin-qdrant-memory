@@ -20,7 +20,7 @@ on:
         default: openrouter-free
         options: [openrouter-free, hosted-ollama, hosted-qwen35, hosted-qwen35-4b, reference]
       generation_model:
-        description: Optional fixed OpenRouter model ending in :free
+        description: Optional free model ID; openrouter/free enables dynamic exploration
         type: string
         default: ''
 
@@ -159,7 +159,7 @@ jobs:
         run: .quality/venv/bin/python scripts/evaluate_owner_lifecycle.py --model-profile "$MODEL_PROFILE" --adapter-root .quality/mcp --scenarios tests/quality/lifecycle-mutations-v1.json --output "$QUALITY_OUTPUT"
       - name: Actual small-model lifecycle smoke
         if: inputs.mode == 'smoke'
-        run: .quality/venv/bin/python scripts/smoke_owner_lifecycle.py --adapter-root .quality/mcp --output "$QUALITY_OUTPUT"
+        run: .quality/venv/bin/python scripts/smoke_owner_lifecycle.py --adapter-root .quality/mcp --output "$QUALITY_OUTPUT" --repetitions 5
       - name: Require evidence for the selected evaluation mode
         run: |
           .quality/venv/bin/python - <<'PY'
@@ -168,6 +168,7 @@ jobs:
           assert d['model_profile'] == os.environ['MODEL_PROFILE']
           if os.environ['MODEL_EVALUATION_MODE'] == 'smoke':
               assert d['status'] == 'SMOKE_PASS' and d['evaluation_mode'] == 'smoke'
+              assert d['requested_repetitions'] == 5 and len(d['runs']) == 5
               assert d['quality_evaluated'] is False and d['baseline_executed'] is False
           else:
               assert d['status'] == 'PASS' and d['baseline_executed'] is True
