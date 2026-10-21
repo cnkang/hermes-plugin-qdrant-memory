@@ -38,6 +38,30 @@ This is deterministic Owner-to-Cloud integration, separate from the real HTTPS M
 network acceptance and actual Host tests. It does not certify Host UI or model quality.
 Run this lane only with explicit authorization. A skipped job is not a Cloud test result.
 
+## Disposable collection with an existing test key
+
+An operator can explicitly authorize reuse of `QDRANT_CLOUD_API_KEY` for a manual
+run. Set the workflow input `use_existing_test_key` to `true`. This option defaults
+to `false` and does not apply to push events. If separate scoped inputs are present,
+the workflow uses the scoped lane instead.
+
+The manual lane creates a new `qm_owner_ci_<random UUID>` collection and enrolls
+its embedding marker before it runs the same Owner isolation, CAS and recovery
+contracts. It deletes the entire fresh collection after success or failure and
+checks that the collection is absent. An independent `always()` step repeats this
+cleanup check with the exact generated name from the private configuration file.
+It does not reuse or delete an existing collection. The job removes the private
+configuration file last. Do not use production credentials for this lane.
+
+This lane does not certify collection-scoped database permissions. The separate
+scoped lane retains its required HTTP 403 check. Neither lane changes Agent grants
+or bypasses the Owner. A forced runner shutdown can prevent cleanup; if that occurs,
+an operator must verify and remove only the invocation's disposable collection.
+
+```sh
+gh workflow run cloud-smoke.yml --ref main -f use_existing_test_key=true
+```
+
 For an authorized local run, use a mode-0600 file with `url`, `owner_collection` and
 `owner_api_key` fields, then execute:
 

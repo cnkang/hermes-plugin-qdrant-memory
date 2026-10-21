@@ -35,17 +35,66 @@ def test_scoped_cloud_owner_devices_cas_and_recovery(tmp_path, request):
     if not collection.startswith("qm_owner_ci_"):
         raise ValueError("Cloud Owner acceptance requires a disposable qm_owner_ci_ collection")
     validate_url(settings["url"], cloud=True, api_key=key)
+    client = QdrantClient(url=settings["url"], api_key=key, trust_env=False)
+    try:
+        with pytest.raises(UnexpectedResponse) as denied:
+            client.get_collection("qm_owner_forbidden_" + uuid.uuid4().hex)
+        assert denied.value.status_code == 403
+        _exercise_cloud_owner(tmp_path, client, settings)
+    finally:
+        client.close()
+
+
+def test_cloud_owner_disposable_collection(tmp_path, request):
+    """Run authorized Owner contracts with a test key and a disposable collection."""
+    filename = request.config.getoption("--qdrant-cloud-config")
+    if not filename:
+        pytest.skip("SKIPPED: explicitly authorized Cloud test configuration required")
+    path = private_entry(Path(filename))
+    settings = json.loads(path.read_text())
+    key = settings.get("test_api_key")
+    if not key:
+        pytest.skip("SKIPPED: explicit test-key lane was not selected")
+    validate_url(settings["url"], cloud=True, api_key=key)
+    # Always generate a fresh collection. Never reuse or delete an operator's
+    # existing collection in this lane, even if a collection name was supplied.
+    collection = "qm_owner_ci_" + uuid.uuid4().hex
+    settings = {**settings, "owner_collection": collection}
     cfg = config(qdrant={"mode": "cloud", "url": settings["url"], "collection": collection})
     client = QdrantClient(url=settings["url"], api_key=key, trust_env=False)
+    provision_started = False
+    try:
+        assert not client.collection_exists(collection), "Disposable collection already exists"
+        provision_started = True
+        # Retain the exact fresh name for an independent always() cleanup step
+        # if the test process exits before its finally block can run.
+        path.write_text(json.dumps({**settings, "provision_started": True}))
+        QdrantStore(client, cfg, Embedder()).initialize(create=True)
+        print("Cloud Owner test-key lane: database credential scope is not certified.")
+        _exercise_cloud_owner(tmp_path, client, settings)
+    finally:
+        try:
+            if provision_started:
+                if client.collection_exists(collection):
+                    client.delete_collection(collection)
+                assert not client.collection_exists(collection), (
+                    "Cloud test collection cleanup failed"
+                )
+                print("Cloud Owner collection cleanup verified: disposable collection is absent.")
+        finally:
+            client.close()
+
+
+def _exercise_cloud_owner(tmp_path, client, settings):
+    """Exercise Owner isolation, CAS and recovery on an initialized Cloud collection."""
+    collection = settings["owner_collection"]
+    cfg = config(qdrant={"mode": "cloud", "url": settings["url"], "collection": collection})
     rt = None
     owner_id = "fixture-" + uuid.uuid4().hex
     cleanup_filter = Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=owner_id))])
     initialized = False
     try:
         client.get_collection(collection)
-        with pytest.raises(UnexpectedResponse) as denied:
-            client.get_collection("qm_owner_forbidden_" + uuid.uuid4().hex)
-        assert denied.value.status_code == 403
         store = QdrantStore(client, cfg, Embedder())
         # Provisioning and fingerprint enrollment belong to a separate trusted
         # operator step. The Owner lane must never create or delete collections.
@@ -128,4 +177,3 @@ def test_scoped_cloud_owner_devices_cas_and_recovery(tmp_path, request):
         finally:
             if rt is not None:
                 rt.ledger.close()
-            client.close()

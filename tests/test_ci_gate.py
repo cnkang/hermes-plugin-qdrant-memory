@@ -67,3 +67,34 @@ def test_cloud_smoke_uses_qdrant_cloud_environment():
     workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/cloud-smoke.yml"
     workflow = YAML(typ="safe").load(workflow_path.read_text(encoding="utf-8"))
     assert workflow["jobs"]["cloud"]["environment"] == "qdrant-cloud"
+
+
+@pytest.mark.parametrize("authorized,available", [("false", False), ("true", True)])
+def test_existing_cloud_test_key_requires_explicit_opt_in(tmp_path, authorized, available):
+    """Execute availability logic: a broad test key must not enable the lane by default."""
+    path = Path(__file__).resolve().parents[1] / ".github/workflows/cloud-smoke.yml"
+    workflow = YAML(typ="safe").load(path.read_text(encoding="utf-8"))
+    assert (
+        workflow["on"]["workflow_dispatch"]["inputs"]["use_existing_test_key"]["default"] is False
+    )
+    step = workflow["jobs"]["owner-availability"]["steps"][0]
+    assert "github.event_name == 'workflow_dispatch'" in step["env"]["USE_EXISTING_TEST_KEY"]
+    output = tmp_path / "output"
+    result = subprocess.run(
+        ["bash", "-c", step["run"]],
+        env={
+            **os.environ,
+            "QDRANT_CLOUD_URL": "https://fixture.cloud.qdrant.io",
+            "QDRANT_CLOUD_OWNER_API_KEY": "",
+            "QDRANT_CLOUD_OWNER_COLLECTION": "",
+            "QDRANT_CLOUD_API_KEY": "synthetic-test-key",
+            "USE_EXISTING_TEST_KEY": authorized,
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode == 0
+    assert output.read_text().strip() == f"available={str(available).lower()}"
+    assert "synthetic-test-key" not in result.stdout + result.stderr

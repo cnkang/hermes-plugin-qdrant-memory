@@ -3,6 +3,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      use_existing_test_key:
+        description: 'Authorize a fresh disposable Owner collection with the existing test key'
+        type: boolean
+        default: false
 
 concurrency:
   group: cloud-smoke-${{ github.ref }}
@@ -25,13 +30,17 @@ jobs:
           QDRANT_CLOUD_URL: ${{ secrets.QDRANT_CLOUD_URL }}
           QDRANT_CLOUD_OWNER_API_KEY: ${{ secrets.QDRANT_CLOUD_OWNER_API_KEY }}
           QDRANT_CLOUD_OWNER_COLLECTION: ${{ secrets.QDRANT_CLOUD_OWNER_COLLECTION }}
+          QDRANT_CLOUD_API_KEY: ${{ secrets.QDRANT_CLOUD_API_KEY }}
+          USE_EXISTING_TEST_KEY: ${{ github.event_name == 'workflow_dispatch' && inputs.use_existing_test_key }}
         run: |
           python3 - <<'PY'
           import os
-          available = all(os.environ[name] for name in ['QDRANT_CLOUD_URL', 'QDRANT_CLOUD_OWNER_API_KEY', 'QDRANT_CLOUD_OWNER_COLLECTION'])
+          scoped = bool(os.environ['QDRANT_CLOUD_OWNER_API_KEY'] and os.environ['QDRANT_CLOUD_OWNER_COLLECTION'])
+          disposable = os.environ['USE_EXISTING_TEST_KEY'] == 'true' and bool(os.environ['QDRANT_CLOUD_API_KEY'])
+          available = bool(os.environ['QDRANT_CLOUD_URL']) and (scoped or disposable)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'available={str(available).lower()}\n')
-          print('Scoped Owner inputs available.' if available else 'SKIPPED: no scoped Cloud Owner credentials/collection.')
+          print('Owner test inputs available.' if available else 'SKIPPED: no authorized Cloud Owner inputs.')
           PY
   owner:
     name: Scoped Cloud Owner devices and recovery
@@ -47,22 +56,35 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.11'
-      - name: Prepare separate scoped Owner parameters
+      - name: Prepare authorized Owner test parameters
         id: owner
         env:
           QDRANT_CLOUD_URL: ${{ secrets.QDRANT_CLOUD_URL }}
           QDRANT_CLOUD_OWNER_API_KEY: ${{ secrets.QDRANT_CLOUD_OWNER_API_KEY }}
           QDRANT_CLOUD_OWNER_COLLECTION: ${{ secrets.QDRANT_CLOUD_OWNER_COLLECTION }}
+          QDRANT_CLOUD_API_KEY: ${{ secrets.QDRANT_CLOUD_API_KEY }}
+          USE_EXISTING_TEST_KEY: ${{ github.event_name == 'workflow_dispatch' && inputs.use_existing_test_key }}
         run: |
           python - <<'PY'
           import json, os
           from pathlib import Path
-          available = all(os.environ[name] for name in ['QDRANT_CLOUD_URL', 'QDRANT_CLOUD_OWNER_API_KEY', 'QDRANT_CLOUD_OWNER_COLLECTION'])
+          scoped = bool(os.environ['QDRANT_CLOUD_OWNER_API_KEY'] and os.environ['QDRANT_CLOUD_OWNER_COLLECTION'])
+          disposable = os.environ['USE_EXISTING_TEST_KEY'] == 'true' and bool(os.environ['QDRANT_CLOUD_API_KEY'])
+          available = bool(os.environ['QDRANT_CLOUD_URL']) and (scoped or disposable)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'available={str(available).lower()}\n')
           if available:
               path = Path(os.environ['RUNNER_TEMP']) / 'cloud-owner-config.json'
-              path.write_text(json.dumps({'url': os.environ['QDRANT_CLOUD_URL'], 'owner_api_key': os.environ['QDRANT_CLOUD_OWNER_API_KEY'], 'owner_collection': os.environ['QDRANT_CLOUD_OWNER_COLLECTION']}))
+              settings = {'url': os.environ['QDRANT_CLOUD_URL']}
+              if scoped:
+                  settings.update(owner_api_key=os.environ['QDRANT_CLOUD_OWNER_API_KEY'], owner_collection=os.environ['QDRANT_CLOUD_OWNER_COLLECTION'])
+                  test = 'test_scoped_cloud_owner_devices_cas_and_recovery'
+              else:
+                  settings['test_api_key'] = os.environ['QDRANT_CLOUD_API_KEY']
+                  test = 'test_cloud_owner_disposable_collection'
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+                  output.write(f'test={test}\n')
+              path.write_text(json.dumps(settings))
               path.chmod(0o600)
           else:
               raise SystemExit('Scoped Owner inputs changed after availability check; rerun authorization.')
@@ -70,9 +92,11 @@ jobs:
       - name: Install Owner acceptance dependencies
         if: steps.owner.outputs.available == 'true'
         run: python -m pip install '.[remote]' 'pytest>=8,<10'
-      - name: Execute scoped Cloud Owner acceptance
+      - name: Execute authorized Cloud Owner acceptance
         if: steps.owner.outputs.available == 'true'
-        run: python -m pytest tests/security/test_cloud_owner.py -q --qdrant-cloud-config="$RUNNER_TEMP/cloud-owner-config.json" --junitxml=cloud-owner-results.xml
+        env:
+          OWNER_TEST: ${{ steps.owner.outputs.test }}
+        run: python -m pytest "tests/security/test_cloud_owner.py::$OWNER_TEST" -q -rP --qdrant-cloud-config="$RUNNER_TEMP/cloud-owner-config.json" --junitxml=cloud-owner-results.xml -o junit_logging=system-out
       - name: Require executed credentialed acceptance
         if: steps.owner.outputs.available == 'true'
         run: >-
@@ -80,6 +104,26 @@ jobs:
           suites=E.parse('cloud-owner-results.xml').findall('.//testsuite');
           assert sum(int(s.get('tests',0)) for s in suites)>=1;
           assert sum(int(s.get('skipped',0)) for s in suites)==0"
+      - name: Verify disposable collection cleanup independently
+        if: always() && steps.owner.outputs.available == 'true'
+        run: |
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'cloud-owner-config.json'
+          settings = json.loads(path.read_text())
+          if settings.get('provision_started'):
+              from qdrant_client import QdrantClient
+              from qdrant_memory.config import validate_url
+              collection = settings['owner_collection']
+              assert re.fullmatch(r'qm_owner_ci_[0-9a-f]{32}', collection)
+              validate_url(settings['url'], cloud=True, api_key=settings['test_api_key'])
+              with QdrantClient(url=settings['url'], api_key=settings['test_api_key'], trust_env=False) as client:
+                  if client.collection_exists(collection):
+                      client.delete_collection(collection)
+                  assert not client.collection_exists(collection), 'Cloud test collection cleanup failed'
+              print('Independent cleanup verified: disposable Cloud Owner collection is absent.')
+          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.owner.outputs.available == 'true'
         with:

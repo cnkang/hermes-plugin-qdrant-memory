@@ -13,6 +13,44 @@ from ..helpers import Embedder, config
 from . import test_cloud_owner as cloud
 
 
+@pytest.mark.parametrize("fail_acceptance", [True, False])
+def test_disposable_collection_is_removed_after_acceptance(tmp_path, monkeypatch, fail_acceptance):
+    """Delete the invocation's collection after success or an acceptance failure."""
+    client = QdrantClient(":memory:")
+    monkeypatch.setattr(cloud, "QdrantClient", lambda **kwargs: client)
+    close = client.close
+    monkeypatch.setattr(client, "close", lambda: None)
+
+    def fail(*args):
+        raise RuntimeError("synthetic acceptance failure")
+
+    if fail_acceptance:
+        monkeypatch.setattr(cloud, "_exercise_cloud_owner", fail)
+    filename = tmp_path / "disposable.json"
+    filename.write_text(
+        json.dumps(
+            {
+                "url": "https://fixture.cloud.qdrant.io",
+                "test_api_key": "synthetic-test-key",
+            }
+        )
+    )
+    filename.chmod(0o600)
+    request = SimpleNamespace(config=SimpleNamespace(getoption=lambda name: str(filename)))
+    try:
+        if fail_acceptance:
+            with pytest.raises(RuntimeError, match="acceptance failure"):
+                cloud.test_cloud_owner_disposable_collection(tmp_path, request)
+        else:
+            cloud.test_cloud_owner_disposable_collection(tmp_path, request)
+        assert client.get_collections().collections == []
+        state = json.loads(filename.read_text())
+        assert state["provision_started"] is True
+        assert state["owner_collection"].startswith("qm_owner_ci_")
+    finally:
+        close()
+
+
 @pytest.mark.parametrize("delete_works", [True, False])
 def test_cleanup_after_write_response_is_lost(tmp_path, monkeypatch, delete_works):
     """Remove committed synthetic data even if its response never reaches the test."""
