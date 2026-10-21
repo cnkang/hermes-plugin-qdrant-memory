@@ -3,6 +3,7 @@
 import json
 import runpy
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -66,6 +67,21 @@ def test_free_router_has_no_paid_fallback_and_only_local_embeddings():
     assert list(profile["local_models"]) == ["qwen3-embedding:0.6b"]
     assert "models" not in profile["llm"]
     assert "reasoning_effort" not in profile["llm"]
+
+
+def test_background_failure_observation_keeps_stages_without_private_details():
+    """Observe existing background failures without retaining messages or local values."""
+    module = runner()
+    recorder = module["RecordingLLM"](SimpleNamespace(), [])
+
+    def fail():
+        raise ValueError("synthetic-private-data")
+
+    with pytest.raises(ValueError, match="synthetic-private-data"):
+        recorder.observe_background_job(fail)()
+    assert recorder.background_failures[0]["type"] == "ValueError"
+    assert recorder.background_failures[0]["stages"][-1]["function"] == "fail"
+    assert "synthetic-private-data" not in json.dumps(recorder.background_failures)
 
 
 @pytest.mark.parametrize("selected", ["qwen/qwen3:free", "synthetic-secret"])

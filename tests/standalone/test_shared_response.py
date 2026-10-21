@@ -22,7 +22,7 @@ def test_rejected_body_is_consumed_once_within_the_limit(rejection):
         headers["Authorization"] = "Bearer synthetic"
     if rejection == "origin":
         headers["Origin"] = "http://untrusted.invalid"
-    calls, statuses, reads = [], [], []
+    calls, statuses, reads, timeouts = [], [], [], []
 
     class Reader(io.BytesIO):
         """Track bounded reads without relying on a platform-specific reset race."""
@@ -41,6 +41,7 @@ def test_rejected_body_is_consumed_once_within_the_limit(rejection):
         headers["Host"] = f"127.0.0.1:{server.server_port}"
         handler = object.__new__(server.RequestHandlerClass)
         handler.server, handler.path, handler.headers = server, "/v1/tool", headers
+        handler.connection = SimpleNamespace(settimeout=timeouts.append)
         handler.rfile, handler.wfile = Reader(body), io.BytesIO()
         handler.send_response = statuses.append
         handler.send_header = lambda *_args: None
@@ -49,6 +50,7 @@ def test_rejected_body_is_consumed_once_within_the_limit(rejection):
     assert statuses == [403 if rejection in {"missing-token", "invalid-token", "origin"} else 400]
     assert handler.rfile.tell() == len(body)
     assert reads == [len(body)]
+    assert timeouts == ([] if rejection == "invalid-json" else [1])
     assert not calls
 
 

@@ -139,6 +139,7 @@ Model digests and the running Ollama version are also checked after cache restor
 Credentials, evaluation reports, process IDs, and temporary memory data are excluded from caches.
 The model workflow saves verified downloads before quality checks, so a later quality failure does not discard them.
 The reference profile retains port 11434 and requires a separately provisioned test runner.
+Run the reference profile from `main` only.
 The pinned cache actions use version 6.1.0 with Node.js 24. The reference runner must be version 2.327.1 or later.
 The setup loads local models before measurement. Reported model latency excludes initial model download and load.
 
@@ -202,6 +203,12 @@ The model loaded and returned one successful response. A background ValueError t
 The exact validation failure is unverified. This run supplies no complete quality scores and does not prove a memory shortage.
 Ollama reported 2,369,666,414 loaded bytes for generation and 1,237,875,425 bytes for embeddings, with zero GPU memory.
 This failure permits the next 4B comparison. It does not relax any quality gate.
+
+The [first 4B comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39582200266) also failed before baseline completion.
+It observed one successful response before a background ValueError blocked the lifecycle.
+Ollama reported 3,146,734,631 loaded bytes for generation, with zero GPU memory.
+Neither Qwen3.5 run provides complete quality scores. The exact failure needs a diagnostic rerun.
+Diagnostic reports retain background exception types and source stages, without exception messages or local values.
 
 ### Container alternative
 
