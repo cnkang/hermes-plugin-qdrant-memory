@@ -20,6 +20,7 @@ on:
       - tests/test_quality_runner.py
       - tests/test_dependency_security.py
       - tests/quality/lifecycle-v1.json
+      - tests/quality/lifecycle-mutations-v1.json
   pull_request:
     paths:
       - scripts/pi_lifecycle_quality.mjs
@@ -38,6 +39,7 @@ on:
       - tests/test_quality_runner.py
       - tests/test_dependency_security.py
       - tests/quality/lifecycle-v1.json
+      - tests/quality/lifecycle-mutations-v1.json
   workflow_dispatch:
 
 permissions:
