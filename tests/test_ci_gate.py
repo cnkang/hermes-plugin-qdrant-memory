@@ -1,7 +1,9 @@
 """Execute the workflow gate against success, failure, skipped and cancelled inputs."""
 
+import json
 import os
 import subprocess
+import uuid
 from pathlib import Path
 
 import pytest
@@ -99,3 +101,47 @@ def test_existing_cloud_test_key_requires_explicit_opt_in(tmp_path, authorized, 
     assert result.returncode == 0
     assert output.read_text().strip() == f"available={str(available).lower()}"
     assert "synthetic-test-key" not in result.stdout + result.stderr
+
+
+def test_independent_cloud_cleanup_uses_supported_client_lifecycle(tmp_path, monkeypatch):
+    """Execute the workflow cleanup against a real client that has no context manager."""
+    import qdrant_client
+    from qdrant_client.models import Distance, VectorParams
+
+    path = Path(__file__).resolve().parents[1] / ".github/workflows/cloud-smoke.yml"
+    workflow = YAML(typ="safe").load(path.read_text(encoding="utf-8"))
+    step = next(
+        s
+        for s in workflow["jobs"]["owner"]["steps"]
+        if s.get("name") == "Verify disposable collection cleanup independently"
+    )
+    collection = "qm_owner_ci_" + uuid.uuid4().hex
+    client = qdrant_client.QdrantClient(":memory:")
+    client.create_collection(
+        collection, vectors_config=VectorParams(size=3, distance=Distance.COSINE)
+    )
+    client.create_collection(
+        "unrelated", vectors_config=VectorParams(size=3, distance=Distance.COSINE)
+    )
+    close = client.close
+    closed = []
+    monkeypatch.setattr(client, "close", lambda: closed.append(True))
+    monkeypatch.setattr(qdrant_client, "QdrantClient", lambda **kwargs: client)
+    (tmp_path / "cloud-owner-config.json").write_text(
+        json.dumps(
+            {
+                "url": "https://fixture.cloud.qdrant.io",
+                "test_api_key": "synthetic-test-key",
+                "owner_collection": collection,
+                "provision_started": True,
+            }
+        )
+    )
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    try:
+        exec("\n".join(step["run"].splitlines()[1:-1]), {})
+        assert not client.collection_exists(collection)
+        assert client.collection_exists("unrelated")
+        assert closed == [True]
+    finally:
+        close()
