@@ -108,7 +108,7 @@ def test_openrouter_quality_rejects_paid_or_invalid_model_configuration(monkeypa
     [
         ("openrouter/free", {"nvidia/example": 1}, False),
         ("nvidia/example:free", {}, False),
-        ("nvidia/example:free", {"nvidia/example": 2}, True),
+        ("nvidia/example:free", {"nvidia/example": 2}, False),
         ("nvidia/example:free", {"nvidia/example:free": 2}, True),
         ("nvidia/example:free", {"nvidia/other": 1}, False),
         ("nvidia/example:free", {"nvidia/example": 1, "nvidia/other": 1}, False),

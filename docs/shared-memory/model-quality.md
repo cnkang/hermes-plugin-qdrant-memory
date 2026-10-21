@@ -191,6 +191,7 @@ See [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/s
 
 Reports distinguish `fixed-route` from `dynamic-free-router`.
 A fixed model requires matching actual response model IDs. Missing, different, or mixed IDs fail the gate.
+The `:free` suffix is significant. A response without it does not establish the configured variant.
 Free Router results are exploratory. Even a passing score does not provide the fixed-model baseline required for release-candidate acceptance.
 Keep the model ID, observed IDs, embedding manifests, dataset and prompt fingerprints with each run.
 
