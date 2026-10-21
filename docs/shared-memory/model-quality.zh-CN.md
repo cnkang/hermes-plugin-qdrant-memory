@@ -219,7 +219,7 @@ reference 配置仅从 `main` 运行。
 表中维度为预期值。实际批量响应必须在 Qdrant 启动前确认这些维度。
 不匹配时运行失败。每次运行使用新的临时 Embedded Qdrant collection，并在测试后删除。
 Cloud Smoke 通过 HTTPS MCP 执行一次合成 Hermes 和 Pi 生命周期。
-它检查提取、向量、授权召回、私有隔离、重放和重启。
+它检查提取、向量、授权召回、私有 Agent 及用户隔离、重放和重启。
 成功状态为 `SMOKE_PASS`，同时记录 `quality_evaluated=false` 和 `baseline_executed=false`。
 Cloud Quality 使用完整固定语料、现有评分器、mutation 评估器和原有阈值。
 HTTP 200、有效 JSON 或单条搜索结果均不能证明质量 PASS。

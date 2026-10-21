@@ -114,7 +114,7 @@ def test_manual_cloud_without_key_writes_redacted_failure(
     assert "Traceback" not in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("problem", [None, "isolation", "exception"])
+@pytest.mark.parametrize("problem", [None, "isolation", "exception", "quota"])
 def test_cloud_smoke_uses_preflight_and_closes_resources(tmp_path, monkeypatch, problem):
     """Cloud wiring cannot skip a lifecycle gate or promote smoke to quality PASS."""
     module = runpy.run_path(str(ROOT / "scripts/smoke_owner_lifecycle.py"))
@@ -147,7 +147,11 @@ def test_cloud_smoke_uses_preflight_and_closes_resources(tmp_path, monkeypatch, 
 
         def report(self):
             """Return safe transport observations."""
-            return {"resources_closed": self.closed, "embedding_dimensions": 2}
+            return {
+                "resources_closed": self.closed,
+                "embedding_dimensions": 2,
+                "final_failure_classification": "quota_exhausted" if problem == "quota" else None,
+            }
 
     class LLM:
         """A unit-only facade; actual lifecycle behavior is tested separately."""
@@ -164,7 +168,7 @@ def test_cloud_smoke_uses_preflight_and_closes_resources(tmp_path, monkeypatch, 
         calls.append("exercise")
         homes.append(home)
         assert recorder.model_profile["embedding"]["dimensions"] == 2
-        if problem == "exception":
+        if problem in {"exception", "quota"}:
             raise RuntimeError("synthetic-private-key")
         return {
             name: name != "private_isolation" or problem != "isolation" for name in module["CHECKS"]
@@ -197,6 +201,8 @@ def test_cloud_smoke_uses_preflight_and_closes_resources(tmp_path, monkeypatch, 
     assert observed["resources_closed"] is True
     assert report["temporary_data_cleaned"] is True
     assert "synthetic-private-key" not in output.read_text()
+    if problem == "quota":
+        assert report["failure_classification"] == "quota_exhausted"
 
 
 @pytest.mark.parametrize("problem", [None, "no_facts", "mutation"])

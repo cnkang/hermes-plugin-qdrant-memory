@@ -223,7 +223,7 @@ They use no local model weights. The `openrouter-free` comparison retains local 
 The dimensions in this table are expected values. An actual batched response must confirm them before Qdrant starts.
 A mismatch fails the run. Each run uses a new temporary Embedded Qdrant collection and removes it after the test.
 Cloud Smoke runs one synthetic Hermes and Pi lifecycle through HTTPS MCP.
-It checks extraction, vectors, authorized recall, private isolation, replay and restart.
+It checks extraction, vectors, authorized recall, private Agent and user isolation, replay and restart.
 Success is `SMOKE_PASS`, with `quality_evaluated=false` and `baseline_executed=false`.
 Cloud Quality runs the full frozen corpus, scorer and mutation evaluator with the existing thresholds.
 HTTP 200, valid JSON and one search result cannot establish quality PASS.
