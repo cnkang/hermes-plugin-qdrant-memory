@@ -217,7 +217,8 @@ Four generation calls reached the existing 30-second request timeout. This resul
 The [3B hosted attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39573848777) also failed before baseline completion.
 Five model responses were observed, with no provider or recording errors. A background ValueError blocked the lifecycle.
 This is not passing model-quality evidence. The experimental local profile now tests the smaller `qwen3:1.7b` under the same timeouts and quality gates.
-The optional Free Router profile uses remote generation and the local 0.6B embedding model. Its actual result requires a separate main-branch run.
+The optional Free Router profile uses remote generation and the local 0.6B embedding model.
+Its main-branch exploration failed before baseline completion. See the [hosted CI evidence](#hosted-ci-evidence-on-2026-10-21).
 The quality thresholds remain unchanged.
 Setup records Ollama's loaded-model size in `quality-model-resources.json`. This is not peak process memory.
 The 3B attempt reported 2,168,360,795 bytes for generation and 1,237,875,425 bytes for embeddings, with zero GPU memory.

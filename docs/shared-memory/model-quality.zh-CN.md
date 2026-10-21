@@ -213,7 +213,8 @@ Provider 错误和作用域泄漏均为零。这是失败证据，不能作为�
 [3B 托管尝试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39573848777) 也在基线完成前失败。
 观测到五次模型响应，没有 provider 或记录错误。后台 ValueError 阻断了生命周期。
 这不能作为模型质量通过的证据。实验性本地配置现使用更小的 `qwen3:1.7b`，保留相同的超时和质量门禁。
-可选 Free Router 配置使用远程生成及本地 0.6B 嵌入模型。实际结果仍需要单独在 main 上运行。
+可选 Free Router 配置使用远程生成及本地 0.6B 嵌入模型。
+其 main 分支探索在基线完成前失败，详见[托管 CI 证据](#2026-10-21-托管-ci-证据)。
 质量阈值保持不变。
 初始化将 Ollama 报告的已加载模型大小记录在 `quality-model-resources.json` 中。这不是进程内存峰值。
 3B 尝试报告生成模型占 2,168,360,795 字节，嵌入模型占 1,237,875,425 字节，GPU 内存为零。
