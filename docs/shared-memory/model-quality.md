@@ -116,10 +116,12 @@ Its result needs a completed CI run.
 ## Small-model smoke workflow
 
 `owner-model-smoke.yml` runs on relevant pull requests and main changes. It also accepts a manual request.
-It selects only `qwen3:0.6b`, with thinking disabled, and `all-minilm:22m` with 384 embedding dimensions.
-The fixed downloads total about 569 MB, excluding Ollama and dependencies.
-The alternative `qwen3.5:0.8b` default package is about 1.3 GB and includes vision components.
-These package sizes do not measure process memory. The smaller text model is the first smoke candidate.
+It currently tests `qwen3.5:0.8b`, with thinking disabled, and `all-minilm:22m` with 384 embedding dimensions.
+The fixed downloads total about 1.37 GB, excluding Ollama and dependencies.
+The smaller `qwen3:0.6b` package is about 523 MB. It failed both initial smoke attempts with empty extraction.
+The [explicit-preference attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39586687759) did not complete the native capture check.
+The 0.8B candidate uses the same preference cases and validity checks. Its current selection does not imply a passing run.
+Package sizes do not measure process memory. The 0.8B package also contains vision components.
 The workflow uses the shared setup and caches. It requires no API key or self-hosted runner.
 The separate `model-smoke` environment contains no required secrets.
 

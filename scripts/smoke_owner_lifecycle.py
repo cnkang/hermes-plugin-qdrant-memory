@@ -144,6 +144,16 @@ def run_smoke(adapter):
         }
     except Exception as exc:
         exc.smoke_background_failures = recorder.background_failures
+        exc.smoke_observations = {
+            "model_latency": core.latency_summary(recorder.latencies),
+            "observed_provider_models": dict(recorder.provider_models),
+            "provider_http_statuses": dict(recorder.http_statuses),
+            "provider_error_types": dict(recorder.errors),
+            "recording_error_types": dict(recorder.recording_errors),
+            "capture_counts": {
+                row["id"]: len(recorder.extractions.get(row["id"], [])) for row in CASES
+            },
+        }
         raise
     finally:
         llm.close()
@@ -180,6 +190,7 @@ def main():
             report["status"] = "SMOKE_PASS"
     except Exception as exc:
         report["failure_type"] = type(exc).__name__
+        report.update(getattr(exc, "smoke_observations", {}))
         report["background_failures"] = getattr(exc, "smoke_background_failures", [])
         report["failure_stages"] = [
             {"file": Path(frame.filename).name, "line": frame.lineno, "function": frame.name}

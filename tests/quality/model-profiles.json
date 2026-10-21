@@ -6,12 +6,12 @@
   },
   "profiles": {
     "smoke-ollama": {
-      "generation_model": "qwen3:0.6b",
+      "generation_model": "qwen3.5:0.8b",
       "reasoning_effort": "none",
       "embedding_model": "all-minilm:22m",
       "embedding_dimensions": 384,
       "local_models": {
-        "qwen3:0.6b": "7df6b6e09427a769808717c0a93cadc4ae99ed4eb8bf5ca557c90846becea435",
+        "qwen3.5:0.8b": "de63045f29755d4721c09d54c9b45c2dadb644f4fd7d604d4cac90d96049971c",
         "all-minilm:22m": "1b226e2802dbb772b5fc32a58f103ca1804ef7501331012de126ab22f67475ef"
       }
     },

@@ -113,10 +113,12 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 ## 小模型冒烟工作流
 
 `owner-model-smoke.yml` 在相关 pull request 和 main 变更时运行，也可手动触发。
-它只选择关闭思考后的 `qwen3:0.6b`，以及 384 维的 `all-minilm:22m` 嵌入模型。
-固定模型下载合计约 569 MB，不含 Ollama 和依赖。
-备选 `qwen3.5:0.8b` 默认模型包约 1.3 GB，且包含视觉组件。
-这些安装包体积不代表进程内存。较小的文本模型是首个冒烟候选。
+它当前测试关闭思考后的 `qwen3.5:0.8b`，以及 384 维的 `all-minilm:22m` 嵌入模型。
+固定模型下载合计约 1.37 GB，不含 Ollama 和依赖。
+较小的 `qwen3:0.6b` 安装包约 523 MB，但它在前两次冒烟尝试中均返回空提取而失败。
+[显式偏好尝试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39586687759) 未完成原生捕获检查。
+0.8B 候选使用相同的偏好语料和有效性检查。当前被选中不代表已运行通过。
+安装包体积不代表进程内存。0.8B 安装包还包含视觉组件。
 工作流复用相同初始化与缓存，不需要 API Key 或 self-hosted runner。
 独立的 `model-smoke` Environment 不要求任何 Secret。
 
