@@ -62,13 +62,13 @@ CodeRabbit 重审 #69 提出 1 major issue。原 `NativeOwner.events()` 对外�
 | 维护者 Native/Gateway/recall 修复组合 | PASS，34 tests |
 | 新 Native turn/builtin/checkpoint 授权回归组合 | PASS，36 tests；修复前 3 FAIL |
 | 完整 Runtime + 评分门禁基线 | PASS，710 tests；9 SKIPPED；1 条 Embedded payload index 无效提示。此全量结果不冒充后来仅修改验收脚本的重新全量运行 |
-| 后续脚本/评分回归 | PASS，Python 3.11 和 3.14 各 18 tests，评分模块 coverage 90%；两个新增问题修复前 2 FAIL。SDK2 测试环境未安装 pytest-cov，因此覆盖率使用既有 Python 3.14 环境测量 |
+| 历史脚本/评分回归（当时版本） | PASS，Python 3.11 和 3.14 各 18 tests，评分模块 coverage 90%；两个新增问题修复前 2 FAIL。SDK2 测试环境未安装 pytest-cov，因此覆盖率使用既有 Python 3.14 环境测量 |
 | Pi Node 实际 Host/并发/UTF-8 | PASS，11 tests |
 | 最新 Native 代码 Hermes→verified HTTPS→Pi | PASS，1 test，0 skip |
 | Ruff / 格式 / actionlint / diff whitespace | PASS；自定义测试 Runner label 在 actionlint 配置中明确声明，没有忽略检查 |
 | Skill 校验 | PASS，immutable Runtime/MCP preview pin 已同步，提交 `f066ed0` |
 | 真实模型诊断运行 | PASS；重启前后四项质量指标均 1.0，scope leaks/provider failures 为 0，24 次模型调用；64 条检索观测；仅动态 score 不同 |
-| 最终含脚本复审修复的模型运行 | PASS：四项质量指标均 1.0，scope leaks/provider failures/recording errors 为 0，replay/restart 安全，重启新增模型调用 0；24 次真实模型推理、64 条检索观测，全部源码 hash 与当前文件一致 |
+| 历史脚本复审后的模型运行 | PASS：四项质量指标均 1.0，scope leaks/provider failures/recording errors 为 0，replay/restart 安全，重启新增模型调用 0；24 次真实模型推理、64 条检索观测，源码 hash 对应该次运行的文件 |
 | scoped Qdrant Cloud | SKIPPED：没有提供独立测试 scope/collection 凭据；没有使用生产 key 代替 |
 | 真实模型 GitHub Runner、公网 TLS/服务安装、用户 UI | UNVERIFIED，不把本机 loopback TLS 或配置示例当作这些环境的验收 |
 

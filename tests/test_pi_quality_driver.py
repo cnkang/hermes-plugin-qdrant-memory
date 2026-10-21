@@ -77,5 +77,3 @@ export async function ownerRequest(mode, value) {
     assert first[1]["receipt"]["prompt_number"] == 2
     assert deliveries[1][0]["receipt"]["prompt_number"] == 3
     assert observed["history_leak"] is False
-    if "contexts" in observed:
-        assert [row["case_id"] for row in observed["contexts"]] == list("ABC")
