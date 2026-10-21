@@ -116,7 +116,7 @@ Its result needs a completed CI run.
 ## Small-model smoke workflow
 
 `owner-model-smoke.yml` runs on relevant pull requests and main changes. It also accepts a manual request.
-The current smoke candidate selects `qwen3.5:4b`, with thinking disabled, and `all-minilm:22m` with 384 embedding dimensions.
+The default smoke profile selects `qwen3.5:0.8b`, with thinking disabled, and `all-minilm:22m` with 384 embedding dimensions.
 Both model manifests are fixed in the profile. CI requires five independent lifecycle runs before acceptance.
 The smaller `qwen3:0.6b` package is about 523 MB. It failed both initial smoke attempts with empty extraction.
 The [explicit-preference attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39586687759) did not complete the native capture check.
@@ -159,13 +159,22 @@ This result cannot certify the full quality baseline or mutation gates.
 The declarative-v2 comparisons failed with [0.6B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678861759), [0.8B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678867271), and [1.7B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678857488).
 Each stopped during its first lifecycle with empty capture. HTTP 200 responses did not establish capture success.
 The [2B run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39680318405) extracted a native memory but failed Runtime validation of its importance value.
-The Owner blocked the write. The 4B candidate retains the same v2 cases, prompts, embedding model, and gates. Its stability remains unverified.
+The Owner blocked the write. The subsequent 4B candidate retained the same v2 cases, prompts, embedding model, and gates.
 
 The [initial 4B run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39680955844) also failed importance validation before a complete lifecycle.
 These runs predate schema grounding in the Owner adapter.
 The adapter now includes the trusted JSON schema in its system message as well as `response_format`, as recommended in the [Ollama structured output guide](https://docs.ollama.com/capabilities/structured-outputs).
 This changes the effective model prompt. The extraction instructions, cases, schema, and Runtime validation remain intact.
 Earlier quality and smoke results apply to their recorded source fingerprints. New runs must validate this adapter change.
+
+After this adapter fix, the [0.8B comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39682043203) passed all eight checks in each of five independent lifecycles at `cffe602`.
+It made ten generation calls with the expected fixed model identity. Model digests matched, and process cleanup passed.
+Ollama reported 574,074,386 loaded bytes for generation and 49,387,928 for embeddings, with zero GPU bytes.
+These values describe loaded models, not peak process memory.
+The [4B comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39681606697) also passed five lifecycles, but loaded 3,146,734,631 generation bytes.
+The [0.6B comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39681613565) still failed with empty project capture.
+Select 0.8B as the default. Other profiles remain manual options; CI does not run a model matrix.
+The effective prompt changed, so the earlier full OpenRouter quality PASS does not certify the new adapter. Repeat the full quality evaluation on main.
 
 ## Manual quality workflow
 
