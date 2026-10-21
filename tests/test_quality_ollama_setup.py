@@ -32,7 +32,9 @@ def test_cached_executable_cannot_bypass_the_archive_checksum(tmp_path):
     tools = tmp_path / "tools"
     tools.mkdir()
     # The Linux workflow requires GNU checksum options; use coreutils on macOS too.
-    (tools / "sha256sum").symlink_to(shutil.which("gsha256sum") or shutil.which("sha256sum"))
+    checksum_tool = shutil.which("gsha256sum") or shutil.which("sha256sum")
+    assert checksum_tool is not None, "Install GNU coreutils to run the archive integrity contract"
+    (tools / "sha256sum").symlink_to(checksum_tool)
     result = subprocess.run(
         [shutil.which("bash"), str(ROOT / "scripts/start_quality_ollama.sh")],
         cwd=tmp_path,
@@ -49,6 +51,7 @@ def test_cached_executable_cannot_bypass_the_archive_checksum(tmp_path):
     assert result.returncode != 0
     assert not marker.exists()
     assert "checksum" in result.stderr.lower()
+    assert not (root / "ollama.tar.zst").exists()
 
 
 @pytest.mark.parametrize("alive", [False, True])

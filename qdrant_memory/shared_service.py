@@ -492,9 +492,10 @@ def make_server(owner, port):
                 return
             size = int(lengths[0])
             # One extra byte covers the size-limit probe. Never parse or admit
-            # rejected data; the existing socket timeout and worker cap apply.
+            # rejected data; use a short drain timeout and the existing worker cap.
             if 0 < size <= 131073:
                 try:
+                    self.connection.settimeout(1)
                     self.rfile.read(size)
                 except OSError:
                     pass

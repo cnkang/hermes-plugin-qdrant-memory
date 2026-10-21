@@ -106,12 +106,37 @@ class RecordingLLM:
         self.case_ids = {case["user"]: case["id"] for case in cases}
         self.extractions, self.latencies, self.errors = {}, [], Counter()
         self.recording_errors = Counter()
+        self.background_failures = []
         self.lock = threading.Lock()
         self.provider_models, self.http_statuses = Counter(), Counter()
         self.request_lock, self.last_request = threading.Lock(), 0.0
         hooks = getattr(getattr(delegate, "client", None), "event_hooks", None)
         if isinstance(hooks, dict):
             hooks.setdefault("response", []).append(self.observe_response)
+
+    def observe_background_job(self, delegate):
+        """Wrap the actual worker job, retaining only exception types and source stages."""
+
+        def observed(*args, **kwargs):
+            try:
+                return delegate(*args, **kwargs)
+            except Exception as exc:
+                failure = {
+                    "type": type(exc).__name__,
+                    "stages": [
+                        {
+                            "file": Path(frame.filename).name,
+                            "line": frame.lineno,
+                            "function": frame.name,
+                        }
+                        for frame in traceback.extract_tb(exc.__traceback__)[-8:]
+                    ],
+                }
+                with self.lock:
+                    self.background_failures.append(failure)
+                raise
+
+        return observed
 
     def observe_response(self, response):
         """Record public model IDs and status codes, never provider bodies or credentials."""
@@ -141,7 +166,7 @@ class RecordingLLM:
         started = time.monotonic()
         try:
             if self.model_profile["name"] == "openrouter-free":
-                # Keep sequential free-tier requests below 20 requests/minute.
+                # Space request start times by at least 3.1 seconds.
                 # There is no paid fallback or automatic retry after a denial.
                 with self.request_lock:
                     time.sleep(max(0, 3.1 - (time.monotonic() - self.last_request)))
@@ -220,6 +245,7 @@ def start_host(home, policy_path, recorder):
     provider = QdrantMemoryProvider(
         plugin_context=SimpleNamespace(llm=recorder), embedder=embedder, overrides=cfg
     )
+    provider._run_job = recorder.observe_background_job(provider._run_job)
     try:
         provider.initialize("native-0", hermes_home=str(home))
     except BaseException:
@@ -670,6 +696,7 @@ def main():
     finally:
         if llm is not None:
             llm.close()
+    report["background_failures"] = recorder.background_failures if recorder else []
     report["model_latency"] = latency_summary(recorder.latencies if recorder else [])
     report["provider_error_types"] = dict(recorder.errors) if recorder else {}
     report["recording_error_types"] = dict(recorder.recording_errors) if recorder else {}

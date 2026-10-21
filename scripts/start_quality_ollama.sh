@@ -15,7 +15,10 @@ if [ ! -f "$quality_root/ollama.tar.zst" ]; then
     "https://github.com/ollama/ollama/releases/download/v${quality_version}/ollama-linux-amd64.tar.zst"
 fi
 # Verify every restored archive before extracting or executing any of its files.
-echo "$quality_sha  $quality_root/ollama.tar.zst" | sha256sum --check --strict
+if ! echo "$quality_sha  $quality_root/ollama.tar.zst" | sha256sum --check --strict; then
+  rm -f "$quality_root/ollama.tar.zst"
+  exit 1
+fi
 tar --zstd -xf "$quality_root/ollama.tar.zst" -C "$quality_root"
 export OLLAMA_HOST=127.0.0.1:19134
 export OLLAMA_MODELS="$quality_root/models"
