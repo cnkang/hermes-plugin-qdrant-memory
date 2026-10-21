@@ -132,6 +132,12 @@ class OpenRouterSession:
             aliases = {selected, canonical} | {
                 item["id"] for item in catalog if item.get("canonical_slug") == canonical
             }
+            # OpenRouter lists :free as a variant of a base model. Accept its
+            # response ID only after the official free entry binds that family.
+            # Requests still use the exact :free slug and a zero-price ceiling.
+            base = selected.removesuffix(":free")
+            if canonical == base or re.fullmatch(re.escape(base) + r"-\d{8}", canonical):
+                aliases.add(base)
             self.http.allow_model(kind, aliases)
             self.preflight_evidence[kind] = {
                 "requested_model": selected,

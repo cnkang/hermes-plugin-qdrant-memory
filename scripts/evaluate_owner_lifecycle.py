@@ -99,9 +99,12 @@ def model_profile(name, *, generation_model=None, embedding_model=None):
     }
 
 
-def fixed_generation_observed(route, observed):
+def fixed_generation_observed(route, observed, aliases=None):
     """Require actual response identities to match a named route, excluding the free router."""
-    return route != "openrouter/free" and bool(observed) and all(name == route for name in observed)
+    allowed = aliases if aliases is not None else {route}
+    return (
+        route != "openrouter/free" and bool(observed) and all(name in allowed for name in observed)
+    )
 
 
 def select_installed_models(profile, models):
@@ -279,7 +282,12 @@ def start_host(home, policy_path, recorder):
             },
         },
     )
-    embedder = HTTPEmbeddingProvider(embedding_config(cfg), secret_reader=lambda _: None)
+    remote = getattr(recorder, "remote_session", None)
+    embedder = (
+        remote.embedding_provider(embedding_config(cfg))
+        if remote and cfg["embedding"]["provider"] == "openai-compatible"
+        else HTTPEmbeddingProvider(embedding_config(cfg), secret_reader=lambda _: None)
+    )
     provider = QdrantMemoryProvider(
         plugin_context=SimpleNamespace(llm=recorder), embedder=embedder, overrides=cfg
     )
@@ -377,7 +385,7 @@ def pi_capture(adapter, home, rows, url, certificate, token, recall_token):
     """Require actual Pi session hooks and an acknowledged capture for every turn."""
     home.mkdir()
     env = {
-        **os.environ,
+        **{key: value for key, value in os.environ.items() if key != "OPENROUTER_API_KEY"},
         "QDRANT_MEMORY_OWNER_URL": url,
         "QDRANT_MEMORY_CA_FILE": str(certificate),
         "QDRANT_MEMORY_RUNTIME_PYTHON": sys.executable,
@@ -550,6 +558,7 @@ def main():
             "hosted-qwen35",
             "hosted-qwen35-4b",
             "openrouter-free",
+            "openrouter-cloud-quality",
         ),
         default="reference",
         help="Quality model identity; smoke-ollama uses smoke_owner_lifecycle.py instead",
@@ -568,7 +577,8 @@ def main():
     validate_gold(data)
     if args.output.exists():
         raise FileExistsError("Choose a new evaluation output path")
-    llm, recorder = None, None
+    llm, recorder, remote = None, None, None
+    temporary_home = None
     tokens = {key: secrets.token_hex(32) for key in ("NATIVE", "SECOND", "PI", "PROJECT", "READER")}
     report = {
         "status": "FAIL",
@@ -588,6 +598,8 @@ def main():
                 ROOT / "scripts" / "evaluate_owner_lifecycle.py",
                 ROOT / "scripts" / "pi_lifecycle_quality.mjs",
                 ROOT / "tests" / "quality" / "model-profiles.json",
+                ROOT / "scripts" / "quality_openrouter.py",
+                ROOT / "scripts" / "quality_openrouter_http.py",
                 *sorted((ROOT / "scripts").glob("evaluate_owner_mutations.py")),
                 *sorted((ROOT / "qdrant_memory").glob("*.py")),
             ]
@@ -599,11 +611,19 @@ def main():
         if os.environ.get("QM_QUALITY_UNUSED_KEY"):
             raise ValueError("Local quality evaluation refuses supplied API credentials")
         profile = model_profile(args.model_profile)
-        if args.model_profile == "openrouter-free" and not os.environ.get("OPENROUTER_API_KEY"):
-            raise ValueError("Explicit OpenRouter test credential required")
-        with httpx.Client(trust_env=False, timeout=5) as http:
-            models = http.get(profile["ollama_url"] + "/api/tags").json()["models"]
-        report["models"] = select_installed_models(profile, models)
+        if profile["llm"]["base_url"] == OPENROUTER.BASE_URL:
+            if (
+                args.scenarios
+                and args.scenarios.resolve()
+                != (ROOT / "tests/quality/lifecycle-mutations-v1.json").resolve()
+            ):
+                raise ValueError("Cloud evaluation requires the frozen anonymous mutation corpus")
+            remote = OPENROUTER.OpenRouterSession(profile)
+            remote.preflight()
+        if profile["local_models"]:
+            with httpx.Client(trust_env=False, timeout=5) as http:
+                models = http.get(profile["ollama_url"] + "/api/tags").json()["models"]
+            report["models"] = select_installed_models(profile, models)
         report["generation_route"] = profile["llm"]["model"]
         report["model_selection"] = (
             "dynamic-free-router" if profile["llm"]["model"] == "openrouter/free" else "fixed-route"
@@ -616,11 +636,21 @@ def main():
             (args.adapter_root / "integrations" / "pi" / "owner-memory.mjs").read_bytes()
         )
         llm = OwnerLLM(profile["llm"])
+        if remote:
+            remote.attach_llm(llm)
         recorder = RecordingLLM(llm, data["cases"], profile)
+        recorder.remote_session = remote
+        if remote:
+            queries = [row["query"] for row in data["queries"]]
+            queries.extend(row["user"] for row in data["cases"])
+            remote.prefetch_queries(
+                embedding_config(merge(DEFAULTS, {"embedding": profile["embedding"]})), queries
+            )
         from agent.secret_scope import reset_secret_scope, set_secret_scope
 
         with tempfile.TemporaryDirectory(prefix="qm-model-quality-") as directory:
             home = Path(directory).resolve()
+            temporary_home = home
             env = {"QM_QUALITY_" + key: value for key, value in tokens.items()}
             with patch.dict(os.environ, env):
                 scoped = set_secret_scope(env, profile_home=str(home))
@@ -706,6 +736,11 @@ def main():
     except Exception as exc:
         report["status"] = "FAIL"
         report["failure_type"] = type(exc).__name__
+        report["failure_classification"] = getattr(exc, "classification", "lifecycle_failure")
+        if args.model_profile.startswith("openrouter-") and not os.environ.get(
+            "OPENROUTER_API_KEY"
+        ):
+            report["required_secret"] = "OPENROUTER_API_KEY"
         report["failure_location"] = [
             {"file": Path(frame.filename).name, "line": frame.lineno, "function": frame.name}
             for frame in traceback.extract_tb(exc.__traceback__)[-5:]
@@ -737,16 +772,29 @@ def main():
     finally:
         if llm is not None:
             llm.close()
+        if remote is not None:
+            remote.close()
+    report["temporary_data_cleaned"] = temporary_home is None or not temporary_home.exists()
+    if remote:
+        report["openrouter"] = remote.report()
+        if report["status"] == "FAIL":
+            report["failure_classification"] = (
+                report["openrouter"].get("final_failure_classification")
+                or report.get("failure_classification")
+                or "quality_gate"
+            )
     report["background_failures"] = recorder.background_failures if recorder else []
     report["model_latency"] = latency_summary(recorder.latencies if recorder else [])
     report["provider_error_types"] = dict(recorder.errors) if recorder else {}
     report["failed_model_calls"] = dict(recorder.failed_calls) if recorder else {}
     report["recording_error_types"] = dict(recorder.recording_errors) if recorder else {}
     report["observed_provider_models"] = dict(recorder.provider_models) if recorder else {}
-    if args.model_profile == "openrouter-free":
+    if args.model_profile in {"openrouter-free", "openrouter-cloud-quality"}:
         route = report.get("generation_route", "openrouter/free")
         report["fixed_model_observed"] = fixed_generation_observed(
-            route, report["observed_provider_models"]
+            route,
+            report["observed_provider_models"],
+            remote.http.aliases.get("chat") if remote else None,
         )
         if route != "openrouter/free" and not report["fixed_model_observed"]:
             report["status"] = "FAIL"

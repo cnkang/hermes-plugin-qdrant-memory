@@ -48,7 +48,7 @@ def metadata(kind):
     }
 
 
-def prepare(*, change=None, width=3, expected=3, ready=True):
+def prepare(*, change=None, width=3, expected=3, ready=True, response_base=False):
     """Serve public metadata and actual model responses through MockTransport."""
     module = runpy.run_path(str(ROOT / "scripts/quality_openrouter.py"))
     calls = []
@@ -86,7 +86,7 @@ def prepare(*, change=None, width=3, expected=3, ready=True):
             return httpx.Response(
                 200,
                 json={
-                    "model": "fixture/chat-20261022",
+                    "model": "fixture/chat" if response_base else "fixture/chat-20261022",
                     "usage": {"cost": 0},
                     "choices": [{"message": {"content": json.dumps({"ready": ready})}}],
                 },
@@ -95,7 +95,7 @@ def prepare(*, change=None, width=3, expected=3, ready=True):
         return httpx.Response(
             200,
             json={
-                "model": "fixture/embed-20261022",
+                "model": "fixture/embed" if response_base else "fixture/embed-20261022",
                 "usage": {"cost": 0},
                 "data": [{"index": i, "embedding": [1.0] * width} for i in range(2)],
             },
@@ -193,3 +193,28 @@ def test_missing_key_is_a_configuration_error(monkeypatch):
     with pytest.raises(RuntimeError) as error:
         module["OpenRouterSession"](copy.deepcopy(profile()))
     assert error.value.classification == "configuration_error"
+
+
+def test_free_variant_response_base_identity_requires_catalog_family():
+    """The official free variant may report the catalog-bound base model ID."""
+    session, _, _ = prepare(response_base=True)
+    try:
+        session.preflight()
+        assert session.report()["observed_models"]["chat"] == {"fixture/chat": 1}
+    finally:
+        session.close()
+
+
+def test_unrelated_canonical_cannot_authorize_a_stripped_response_identity():
+    """A suffix rule alone must not bypass the selected catalog model family."""
+
+    def change(rows):
+        rows["chat"]["canonical_slug"] = "fixture/unrelated-20261022"
+
+    session, _, _ = prepare(change=change, response_base=True)
+    try:
+        with pytest.raises(RuntimeError) as error:
+            session.preflight()
+        assert error.value.classification == "model_identity_mismatch"
+    finally:
+        session.close()
