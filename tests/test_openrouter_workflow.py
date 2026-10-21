@@ -63,5 +63,9 @@ def test_remote_tiers_do_not_download_ollama_or_local_models():
     steps = workflow()["jobs"]["quality"]["steps"]
     setup = [s for s in steps if s.get("name") == "Install and start isolated Ollama models"][0]
     assert "local-required" in setup["if"]
+    names = {"Cache the fixed Ollama archive", "Cache fixed local model manifests and blobs"}
+    caches = [s for s in steps if s.get("name") in names]
+    assert len(caches) == 2
+    assert all(s["if"] == "steps.model-cache-keys.outputs.local-required == 'true'" for s in caches)
     artifacts = [s for s in steps if "actions/upload-artifact@" in s.get("uses", "")]
     assert artifacts and all(s["if"] == "always()" for s in artifacts)
