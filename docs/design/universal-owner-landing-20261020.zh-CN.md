@@ -100,8 +100,8 @@ Windows 中文语料读取显式使用 UTF-8，cp1252 默认编码模拟回归�
 
 ## 未验证范围
 
-- Cloud 专项凭据验收保持 SKIPPED。
-- 专用模型 CI runner 尚未执行，状态为 UNVERIFIED。
+- [Cloud Owner main 测试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39558088367)已通过 1 项端到端测试，0 跳过，并通过独立集合清理检查。测试使用测试专用 Key；集合级数据库凭据限制仍为 UNVERIFIED。
+- GitHub 托管小模型冒烟已通过。固定免费模型和 Free Router 的完整质量 CI 均已执行，但未完成基线，结果为 FAIL。详见[模型质量指南](../shared-memory/model-quality.zh-CN.md#2026-10-21-托管-ci-证据)。历史本地 reference PASS 不代表这些 CI 通过；独立 self-hosted reference runner 仍为 UNVERIFIED。
 - 公网部署、真实服务安装、完整用户界面验收保持 UNVERIFIED。
 - OAuth/OIDC、交互授权及其他 Harness 自动生命周期不在当前已验证支持范围内。
 - 当前源码预览不自动升级既有数据，不执行生产迁移。

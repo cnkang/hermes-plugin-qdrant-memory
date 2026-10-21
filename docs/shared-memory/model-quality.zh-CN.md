@@ -328,7 +328,7 @@ Pi 质量驱动器在生命周期上下文 hook 执行后，通过 `streamSimple
 手动工作流要求这两个字段及 mutation `PASS` 才能验收。
 它不接受 `DIAGNOSTIC_PASS` 作为完整质量结果。
 
-手动工作流还测试同一轮输入替换两个不同项目事实的情况。
+reference 配置还测试同一轮输入替换两个不同项目事实的情况。
 它分别使用确定性接口和已安装的本地模型，运行精确记录 ID 更新契约。
 模型探针使用关闭思考模式的 Ollama 原生测试 API，不改变生产模型路由。
 工作流拒绝跳过模型探针，并保存其 JUnit 结果。
@@ -348,3 +348,26 @@ Pi 质量驱动器在生命周期上下文 hook 执行后，通过 `streamSimple
 旧的持久候选若缺少该标志或标志为假，继续采用此前复核策略。
 Embedding 和存储的 payload schema 保持不变。一次显式替换可能需要最多十次关系模型调用。
 报告实测延迟时必须包含这些调用。
+
+## 2026-10-21 托管 CI 证据
+
+这些结果仅描述对应运行，不代表生产环境验收。
+
+| 运行 | 结果 | 实测边界 |
+|---|---|---|
+| [Qwen3.5 0.8B 冒烟](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39613998288) | SMOKE_PASS | 八项功能检查全部通过。本次没有评估完整模型质量。 |
+| [固定 Nemotron 免费模型](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39617795232) | FAIL | 首次请求返回 HTTP 404，完整基线未执行。 |
+| [固定 Dots 免费模型](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39618414645) | FAIL | 十次请求返回 HTTP 200，且免费模型 ID 与所选 ID 完全一致。下一次请求返回 HTTP 400，完整基线未完成。 |
+| [Free Router 探索](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39619046518) | FAIL | 三次请求返回 HTTP 200，涉及两个模型。下一次请求返回 HTTP 404，完整基线未完成。 |
+
+Dots 运行选择了 `dots-studio/dots-3-note-preview:free`。
+其 HTTP 400 响应的精确原因仍未验证。
+Free Router 运行实际观察到 `liquid/lfm-2.5-2.6b:free` 和 `dots-studio/dots-3-note-preview:free`。
+每次已完成的外部运行均停止了测试自有的 Ollama 进程。
+这些运行保留严格输出校验、TLS 检查、冻结语料和质量阈值。
+它们使用免费路由，没有付费回退。
+
+历史[本地 reference 证据](owner-model-stack-evidence.json)记录了 Qwen3 8B 与 Qwen3 Embedding 4B 的完整 PASS。
+该结果仅适用于记录中的源码和模型 hash，不认证当前托管 CI 源码或免费路由。
+模型目录声明支持某项能力，不保证端点对每次请求都可用。
+功能冒烟验收与完整质量验收必须分开。
