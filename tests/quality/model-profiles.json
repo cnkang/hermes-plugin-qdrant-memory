@@ -6,12 +6,12 @@
   },
   "profiles": {
     "smoke-ollama": {
-      "generation_model": "qwen3.5:0.8b",
+      "generation_model": "qwen3:1.7b",
       "reasoning_effort": "none",
       "embedding_model": "all-minilm:22m",
       "embedding_dimensions": 384,
       "local_models": {
-        "qwen3.5:0.8b": "de63045f29755d4721c09d54c9b45c2dadb644f4fd7d604d4cac90d96049971c",
+        "qwen3:1.7b": "8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7",
         "all-minilm:22m": "1b226e2802dbb772b5fc32a58f103ca1804ef7501331012de126ab22f67475ef"
       }
     },
@@ -52,7 +52,7 @@
       }
     },
     "openrouter-free": {
-      "generation_model": "openrouter/free",
+      "generation_model": "liquid/lfm-2.5-2.6b:free",
       "embedding_model": "qwen3-embedding:0.6b",
       "embedding_dimensions": 1024,
       "local_models": {

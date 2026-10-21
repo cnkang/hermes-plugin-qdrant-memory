@@ -48,3 +48,55 @@ def test_smoke_cli_redacts_failure_messages(tmp_path, monkeypatch, capsys):
     assert module["main"]() == 1
     assert "synthetic-private-key" not in output.read_text() + capsys.readouterr().out
     assert json.loads(output.read_text())["failure_type"] == "ValueError"
+
+
+@pytest.mark.parametrize("failure", [None, "empty", "exception"])
+def test_repeated_smoke_requires_every_fresh_lifecycle(tmp_path, monkeypatch, failure):
+    """A failed repetition stops the test; a later success cannot hide it."""
+    module = runpy.run_path(str(ROOT / "scripts/smoke_owner_lifecycle.py"))
+    output = tmp_path / "smoke.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["smoke", "--adapter-root", str(tmp_path), "--output", str(output), "--repetitions", "5"],
+    )
+    calls = []
+
+    def attempt(_adapter):
+        calls.append(True)
+        if len(calls) == 2 and failure == "exception":
+            raise RuntimeError("synthetic-private-key")
+        checks = {name: True for name in module["CHECKS"]}
+        if len(calls) == 2 and failure == "empty":
+            checks["pi_capture"] = False
+        return {"checks": checks}
+
+    monkeypatch.setitem(module["main"].__globals__, "run_smoke", attempt)
+    assert module["main"]() == (1 if failure else 0)
+    report = json.loads(output.read_text())
+    assert len(calls) == (2 if failure else 5)
+    assert report["requested_repetitions"] == 5
+    assert len(report["runs"]) == (1 if failure == "exception" else len(calls))
+    assert report["status"] == ("FAIL" if failure else "SMOKE_PASS")
+    assert report["quality_evaluated"] is False
+    assert "synthetic-private-key" not in output.read_text()
+
+
+@pytest.mark.parametrize("repetitions", ["0", "6"])
+def test_smoke_repetitions_are_bounded(tmp_path, monkeypatch, repetitions):
+    """Reject an invalid repetition budget before starting a model or Owner."""
+    module = runpy.run_path(str(ROOT / "scripts/smoke_owner_lifecycle.py"))
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "smoke",
+            "--adapter-root",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "out.json"),
+            "--repetitions",
+            repetitions,
+        ],
+    )
+    with pytest.raises(SystemExit) as caught:
+        module["main"]()
+    assert caught.value.code == 2

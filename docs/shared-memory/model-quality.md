@@ -116,8 +116,8 @@ Its result needs a completed CI run.
 ## Small-model smoke workflow
 
 `owner-model-smoke.yml` runs on relevant pull requests and main changes. It also accepts a manual request.
-It currently tests `qwen3.5:0.8b`, with thinking disabled, and `all-minilm:22m` with 384 embedding dimensions.
-The fixed downloads total about 1.37 GB, excluding Ollama and dependencies.
+The current smoke profile selects `qwen3:1.7b`, with thinking disabled, and `all-minilm:22m` with 384 embedding dimensions.
+Both model manifests are fixed in the profile. CI requires five independent lifecycle runs before acceptance.
 The smaller `qwen3:0.6b` package is about 523 MB. It failed both initial smoke attempts with empty extraction.
 The [explicit-preference attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39586687759) did not complete the native capture check.
 The 0.8B model uses the same preference cases and validity checks as the 0.6B attempt.
@@ -126,6 +126,10 @@ The [first 0.8B run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actio
 It made two generation requests, with observed p50 6.00 seconds and p95 6.31 seconds.
 Ollama reported 574,074,386 loaded bytes for generation and 49,387,928 for embeddings, with zero GPU memory.
 These are loaded-model observations from one smoke run, not peak process memory or a quality benchmark.
+The [later 0.8B run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39624059913) failed because Pi project capture returned no memory.
+Both generation requests returned HTTP 200. The two earlier passes do not establish repeat stability.
+The earlier 0.8B pair required about 1.37 GB of model downloads.
+The 1.7B candidate retains the same two preference cases and validity checks.
 The workflow uses the shared setup and caches. It requires no API key or self-hosted runner.
 The separate `model-smoke` environment contains no required secrets.
 
@@ -135,6 +139,9 @@ Named-subject extraction, multilingual meaning, and supersession remain in the f
 It checks authorized recall, private isolation, replay, and durable restart without new generation calls.
 It queries the model's captured text to check the storage round trip. It does not score semantic accuracy.
 Empty captures, provider failures, invalid payloads, missing observations, or failed checks produce FAIL.
+Each repetition uses new Owner data, device credentials, and host state. The Ollama process and fixed weights remain warm.
+Any failed repetition stops the run. A later success cannot replace that failure.
+The report retains each completed repetition in `runs`; `requested_repetitions` records the required count.
 Success is `SMOKE_PASS`, with `quality_evaluated=false` and `baseline_executed=false`.
 This result cannot certify the full quality baseline or mutation gates.
 
@@ -147,7 +154,7 @@ Select one of these profiles:
 
 | Profile | Runner | Generation | Embeddings |
 | --- | --- | --- | --- |
-| `openrouter-free` (default quality) | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`, 1024 dimensions |
+| `openrouter-free` (default quality) | GitHub `ubuntu-24.04` | OpenRouter `liquid/lfm-2.5-2.6b:free` | `qwen3-embedding:0.6b`, 1024 dimensions |
 | `hosted-ollama` (optional comparison) | GitHub `ubuntu-24.04` | `qwen3:1.7b` | The same local 0.6B model |
 | `hosted-qwen35` (experimental) | GitHub `ubuntu-24.04` | `qwen3.5:2b` | The same local 0.6B model |
 | `hosted-qwen35-4b` (experimental) | GitHub `ubuntu-24.04` | `qwen3.5:4b` | The same local 0.6B model |
@@ -182,7 +189,8 @@ Use synthetic test data only. OpenRouter receives the synthetic generation promp
 
 For a fixed quality model, set the manual `generation_model` input to an explicit model ID ending in `:free`.
 You can also set `OPENROUTER_QUALITY_MODEL` as an Environment variable or Secret. Prefer a variable for this public model name.
-The manual input takes precedence, then the variable, then the Secret. An empty selection retains `openrouter/free`.
+The manual input takes precedence, then the variable, then the Secret. An empty selection uses the fixed Liquid free model.
+Select `openrouter/free` explicitly for dynamic exploration.
 Paid model IDs and malformed values fail before provider requests. There is no model fallback.
 The Owner requests `provider.require_parameters=true` so OpenRouter must select an endpoint that supports the requested structured output parameters.
 The existing Owner LLM adapter accepts the optional boolean `provider_require_parameters`; other profiles omit it.
@@ -233,12 +241,12 @@ The experimental 1.7B profile now explicitly requests `reasoning_effort: "none"`
 Ollama documents this as the [OpenAI-compatible control to disable thinking](https://docs.ollama.com/api/openai-compatibility).
 Reports record this setting. The 30-second timeout, strict output validation, and quality thresholds remain unchanged.
 The Owner LLM adapter accepts optional `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` values when the selected provider supports them.
-When omitted, the request keeps the provider default. Reference and Free Router profiles omit this option.
+When omitted, the request keeps the provider default. Reference and OpenRouter profiles omit this option.
 
 The [1.7B run with thinking disabled](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39580559444) completed the baseline but failed the quality gates.
 All 29 model requests succeeded. Model-call p50 was 1.14 seconds and p95 was 4.37 seconds.
 Precision was 1.0, but positive-case recall and Recall@5 were 0.375. Mutation checks also failed.
-Faster valid responses alone do not qualify this model as the default.
+Faster valid responses alone do not qualify this model as the default quality model.
 The next hosted comparison uses `qwen3.5:2b`. Test `qwen3.5:4b` only if the 2B candidate does not pass.
 
 The [2B comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39581374057) failed before baseline completion.
@@ -361,9 +369,11 @@ These results describe the recorded runs. They do not establish production accep
 | Run | Result | Observed limit |
 |---|---|---|
 | [Qwen3.5 0.8B smoke](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39613998288) | SMOKE_PASS | All eight functional checks passed. This run did not evaluate full model quality. |
+| [Later Qwen3.5 0.8B smoke](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39624059913) | FAIL | Both requests returned HTTP 200, but Pi project capture returned no memory. |
 | [Fixed Nemotron free model](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39617795232) | FAIL | The first request returned HTTP 404. The full baseline did not run. |
 | [Fixed Dots free model](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39618414645) | FAIL | Ten requests returned HTTP 200 with the exact selected free model ID. The next request returned HTTP 400. The full baseline did not complete. |
 | [Free Router exploration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39619046518) | FAIL | Three requests returned HTTP 200 across two models. The next request returned HTTP 404. The full baseline did not complete. |
+| [Fixed Liquid free model](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39624008695) | PASS | The full baseline, mutation checks, and context checks passed. All 29 responses matched the selected free model ID. |
 
 The Dots run selected `dots-studio/dots-3-note-preview:free`.
 The exact cause of its HTTP 400 response remains unverified.
@@ -371,6 +381,11 @@ Later reports use `failed_model_calls` to identify failed extraction cases by th
 Relation failures use `relation`; unknown calls use `other` or `extract/unattributed`.
 These counters do not contain raw input, response bodies, or exception messages.
 The Free Router run observed `liquid/lfm-2.5-2.6b:free` and `dots-studio/dots-3-note-preview:free`.
+The fixed Liquid run used `liquid/lfm-2.5-2.6b:free` on Runtime `0b1b05289eae3731af30e1c38c427aec7c6ac635`.
+It completed 24 baseline turns, 32 queries, and 11 mutation checks.
+Precision was 1.0. Positive-case recall, Recall@5, and MRR were 0.9375.
+Scope leaks and provider failures were zero. Restart made no new generation calls.
+This records a passing run, not guaranteed endpoint availability or a remote weight checksum.
 Each completed external run stopped its test-owned Ollama process.
 The runs retained strict output validation, TLS checks, the frozen dataset, and the quality thresholds.
 They used free routes without a paid fallback.

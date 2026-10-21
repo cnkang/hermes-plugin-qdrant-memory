@@ -25,7 +25,7 @@ def runner():
 def test_smoke_profile_uses_small_fixed_local_models():
     """Smoke does not require external credentials or the quality embedding model."""
     profile = runner()["model_profile"]("smoke-ollama")
-    assert profile["llm"]["model"] == "qwen3.5:0.8b"
+    assert profile["llm"]["model"] == "qwen3:1.7b"
     assert profile["llm"]["reasoning_effort"] == "none"
     assert profile["embedding"]["model"] == "all-minilm:22m"
     assert profile["embedding"]["dimensions"] == 384
@@ -73,11 +73,11 @@ def test_qwen35_comparison_keeps_the_same_embedding_and_generation_budget(name, 
     assert len(candidate["local_models"]) == 2
 
 
-def test_free_router_has_no_paid_fallback_and_only_local_embeddings():
+def test_default_free_quality_model_has_no_paid_fallback_and_only_local_embeddings():
     """External generation is explicit; the embedding model stays on the runner."""
     module = runner()
     profile = module["model_profile"]("openrouter-free")
-    assert profile["llm"]["model"] == "openrouter/free"
+    assert profile["llm"]["model"] == "liquid/lfm-2.5-2.6b:free"
     assert profile["llm"]["base_url"] == "https://openrouter.ai/api/v1"
     assert profile["llm"]["api_key_env"] == "OPENROUTER_API_KEY"
     assert list(profile["local_models"]) == ["qwen3-embedding:0.6b"]
@@ -92,7 +92,7 @@ def test_openrouter_quality_route_can_select_an_explicit_free_model(monkeypatch,
     monkeypatch.setenv("OPENROUTER_QUALITY_MODEL", model)
     profile = runner()["model_profile"]("openrouter-free")
     assert profile["llm"]["model"] == model
-    assert runner()["model_profile"]("smoke-ollama")["llm"]["model"] == "qwen3.5:0.8b"
+    assert runner()["model_profile"]("smoke-ollama")["llm"]["model"] == "qwen3:1.7b"
 
 
 @pytest.mark.parametrize("model", ["openai/gpt-4.1", "https://untrusted.invalid", "x:free\nsecret"])

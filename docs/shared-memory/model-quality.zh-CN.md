@@ -113,8 +113,8 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 ## 小模型冒烟工作流
 
 `owner-model-smoke.yml` 在相关 pull request 和 main 变更时运行，也可手动触发。
-它当前测试关闭思考后的 `qwen3.5:0.8b`，以及 384 维的 `all-minilm:22m` 嵌入模型。
-固定模型下载合计约 1.37 GB，不含 Ollama 和依赖。
+当前冒烟配置选择关闭思考后的 `qwen3:1.7b`，以及 384 维的 `all-minilm:22m` 嵌入模型。
+两个模型清单均固定在配置中。CI 要求五次独立生命周期运行全部通过后才能验收。
 较小的 `qwen3:0.6b` 安装包约 523 MB，但它在前两次冒烟尝试中均返回空提取而失败。
 [显式偏好尝试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39586687759) 未完成原生捕获检查。
 0.8B 模型使用与 0.6B 尝试相同的偏好语料和有效性检查。
@@ -123,6 +123,10 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 它发起两次生成请求，观测 p50 为 6.00 秒，p95 为 6.31 秒。
 Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,928 字节，GPU 内存为零。
 这些是一次冒烟运行的模型加载观测，不是进程内存峰值或质量基准。
+[后续 0.8B 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39624059913) 因 Pi 项目捕获未返回记忆而失败。
+两次生成请求均返回 HTTP 200。此前两次通过不能证明重复运行稳定性。
+此前 0.8B 组合的模型下载合计约 1.37 GB。
+1.7B 候选保留相同的两条偏好语料和有效性检查。
 工作流复用相同初始化与缓存，不需要 API Key 或 self-hosted runner。
 独立的 `model-smoke` Environment 不要求任何 Secret。
 
@@ -132,6 +136,9 @@ Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,9
 它检查授权召回、私有隔离、重放，以及不新增生成调用的持久化重启。
 它查询模型已捕获的文本来检查存储往返，不评估语义准确率。
 空捕获、provider 失败、无效 payload、缺少观测或检查失败均产生 FAIL。
+每次重复使用全新的 Owner 数据、设备凭据和宿主状态。Ollama 进程和固定权重保持预热。
+任何一次重复失败都会停止运行，后续成功不能替代该失败。
+报告在 `runs` 中保留每次已完成的重复，`requested_repetitions` 记录所需次数。
 成功仅标记为 `SMOKE_PASS`，并设置 `quality_evaluated=false`、`baseline_executed=false`。
 该结果不能认证完整质量基线或 mutation 门禁。
 
@@ -143,7 +150,7 @@ Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,9
 
 | 配置 | Runner | 生成 | 向量化 |
 | --- | --- | --- | --- |
-| `openrouter-free`（默认质量） | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`，1024 维 |
+| `openrouter-free`（默认质量） | GitHub `ubuntu-24.04` | OpenRouter `liquid/lfm-2.5-2.6b:free` | `qwen3-embedding:0.6b`，1024 维 |
 | `hosted-ollama`（可选对比） | GitHub `ubuntu-24.04` | `qwen3:1.7b` | 同一个本地 0.6B 模型 |
 | `hosted-qwen35`（实验性） | GitHub `ubuntu-24.04` | `qwen3.5:2b` | 同一个本地 0.6B 模型 |
 | `hosted-qwen35-4b`（实验性） | GitHub `ubuntu-24.04` | `qwen3.5:4b` | 同一个本地 0.6B 模型 |
@@ -178,7 +185,8 @@ OpenRouter 配置要求 GitHub Environment `model-quality` 中包含测试 Secre
 
 如需固定质量模型，将手动输入 `generation_model` 设为以 `:free` 结尾的明确模型 ID。
 也可将 `OPENROUTER_QUALITY_MODEL` 配置为 Environment Variable 或 Secret。该公开模型名称优先使用 Variable。
-优先级为手动输入、Variable、Secret。选择为空时保留 `openrouter/free`。
+优先级为手动输入、Variable、Secret。选择为空时使用固定的 Liquid 免费模型。
+需要动态探索时，显式选择 `openrouter/free`。
 付费模型 ID 与格式错误值会在 provider 请求前失败，不设模型回退。
 Owner 请求 `provider.require_parameters=true`，要求 OpenRouter 选择支持所请求结构化输出参数的端点。
 现有 Owner LLM 适配器接受可选布尔值 `provider_require_parameters`；其他配置省略该值。
@@ -229,12 +237,12 @@ Ollama 报告生成模型加载 1,886,629,395 字节，嵌入模型加载 1,237,
 Ollama 将其列为[关闭思考模式的 OpenAI 兼容控制](https://docs.ollama.com/api/openai-compatibility)。
 报告记录此设置。30 秒超时、严格输出验证和质量阈值保持不变。
 当所选 provider 支持时，Owner LLM 适配器接受可选值 `none`、`minimal`、`low`、`medium`、`high` 或 `xhigh`。
-省略此选项时，请求保留 provider 默认行为。Reference 和 Free Router 配置省略此选项。
+省略此选项时，请求保留 provider 默认行为。Reference 和 OpenRouter 配置省略此选项。
 
 [关闭思考后的 1.7B 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39580559444) 完成了基线，但质量门禁失败。
 全部 29 次模型请求成功。模型调用 p50 为 1.14 秒，p95 为 4.37 秒。
 Precision 为 1.0，但正例召回率和 Recall@5 均为 0.375。Mutation 检查也失败。
-仅有更快的有效响应，不能使该模型成为合格的默认模型。
+仅有更快的有效响应，不能使该模型成为合格的默认质量模型。
 下一次托管对比使用 `qwen3.5:2b`。仅在 2B 候选未通过时测试 `qwen3.5:4b`。
 
 [2B 对比](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39581374057) 在基线完成前失败。
@@ -357,9 +365,11 @@ Embedding 和存储的 payload schema 保持不变。一次显式替换可能需
 | 运行 | 结果 | 实测边界 |
 |---|---|---|
 | [Qwen3.5 0.8B 冒烟](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39613998288) | SMOKE_PASS | 八项功能检查全部通过。本次没有评估完整模型质量。 |
+| [后续 Qwen3.5 0.8B 冒烟](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39624059913) | FAIL | 两次请求均返回 HTTP 200，但 Pi 项目捕获未返回记忆。 |
 | [固定 Nemotron 免费模型](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39617795232) | FAIL | 首次请求返回 HTTP 404，完整基线未执行。 |
 | [固定 Dots 免费模型](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39618414645) | FAIL | 十次请求返回 HTTP 200，且免费模型 ID 与所选 ID 完全一致。下一次请求返回 HTTP 400，完整基线未完成。 |
 | [Free Router 探索](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39619046518) | FAIL | 三次请求返回 HTTP 200，涉及两个模型。下一次请求返回 HTTP 404，完整基线未完成。 |
+| [固定 Liquid 免费模型](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39624008695) | PASS | 完整基线、mutation 检查及上下文检查通过。全部 29 次响应均匹配所选免费模型 ID。 |
 
 Dots 运行选择了 `dots-studio/dots-3-note-preview:free`。
 其 HTTP 400 响应的精确原因仍未验证。
@@ -367,6 +377,11 @@ Dots 运行选择了 `dots-studio/dots-3-note-preview:free`。
 关系判断失败记为 `relation`；未知调用记为 `other` 或 `extract/unattributed`。
 这些计数不包含原始输入、响应正文或异常消息。
 Free Router 运行实际观察到 `liquid/lfm-2.5-2.6b:free` 和 `dots-studio/dots-3-note-preview:free`。
+固定 Liquid 运行在 Runtime `0b1b05289eae3731af30e1c38c427aec7c6ac635` 上使用 `liquid/lfm-2.5-2.6b:free`。
+它完成了 24 轮基线、32 个查询和 11 项 mutation 检查。
+Precision 为 1.0，正例召回率、Recall@5 和 MRR 均为 0.9375。
+作用域泄漏和 provider 失败均为零，重启未新增生成调用。
+该记录说明一次运行通过，不保证端点始终可用，也不提供远程权重校验和。
 每次已完成的外部运行均停止了测试自有的 Ollama 进程。
 这些运行保留严格输出校验、TLS 检查、冻结语料和质量阈值。
 它们使用免费路由，没有付费回退。

@@ -164,6 +164,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adapter-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--repetitions", type=int, choices=range(1, 6), default=1)
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError("Choose a new smoke output path")
@@ -173,6 +174,8 @@ def main():
         "model_profile": "smoke-ollama",
         "baseline_executed": False,
         "quality_evaluated": False,
+        "requested_repetitions": args.repetitions,
+        "runs": [],
         "source_sha256": {
             str(path.relative_to(ROOT)): core.digest(path.read_bytes())
             for path in (
@@ -183,11 +186,17 @@ def main():
         },
     }
     try:
-        evidence = run_smoke(args.adapter_root.resolve())
-        report.update(evidence)
-        checks = evidence["checks"]
-        if set(checks) == CHECKS and all(value is True for value in checks.values()):
+        # Check fresh Owner lifecycles and stop at the first failure.
+        for _ in range(args.repetitions):
+            evidence = run_smoke(args.adapter_root.resolve())
+            report["runs"].append(evidence)
+            checks = evidence["checks"]
+            if set(checks) != CHECKS or not all(value is True for value in checks.values()):
+                break
+        else:
             report["status"] = "SMOKE_PASS"
+        if args.repetitions == 1 and report["runs"]:
+            report.update(report["runs"][0])
     except Exception as exc:
         report["failure_type"] = type(exc).__name__
         report.update(getattr(exc, "smoke_observations", {}))
