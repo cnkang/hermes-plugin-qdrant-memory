@@ -13,6 +13,7 @@
     },
     "hosted-ollama": {
       "generation_model": "qwen3:1.7b",
+      "reasoning_effort": "none",
       "embedding_model": "qwen3-embedding:0.6b",
       "embedding_dimensions": 1024,
       "local_models": {

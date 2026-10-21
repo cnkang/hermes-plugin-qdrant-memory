@@ -170,6 +170,15 @@ Provider 错误和作用域泄漏均为零。这是失败证据，不能作为�
 当前运行缓存已校验的安装包并重新解压，缓存的可执行文件不能绕过安装包验证。
 1.7B 模型使用 [Apache License 2.0](https://ollama.com/library/qwen3:1.7b)；CI 仅下载进行评估，不在软件包中分发权重。
 
+[首次 1.7B 尝试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39578556397) 使用 provider 默认思考行为，在基线完成前失败。
+观测到 27 次成功响应和 5 次 30 秒读取超时。模型调用 p50 为 10.74 秒，p95 为 30.03 秒。
+Ollama 报告生成模型加载 1,886,629,395 字节，嵌入模型加载 1,237,875,425 字节，GPU 内存为零。
+实验性 1.7B 配置现通过现有 Owner LLM 适配器显式请求 `reasoning_effort: "none"`。
+Ollama 将其列为[关闭思考模式的 OpenAI 兼容控制](https://docs.ollama.com/api/openai-compatibility)。
+报告记录此设置。30 秒超时、严格输出验证和质量阈值保持不变。
+当所选 provider 支持时，Owner LLM 适配器接受可选值 `none`、`minimal`、`low`、`medium`、`high` 或 `xhigh`。
+省略此选项时，请求保留 provider 默认行为。Reference 和 Free Router 配置省略此选项。
+
 ### 容器替代方案
 
 官方 [Ollama 容器](https://docs.ollama.com/docker) 可以隔离安装依赖。

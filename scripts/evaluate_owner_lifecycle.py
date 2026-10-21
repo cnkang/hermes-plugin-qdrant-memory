@@ -70,6 +70,11 @@ def model_profile(name):
             "base_url": "https://openrouter.ai/api/v1" if external else local + "/v1",
             "max_output_tokens": 2048,
             "api_key_env": "OPENROUTER_API_KEY" if external else "QM_QUALITY_UNUSED_KEY",
+            **(
+                {"reasoning_effort": selected["reasoning_effort"]}
+                if "reasoning_effort" in selected
+                else {}
+            ),
         },
     }
 
@@ -530,6 +535,9 @@ def main():
             models = http.get(profile["ollama_url"] + "/api/tags").json()["models"]
         report["models"] = select_installed_models(profile, models)
         report["generation_route"] = profile["llm"]["model"]
+        report["generation_reasoning_effort"] = profile["llm"].get(
+            "reasoning_effort", "provider-default"
+        )
         report["embedding_dimensions"] = profile["embedding"]["dimensions"]
         report["pi_extension_sha256"] = digest(
             (args.adapter_root / "integrations" / "pi" / "owner-memory.mjs").read_bytes()

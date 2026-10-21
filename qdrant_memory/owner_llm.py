@@ -23,6 +23,12 @@ class OwnerLLM:
             or not 1 <= self.max_output_tokens <= 8192
         ):
             raise ValueError("Owner output budget must be an integer between 1 and 8192")
+        self.reasoning_effort = cfg.get("reasoning_effort")
+        if self.reasoning_effort is not None and (
+            not isinstance(self.reasoning_effort, str)
+            or self.reasoning_effort not in {"none", "minimal", "low", "medium", "high", "xhigh"}
+        ):
+            raise ValueError("Unsupported Owner reasoning effort")
         self.url = cfg.get("base_url", "").rstrip("/") + "/chat/completions"
         key = os.environ.get(cfg.get("api_key_env", "QDRANT_MEMORY_LLM_API_KEY"))
         validate_url(self.url, api_key=key, require_tls=True)
@@ -41,22 +47,22 @@ class OwnerLLM:
         """Return structured output to the existing Extractor validation pipeline."""
         import json
 
-        response = self.client.post(
-            self.url,
-            json={
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": instructions},
-                    {"role": "user", "content": json.dumps(input, ensure_ascii=False)},
-                ],
-                "temperature": 0,
-                "max_tokens": self.max_output_tokens,
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {"name": "qdrant_memory", "strict": True, "schema": json_schema},
-                },
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": json.dumps(input, ensure_ascii=False)},
+            ],
+            "temperature": 0,
+            "max_tokens": self.max_output_tokens,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "qdrant_memory", "strict": True, "schema": json_schema},
             },
-        )
+        }
+        if self.reasoning_effort is not None:
+            body["reasoning_effort"] = self.reasoning_effort
+        response = self.client.post(self.url, json=body)
         if response.status_code != 200:
             raise RuntimeError("Owner extraction provider request failed")
         choice = response.json()["choices"][0]
