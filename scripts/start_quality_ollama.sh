@@ -61,4 +61,17 @@ with httpx.Client(trust_env=False, timeout=30) as client:
                           ("/api/generate", {"model": name, "prompt": "Hi", "stream": False,
                                              "options": {"num_predict": 1}}))
         client.post(profile["ollama_url"] + route, json=payload, timeout=300).raise_for_status()
+    loaded = client.get(profile["ollama_url"] + "/api/ps")
+    loaded.raise_for_status()
+    # Ollama reports loaded-model size; this is not a peak process RSS measurement.
+    resources = {
+        "ollama_version": version.json()["version"],
+        "loaded_models": [
+            {key: row.get(key) for key in ("name", "size", "size_vram", "context_length")}
+            for row in loaded.json()["models"] if row["name"] in profile["local_models"]
+        ],
+    }
+    print(json.dumps(resources))
+    with open(os.path.join(os.environ["RUNNER_TEMP"], "quality-model-resources.json"), "x") as output:
+        json.dump(resources, output, indent=2)
 PY

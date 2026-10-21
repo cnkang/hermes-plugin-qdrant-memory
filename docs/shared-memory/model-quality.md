@@ -122,7 +122,7 @@ Select one of these profiles:
 
 | Profile | Runner | Generation | Embeddings |
 | --- | --- | --- | --- |
-| `hosted-ollama` (default) | GitHub `ubuntu-24.04` | `qwen3:8b` | `qwen3-embedding:0.6b`, 1024 dimensions |
+| `hosted-ollama` (default) | GitHub `ubuntu-24.04` | `qwen2.5:3b` | `qwen3-embedding:0.6b`, 1024 dimensions |
 | `openrouter-free` | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | The same local 0.6B model |
 | `reference` | Disposable Linux runner with `qdrant-memory-models` label | Installed `qwen3:8b` | Installed `qwen3-embedding:4b`, 2560 dimensions |
 
@@ -159,7 +159,22 @@ Workflow configuration alone does not prove execution. Record the run URL and ac
 The [initial hosted run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) used `qwen3:4b-instruct-2507-q4_K_M` and failed.
 Precision was 1.0, but positive-case recall and Recall@5 were 0.4375. Mutation checks also failed.
 Provider errors and scope leaks were zero. This is failure evidence, not acceptance evidence.
-The hosted profile now uses the reference generation model with the smaller embedding model. The quality thresholds remain unchanged.
+The [8B hosted attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39572169059) failed before baseline completion.
+Four generation calls reached the existing 30-second request timeout. This result does not prove a memory shortage.
+The hosted profile now tests `qwen2.5:3b` with the smaller embedding model. The quality thresholds remain unchanged.
+Setup records Ollama's loaded-model size in `quality-model-resources.json`. This is not peak process memory.
+The 3B model uses the [Qwen Research License](https://ollama.com/library/qwen2.5:3b); CI downloads it for evaluation and does not bundle its weights.
+
+### Container alternative
+
+An official [Ollama container](https://docs.ollama.com/docker) can isolate installation dependencies.
+It does not add RAM or CPU resources, improve extraction quality, or remove request timeouts.
+For a container lane, fix the image digest, start the server before pulling models, and poll the API with a deadline.
+Bind the port to loopback, cache a mounted model directory across runs, and remove the test container in an always-run step.
+A Docker volume alone does not persist across fresh hosted runners.
+Do not use an unbounded `docker logs --follow` command as a readiness check.
+The current fixed-binary lane already checks readiness, version, model digests, cleanup, and cache restore.
+Both hosted attempts completed setup. Their observed failures do not justify a second installation path.
 
 Ordinary test CI also runs the scorer unit tests.
 
