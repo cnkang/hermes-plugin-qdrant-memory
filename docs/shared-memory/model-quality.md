@@ -125,9 +125,10 @@ Select one of these profiles:
 | `openrouter-free` (default) | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`, 1024 dimensions |
 | `hosted-ollama` (experimental) | GitHub `ubuntu-24.04` | `qwen3:1.7b` | The same local 0.6B model |
 | `hosted-qwen35` (experimental) | GitHub `ubuntu-24.04` | `qwen3.5:2b` | The same local 0.6B model |
+| `hosted-qwen35-4b` (experimental) | GitHub `ubuntu-24.04` | `qwen3.5:4b` | The same local 0.6B model |
 | `reference` | Disposable Linux runner with `qdrant-memory-models` label | Installed `qwen3:8b` | Installed `qwen3-embedding:4b`, 2560 dimensions |
 
-The first three profiles need no self-hosted runner.
+The first four profiles need no self-hosted runner.
 They download a fixed Ollama release and fixed model manifests from [Ollama](https://github.com/ollama/ollama/releases).
 The setup checks the archive checksum and model digests in [model-profiles.json](../../tests/quality/model-profiles.json).
 It starts a private process on loopback port 19134. It stops that process after the test.
@@ -162,7 +163,7 @@ Workflow configuration alone does not prove execution. Record the run URL and ac
 Each dispatch runs one selected profile. It does not run a model matrix.
 Use the workflow input to select another fixed model profile. A model name is configuration and needs no Secret.
 Model changes require a fixed manifest digest. Arbitrary unverified model tags are not accepted.
-The two hosted Ollama profiles use the same embedding model, generation budget, and disabled thinking for comparison.
+The hosted Ollama profiles use the same embedding model, generation budget, and disabled thinking for comparison.
 The final default local model depends on the completed CI results; the comparison itself is not acceptance evidence.
 
 The [initial hosted run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) used `qwen3:4b-instruct-2507-q4_K_M` and failed.
@@ -189,6 +190,18 @@ Ollama documents this as the [OpenAI-compatible control to disable thinking](htt
 Reports record this setting. The 30-second timeout, strict output validation, and quality thresholds remain unchanged.
 The Owner LLM adapter accepts optional `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` values when the selected provider supports them.
 When omitted, the request keeps the provider default. Reference and Free Router profiles omit this option.
+
+The [1.7B run with thinking disabled](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39580559444) completed the baseline but failed the quality gates.
+All 29 model requests succeeded. Model-call p50 was 1.14 seconds and p95 was 4.37 seconds.
+Precision was 1.0, but positive-case recall and Recall@5 were 0.375. Mutation checks also failed.
+Faster valid responses alone do not qualify this model as the default.
+The next hosted comparison uses `qwen3.5:2b`. Test `qwen3.5:4b` only if the 2B candidate does not pass.
+
+The [2B comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39581374057) failed before baseline completion.
+The model loaded and returned one successful response. A background ValueError then blocked the lifecycle.
+The exact validation failure is unverified. This run supplies no complete quality scores and does not prove a memory shortage.
+Ollama reported 2,369,666,414 loaded bytes for generation and 1,237,875,425 bytes for embeddings, with zero GPU memory.
+This failure permits the next 4B comparison. It does not relax any quality gate.
 
 ### Container alternative
 
