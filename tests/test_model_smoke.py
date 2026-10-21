@@ -22,7 +22,7 @@ def test_smoke_cli_never_certifies_quality(tmp_path, monkeypatch, capsys, health
     checks["restart_durable"] = healthy
     if healthy is None:
         checks.clear()
-    monkeypatch.setitem(scope, "run_smoke", lambda _adapter: {"checks": checks})
+    monkeypatch.setitem(scope, "run_smoke", lambda _adapter, _profile=None: {"checks": checks})
     result = module["main"]()
     report = json.loads(output.read_text())
     assert result == (0 if healthy else 1)
@@ -41,7 +41,7 @@ def test_smoke_cli_redacts_failure_messages(tmp_path, monkeypatch, capsys):
         "sys.argv", ["smoke", "--adapter-root", str(tmp_path), "--output", str(output)]
     )
 
-    def fail(_adapter):
+    def fail(_adapter, _profile=None):
         raise ValueError("synthetic-private-key")
 
     monkeypatch.setitem(module["main"].__globals__, "run_smoke", fail)
@@ -61,7 +61,7 @@ def test_repeated_smoke_requires_every_fresh_lifecycle(tmp_path, monkeypatch, fa
     )
     calls = []
 
-    def attempt(_adapter):
+    def attempt(_adapter, _profile=None):
         calls.append(True)
         if len(calls) == 2 and failure == "exception":
             raise RuntimeError("synthetic-private-key")
@@ -95,6 +95,56 @@ def test_smoke_repetitions_are_bounded(tmp_path, monkeypatch, repetitions):
             str(tmp_path / "out.json"),
             "--repetitions",
             repetitions,
+        ],
+    )
+    with pytest.raises(SystemExit) as caught:
+        module["main"]()
+    assert caught.value.code == 2
+
+
+@pytest.mark.parametrize("profile", ["smoke-qwen06", "smoke-qwen08", "smoke-qwen17"])
+def test_smoke_cli_selects_one_frozen_comparison_profile(tmp_path, monkeypatch, profile):
+    """A manual comparison uses exactly the requested local profile and existing checks."""
+    module = runpy.run_path(str(ROOT / "scripts/smoke_owner_lifecycle.py"))
+    output = tmp_path / "smoke.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "smoke",
+            "--adapter-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+            "--model-profile",
+            profile,
+        ],
+    )
+    observed = []
+
+    def attempt(_adapter, selected=None):
+        observed.append(selected)
+        return {"checks": {name: True for name in module["CHECKS"]}}
+
+    monkeypatch.setitem(module["main"].__globals__, "run_smoke", attempt)
+    assert module["main"]() == 0
+    assert observed == [profile]
+    assert json.loads(output.read_text())["model_profile"] == profile
+
+
+@pytest.mark.parametrize("profile", ["reference", "openrouter-free", "unknown"])
+def test_smoke_cli_rejects_non_smoke_profiles(tmp_path, monkeypatch, profile):
+    """A local smoke selection cannot start external or reference model routing."""
+    module = runpy.run_path(str(ROOT / "scripts/smoke_owner_lifecycle.py"))
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "smoke",
+            "--adapter-root",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "out.json"),
+            "--model-profile",
+            profile,
         ],
     )
     with pytest.raises(SystemExit) as caught:

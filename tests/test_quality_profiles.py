@@ -32,6 +32,27 @@ def test_smoke_profile_uses_small_fixed_local_models():
     assert all(len(value) == 64 for value in profile["local_models"].values())
 
 
+@pytest.mark.parametrize(
+    "name,model",
+    [
+        ("smoke-qwen06", "qwen3:0.6b"),
+        ("smoke-qwen08", "qwen3.5:0.8b"),
+        ("smoke-qwen17", "qwen3:1.7b"),
+    ],
+)
+def test_smoke_comparisons_keep_one_model_and_the_same_embedding(name, model):
+    """Only generation changes; every local model has a fixed manifest digest."""
+    module = runner()
+    base = module["model_profile"]("smoke-ollama")
+    profile = module["model_profile"](name)
+    assert profile["llm"]["model"] == model
+    assert profile["llm"]["reasoning_effort"] == "none"
+    assert profile["llm"] == {**base["llm"], "model": model}
+    assert profile["embedding"] == base["embedding"]
+    assert set(profile["local_models"]) == {model, "all-minilm:22m"}
+    assert all(len(value) == 64 for value in profile["local_models"].values())
+
+
 def test_hosted_models_are_separate_from_the_reference_models():
     """The hosted profile has its own fixed models and embedding dimensions."""
     module = runner()

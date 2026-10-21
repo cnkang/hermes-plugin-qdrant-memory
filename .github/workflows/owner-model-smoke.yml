@@ -2,6 +2,12 @@ name: Small-model Owner lifecycle smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      model_profile:
+        description: One fixed local smoke profile; default permits the configured override
+        type: choice
+        default: smoke-ollama
+        options: [smoke-ollama, smoke-qwen06, smoke-qwen08, smoke-qwen17]
   pull_request:
     paths:
       - qdrant_memory/**
@@ -27,5 +33,5 @@ jobs:
   smoke:
     uses: ./.github/workflows/owner-model-quality.yml
     with:
-      profile: smoke-ollama
+      profile: ${{ inputs.model_profile || 'smoke-ollama' }}
       mode: smoke
