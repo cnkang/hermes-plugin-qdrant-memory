@@ -134,6 +134,7 @@ CI caches dependency downloads, the fixed Ollama installation, and each profile'
 Cache keys include the platform and the relevant lock or model configuration hash.
 Model digests and the running Ollama version are checked after cache restore.
 Credentials, evaluation reports, process IDs, and temporary memory data are excluded from caches.
+The model workflow saves verified downloads before quality checks, so a later quality failure does not discard them.
 The reference profile retains port 11434 and requires a separately provisioned test runner.
 The setup loads local models before measurement. Reported model latency excludes initial model download and load.
 

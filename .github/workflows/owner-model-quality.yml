@@ -50,32 +50,55 @@ jobs:
           ref: c52437c85bce0bd6d1a81ec9bd5ddbbb98a58e9d
           path: .quality/mcp
           persist-credentials: false
+      - name: Derive separate installation and model cache keys
+        id: model-cache-keys
+        if: inputs.profile != 'reference'
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
+          profiles = json.load(open("tests/quality/model-profiles.json"))
+          models = profiles["profiles"][os.environ["MODEL_PROFILE"]]["local_models"]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print("installation=" + profiles["ollama"]["archive_sha256"], file=output)
+              print("models=" + hashlib.sha256(json.dumps(models, sort_keys=True).encode()).hexdigest(), file=output)
+          PY
       - name: Cache verified dependency downloads
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        id: dependency-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             ~/.cache/pip
             ~/.npm
           key: quality-deps-${{ runner.os }}-${{ runner.arch }}-py311-${{ hashFiles('requirements-quality.txt', '.quality/mcp/integrations/agent-hosts/package-lock.json') }}
       - name: Cache the fixed Ollama installation
+        id: ollama-cache
         if: inputs.profile != 'reference'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             ${{ runner.temp }}/quality-ollama/bin
             ${{ runner.temp }}/quality-ollama/lib
-          key: quality-ollama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/quality/model-profiles.json') }}
+          key: quality-ollama-${{ runner.os }}-${{ runner.arch }}-${{ steps.model-cache-keys.outputs.installation }}
       - name: Cache fixed local model manifests and blobs
+        id: model-cache
         if: inputs.profile != 'reference'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/quality-ollama/models
-          key: quality-models-${{ runner.os }}-${{ runner.arch }}-${{ inputs.profile }}-${{ hashFiles('tests/quality/model-profiles.json') }}
+          key: quality-models-${{ runner.os }}-${{ runner.arch }}-${{ steps.model-cache-keys.outputs.models }}
       - name: Prepare isolated test dependencies
         shell: bash
         run: |
           bash scripts/install_quality_dependencies.sh .quality/venv
           npm ci --prefix .quality/mcp/integrations/agent-hosts --ignore-scripts --no-audit --no-fund
+      - name: Save installed dependency downloads before quality gates
+        if: steps.dependency-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.npm
+          key: ${{ steps.dependency-cache.outputs.cache-primary-key }}
       - name: Require scorer contracts before the actual model run
         env:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
@@ -83,6 +106,21 @@ jobs:
       - name: Install and start isolated Ollama models
         if: inputs.profile != 'reference'
         run: bash scripts/start_quality_ollama.sh
+      # Preserve verified downloads even when later model quality checks fail.
+      - name: Save the verified Ollama installation
+        if: inputs.profile != 'reference' && steps.ollama-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/quality-ollama/bin
+            ${{ runner.temp }}/quality-ollama/lib
+          key: ${{ steps.ollama-cache.outputs.cache-primary-key }}
+      - name: Save verified local model manifests and blobs
+        if: inputs.profile != 'reference' && steps.model-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/quality-ollama/models
+          key: ${{ steps.model-cache.outputs.cache-primary-key }}
       - name: Verify multi-subject replacement with the local model
         if: inputs.profile == 'reference'
         env:
