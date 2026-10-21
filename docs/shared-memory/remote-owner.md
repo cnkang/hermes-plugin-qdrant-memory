@@ -266,18 +266,18 @@ acceptance require independent evidence. No production-readiness claim is made.
 
 Native lifecycle turns, builtin memory notifications and mixed-history checkpoints
 also require the Owner scope. A different or neutral mixed scope is recorded as a
-failed `native_owner_unadmitted` event and raises `PermissionError`; it cannot fall
-back to local Runtime writes. Operator retry cannot reattribute such an event to
+failed `native_owner_unadmitted` event and raises `PermissionError`. It cannot
+fall back to local Runtime writes. Operator retry cannot reattribute such an event to
 another identity.
 
 After operator retry, startup cancels pending `native_owner_unadmitted` input
 whose scope differs from the current Owner. It never reattributes that input.
-Only raw input without candidates, operation keys or Owner authority qualifies;
-its `CANCELLED` receipt, erased payload and `native_unadmitted_discarded` counter
+Only raw input without candidates, operation keys or Owner authority qualifies.
+Its `CANCELLED` receipt, erased payload and `native_unadmitted_discarded` counter
 commit atomically. Repeated startup does not count the same cancellation again.
 Same-scope input still reauthorizes into private memory, and admitted/prepared
 work retains its recovery protections. Failed events still require the existing
-explicit operator retry; this does not bypass the failure gate.
+explicit operator retry. This does not bypass the failure gate.
 
 An operator can also discard a specific unadmitted event before restart. Stop
 every Owner for the profile before using the offline command:
@@ -287,7 +287,7 @@ qdrant-memory --home /path/to/owner-profile discard-unadmitted-event \
   --event-id EVENT_ID --confirm-discard
 ```
 
-The standalone distribution installs this `qdrant-memory` entry point; `--home`
+The standalone distribution installs this `qdrant-memory` entry point. `--home`
 is a global option before the subcommand. For a host-only plugin installation,
 select the intended Hermes profile first, then use
 `hermes qdrant-memory discard-unadmitted-event --event-id EVENT_ID --confirm-discard`.
@@ -298,7 +298,7 @@ Only a `PENDING`/`FAILED` `native_owner_unadmitted` event without candidates,
 operation keys or Owner authority can be discarded. The change uses a
 compare-and-set on the original status and payload, retains a `CANCELLED` receipt,
 and clears the raw payload. Repeating the same disposal is a no-op. Prepared or
-uncertain work must reconcile instead; this command cannot clear its recovery
+uncertain work must reconcile instead. This command cannot clear its recovery
 gate, reset a destination or delete saved memories. It is an operator CLI,
 never an Agent MCP tool. Automatic startup cancellation is limited to the
 foreign, never-admitted input described above.
