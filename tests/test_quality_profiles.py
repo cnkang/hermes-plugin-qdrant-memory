@@ -31,15 +31,26 @@ def test_hosted_models_are_separate_from_the_reference_models():
     assert all(len(value) == 64 for value in hosted["local_models"].values())
 
 
-def test_hosted_model_digest_mismatch_is_not_accepted():
+@pytest.mark.parametrize("name", ["hosted-ollama", "hosted-qwen35"])
+def test_hosted_model_digest_mismatch_is_not_accepted(name):
     """A moved model tag or unexpected cache cannot silently change the test model."""
     module = runner()
-    profile = module["model_profile"]("hosted-ollama")
+    profile = module["model_profile"](name)
     installed = [{"name": name, "digest": value} for name, value in profile["local_models"].items()]
     assert len(module["select_installed_models"](profile, installed)) == 2
     installed[0]["digest"] = "0" * 64
     with pytest.raises(ValueError, match="digest"):
         module["select_installed_models"](profile, installed)
+
+
+def test_qwen35_comparison_keeps_the_same_embedding_and_generation_budget():
+    """Change only the generation model in the hosted comparison."""
+    module = runner()
+    baseline = module["model_profile"]("hosted-ollama")
+    candidate = module["model_profile"]("hosted-qwen35")
+    assert candidate["embedding"] == baseline["embedding"]
+    assert candidate["llm"] == {**baseline["llm"], "model": "qwen3.5:2b"}
+    assert len(candidate["local_models"]) == 2
 
 
 def test_free_router_has_no_paid_fallback_and_only_local_embeddings():

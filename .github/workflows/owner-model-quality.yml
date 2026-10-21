@@ -7,13 +7,13 @@ on:
         description: Model profile (OpenRouter requires main and model-quality secret)
         type: choice
         default: openrouter-free
-        options: [openrouter-free, hosted-ollama, reference]
+        options: [openrouter-free, hosted-ollama, hosted-qwen35, reference]
 
 permissions:
   contents: read
 
 concurrency:
-  group: owner-model-quality
+  group: owner-model-quality-${{ inputs.profile }}
   cancel-in-progress: false
 
 jobs:

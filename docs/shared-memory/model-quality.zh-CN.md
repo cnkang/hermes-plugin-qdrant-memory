@@ -120,9 +120,10 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 | --- | --- | --- | --- |
 | `openrouter-free`（默认） | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`，1024 维 |
 | `hosted-ollama`（实验性） | GitHub `ubuntu-24.04` | `qwen3:1.7b` | 同一个本地 0.6B 模型 |
+| `hosted-qwen35`（实验性） | GitHub `ubuntu-24.04` | `qwen3.5:2b` | 同一个本地 0.6B 模型 |
 | `reference` | 带 `qdrant-memory-models` 标签的一次性 Linux runner | 已安装的 `qwen3:8b` | 已安装的 `qwen3-embedding:4b`，2560 维 |
 
-前两种配置不需要 self-hosted runner。
+前三种配置不需要 self-hosted runner。
 它们从 [Ollama](https://github.com/ollama/ollama/releases) 下载固定版本的 Ollama 和固定模型清单。
 初始化检查 [model-profiles.json](../../tests/quality/model-profiles.json) 中的安装包校验和及模型摘要。
 它在回环端口 19134 启动私有进程，并在测试后停止该进程。
@@ -153,6 +154,12 @@ OpenRouter 配置要求 GitHub Environment `model-quality` 中包含测试 Secre
 独立的双主体 Ollama 原生探针仅在 `reference` 配置运行。
 每种配置均运行完整基线和 mutation 门禁。
 仅有工作流配置不能证明已执行。应单独记录运行链接和实际结果。
+
+每次手动触发仅运行一个选定配置，不运行模型矩阵。
+使用工作流输入选择其他固定模型配置。模型名称属于配置，不需要 Secret。
+模型变更必须提供固定的清单摘要。不接受任意未经校验的模型标签。
+两个托管 Ollama 配置使用相同的嵌入模型、生成预算和关闭思考设置进行对比。
+最终默认本地模型取决于已完成的 CI 结果；对比配置本身不构成验收证据。
 
 [首次托管运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) 使用 `qwen3:4b-instruct-2507-q4_K_M`，结果失败。
 Precision 为 1.0，但正例召回率和 Recall@5 均为 0.4375。Mutation 检查也失败。
