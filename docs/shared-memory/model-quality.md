@@ -332,7 +332,7 @@ A successful full run reports top-level `status=PASS` and `baseline_executed=tru
 The manual workflow requires both fields and mutation `PASS` for acceptance.
 It does not accept `DIAGNOSTIC_PASS` as a full quality result.
 
-The manual workflow also tests a turn that replaces facts about two different projects.
+The reference profile also tests a turn that replaces facts about two different projects.
 It runs the exact-ID update contract with both a deterministic facade and the installed local model.
 The model probe uses Ollama's native test API with thinking disabled. It does not change production model routing.
 The workflow rejects skipped model probes and stores their JUnit results.
@@ -352,3 +352,26 @@ New extraction schemas require every property under the [strict Structured Outpu
 Legacy durable candidates with missing or false flags keep the previous review policy.
 Embeddings and the stored payload schema remain unchanged. An explicit replacement can require up to ten relation-model calls.
 Report the measured latency, including these calls.
+
+## Hosted CI evidence on 2026-10-21
+
+These results describe the recorded runs. They do not establish production acceptance.
+
+| Run | Result | Observed limit |
+|---|---|---|
+| [Qwen3.5 0.8B smoke](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39613998288) | SMOKE_PASS | All eight functional checks passed. This run did not evaluate full model quality. |
+| [Fixed Nemotron free model](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39617795232) | FAIL | The first request returned HTTP 404. The full baseline did not run. |
+| [Fixed Dots free model](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39618414645) | FAIL | Ten requests returned HTTP 200 with the exact selected free model ID. The next request returned HTTP 400. The full baseline did not complete. |
+| [Free Router exploration](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39619046518) | FAIL | Three requests returned HTTP 200 across two models. The next request returned HTTP 404. The full baseline did not complete. |
+
+The Dots run selected `dots-studio/dots-3-note-preview:free`.
+The exact cause of its HTTP 400 response remains unverified.
+The Free Router run observed `liquid/lfm-2.5-2.6b:free` and `dots-studio/dots-3-note-preview:free`.
+Each completed external run stopped its test-owned Ollama process.
+The runs retained strict output validation, TLS checks, the frozen dataset, and the quality thresholds.
+They used free routes without a paid fallback.
+
+The historical [local reference evidence](owner-model-stack-evidence.json) records a full PASS with Qwen3 8B and Qwen3 Embedding 4B.
+It applies to its recorded source and model hashes. It does not certify the current hosted CI source or free routes.
+Model catalog support does not guarantee that an endpoint is available for every request.
+Keep functional smoke acceptance separate from full quality acceptance.
