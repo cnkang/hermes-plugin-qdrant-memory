@@ -1,32 +1,71 @@
-# One Memory, Multiple Agents：跨 Agent 共享记忆（可选启用）
+# One Memory, Multiple Agents — 可选启用的共享 owner
 
-生产部署前请阅读[目的地保护、诊断与部署指南](deployment-security.md)和[威胁模型](threat-model-v1.md)。保护策略与 `shared-doctor` 尚未发布，不能直接用于 Runtime 0.4.0。Agent 只应持有 Owner 客户端令牌，不应持有 Qdrant 写凭据。本地锁无法约束远程管理员或同等系统权限。
+生产部署前，请阅读[受保护目的地与诊断指南](deployment-security.md)和[威胁模型](threat-model-v1.md)。
+目的地保护是尚未发布的可选启用能力。Runtime 0.4.0 仅支持原有服务，不包含该保护能力。在应用客户端中，
+Qdrant 写凭据必须只属于 Owner。
 
-多个独立 Agent 可以通过同一个持有 Runtime、Ledger 和 WriterLease 的本地服务访问同一份记忆。
-它是显式选择启用的新模式；Hermes Native Provider、自动提取、现有 stdio MCP、DSH 和 WorkBuddy
-私有配置均不自动切换。Hermes 兼容性是首要验收门槛。
+多个独立 Agent 可以通过同一个 Runtime owner 使用一份规范存储。本 checkout 实现了
+本地认证服务和 stdio MCP 桥接。现有 Hermes Native Provider、独立 stdio MCP、DSH 和
+WorkBuddy 的默认行为保持私有且不变。本次工作不会重新配置任何已安装的 profile。
 
-完整命令与可复制配置见[英文操作指南](README.md)，设计与安全边界见
-[架构决策](architecture.md)，实测与未完成项见[验证报告](report.md)。
+见[架构/安全契约](architecture.md)、[英文操作指南](README.md)和
+[实测验证报告](report.md)。不要在生产 profile 上试验下方命令。
 
-## 安装和启动
+## 安装并创建独立的 owner profile
 
-在独立 Python 3.11+ 虚拟环境中安装 PyPI 上的 Runtime 0.4.0 及 `[mcp]` extra：
+使用 Python 3.11+ 和隔离环境。Runtime 0.4.0 包含此功能。请安装 PyPI 发行版，或在开发
+时使用固定 commit 的已审核 checkout。
 
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env
 /absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.4.0'
+/absolute/path/shared-runtime-env/bin/qdrant-memory setup \
+  --profile /absolute/path/shared-owner --embedding-provider ollama \
+  --model qwen3-embedding:0.6b --dimensions 1024 \
+  --base-url http://127.0.0.1:11434 --user-id owner-admin
 ```
 
-使用新的 owner profile，通过原有 `setup` 显式选择 embedding 模型
-并初始化集合；不要拿生产 profile 做测试。Ollama 模型须先安装，例如
-`qwen3-embedding:0.6b` 对应 1024 维。集合维度、距离和 embedding fingerprint 验证继续生效。
-更换模型应显式创建新目标并执行已有备份和迁移流程，不能直接改原集合。
+运行 `setup` 前请先显式安装所选的 Ollama 模型。`setup` 会创建一个新的私有 embedded profile
+并校验其 collection。也可以使用现有 runtime 配置和 `init` 流程，在 owner profile 中
+配置远程 Qdrant Server 或 Cloud。这些凭据只能保存在 owner 中。绝不要让多个独立
+profile 指向同一目的地进行写入。所有客户端 embedding 都在 owner 上运行。fingerprint、
+距离和维度必须与现有 collection 一致。更换模型需要显式创建新目的地，并执行现有的
+授权迁移流程。
 
-按英文指南的 Python 示例生成高熵 token 和 `policy.json`，文件仅所有者可读写，不能进入 Git。
-每个 Agent 使用不同 token。policy 保存 SHA256，不保存 token 明文。Windows 由操作员设置私有 ACL。
-先进入包含 policy 的私有目录。`--policy` 解析后的路径必须位于当前工作目录内。
-然后启动 Owner：
+在新的运维方自有目录中，将三个独立的高熵 token 生成到私有文件和一个 policy 中，
+且不要打印凭据：
+
+```python
+import hashlib, json, os, secrets
+from pathlib import Path
+
+os.umask(0o077)
+clients = []
+for principal, permission in [("hermes", "write"), ("dsh", "write"), ("reviewer", "read")]:
+    token = secrets.token_urlsafe(32)
+    path = Path(principal + ".token")
+    with path.open("x") as stream:
+        stream.write(token)
+    clients.append(
+        {
+            "token_sha256": hashlib.sha256(token.encode()).hexdigest(),
+            "principal": principal,
+            "owner_id": "my-user",
+            "space_id": "my-project",
+            "permission": permission,
+            "visibility": "shared",
+        }
+    )
+with Path("policy.json").open("x") as stream:
+    json.dump({"clients": clients}, stream, indent=2)
+```
+
+这些文件必须排除在 Git 之外。policy 必须为 POSIX 0600 模式（Windows 上使用私有 ACL）。
+`visibility: project` 是另一种显式授予的空间。`visibility: private` 在每个 owner/空间
+中只能有一个 principal。一份凭据只授予一个已配置空间。访问其他空间请使用不同的凭据和
+进程。
+
+从包含策略文件的私有目录启动 Owner。解析后的 `--policy` 路径必须位于当前工作目录内。
 
 ```sh
 cd /absolute/path
@@ -35,102 +74,148 @@ cd /absolute/path
   --policy /absolute/path/policy.json --port 8765
 ```
 
-等待 readiness JSON。服务仅监听 `127.0.0.1`，是私有 JSON API，不是 HTTP MCP 服务。
-不要代理到公网。审计 stderr 只包含哈希化身份和允许/拒绝结果，不包含记忆正文或 token。
-Ctrl-C 后排空已接收请求，再释放 WriterLease。policy 修改和 token 撤销需要重启。
+等待 readiness JSON。端点只监听 loopback。它是私有 API，**不是** HTTP MCP 端点。
+不要把它放在公共反向代理之后。审计的允许/拒绝决定写入 stderr，principal ID 以哈希
+形式出现。请按本地隐私策略采集并保留这些日志。按 Ctrl-C 停止。服务关闭时会先排空
+活动请求，再释放 WriterLease。
 
 ## 私有、共享、只读和项目空间
 
-凭据由可信配置绑定 `principal`、`owner_id`、`space_id`、`permission` 和 `visibility`。
-`permission: read` 在服务边界拒绝所有写入；`write` 允许读取和经授权的修改。
-`visibility: private` 的空间只允许一个 principal；`shared` 或 `project` 可明确授予多个 Agent。
-一个 token 只连接一个空间，需要访问另一个空间时使用另一份凭据和连接。
+凭据在可信配置中绑定 `principal`、`owner_id`、`space_id`、`permission` 和
+`visibility`。`permission: read` 在服务边界拒绝所有写入。`write` 允许读取和经授权的
+修改。`visibility: private` 空间只允许一个 principal。`shared` 或 `project` 空间可
+显式授予多个 Agent。一个 token 只连接一个空间，访问其他空间需使用不同凭据和连接。
 
-owner 映射为原 `user_id`；稳定空间映射为保留的 `agent_id: shared:v1:<space>`；创建者另存
-`created_by`，更新者另存 `updated_by`。搜索同时验证 scope、共享标记和 visibility，ID 修改同样校验。
-没有显式共享标记的历史记录全部保持私有，原 `agent_id: null` 也不是跨 Agent 通配符。
-工具参数不能覆盖 owner、Agent 身份或空间。共享不会导入私人对话历史。
+owner 映射到现有 `user_id`。稳定空间映射到保留的 `agent_id: shared:v1:<space>`。
+创建者存入 `created_by`，最后更新者存入 `updated_by`。搜索同时校验 scope、共享标记
+和 visibility。ID 修改校验同一边界。没有显式共享标记的记录保持私有，原有的
+`agent_id: null` 不是跨 Agent 通配符。工具参数不能覆盖 owner、Agent 身份或空间。
+共享永远不会导入私有对话历史。
 
-## 接入 Hermes、DSH、WorkBuddy、Codex
+## 接入 DSH、WorkBuddy、Codex 或 Hermes 的 MCP fallback
 
-各 Agent 在自己的 MCP 配置中启动：
+各宿主从预览环境启动自己的桥接：
 
-```text
-/absolute/path/shared-runtime-env/bin/qdrant-memory shared-mcp --url http://127.0.0.1:8765
+```json
+{
+  "mcpServers": {
+    "qdrant-memory-shared": {
+      "command": "/absolute/path/shared-runtime-env/bin/qdrant-memory",
+      "args": ["shared-mcp", "--url", "http://127.0.0.1:8765"],
+      "env": {"QDRANT_MEMORY_SHARED_TOKEN": "<inject this host's own token securely>"}
+    }
+  }
+}
 ```
 
-通过宿主支持的安全环境变量机制传入该 Agent 的 `QDRANT_MEMORY_SHARED_TOKEN`。
-桥接进程不打开数据库、不创建 Ledger、不运行 embedding。英文指南包含 JSON 与 Codex TOML 示例。
-DSH Bundle 和 WorkBuddy Managed Connector 默认仍安装和运行私有 profile；本次更新不修改已有安装。
-真实宿主 UI 导入仍需后续人工验收，自动测试覆盖官方 MCP SDK 的独立进程协议连接。
+该占位符不是可用凭据。请使用宿主支持的密钥注入机制。绝不要把真实 token 粘入受源码
+控制的示例。stdio 工具名仍为 `qdrant_memory_search/add/update/delete`。共享模式为
+修改操作增加必需的 `request_id`。update 和 delete 还需要 `expected_version`。
+请以实际工具目录为准。
+Codex 的 TOML MCP 配置使用：
 
-**Hermes 优先兼容：Native Provider 继续处理原有私有记忆，不改变生命周期或默认 schema。**
-Native Provider 自动将提取结果保存到共享空间尚未实现。只有未启用 qdrant-memory Native Provider
-接口的 Hermes profile 才使用本次 MCP fallback；不要给同一 Hermes profile 注册重复接口。
-保留 Native Provider 时，也可以由操作员使用 CLI 显式保存用户授权的共享事实。
+```toml
+[mcp_servers.qdrant-memory-shared]
+command = "/absolute/path/shared-runtime-env/bin/qdrant-memory"
+args = ["shared-mcp", "--url", "http://127.0.0.1:8765"]
+env_vars = ["QDRANT_MEMORY_SHARED_TOKEN"]
+```
 
-## 可操作示例：Hermes 保存，DSH 新会话读取
+这是显式的外部 MCP 注册，不是对受管 bundle 的修改。DSH bundle 和 WorkBuddy 托管安装器
+仍启动各自的私有 profile。仓库附带的 MCP 分发包含单独的预览配置示例。宿主 UI 或原生
+bundle 导入的验收仍是后续工作。
 
-这是已实现的 Runtime/stdio 接口流程，尚未宣称宿主应用 UI 完整认证：
+**Hermes 兼容性：** Native Provider 保持私有，并执行现有的自动提取/预取。自动共享
+提取已列入计划，尚未实现。仅对未启用 qdrant-memory Native Provider 接口的 Hermes
+profile 使用共享 MCP 桥接。不要为同一个 Hermes profile 注册两种接口。另一种做法是
+保留 Native Provider，并用显式运维 CLI 执行用户授权的共享保存。不伪造任何生命周期
+回调。
 
-1. 用户授权保存项目决定。Hermes MCP fallback 用自身 token 调用 add：
-   `{"text":"项目使用 SQLite WAL","request_id":"decision-save-001"}`。
-2. DSH 在独立新会话用自己的 token 搜索 `{"query":"项目使用什么数据库模式？"}`，读取同一条
-   canonical 记录及 ID、`version`、`created_by: hermes`。
-3. 经用户授权后 DSH 更新，传入原 ID、读取时的 `expected_version`、新正文和新的 `request_id`。
-4. Hermes 下次搜索可见新内容。持旧版本修改将收到 `SharedConflictError`，不会覆盖新内容。
-5. 只读 Agent 可以搜索，add/update/delete 全部拒绝；私有空间和其他用户数据无法读取。
+## 操作示例：Hermes 显式保存，独立 DSH 召回
 
-`version` 是不透明 UUID 修订标记，不能自行推算。删除后重建也使用新标记，避免旧版本误改。
-所有写入由一个 Runtime 锁串行协调，不支持分布式多写。
+该流程在 runtime/stdio 接口层面可用。实际宿主应用 UI 流程未获 SDK 测试认证。
+对于使用 MCP fallback 的 Hermes profile：
 
-## 重试、恢复和维护
+1. 用户授权将一项项目决定保存到 `my-project`。Hermes 使用自己的凭据和
+   `qdrant_memory_add`，参数为
+   `{"text":"Project uses SQLite WAL","request_id":"decision-save-001"}`。
+2. 新的 DSH 会话使用自己的凭据，以
+   `{"query":"Which database mode does this project use?"}` 搜索。服务返回规范记录，
+   其中包含 `created_by: hermes`、ID 和不透明 `version`。
+3. 经授权替换时，DSH 提供该精确 ID/version：
+   `{"id":"<id>","text":"Project uses PostgreSQL","expected_version":"<version>","request_id":"decision-edit-001"}`。
+4. Hermes 再次搜索即可看到新文本/版本。基于旧版本的修改返回 `SharedConflictError`，
+   绝不会覆盖较新的修改。
+5. reviewer 凭据可以搜索，但所有 add/update/delete 都被拒绝。私有记录、其他用户的
+   记录或旧版记录保持不可见。
 
-每个逻辑修改保留固定 `request_id` 和原参数。断线后重试同一请求，服务返回已持久化的原操作结果；
-同一 ID 搭配不同参数会冲突。历史 receipt 不保证数据当前仍存在，重连后应搜索核对。
-过期版本冲突需要重新读取并确认新的修改意图，不能自动拿新版本覆盖。
+直接 CLI 调用使用同一策略边界：
 
-写入先将完整计划和预期响应保存到同一个 SQLite 的新增表，再调用原 Runtime 的 operation/commit。
-服务会在启动就绪前恢复尚未完成的计划，重放同一个点 ID 和版本，不产生逻辑副本。
-写入结果不确定时阻止后续写入；终止错误须先停止 owner，恢复依赖，再使用原 CLI 的
-`qdrant-memory --home OWNER retry` 并重启。不要并行启动维护程序或移除锁文件。
-已有 destructive recovery 和原始 Hermes extraction event 的启动阻断保持有效。
+```sh
+# 先通过可信的本地密钥机制导出该 client 的 token。
+qdrant-memory shared-call --url http://127.0.0.1:8765 \
+  --tool qdrant_memory_search --arguments '{"query":"database mode"}'
+```
 
-备份前停止 owner，整体保存 profile、SQLite 数据库及 WAL/sidecar、embedded Qdrant 数据和配置。
-远程 Qdrant 应在 owner 停止时协调 snapshot，与 Ledger 配套恢复；凭据单独安全备份。
-只恢复其中一侧不能保证一致。Mem0 格式 export 是交换格式，不保留共享授权、版本标记和 request receipt，
-不能替代完整备份；重新 import 的记录继续私有。升级不自动迁移集合或旧数据。
+不要自动共享整段对话。召回文本是不可信数据，永远不能授权保存、修改或变更授予。
 
-回滚先停止服务并保留完整备份，移除新 MCP 注册，将 Agent 恢复到原私有 profile。
-老版本不能恢复未完成的 shared plan，因此须保留新 Runtime 完成排空/恢复后再回滚。
-不要用旧版私有工具修改 service 管理的共享 scope。
+## 重试、备份、恢复、升级与回滚
+
+为每次预期修改保留稳定且唯一的 request ID。网络失败具有不确定性：请用**相同**的
+request ID 和完全相同的参数重试。持久化 receipt 会返回原始结果。用同一 request ID
+搭配其他参数会冲突。成功的 receipt 只代表历史状态。重连后请搜索当前状态。遇到旧版本
+冲突时，重新读取并为新的修改取得授权意图。仅为该新授权操作使用新的 request ID。
+绝不要猜测新版本。
+
+owner 会在就绪前重放待处理的 Runtime 操作和未完成的请求计划。遇到终止性失败时，它
+阻止新的写入并要求人工介入。停止 owner，恢复 Qdrant/embedding 依赖，运行现有运维命令
+`qdrant-memory --home OWNER retry`，然后重启。不得同时运行第二个 owner 执行维护。
+共享计划未完成期间，普通工具会话和会修改数据的 init/delete/import 命令会 fail-closed。
+运维 retry 仍可用，之后重启 owner 以核对 receipt。待处理的破坏性意图和原始宿主提取
+事件继续阻止不兼容的启动。请使用独立的 owner home，不要复用 Native Provider 的活动
+profile。
+
+停止 owner，并对**整个 profile（包括 SQLite WAL/sidecar、Qdrant embedded 数据和配置）**
+做一致性备份。对于远程 Qdrant，应在 owner 停止时协调服务端 snapshot 与其 profile 备份。
+请单独保存 policy 和客户端 token，并设置私有权限。恢复时须同时匹配账本/存储快照。
+不要只恢复已完成操作的一侧。绝不要把打开的 embedded 目录复制当作一致性保证。可移植的
+Mem0 格式 export 仍是交换操作，不是完整的共享备份：它不保留共享授予、修订 token 或
+共享 request receipt。重新导入的记录在显式执行受支持的共享操作前保持私有。
+
+该功能新增一张 request 表和可选 payload 字段。现有 collection 只做校验，绝不静默迁移。
+旧代码会忽略这些新增表和字段。回滚时，停止服务，保留一致性备份，移除新的 MCP 注册，
+并将 Agent 恢复到原先的私有 profile。不要用旧版独立工具修改由服务管理的共享 scope。
+旧版 owner 无法核对未完成的共享请求计划。回滚前请保留新 Runtime 可用，以排空并恢复
+这些计划。降级**不是**待处理共享计划的安全恢复方式。
 
 ## 限制与排障
 
-- `WriterBusyError`：连接唯一 owner 或正常关闭旧 owner；绝不能绕过锁。
-- `PermissionError`：检查 token、grant 和空间；不要伪造身份扩大范围。
-- `SharedConflictError`：旧版本或 request ID 重用，明确协调后再修改。
-- `SharedRecoveryRequiredError`：停止写入、修复依赖、执行授权 retry 后重启。
-- fingerprint/维度不匹配：恢复原 embedding，或执行显式备份迁移。
-- 同一 OS 用户的恶意代码可读进程环境和 profile，不属于 bearer token 的隔离边界。
-- 不同 profile/主机的直接 Qdrant 写入不受本地 WriterLease 约束，属于不支持的部署。
-- 所有操作经过 owner 串行化，embedding 可能成为瓶颈；不宣称性能或检索质量提升。
-- receipt 为可靠重试而保留，完成后的正文计划会清除；当前版本没有 receipt 自动压缩策略。
-- 不支持公网 API、OAuth、远程 Agent 直连、分布式多写、独立进程打开 embedded 数据目录，
-  不支持自动将私有历史转为共享数据。
+- `WriterBusyError`：使用规范服务，或干净地停止旧 owner。绝不要删除锁。分离的
+  profile home 不会增加安全的多写入支持。
+- `PermissionError`：检查宿主 token/授予和 ID 空间。不要伪造身份。
+- `SharedConflictError`：旧修订或复用的 request ID。请显式核对。
+- `SharedRecoveryRequiredError`：停止接纳，修复依赖，retry/重启。
+- embedding fingerprint/维度不匹配：保留原有 pipeline，或执行带备份的显式迁移到新
+  collection。绝不要更改 fingerprint。
+- HTTP 403：需要精确的 loopback Host、JSON content type、无 Origin 和有效 bearer token。
+- 共享不意味着质量提升。所有搜索和写入都经 owner 串行化。本地推理可能成为吞吐瓶颈。
+  包括本地跳转开销在内的可复现测量见验证报告。
+- MVP 为保障重试正确性会无限期保留 receipt。计划 payload 在提交后清除。尚未发布
+  receipt 压缩策略。
+- 未实现分布式多写、embedded 直接读取、远程 Agent API、OAuth、组管理 UI、私有到共享
+  的自动迁移，以及 Native Provider 自动共享提取。
 
-官方 [Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) 提供通用语义存储和检索，
-具备 Qdrant 持久化与 metadata 过滤能力。本项目侧重 Agent 长期记忆生命周期、恢复和显式授权共享，
-不以未经验证的方式贬低官方实现。本功能随 Runtime 0.4.0 发布，默认不启用，需要运维方配置。
+官方 [Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) 提供带 Qdrant 持久化和
+metadata 过滤的语义存储/检索。Qdrant Memory 侧重 Agent 记忆生命周期、持久恢复和显式
+受控共享。此功能属于 Runtime 0.4.0，仍需显式启用并由运维方配置。
 
+## 本机 HTTP 安全边界
 
-### 本机 HTTP 的安全审查边界
+共享 owner 使用未加密的私有本机 HTTP API，仅绑定 `127.0.0.1`。Bearer 凭据约束已配置
+的客户端。以同一 OS 用户运行的恶意代码或本机特权进程不在凭据保密边界内。当前版本不
+支持远程访问，服务不得通过公共代理暴露。
 
-共享 owner 使用未加密的本机私有 HTTP API，固定监听 `127.0.0.1`。
-Bearer 凭据用于约束已配置客户端；同一 OS 用户的恶意代码或本机高权限进程不在
-该凭据的保密边界内。当前版本不支持远程访问，不应通过公共代理暴露服务。
-
-仓库中明确记录一项 Sonar 规则例外：仅对 `qdrant_memory/shared_service.py`
-中的 `python:S5332`（明文 HTTP）应用上述本机传输设计判断。其他安全规则和质量
-阈值继续执行。依据及测试见[架构说明](architecture.md#reviewed-local-http-transport-decision-sonar-s5332)。
-加入远程或通配监听前必须移除此例外，重新审核 TLS 和远程身份授权方案。
+仓库记录了一项 Sonar 规则例外：`python:S5332`（明文 HTTP）仅对
+`qdrant_memory/shared_service.py` 应用上述本机传输设计决定。其他所有安全规则和质量
+阈值继续生效。理由和测试见[架构说明](architecture.md#reviewed-local-http-transport-decision-sonar-s5332)。
+在增加远程或通配监听前，请移除此例外，并重新审核 TLS 与远程身份授权。

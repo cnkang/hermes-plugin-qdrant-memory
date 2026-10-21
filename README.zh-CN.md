@@ -1,13 +1,17 @@
 # Hermes Qdrant 记忆插件
 
-当前源码新增的可选目的地保护与 `shared-doctor` 尚未发布，见
-[部署安全指南](docs/shared-memory/deployment-security.md)和
-[威胁模型](docs/shared-memory/threat-model-v1.md)。本地锁无法阻止持有独立数据库写凭据的远程进程；
-生产部署必须单独配置 Qdrant 凭据和网络隔离。现有发布版安装命令保持不变。
+当前 checkout 中新增的共享部署加固措施记录在
+[受保护目的地指南](docs/shared-memory/deployment-security.md)和
+[版本化威胁模型](docs/shared-memory/threat-model-v1.md)中。这些新增内容尚未发布。
+现有发布版的安装命令保持不变。
 
 ## One Memory, Multiple Agents — 可选的共享 owner
 
-Runtime 0.4.0 新增显式启用的本地认证共享 owner 与 stdio 桥接，多个 Agent 可访问授权空间，旧记录继续私有。Hermes Native Provider 和原私有默认行为保持不变。见[中文操作指南](docs/shared-memory/README.zh-CN.md)、[架构](docs/shared-memory/architecture.md)和[验证报告](docs/shared-memory/report.md)。Native Provider 自动共享提取尚未实现。
+Runtime 0.4.0 新增可显式启用的本地认证共享 owner 与 stdio 桥接。多个 Agent 可以共享
+一个明确授权的空间，旧记录继续保持私有。Hermes Native Provider 与现有私有默认行为
+保持不变。配置、Hermes/DSH 操作示例与限制见[共享记忆指南](docs/shared-memory/README.zh-CN.md)，
+架构见[架构说明](docs/shared-memory/architecture.md)，验证见[验证报告](docs/shared-memory/report.md)。
+Native Provider 自动共享提取已列入计划，尚未实现。
 
 [![CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml)
 [![Platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml)
@@ -16,37 +20,38 @@ Runtime 0.4.0 新增显式启用的本地认证共享 owner 与 stdio 桥接，�
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.4.0** 新增显式启用的本地认证共享 owner 与 stdio 桥接，用于明确的共享记忆场景。
-> 同时保留 0.3.0 的可选离线 CPU Embedding、受信初始化以及对 MCP Python SDK 1.x 和 2.x 的支持。
+> **Runtime 0.4.0** 新增可显式启用的本地认证共享 owner，以及用于明确共享记忆的 stdio
+> 桥接；同时保留 0.3.0 的可选离线 CPU embedding、受信初始化与 MCP Python SDK 1.x/2.x 支持。
 > 显式写入继续按规范化文本去重，不调用 LLM。
 > Runtime 0.4.0 已在 [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.4.0/) 发布。
 > 通用 MCP 发行包和托管启动器各自选择精确的 Runtime 依赖，分别发布。
-> Hermes Plugin Catalog 使用独立审核的固定版本，PyPI 发布不会
-> 自动升级目录。每个目标仍只允许一个写入者。
+> Hermes Plugin Catalog 使用独立审核的不可变固定版本，PyPI 发布不会升级它。
+> 每个目的地仍只允许一个写入者。
 > 参见[发布说明](docs/releases/0.4.0.zh-CN.md)和[验证记录](docs/validation.md)。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 0.4.0 新增[多 Agent 共享记忆](docs/shared-memory/README.zh-CN.md)：
-必须明确启用，私有默认行为不变。
+可选启用本地认证 owner，不改变私有默认行为。
 
-为 Hermes Agent 提供长期记忆的原生插件，以 `MemoryProvider` 接入：
-通过 Hermes 的可信 `ctx.llm` 提取记忆，
-以 Qdrant named dense vector 保存向量和 schema-v1 payload。无需 Mem0 SDK 或
-独立 LLM SDK，不修改 Hermes 核心，不发送插件遥测。
+为 Hermes Agent 提供长期记忆的原生插件，以 `MemoryProvider` 实现。
+Hermes 通过可信的 `ctx.llm` facade 执行提取。Qdrant 保存 named dense vector 和
+schema-v1 payload。不使用 Mem0 SDK 或独立 LLM SDK，不发送遥测，不修改核心。
 
-已收录于官方 [Hermes Plugin Catalog](https://hermes-agent.nousresearch.com/docs/plugins/qdrant-memory)（社区维护插件，community-maintained）。
+已收录于官方 [Hermes Plugin Catalog](https://hermes-agent.nousresearch.com/docs/plugins/qdrant-memory)，
+属于社区维护插件。
 
 ## 工作原理
 
-非 Hermes 用户可在独立 Python 3.11+ 环境中执行
-`pip install 'hermes-plugin-qdrant-memory[mcp]==0.4.0'`；仅 CLI 可省略 `[mcp]`。
-`qdrant-memory` 是 CLI，`mcp` 是服务子命令，standalone 不需要 Hermes。
-见[安装与快速开始](docs/standalone.md)，MCP 用户也可选择
+非 Hermes 用户可在私有的 Python 3.11+ 环境中安装：
+`pip install 'hermes-plugin-qdrant-memory[mcp]==0.4.0'`（仅 CLI 可省略 `[mcp]`）。
+`qdrant-memory` 是 CLI，`mcp` 是其服务子命令。Standalone 不需要 Hermes。
+见[安装与快速开始](docs/standalone.md)。以 MCP 为主的 Agent 也可改用
 [metadata-only 分发包](https://github.com/cnkang/qdrant-memory-mcp)。
-正式发行见 [Runtime PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/)
+公开发行见 [Runtime PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/)
 和 [MCP 分发 PyPI](https://pypi.org/project/qdrant-memory-mcp/)。
-Hermes 原生插件使用下文官方安装机制；授权升级前，验证相同 profile、collection 和 embedding pipeline。
+Hermes 原生插件使用下文官方安装机制。授权升级前，请确认相同的 profile、collection
+和 embedding pipeline。
 
 ```mermaid
 flowchart LR
@@ -60,57 +65,57 @@ flowchart LR
 
 ## 为什么选择这个插件
 
-- 为 Hermes Agent 提供持久、私有的记忆：对话沉淀为你自有 Qdrant 存储中的可检索
-  记忆，召回、更新与按作用域删除均由你掌控。
-- 它是 Hermes 原生 `MemoryProvider`，不是 Mem0；`migrate mem0` 可导入既有
-  Mem0 导出数据。
-- embedded Qdrant 无需额外服务；同一套代码也可指向自建 Server 与 Qdrant Cloud。
-- 完全本地运行可行：embedded Qdrant + 本地 Ollama，数据留在本机。
-- 数据位置取决于目的地：记忆提取使用 Hermes 配置的 LLM，向量化使用配置的
-  embedding 服务，两者都可能是远程服务。见[数据流与隐私](#数据流与隐私)。
-- 本预览版不支持：多写入者 Server/Cloud、hybrid 检索与 Web UI。
+- 为 Hermes Agent 提供持久、私有的记忆：对话成为自有 Qdrant 存储中的可检索记忆，
+  支持召回、更新与按作用域删除。
+- 它是 Hermes 原生 `MemoryProvider`，不是 Mem0。`migrate mem0` 可导入既有 Mem0
+  导出数据。
+- embedded Qdrant 无需独立服务。同一套代码可指向自建 Server 与 Qdrant Cloud。
+- 完全本地部署可行：embedded Qdrant 加本地 Ollama，数据留在本机。
+- 数据位置取决于目的地。提取使用 Hermes 配置的 LLM，向量化使用配置的 embedding
+  服务，两者都可能为远程服务。见[数据流与隐私](#数据流与隐私)。
+- 本预览版不支持：多写入者 Server/Cloud、hybrid 检索和 Web UI。
 
 ## 额外兼容其他 agent
 
-本插件主要为 Hermes Agent 提供持久化记忆集成。作为额外能力，共享后端也能
-通过 Runtime 的 `qdrant-memory --home PATH` JSON CLI 和可选的本地 stdio MCP
-为其他 agent 提供服务，无需安装 Hermes。这些接口支持显式、固定作用域的
-记忆操作及维护/迁移；自动提取与预取仍由 Hermes 生命周期驱动。
-配置和使用边界见[独立运行指南](docs/standalone.md)，跨 agent 的安装与使用
-说明见通用的 [qdrant-memory skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)。
+插件主要提供 Hermes Agent 的持久记忆集成。作为附加能力，其共享后端可通过 Runtime 的
+`qdrant-memory --home PATH` JSON CLI 和可选的本地 stdio MCP 接口为其他 Agent 服务。
+独立使用不需要 Hermes。这些接口支持显式、限定作用域的记忆操作以及维护/迁移。
+自动提取与预取仍属于 Hermes 生命周期功能。配置与边界见[独立运行指南](docs/standalone.md)，
+多 Agent 安装与使用说明见通用的
+[qdrant-memory skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)。
 
-可选 MCP 服务提供四个固定作用域的工具：`qdrant_memory_search`、
+可选 MCP 服务暴露四个限定作用域的工具：`qdrant_memory_search`、
 `qdrant_memory_add`、`qdrant_memory_update` 和 `qdrant_memory_delete`。
-兼容客户端以本地 stdio 子进程启动服务，发现并调用工具；维护和迁移仍通过
-操作员 CLI 完成。[MCP 能力与接入指南](docs/mcp.md)列明配置、共享记忆边界
-和实际验证过的 agent。Runtime 0.2.0 已通过 PyPI 发布这些接口；旧 v0.1.0 不包含 MCP 入口。
+兼容客户端以本地 stdio 进程启动它，并发现和调用这些工具。维护与迁移使用运维 CLI。
+配置、共享记忆边界与已验证的 Agent 矩阵见
+[MCP 能力与接入指南](docs/mcp.md)。Runtime 0.2.0 发布了这些接口。
+已发布的 v0.1.0 插件版本不包含 MCP 入口。
 
 ## 演示
 
-![终端录屏：安装插件、存入偏好、并在新会话中召回](https://raw.githubusercontent.com/cnkang/hermes-plugin-qdrant-memory/main/assets/demo.gif)
+![终端录屏：安装插件、存入偏好，并在新会话中召回](https://raw.githubusercontent.com/cnkang/hermes-plugin-qdrant-memory/main/assets/demo.gif)
 
-录屏展示在干净 profile 上的完整流程：安装已验证的固定版本源码、教一条偏好、
-等待后台提取、在新会话中召回，并清理演示作用域。全部步骤在 embedded 模式下运行；
-`scripts/demo.sh` 以固定版本复现同一流程。
+录屏展示在干净 profile 上的完整流程：安装已验证的固定版本源码、教一条偏好，
+等待后台提取，然后在新会话中召回该偏好，并清理演示作用域。所有步骤都在
+embedded 模式下运行。`scripts/demo.sh` 以固定版本复现同一流程。
 
-## 安装与启用
+## 安装
 
-需要 Python 3.11+、兼容的 Hermes 和可访问的 embedding 服务。最低支持的 Hermes
-版本为 v0.21.5（v2026.9.24）；已测试的主机版本见 [CI 服务](docs/ci.md)。
-默认 embedding 为 Ollama `qwen3-embedding:4b`，维度 2560；请准备足够的本机资源。
+要求：Python 3.11+、兼容的 Hermes 安装以及可访问的 embedding 服务。最低支持的
+Hermes 版本为 v0.21.5（v2026.9.24）。[CI 服务](docs/ci.md)页面记录了已测试的
+主机版本。默认模型需要 Ollama，并需要足够的本机资源来提供 `qwen3-embedding:4b`。
 
-明确选择当前 profile 的 home，不要复用其他 profile 的数据。
+明确选择**当前活动 profile** 的 home。不要复用其他 profile 的数据。
 
-**Catalog 安装：使用官方 Hermes Plugin Catalog 审核过的版本。**
+**Catalog 方案：安装官方 Hermes Plugin Catalog 审核过的版本。**
 
-Catalog 独立选择固定提交，其版本可能早于 Runtime 0.4.0。
-如需使用当前发布版本，包括可选的 CPU Embedding 与引导初始化，
-请采用下方推荐的固定版本安装方式。
+Catalog 选择自己的固定提交，该版本可能早于 Runtime 0.4.0。如需使用当前发布版本
+（包括可选启用的共享记忆），请采用下方推荐的固定版本安装方式。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
-# 如果 Ollama 尚未运行，先启动服务，并保持服务可用。
+# 如果 Ollama 尚未运行，先启动服务并保持其可用。
 hermes plugins install qdrant-memory
 hermes plugins enable qdrant-memory
 hermes memory setup
@@ -118,20 +123,19 @@ hermes config set memory.provider qdrant-memory
 hermes qdrant-memory init
 ```
 
-安装使用 Catalog 审核过的固定提交，并在克隆前先展示该条目的声明工具、版本要求与已知限制；
+安装会解析 Catalog 审核过的提交，并在克隆前打印该条目声明的工具、要求与已知问题。
 `hermes plugins enable` 通过 Hermes PM 准备声明的依赖。
 
 **推荐：通过 Hermes CLI 安装固定版本的 Runtime 0.4.0 源码。**
 
-此不可变源码提交包含可选的 CPU Embedding 与引导初始化，
-不依赖 PyPI 发布或 Catalog 更新。
+此不可变源码提交包含可选启用的共享记忆。它不依赖 PyPI 发布或 Catalog 更新。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
-# 如果 Ollama 尚未运行，先启动服务，并保持服务可用。
+# 如果 Ollama 尚未运行，先启动服务并保持其可用。
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref ae11a0676724afb4af160b51d32da81b0828e089   # Runtime 0.4.0 发布版本
+  --ref ae11a0676724afb4af160b51d32da81b0828e089   # Runtime 0.4.0 release
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
@@ -140,30 +144,30 @@ hermes qdrant-memory init
 
 **上一验证源码：通过 Hermes CLI 安装 Runtime 0.3.0。**
 
-此不可变源码提交包含可选 CPU Embedding 与引导初始化，
-但不包含共享记忆；当前版本请使用上方 Runtime 0.4.0。
-它不依赖 PyPI 发布或 Catalog 更新。
+此较早的不可变源码提交包含可选 CPU embedding 与引导初始化，但早于可选启用的共享
+记忆。当前版本请使用上方 Runtime 0.4.0。它不依赖 PyPI 发布或 Catalog 更新。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
-# 如果 Ollama 尚未运行，先启动服务，并保持服务可用。
+# 如果 Ollama 尚未运行，先启动服务并保持其可用。
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref 534562f1df43541dbf906d248bb11cd085b211ee   # 已验证的 Runtime 0.3.0 源码
+  --ref 534562f1df43541dbf906d248bb11cd085b211ee   # verified Runtime 0.3.0 source
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
 hermes qdrant-memory init
 ```
 
-此方式下，`hermes plugins install` 会检出指定 ref，`hermes plugins enable` 通过 Hermes PM
-准备声明的依赖；`--ref` 需要完整 40 位 commit SHA（tag 不被接受），发布提交见
-[releases 页面](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)。
-不要向 Hermes 管理的环境直接 pip install。省略 `--ref` 即跟随 `main`（开发线）。
+对于这种固定版本形式，`hermes plugins install` 会检出指定 ref，`hermes plugins enable`
+通过 Hermes PM 准备声明的依赖。`--ref` 接受完整 40 字符 commit SHA。
+[releases 页面](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)
+列出各发布提交。不要向受管理的 Hermes 环境执行 pip install。省略 `--ref` 即跟踪
+`main`，也就是开发线。
 
 **历史发行版本：手动克隆已发布的 tag。**
 
-下方 v0.1.0 tag 不包含独立接口及显式写入修复。安装 Runtime 0.4.0 请使用上方固定源码提交。
+下方 v0.1.0 tag 早于独立接口和显式写入修复。Runtime 0.4.0 请使用上方固定源码。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
@@ -173,26 +177,26 @@ git clone --branch "$RELEASE_TAG" --depth 1 \
   https://github.com/cnkang/hermes-plugin-qdrant-memory.git \
   "$HERMES_HOME/plugins/qdrant-memory"
 ollama pull qwen3-embedding:4b
-# 如果 Ollama 尚未运行，先启动服务，并保持服务可用。
+# 如果 Ollama 尚未运行，先启动服务并保持其可用。
 hermes memory setup
 hermes config set memory.provider qdrant-memory
 hermes qdrant-memory init
 ```
 
-安装后验证：
+然后验证安装：
 
 ```bash
 hermes qdrant-memory status
 hermes qdrant-memory doctor
 ```
 
-安装健康时会报告目的地、embedding 服务与 schema fingerprint；`doctor` 会校验
-运行时发现、manifest 解析、导入与注册。开发安装见[开发指南](docs/development.md)。
+安装健康时会报告目的地、embedding 服务和 schema fingerprint。`doctor` 校验运行时
+发现、manifest 解析、导入与注册。开发安装见[开发指南](docs/development.md)。
 
-发布说明、支持的 Hermes/Python 版本与当前限制记录在
-[docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)；`main` 始终是开发线。
+发布说明、支持的 Hermes/Python 版本和当前限制见
+[docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)。`main` 始终是开发线。
 
-本地开发也可以将 checkout 链接到一个专用、可丢弃的 profile：
+本地开发时，可将仓库软链接到一个可丢弃的 profile：
 
 ```bash
 mkdir -p "$HERMES_HOME/plugins"
@@ -201,36 +205,41 @@ hermes memory setup
 hermes config set memory.provider qdrant-memory
 ```
 
-修改配置后重启相应 Hermes runtime 或开始新会话。插件不会在进行中的会话里
-重建系统提示或工具集合，以保持 prompt cache。包安装方式提供
-`hermes_agent.memory_providers` entry point，并保留同目录的 CLI 和配置接口。
+修改配置后请重启会话。现有系统提示与工具集保持不变，以维持 prompt 缓存。包安装方式
+提供 `hermes_agent.memory_providers` entry point，并将 `cli.py` 与 `config_schema.py`
+保留在包入口旁。
+
+默认使用 embedded Qdrant 和 Ollama `qwen3-embedding:4b`（2560 维）。启用 provider 前
+先运行 embedding 服务并提供该模型。Server/Cloud 请在 `$HERMES_HOME/qdrant-memory.json`
+中配置模式。在当前 profile 的 secret scope 中提供 `QDRANT_URL` / `QDRANT_API_KEY`。
 
 ## 已实现能力
 
-- embedded、自托管 Server 和 Qdrant Cloud 使用统一 client。
-- Ollama `/api/embed` 与 OpenAI-compatible `/v1/embeddings`；校验响应数量、
-  维度、有限非零向量和 embedding pipeline fingerprint。
-- 继承主 LLM、Hermes auxiliary task，以及通过宿主信任门禁的 provider/model 覆盖。
-- user/agent 作用域检索，按精确 ID 校验后更新或删除。
-- Hermes 将 provider 回调交给插件后，turn 会先写入私有 SQLite 账本，再由串行
-  后台 worker 提取和提交；会话缓存检索。
-- 基于权威 `previous_content` 镜像 builtin memory，支持重试和崩溃恢复。
-- Mem0 JSON/Qdrant 只读迁移，保留来源 ID、支持 dry-run/resume/verify 和增量更新。
-- 只读 `list` 盘点、便携 `export`（Mem0 可导入 JSON）与带写入围栏的持久化
-  作用域 `delete-all`。
+- embedded、自托管 Server 与 Cloud 使用同一个 Qdrant client。
+- Ollama `/api/embed` 与 OpenAI-compatible `/v1/embeddings`，带严格探测、
+  向量数量/维度校验和 pipeline fingerprint 检查。
+- 继承主 LLM、插件辅助任务路由，以及运维方信任的显式覆盖。
+- user/agent 作用域过滤，用于召回、按精确 ID 更新与删除。
+- Hermes 接纳 provider 回调后，轮次持久化到插件的私有 SQLite 账本。串行写入、
+  会话缓存召回和 builtin memory 镜像都使用权威的 `previous_content`。
+- SQLite WAL 事件/操作账本、传输重试和重启恢复。
+- 仅按 source ID 的 Mem0 JSON/Qdrant 迁移、重新 embedding、dry-run、可恢复
+  manifest、增量更新，以及 ID 与 payload hash 校验。
+- 只读 `list` 盘点、可移植 `export`（Mem0 可导入 JSON），以及带已准备写入围栏的
+  持久化作用域 `delete-all`。
 
-与托管式记忆服务不同，记忆数据保存在你自己的 Qdrant 目的地，插件不调用任何外部
-记忆服务。插件私有的 SQLite 账本（待处理操作、去重/重试记录与会话映射）保存在
-本地 Hermes home，请与 Qdrant 数据一并保留和备份。从 Mem0 的迁移是单向的，
-0.1 不支持向量复用或 hybrid 检索。
+与托管记忆服务不同，记忆数据保存在你自己的 Qdrant 目的地。插件不调用任何外部记忆
+服务。其私有 SQLite 账本（待处理操作、去重/重试记录和会话映射）留在本地 Hermes home。
+请将该 home 与 Qdrant 数据一并备份。从 Mem0 的迁移是单向的，0.1 版不支持向量复用
+或 hybrid 检索。
 
-显式 add 仅在同一 scope 内对 canonical text 精确去重，不调用 LLM；不同文本即使
-高度相似也分别保存。update 仅替换已授权的精确 ID。Hermes 自动提取时，
-相似度仅用于筛选需要复核的候选。事实关系 `SAME` 才跳过，`SUPERSEDES` 更新，
-`CONFLICT` 新增并记录关联，`UNRELATED` 新增。迁移按 source ID 映射，不做语义合并。
+显式 add 只在同一作用域内按规范化文本去重，从不调用 LLM。不同文本无论相似度高低都
+会保存。update 只替换已授权的精确 ID。Hermes 自动提取时，相似度是候选筛选信号，
+不能证明两条事实完全相同。`SAME` 跳过，`SUPERSEDES` 更新，`CONFLICT` 创建关联记录，
+`UNRELATED` 新增记录。迁移使用 source ID，不做语义合并。
 
-四个模型工具为 `qdrant_memory_search`、`qdrant_memory_add`、
-`qdrant_memory_update`、`qdrant_memory_delete`，维护操作通过 CLI 完成：
+四个 Agent 工具为 `qdrant_memory_search`、`qdrant_memory_add`、
+`qdrant_memory_update` 和 `qdrant_memory_delete`。维护操作保留在 CLI：
 
 ```bash
 hermes qdrant-memory status
@@ -241,29 +250,26 @@ hermes qdrant-memory verify
 hermes qdrant-memory retry
 ```
 
-`status` 不访问网络；`doctor`/`verify` 探测已有 collection，不创建或修复它。
-首次配置后运行 `init`：探测 embedding，创建 collection、写入 pipeline fingerprint，
-并为 Server/Cloud 建立 payload 索引。它不调用 LLM 或写入对话记忆；重复运行会
-校验现有 collection，维度、距离或 fingerprint 不兼容时拒绝继续，不覆盖已有数据。
-发现已有 collection 时，`init` 提示选择 `use`（回车默认）或 `clear`（清空重建）。
-`use` 校验 named dense 向量、维度、距离和 pipeline fingerprint，并逐条检查已有
-记忆的 payload、内容 hash 和向量；验证失败时返回非零退出码。已有数据但没有
-可信 fingerprint 的 collection 不能直接复用。`clear` 先验证 embedding 服务，再删除
-目标 collection 的全部数据并重建，同时清除该目标的本地重放任务和迁移记录，防止
-旧记忆恢复；其他 collection 的账本和会话来源隔离记录保留。清空操作无法撤销，
-远端重建失败时会保留恢复意图，需重新运行 `init` 继续恢复；Qdrant 与本地账本
-属于两个系统，清空和重建仍不保证原子操作。
-清空中断后，其他目标操作返回 `reset_recovery_required`；在同一目的地重新运行
-`init`，完成已授权的重置后再启用 provider。
-脚本调用须显式传入 `--existing use` 或 `--existing clear`；后者即授权删除。
-`--collection NAME` 只覆盖本次命令的目标，后续 agent 使用的目标仍来自配置文件。
-所有部署模式的 `init`、`migrate` 和 `retry` 都要求独占写入权。OS lease 只协调
-使用该 profile destination 的本机进程，不是分布式锁；运行前需停止所有主机上
-正在向同一 destination 写入的 Hermes 会话或 gateway。若 `doctor` 已报告
-`ok: true`，collection 已就绪，无需再次初始化；远端 `doctor`、`stats` 和 `verify`
-可在 writer 运行时检查状态。
-`retry` 重试已准备的操作，并让原始失败事件在下次 provider 启动时重新提取。
-维护 embedded 数据库前停止 agent：本地持久化只允许一个 client 进程持有锁。
+`status` 仅在本地运行。`doctor` 与 `verify` 探测已有 collection，但不创建或修复它。
+首次配置后运行 `init`，以探测 embedding、创建 collection、记录其 pipeline fingerprint
+并建立 Server/Cloud payload 索引。它不调用 LLM，也不写入对话记忆。重复运行会校验
+现有 collection。维度、距离或 fingerprint 不兼容时会失败，且不覆盖已有数据。
+collection 已存在时，`init` 询问选择 `use`（回车默认）还是 `clear`。`use` 校验 named
+dense vector、维度、距离和 pipeline 身份，然后检查每条已存记忆的 payload、内容 hash
+和向量。校验失败返回非零退出码。没有可信 fingerprint 的非空 collection 无法被插件复用。
+`clear` 先探测 embedding，再删除并重建目标 collection，同时丢弃该目的地的本地重放工作
+和迁移记录。插件保留其他目的地，以及会话来源隔离区。清空不可撤销，删除/重建也不是原子
+操作。远端重建失败时请重新运行 `init`。
+清空中断会留下持久的重置意图。其他目的地命令会以 `reset_recovery_required` 失败。
+在同一目的地重新运行 `init`，即可在启用 provider 前继续已授权的重置。
+脚本中请显式传入 `--existing use` 或 `--existing clear`。`clear` 即授权删除。
+`--collection NAME` 只覆盖本次命令的目标，不改变后续 Agent 会话使用的 collection。
+`init`、`migrate` 和 `retry` 在所有部署模式下都要求独占写入权。OS lease 只协调使用
+该 profile 目的地的本机进程，不是分布式锁。运行前请停止所有主机上向同一目的地写入的
+Hermes 会话或 gateway。若 `doctor` 已报告 `ok: true`，collection 已就绪，无需初始化。
+远端 `doctor`、`stats` 和 `verify` 可在 writer 运行时检查它。`retry` 会把失败事件
+重新排入下次 provider 启动，并重试已准备的操作。对 embedded 存储执行维护前请停止
+Agent。Qdrant 的本地持久化只允许一个 client 进程。
 
 ## 记忆盘点、导出与按作用域删除
 
@@ -273,169 +279,145 @@ hermes qdrant-memory export --output backup.json # 可再导入的便携 JSON
 hermes qdrant-memory delete-all --user alice --confirm
 ```
 
-`list` 列出已存记忆的作用域、来源与时间戳，以及该目的地的待处理/失败操作计数
-（`--user`/`--agent` 过滤；两者都不给即覆盖整个 collection，`--limit` 限制条数，
-单独使用 `--agent` 会被拒绝）。`export` 将全部记忆（可限定作用域）写出为 Mem0
-导入器可接受的便携 JSON，可用
-`hermes qdrant-memory migrate mem0 --source-json backup.json` 恢复到新的目的地
-（导入会重新 embedding；0.1 不支持向量复用）。往返保留文本、作用域、分类与
-时间戳：Mem0 迁移来的记忆会恢复到同一 point，原生记忆在导出记录中保留原
-point UUID 作为来源信息。导出文件仅属主可读，已存在时必须显式 `--force` 才覆盖。
-导出仅覆盖已存记忆——待处理事件、重试历史与崩溃恢复状态保留在本地账本中；
-如需完整恢复点，请一并备份 profile home。
+`list` 报告已存记忆的作用域、来源和时间戳，也报告该目的地的待处理/失败操作计数。
+用 `--user` 和 `--agent` 过滤；两者都省略则覆盖整个 collection。`--limit` 限制输出，
+且命令拒绝只给 `--agent` 而不给 `--user` 的调用。
+`export` 将所有已存记忆（可限定一个作用域）写成 Mem0 导入器接受的便携 JSON。
+`hermes qdrant-memory migrate mem0 --source-json backup.json` 可将其恢复到新的目的地
+（导入会重新 embedding，0.1 版不支持向量复用）。往返保留文本、作用域、分类和时间戳。
+从 Mem0 迁移的记忆会重新导入到相同的 point，原生记忆在导出记录中保留原始 point UUID
+作为来源。插件写出的导出文件仅属主可读，已存在时须加 `--force` 才覆盖。导出只包含
+已存记忆。待处理事件、重试历史和崩溃恢复状态留在本地账本。完整恢复点请备份 profile home。
 
-`delete-all` 持久删除一个作用域（user×agent 对）的已存记忆与待处理工作（必须显式
-`--user`）：先写入 reset 风格的删除意图，为每个枚举到的 point 以及该作用域内所有
-已准备的写入（含 point 尚未落库的写入）登记删除围栏，同时使该作用域内"已接收但
-尚未提取"的轮次事件失效，随后以一次过滤删除清除该作用域，并在确认作用域为空后
-才清除意图。注意作用域是精确的 (user, agent) 组合：省略 `--agent` 只选"无 agent"
-作用域，而默认 profile 作用域带 agent（`hermes`）——请用 `--agent hermes` 定向它，
-或用 `--all-agents` 删除该用户的全部 agent 作用域；未用 `--all-agents` 时，若其他
-agent 作用域仍有记忆，结果会给出 `other_agent_scopes`。字面量 `*` 只是普通 agent
-id、不是通配符。`--dry-run` 预览各作用域
-条数；`--confirm` 授权删除。删除中断会 fail-closed：其他命令与 provider 启动都会
-返回 `scope_delete_recovery_required`，需 `delete-all --confirm` 恢复完成后才能继续。
-删除意图带版本且显式：无法区分"单 agent 的 `*`"与"全部 agent"的旧版意图会被拒绝
-（`scope_delete_legacy_intent`），须用 `--resolve-legacy single_agent` 显式消歧
-（仅当记录的 agent 为 `*` 或缺失时，才可用 `--resolve-legacy all_agents`）
-后才会执行。删除后新接收的轮次仍可写入新记忆；删除前已接收的内容——已存记忆、已准备的写入与
-未提取的轮次事件——都会被移除或失效。`list`、`export`、`delete-all` 不依赖
-embedding 服务。
+`delete-all` 持久删除一个作用域（必须提供 `--user`）的已存记忆和待处理工作。它先记录
+reset 风格的意图，然后为该作用域内每个枚举到的 point 和每个已准备的写入登记围栏，
+包括 point 从未落库的写入。它使该作用域内已接纳但未处理的轮次事件失效，以一次过滤
+操作删除该作用域，并且只在该作用域为空后清除意图。作用域是精确的 (user, agent) 对。
+省略 `--agent` 选择无 agent 的作用域，而默认 profile 作用域使用 agent（`hermes`）。
+用 `--agent hermes` 指向它，或用 `--all-agents` 删除该用户的全部 Agent 作用域。
+未使用 `--all-agents` 时，若其他 Agent 作用域仍有记忆，结果会报告 `other_agent_scopes`。
+字面量 `*` 是普通 agent id，不是通配符。`--dry-run` 预览各作用域的计数。
+`--confirm` 授权删除。删除中断时 fail-closed：其他命令和 provider 启动都会返回
+`scope_delete_recovery_required`，直到 `delete-all --confirm` 恢复该操作。删除意图
+带版本且显式。未带版本的意图无法区分 `*` 是单个 Agent 还是全部 Agent，因此插件会拒绝
+它（`scope_delete_legacy_intent`）。用 `--resolve-legacy single_agent` 解决，或在记录
+的 agent 为 `*` 或缺失时使用 `--resolve-legacy all_agents`。删除后接纳的轮次仍可新增
+记忆。删除前接纳的所有内容（已存记忆、已准备的写入和未处理的轮次事件）都会被移除或
+失效。`list`、`export` 和 `delete-all` 不需要 embedding 服务。
 
 ## 数据流与隐私
 
-本 provider 只会把数据发往你配置的服务。各组件携带的内容与去向：
+本 provider 只向你所配置的服务发送数据。各组件携带的内容与去向：
 
 | 组件 | 携带内容 | 去向 |
 | --- | --- | --- |
-| 对话/agent 轮次 | 你的对话内容 | Hermes 会话配置的模型 |
-| 记忆提取（`llm.mode: inherit`） | 本轮用户与助手的文本 | 同一会话模型——主模型在云端时，轮次文本会到达该云端 |
-| 事实关系判断 | 候选记忆与相似的已存记忆 | 与提取相同的路由；仅在相似度选中复核候选时触发 |
-| 向量化（`embedding`） | 记忆与搜索文本 | 默认本地 Ollama，或你配置的 OpenAI 兼容端点 |
-| 存储（`qdrant`） | 记忆 payload 与来源信息；账本保留在本地 | 本地 embedded、自托管 server 或 Qdrant Cloud |
+| 对话/Agent 轮次 | 你的对话内容 | Hermes 会话配置的模型 |
+| 记忆提取（`llm.mode: inherit`） | 本轮用户与助手文本 | 同一会话模型。使用云端模型时，轮次文本会到达该云端 |
+| 关系判断 | 候选记忆与相似的已存记忆 | 与提取相同的路由。仅在相似度选中复核候选时运行 |
+| 向量化（`embedding`） | 记忆与搜索文本 | 默认 Ollama，或你配置的 OpenAI 兼容端点 |
+| 存储（`qdrant`） | 记忆 payload 与来源信息。账本留在本地 | 本地 embedded 路径、自托管 Server 或 Qdrant Cloud |
 
 三种常见部署：
 
 | 部署 | 对话模型 | 提取 LLM | 向量化 | 存储 |
 | --- | --- | --- | --- | --- |
-| 全离线 | 本地（如 Ollama） | 继承本地模型 | 本地 Ollama | 本地 embedded |
+| 全离线 | 本地（例如 Ollama） | 继承本地模型 | 本地 Ollama | 本地 embedded |
 | 混合 | 云端 | 默认继承云端模型 | 本地 Ollama | 本地 embedded |
 | 全云端 | 云端 | 云端 | OpenAI 兼容端点 | Qdrant Cloud |
 
-全离线部署需要同时为对话模型与向量化准备足够的本机算力：验证期间，24 GB 主机上
-27B 本地对话模型加本地向量化已超出可用显存，本地模型每轮可能耗时数分钟。请按此
-规划资源，或选用更小的本地模型。
+全离线部署需要同时为对话模型和向量化准备足够的本机算力。在 24 GB 主机上，27B 本地
+对话模型加本地向量化在验证期间已超出舒适显存。本地模型每轮可能耗时数分钟。请据此
+规划资源，或改用更小的本地模型。
 
-混合部署中，提取与关系判断默认继承会话模型；若对话文本不应到达主模型的
-provider，可将提取路由到其他模型（`llm.mode: task` 并结合插件的辅助任务解析到
-本地模型，或 `llm.mode: override` 显式指定 provider 与模型）。提取指令会排除
-明显的凭据与瞬时状态，但任何被配置的 LLM 或 Qdrant 目的地都可能看到其处理的
-记忆内容，请据此评估信任边界。本地账本的逻辑清理不等于安全擦除——见
-[运维文档](docs/operations.md)与[安全文档](docs/security.md)（英文）。
+在混合部署中，提取和关系判断继承会话模型。可用 `llm.mode: task`（插件辅助任务路由到
+本地模型）或 `llm.mode: override`（显式 provider 与模型）将它们路由到别处。
+提取指令会排除明显的凭据和瞬时状态，但任何已配置的 LLM 或 Qdrant 目的地都可能看到
+它处理的记忆。请据此评估信任边界。本地账本的逻辑清理不等于安全擦除。见
+[运维文档](docs/operations.md)和[安全文档](docs/security.md)。
 
-提取与关系判断通过 Hermes 辅助调用执行，其按任务超时默认 30 秒，本地慢模型很容易
-超时。全本地部署请调大 `auxiliary.qdrant_memory_extraction.timeout`（秒）；超时的
-提取会保留为失败工作，可用 `hermes qdrant-memory retry` 重新排队。
+提取和关系判断作为 Hermes 辅助调用运行。其按任务超时默认 30 秒，慢速本地模型很容易
+超过。全本地部署请调大 `auxiliary.qdrant_memory_extraction.timeout`（秒）。超时的
+提取会成为失败工作，可用 `hermes qdrant-memory retry` 重新排队。
 
 ## 配置与迁移
 
-行为配置位于 `$HERMES_HOME/qdrant-memory.json`，凭据放在当前 profile 的 Hermes
-secret scope。默认 embedded 数据位于 `$HERMES_HOME/qdrant-memory/qdrant`。
-`hermes memory setup` 检测当前 profile 环境中的 `QDRANT_URL` 和 `QDRANT_API_KEY`，
-已有值直接使用并跳过对应输入，只提示变量已设置，不显示其内容。两项分别检测，
-缺失项仍需输入；环境 URL 优先于旧配置 URL，保存环境引用而不复制值或密钥。
-Server 默认地址为 `http://127.0.0.1:6333`；Cloud 要求 HTTPS 和 Database API key。
-详细示例、默认值、OpenAI-compatible embedding、LLM 路由及显式 fallback 见
-[配置文档](docs/configuration.md)（英文）。
+行为配置位于 `$HERMES_HOME/qdrant-memory.json`。凭据属于当前 profile 的 Hermes
+secret scope。默认使用 embedded Qdrant。运行 setup 时，向导会复用当前 profile 环境中已有的
+`QDRANT_URL` 和 `QDRANT_API_KEY`，不再额外提示。setup 会报告这些变量是否存在，但不
+显示其值，只询问缺失项，并保存环境引用而不是复制提供的值或密钥。环境 URL 会替换已保存
+插件设置中的旧显式 URL。Server 或 Cloud 请设置 `qdrant.mode`、collection 和端点。
+Cloud 要求 HTTPS 和 Database API key。[配置示例与默认值](docs/configuration.md)
+涵盖 Ollama、OpenAI 兼容 embedding、LLM 路由和显式 fallback。
 
-迁移前备份来源，并使用独立目标 collection：
+使用独立的目标 collection，并保持 Mem0 来源不变：
 
 ```bash
 hermes qdrant-memory migrate mem0 --source-json /path/to/export.json --dry-run
-# 正式迁移前，所有部署模式都需停止同一目标的 writer。
-# 后台服务用以下命令；CLI 会话用 /exit，前台 gateway 用 Ctrl-C。
+# 停止 CLI/前台 writer；对于已安装的后台 gateway：
 hermes gateway status
 hermes gateway stop
-hermes gateway status
 hermes qdrant-memory migrate mem0 --source-json /path/to/export.json \
   --target-collection hermes_qdrant_memory --resume --verify
 hermes qdrant-memory verify --collection hermes_qdrant_memory
-hermes qdrant-memory stats --collection hermes_qdrant_memory
 ```
 
-仅在迁移和验证成功后，恢复原先运行的后台服务：
+重新 embedding 是默认行为。`--resume` 需要相同的 snapshot 和 pipeline。加
+`--retry-failed` 可按该 manifest 重试失败操作。迁移验证检查精确 ID、作用域和 payload
+hash，而不只是记录数。被取消的迁移记录成为终态 `SUPERSEDED` 工作，绝不计为成功写入。
+resume 保留后续的删除意图。`--verify` 会以非零退出码报告 `migration_superseded` 冲突。
+只要仍有失败记录，`--verify` 会报告 `migration_incomplete`。请先修正并 resume 失败项，
+再审查冲突或进行有意的新导入。只有新导入或更改的 snapshot 才授权重新规划。
+恢复按有限分页读取操作和事件。保留的账本历史仍需监控磁盘容量。
+真实导入前，停止所有向目标写入的会话/gateway，Server/Cloud 也一样。`writer_busy`
+要求停止活动 writer，而不是删除锁文件或账本文件。成功的 dry-run 不检查写入者所有权。
+可执行的 gateway 停止/启动、迁移、验证和中断导入恢复命令见
+[迁移指南](docs/migration-from-mem0.md)。
 
-```bash
-hermes gateway start
-hermes gateway status
-```
+## 运维与安全
 
-若提示 `WriterBusyError` / `writer_busy`，说明仍有会话或 gateway 持有写入锁，
-不是迁移数据格式错误。用 `hermes gateway list` 检查其他 profile，停止相关 writer
-并等待后台请求退出后，重跑原命令；不要删除锁文件、`state.db` 或清空 collection。
-`dry-run` 不申请写入锁，也不探测目标服务，因此成功不代表可以立即正式迁移。
-前台 gateway 迁移后用 `hermes gateway run` 恢复；仅使用 CLI 时重新运行 `hermes`。
-共享 gateway 停机会影响其他 profile；其他机器上的 writer 也需协调停止。
-已开始但中断或存在失败操作时，修正原因后保持同一来源、目标和 embedding pipeline：
+私有 SQLite 账本可能包含原始轮次事件和已准备的 payload。它会逻辑清除已提交事件的正文
+以及已提交/已 supersede 操作的正文，但仍被未完成迁移 manifest 需要的操作除外。
+身份/状态行和 manifest 保留。待处理/失败工作会保留正文以支持恢复。账本行和 manifest
+没有基于时间的过期策略。删除 Qdrant 记忆不会清除待处理或失败的账本工作。请将
+`state.db`、SQLite WAL/SHM sidecar、复制的快照和备份视为敏感数据。用 embedded 存储
+备份账本前请停止 Agent。`init --existing clear` 会清除所选 collection 的账本行，但
+逻辑清除/重置不等于从磁盘页面或此前复制的备份中安全擦除。不要通过删除 `state.db`
+来恢复失败工作。更改 embedding 身份需要新的 collection。
 
-```bash
-hermes qdrant-memory migrate mem0 --source-json /path/to/export.json \
-  --target-collection hermes_qdrant_memory --resume --retry-failed --verify
-hermes qdrant-memory verify --collection hermes_qdrant_memory
-```
+持久化保证从 Hermes 调用 provider 的 `sync_turn` 回调、且插件将事件提交到 SQLite 后
+才开始。Hermes 目前将该回调提交到内存后台队列。宿主突然退出或其有界 shutdown 可能
+丢弃尚未进入插件接纳流程的工作。账本接纳后，插件会在重启后重放待处理事件和已准备
+操作。该插件账本无法让更早的宿主队列变为持久队列。
 
-默认重新 embedding。`--resume` 匹配相同 snapshot、目标和 pipeline；失败操作需要
-`--retry-failed`。验证逐条检查 ID、scope 和 payload hash，数量相等不足以证明迁移
-正确。来源 collection 不会被修改；返回 Mem0 时修改 provider 配置并重启。
-被取消的迁移记录以 `SUPERSEDED` 终态结束，不会冒充成功写入；resume 保留后续删除
-意图，`--verify` 返回 `migration_superseded` 和非零退出码。只要仍有失败记录，
-`--verify` 先返回 `migration_incomplete`：先修复失败并 resume，再审查冲突或新导入。
-只有明确启动新导入或更改来源快照才能重新规划。
-恢复按有限水位分批读取 operation/event；保留的账本历史仍需监控磁盘容量。
-支持的输入、Qdrant 来源和回退步骤见[迁移文档](docs/migration-from-mem0.md)（英文）。
-
-## 运行、安全与限制
-
-SQLite 账本可能保存原始 turn 和待提交记忆。事件提交后会逻辑清除事件正文；操作
-提交或被 supersede 后也会清除正文，但未完成迁移 manifest 仍引用的操作除外。行的
-身份/状态信息和 manifest 会保留；PENDING/FAILED 工作会保留正文以支持恢复。账本行和
-manifest 没有按时间过期的策略。删除 Qdrant 记忆不会清除仍在等待或失败的账本任务。
-`state.db`、SQLite WAL/SHM sidecar、快照和备份都应按敏感数据管理；停止 agent 后再
-一起备份账本与 embedded 数据库。执行 `init --existing clear` 会清除选中 collection
-对应的账本行，但逻辑清除/重置不保证擦除磁盘页面或已有备份。不要删除 `state.db` 来
-恢复失败；先排查配置与服务再 retry。embedding 模型、维度或 fingerprint 改变时需要新
-collection 和显式迁移。
-
-插件的持久化保证从 Hermes 调用 `sync_turn` 并且插件将事件提交到 SQLite 后开始。
-Hermes 当前通过内存后台队列提交该回调；宿主进程突然退出或有界 shutdown 可能丢弃
-尚未进入插件的任务。账本接纳后，插件会在重启时重放待处理事件和已准备操作；插件
-账本无法让更早的宿主队列变成持久队列。
-
-工具参数不能覆盖调用者 scope；bot 和非 primary agent 不自动写记忆。召回文本是不
-可信数据。安全、恢复流程和设计说明见[安全](docs/security.md)、
-[运维](docs/operations.md)、[故障排查](docs/troubleshooting.md)、
-[架构](docs/architecture.md)文档（英文）。
+工具参数不能覆盖 user/agent 作用域。自动写入排除 bot 和非 primary Agent 的轮次。
+请将召回内容视为不可信数据。见[安全](docs/security.md)、[运维流程](docs/operations.md)、
+[故障排查](docs/troubleshooting.md)和[架构](docs/architecture.md)。
 
 ## 兼容性与范围
 
-v0.1 实现 dense retrieval。Hybrid sparse vector、RRF/DBSF、rerank、recency
-weighting 属于后续范围；不支持的配置会被拒绝。named `dense` vector 为未来的
-sparse vector 保留了演进路径。
+0.1 版实现 dense 检索。Hybrid sparse vector、RRF/DBSF、rerank 和 recency weighting
+属于后续能力。插件会拒绝不支持的配置。named `dense` vector 保留了通向未来 sparse
+vector 的路径。
 
-embedding `inherit` 采用特性探测，且需要显式 `inherit_fallback`。未来的宿主
-facade 必须提供 `dimensions`、`fingerprint`、`embed_documents()` 和
-`embed_query()`。当前 Hermes 未声明提供全局 embedding facade。
+插件对 embedding `inherit` 做特性探测，并要求显式 `inherit_fallback`。未来的宿主
+facade 必须提供 `dimensions`、`fingerprint`、`embed_documents()` 和 `embed_query()`。
+当前 Hermes 没有文档化的全局 embedding facade。
 
-兼容性要求 Hermes `MemoryProvider`、checkpoint v2、可信 turn author、权威
-`previous_content`、scoped secrets 和 context thread；更早的版本契约不完整。
-最低支持版本为 v0.21.5（v2026.9.24）。已测试的环境和仍需实机验证的项目见
+兼容性要求 Hermes `MemoryProvider`、checkpoint v2、可信的轮次作者、权威的 builtin
+`previous_content`、限定作用域的 secret 和 context thread。更早的 tag 契约不完整。
+最低支持版本为 v0.21.5（v2026.9.24）。已测试环境和仍需实机验证的服务检查见
 [验证记录](docs/validation.md)。部署前请阅读[配置](docs/configuration.md)、
-[迁移](docs/migration-from-mem0.md)、[安全](docs/security.md) 和
+[迁移](docs/migration-from-mem0.md)、[安全](docs/security.md)和
 [运维](docs/operations.md)。
 
-## 开发验证
+## 开发
 
-从 Hermes checkout 使用 PM 构建隔离环境，再运行宿主 canonical runner：
+提交前运行 Ruff lint 和格式检查。按[开发指南](docs/development.md)安装仓库 pre-commit
+hook。该 hook 检查暂存快照。CI 运行 lint、两个 Python 版本、Snyk 和 SonarCloud。
+已测试的主机版本与 lane 见 [CI 服务](docs/ci.md)。
+
+用 Hermes PM 构建隔离的依赖环境，再用宿主的 canonical 测试运行器运行本仓库的测试。
+测试会导入真实宿主，并使用临时的 `HERMES_HOME`。
 
 ```bash
 cd /path/to/hermes-agent
@@ -449,29 +431,25 @@ HERMES_PYTHON=/path/to/hermes-plugin-qdrant-memory/.test-env/bin/python \
   scripts/run_tests.sh /path/to/hermes-plugin-qdrant-memory/tests -j 1 --file-retries 0
 ```
 
-插件的 `test` 开发依赖组从 `pyproject.toml` 读取。当前测试的宿主 PM 只导出
-运行时依赖，因此先追加插件运行时依赖和测试组，再构建组合环境。
+构建会从 `pyproject.toml` 读取插件的 `test` 开发依赖组。已测试的宿主 PM 只导出运行
+时依赖。构建组合环境前，先追加插件的运行时依赖和测试组。
 
-在插件 checkout 中运行真实 embedding pilot：
+在插件 checkout 中，用宿主导入路径运行真实 embedding pilot：
 
 ```bash
 PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate.py
 ```
 
-评估使用临时 embedded 数据库和 UTF-8 JSON；自定义数据集包含带 `id`/`text` 的
-`memories`，以及带 `query`/`relevant_ids` 的 `queries`。
-[最初的 12 条查询记录](docs/retrieval-baseline.json)是历史合成回归基线，
-不代表生产召回质量。当前默认 fixture 已扩展为 24 条带标签的查询，
-覆盖中文、英文、混合语言和 hard-negative 场景；请运行当前 fixture 获取最新测量。
-重放与账本存储的独立合成测量见[恢复基准](docs/recovery-benchmark.md)（英文）。
+它使用临时 embedded collection 和 UTF-8 JSON 数据集。自定义数据集包含带 `id`/`text`
+的 `memories` 对象，以及带 `query`/`relevant_ids` 的 `queries`。默认 fixture 现包含
+24 条带标签查询，涵盖中文、英文、混合语言和 hard-negative 场景。
+[最初的 12 条查询记录](docs/retrieval-baseline.json)是历史合成回归基线。当前测量请
+重跑当前 fixture。这些 fixture 不能证明生产召回质量。独立的合成重放与保留存储测量见
+[恢复基准](docs/recovery-benchmark.md)。
 
-提交前运行 Ruff lint 和格式检查，并按[开发指南](docs/development.md)（英文）
-安装仓库 pre-commit hook。hook 检查暂存内容；CI 运行 lint、Python 测试、
-Snyk 与 SonarCloud。已测试的主机版本与各 lane 见 [CI 服务](docs/ci.md)。
-
-CI 运行测试、SonarCloud 质量门禁与 Snyk 依赖/源码扫描。
-见[CI 配置](docs/ci.md)（英文）。
+CI 运行测试、SonarCloud 质量门禁以及 Snyk 依赖/代码扫描。
+见 [CI 服务配置](docs/ci.md)和[验证证据](docs/validation.md)。
 
 ## 许可证
 
-MIT，Copyright © 2026 Kang Liu。详见 [LICENSE](LICENSE)。
+MIT。Copyright © 2026 Kang Liu。见 [LICENSE](LICENSE)。
