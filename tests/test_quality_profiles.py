@@ -20,7 +20,7 @@ def test_hosted_models_are_separate_from_the_reference_models():
     module = runner()
     hosted = module["model_profile"]("hosted-ollama")
     reference = module["model_profile"]("reference")
-    assert hosted["llm"]["model"] != reference["llm"]["model"]
+    assert hosted["embedding"]["model"] != reference["embedding"]["model"]
     assert hosted["embedding"]["dimensions"] == 1024
     assert reference["embedding"]["dimensions"] == 2560
     assert hosted["llm"]["base_url"] == "http://127.0.0.1:19134/v1"

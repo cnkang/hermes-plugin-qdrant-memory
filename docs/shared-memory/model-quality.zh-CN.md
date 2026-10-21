@@ -118,7 +118,7 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 
 | 配置 | Runner | 生成 | 向量化 |
 | --- | --- | --- | --- |
-| `hosted-ollama`（默认） | GitHub `ubuntu-24.04` | `qwen3:4b-instruct-2507-q4_K_M` | `qwen3-embedding:0.6b`，1024 维 |
+| `hosted-ollama`（默认） | GitHub `ubuntu-24.04` | `qwen3:8b` | `qwen3-embedding:0.6b`，1024 维 |
 | `openrouter-free` | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | 同一个本地 0.6B 模型 |
 | `reference` | 带 `qdrant-memory-models` 标签的一次性 Linux runner | 已安装的 `qwen3:8b` | 已安装的 `qwen3-embedding:4b`，2560 维 |
 
@@ -151,6 +151,11 @@ OpenRouter 配置要求 GitHub Environment `model-quality` 中包含测试 Secre
 独立的双主体 Ollama 原生探针仅在 `reference` 配置运行。
 每种配置均运行完整基线和 mutation 门禁。
 仅有工作流配置不能证明已执行。应单独记录运行链接和实际结果。
+
+[首次托管运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) 使用 `qwen3:4b-instruct-2507-q4_K_M`，结果失败。
+Precision 为 1.0，但正例召回率和 Recall@5 均为 0.4375。Mutation 检查也失败。
+Provider 错误和作用域泄漏均为零。这是失败证据，不能作为通过验收的证据。
+托管配置现使用 reference 生成模型，并保留较小的嵌入模型。质量阈值保持不变。
 
 普通测试 CI 也运行评分器单元测试。
 

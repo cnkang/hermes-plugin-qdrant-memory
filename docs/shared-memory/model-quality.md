@@ -122,7 +122,7 @@ Select one of these profiles:
 
 | Profile | Runner | Generation | Embeddings |
 | --- | --- | --- | --- |
-| `hosted-ollama` (default) | GitHub `ubuntu-24.04` | `qwen3:4b-instruct-2507-q4_K_M` | `qwen3-embedding:0.6b`, 1024 dimensions |
+| `hosted-ollama` (default) | GitHub `ubuntu-24.04` | `qwen3:8b` | `qwen3-embedding:0.6b`, 1024 dimensions |
 | `openrouter-free` | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | The same local 0.6B model |
 | `reference` | Disposable Linux runner with `qdrant-memory-models` label | Installed `qwen3:8b` | Installed `qwen3-embedding:4b`, 2560 dimensions |
 
@@ -155,6 +155,11 @@ Results from a smaller model do not replace the historical reference measurement
 The separate two-subject native Ollama probe runs only for `reference`.
 The full baseline and mutation gates run for every profile.
 Workflow configuration alone does not prove execution. Record the run URL and actual result separately.
+
+The [initial hosted run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) used `qwen3:4b-instruct-2507-q4_K_M` and failed.
+Precision was 1.0, but positive-case recall and Recall@5 were 0.4375. Mutation checks also failed.
+Provider errors and scope leaks were zero. This is failure evidence, not acceptance evidence.
+The hosted profile now uses the reference generation model with the smaller embedding model. The quality thresholds remain unchanged.
 
 Ordinary test CI also runs the scorer unit tests.
 
