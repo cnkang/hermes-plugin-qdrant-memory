@@ -130,9 +130,10 @@ The first two profiles need no self-hosted runner.
 They download a fixed Ollama release and fixed model manifests from [Ollama](https://github.com/ollama/ollama/releases).
 The setup checks the archive checksum and model digests in [model-profiles.json](../../tests/quality/model-profiles.json).
 It starts a private process on loopback port 19134. It stops that process after the test.
-CI caches dependency downloads, the fixed Ollama installation, and each profile's local models.
+CI caches dependency downloads, the fixed Ollama release archive, and each profile's local models.
 Cache keys include the platform and the relevant lock or model configuration hash.
-Model digests and the running Ollama version are checked after cache restore.
+Every restored archive is checked against its fixed SHA-256 before extraction or execution.
+Model digests and the running Ollama version are also checked after cache restore.
 Credentials, evaluation reports, process IDs, and temporary memory data are excluded from caches.
 The model workflow saves verified downloads before quality checks, so a later quality failure does not discard them.
 The reference profile retains port 11434 and requires a separately provisioned test runner.
@@ -169,7 +170,8 @@ The default workflow now uses Free Router generation and the local 0.6B embeddin
 The quality thresholds remain unchanged.
 Setup records Ollama's loaded-model size in `quality-model-resources.json`. This is not peak process memory.
 The 3B attempt reported 2,168,360,795 bytes for generation and 1,237,875,425 bytes for embeddings, with zero GPU memory.
-Dependency and Ollama installation caches were restored in that run. The changed model set was downloaded and saved under a new key.
+Dependency and historical Ollama installation caches were restored in that run. The changed model set was downloaded and saved under a new key.
+Current runs cache the verified archive and extract it again, so cached executables cannot bypass archive validation.
 The 1.7B model uses [Apache License 2.0](https://ollama.com/library/qwen3:1.7b); CI downloads it for evaluation and does not bundle its weights.
 
 ### Container alternative
