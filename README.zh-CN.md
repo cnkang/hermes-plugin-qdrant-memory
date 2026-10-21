@@ -25,7 +25,7 @@ Native Provider 自动共享提取已列入计划，尚未实现。
 > 显式写入继续按规范化文本去重，不调用 LLM。
 > Runtime 0.4.0 已在 [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.4.0/) 发布。
 > 通用 MCP 发行包和托管启动器各自选择精确的 Runtime 依赖，分别发布。
-> Hermes Plugin Catalog 使用独立审核的不可变固定版本，PyPI 发布不会升级它。
+> Hermes Plugin Catalog 使用独立审核的固定版本（不可变），PyPI 发布不会自动升级目录中的版本。
 > 每个目的地仍只允许一个写入者。
 > 参见[发布说明](docs/releases/0.4.0.zh-CN.md)和[验证记录](docs/validation.md)。
 
@@ -109,7 +109,7 @@ Hermes 版本为 v0.21.5（v2026.9.24）。[CI 服务](docs/ci.md)页面记录�
 
 **Catalog 方案：安装官方 Hermes Plugin Catalog 审核过的版本。**
 
-Catalog 选择自己的固定提交，该版本可能早于 Runtime 0.4.0。如需使用当前发布版本
+Catalog 独立选择固定提交，该版本可能早于 Runtime 0.4.0。如需使用当前发布版本
 （包括可选启用的共享记忆），请采用下方推荐的固定版本安装方式。
 
 ```bash
