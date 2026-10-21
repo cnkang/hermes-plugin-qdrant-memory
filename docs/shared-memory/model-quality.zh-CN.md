@@ -171,7 +171,10 @@ Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,9
 [4B 比较](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39681606697)也通过五次生命周期，但生成模型加载 3,146,734,631 字节。
 [0.6B 比较](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39681613565)仍因项目捕获为空而失败。
 选择 0.8B 作为默认配置。其他配置保留为手动选项，CI 不运行模型矩阵。
-实际 Prompt 已改变，因此此前 OpenRouter 完整质量 PASS 不能认证新适配器。需在 main 上重跑完整质量评估。
+实际 Prompt 已改变，因此此前质量结果不能认证新适配器。
+位于 `24f9b11` 的 [main 分支对照运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39691877748)使用 Liquid Chat 和本地嵌入模型重跑了完整评估。
+Precision、正例召回率、Recall@5 和 MRR@5 均为 1.0。Mutation 和上下文门禁通过，实际观察到 29 次 Chat 响应，provider 失败为零。
+此对照不验证新的远程 Embedding 配置。
 
 ## 手动质量工作流
 
@@ -181,7 +184,7 @@ Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,9
 
 | 配置 | Runner | 生成 | 向量化 |
 | --- | --- | --- | --- |
-| `openrouter-free`（默认质量） | GitHub `ubuntu-24.04` | OpenRouter `liquid/lfm-2.5-2.6b:free` | `qwen3-embedding:0.6b`，1024 维 |
+| `openrouter-free`（可选对照） | GitHub `ubuntu-24.04` | OpenRouter `liquid/lfm-2.5-2.6b:free` | `qwen3-embedding:0.6b`，1024 维 |
 | `hosted-ollama`（可选对比） | GitHub `ubuntu-24.04` | `qwen3:1.7b` | 同一个本地 0.6B 模型 |
 | `hosted-qwen35`（实验性） | GitHub `ubuntu-24.04` | `qwen3.5:2b` | 同一个本地 0.6B 模型 |
 | `hosted-qwen35-4b`（实验性） | GitHub `ubuntu-24.04` | `qwen3.5:4b` | 同一个本地 0.6B 模型 |
@@ -202,44 +205,117 @@ reference 配置仅从 `main` 运行。
 固定的缓存 Action 使用 6.1.0 版及 Node.js 24。reference runner 必须为 2.327.1 或更高版本。
 初始化在测量前加载本地模型。报告的模型延迟不包含首次下载及加载。
 
-OpenRouter 配置要求 GitHub Environment `model-quality` 中包含测试 Secret `OPENROUTER_API_KEY`。
-不需要其他凭据。仅从 `main` 运行此配置。
-只有它的生成步骤接收此 Secret。向量化仍在 runner 上执行。
-只有此配置使用凭据 Environment。所有本地配置均使用 `model-smoke`。
-[Free Router](https://openrouter.ai/docs/guides/routing/routers/free-router) 为每次请求选择可用的免费模型。
-报告记录观测到的模型 ID 和 HTTP 状态计数。
-各次请求可能选择不同模型，因此结果仅描述本次运行。
-评估器使请求至少间隔 3.1 秒。配额和服务可用性仍可能导致失败。
-不设付费回退，也不在 provider 拒绝后自动重试。
-缺少 Secret、限流、provider 错误或缺少模型观测均不能产生 PASS。
-仅使用合成测试数据。OpenRouter 会收到合成的生成提示词。
+## OpenRouter Cloud Smoke 与 Cloud Quality
 
-如需固定质量模型，将手动输入 `generation_model` 设为以 `:free` 结尾的明确模型 ID。
-也可将 `OPENROUTER_QUALITY_MODEL` 配置为 Environment Variable 或 Secret。该公开模型名称优先使用 Variable。
-优先级为手动输入、Variable、Secret。选择为空时使用固定的 Liquid 免费模型。
-需要动态探索时，显式选择 `openrouter/free`。
-付费模型 ID 与格式错误值会在 provider 请求前失败，不设模型回退。
-Owner 请求 `provider.require_parameters=true`，要求 OpenRouter 选择支持所请求结构化输出参数的端点。
-现有 Owner LLM 适配器接受可选布尔值 `provider_require_parameters`；其他配置省略该值。
-不支持的端点必须失败，不能静默丢弃必需参数。
-参见 [OpenRouter 结构化输出](https://openrouter.ai/docs/guides/features/structured-outputs)。
+这两个可选模式仅从 `main` 手动运行，不在 pull request 或 fork 上运行。
+两者复用现有 Owner Runtime 和官方 API `https://openrouter.ai/api/v1`。
+两者均不使用本地模型权重。`openrouter-free` 对照配置保留本地嵌入模型。
 
-报告区分 `fixed-route` 与 `dynamic-free-router`。
-固定模型要求实际响应中的模型 ID 匹配；缺失、不同或混合 ID 均使门禁失败。
-`:free` 后缀具有意义。缺少后缀的响应不能证明它就是所配置的变体。
-Free Router 结果属于探索性结果，即使分数通过，也不构成发布候选验收要求的固定模型基线。
-每次运行均保留模型 ID、观测 ID、嵌入模型清单、数据集与提示词指纹。
+| 模式 | 配置 | 默认 Chat | 默认 Embedding | 预期维度 |
+| --- | --- | --- | --- | --- |
+| Cloud Smoke | `openrouter-cloud-smoke` | `liquid/lfm-2.5-2.6b:free` | `liquid/lfm-2.5-embedding-350m:free` | 1024 |
+| Cloud Quality | `openrouter-cloud-quality` | `google/gemma-4-26b-a4b-it:free` | `nvidia/nemotron-3.5-embed-1b:free` | 2048 |
 
-所有配置使用完整的固定语料和相同质量阈值。
+表中维度为预期值。实际批量响应必须在 Qdrant 启动前确认这些维度。
+不匹配时运行失败。每次运行使用新的临时 Embedded Qdrant collection，并在测试后删除。
+Cloud Smoke 通过 HTTPS MCP 执行一次合成 Hermes 和 Pi 生命周期。
+它检查提取、向量、授权召回、私有隔离、重放和重启。
+成功状态为 `SMOKE_PASS`，同时记录 `quality_evaluated=false` 和 `baseline_executed=false`。
+Cloud Quality 使用完整固定语料、现有评分器、mutation 评估器和原有阈值。
+HTTP 200、有效 JSON 或单条搜索结果均不能证明质量 PASS。
+
+### 配置和运行
+
+1. 打开仓库 Settings，再打开 Environments 中的 `model-quality`。
+2. 添加测试 Secret `OPENROUTER_API_KEY`。不要将密钥放入 Variable、日志或 artifact。
+3. 如需覆盖默认值，添加下表中的可选 Repository 或 Environment Variable。
+4. 打开 Actions，选择“Optional real-model Owner lifecycle quality”，再选择“Run workflow”。
+5. 选择 `main` 分支和所需配置。两个模型输入留空即可使用已配置默认值。
+
+| 可选 Variable | 用途 |
+| --- | --- |
+| `OPENROUTER_SMOKE_CHAT_MODEL` | Cloud Smoke Chat |
+| `OPENROUTER_SMOKE_EMBEDDING_MODEL` | Cloud Smoke Embedding |
+| `OPENROUTER_QUALITY_CHAT_MODEL` | Cloud Quality 或对照 Chat |
+| `OPENROUTER_QUALITY_EMBEDDING_MODEL` | Cloud Quality Embedding |
+
+仅 API Key 为必需项，模型名称属于公开配置。
+优先级为显式 `generation_model` 或 `embedding_model` 输入、对应 Variable、默认值。
+对于质量 Chat，兼容的 `OPENROUTER_QUALITY_MODEL` Variable 或 Secret 位于新 Variable 之后、默认值之前。
+空值视为未设置。四个 Variable 也可直接在本地 shell 中使用。
+本地对应的手动输入为 `OPENROUTER_CHAT_MODEL_INPUT` 和 `OPENROUTER_EMBEDDING_MODEL_INPUT`。
+需要归因对照时，以与 Cloud Quality 相同的显式 Chat 模型运行 `openrouter-free`。
+这会保留现有本地嵌入模型。将结果与完整远程配置比较。
+手动备选 Embedding 模型 `nvidia/nemotron-3-embed-1b:free` 必须通过显式覆盖选择。
+不进行自动模型替换。
+
+手动云运行缺少凭据时，会生成脱敏 FAIL artifact，并记录 `required_secret=OPENROUTER_API_KEY`。
+普通 PR 任务跳过云评估，不接收 API Key。
+仅显式云评估步骤接收此密钥，Pi 子进程不继承该密钥。
+本地运行需安装相同的锁定测试依赖，并通过 shell 的安全环境设置密钥。
+以下命令均需使用新的输出路径：
+
+```sh
+python scripts/smoke_owner_lifecycle.py --model-profile openrouter-cloud-smoke \
+  --adapter-root /path/to/qdrant-memory-mcp --output /tmp/cloud-smoke-new.json
+python scripts/evaluate_owner_lifecycle.py --model-profile openrouter-cloud-quality \
+  --adapter-root /path/to/qdrant-memory-mcp --scenarios tests/quality/lifecycle-mutations-v1.json \
+  --output /tmp/cloud-quality-new.json
+```
+
+### 免费路由和失败检查
+
+运行器在推理前检查官方 Chat 或 Embedding 目录以及有效端点元数据。
+它要求声明价格全部为零、支持文本输入及正确输出类型，且 Chat 支持 `response_format`。
+随后通过实际严格 JSON 探针和实际向量批次检查能力。
+请求保留明确的固定 `:free` ID，要求支持 Chat 参数，并将 prompt 和 completion 价格上限设为零。
+付费 ID 和 `openrouter/free` 均被拒绝。这些工作流不提供付费 opt-in。
+[免费变体指南](https://openrouter.ai/docs/guides/routing/model-variants/free)说明了基础模型和变体的关系。
+响应 ID 必须匹配选定的官方条目或目录绑定的 canonical 模型族。
+仅当选定免费条目绑定该模型族时，才接受基础 ID。未知或混合模型族会失败。
+报告保留请求 ID、实际 ID、允许的别名和元数据哈希。
+
+全部请求串行执行，启动间隔至少为 3.1 秒。
+每次请求超时 30 秒，最多尝试两次。
+Cloud Smoke 总预算为 40 次 API 尝试，Cloud Quality 为 256 次，均包含元数据和重试。
+临时网络错误、限流及指定服务端错误允许重试一次。
+遵守有效的 `Retry-After`；超过有限等待预算时停止运行。
+每日配额拒绝立即停止且不重试。其他认证和能力拒绝也会停止。
+运行器不修改账户隐私设置，也不回退到其他模型。
+免费路由可能退役、容量不足或用尽每日额度。这些情况产生 FAIL 及诊断分类。
+基础设施失败与 `quality_gate` 分类不同，两者均不能产生 PASS。
+
+远程评估器仅允许使用固定匿名样例和 mutation 语料。
+已知合成检索输入使用批量嵌入和临时的精确输入向量缓存。
+无论成功或失败，均关闭缓存及客户端，并删除隔离的 Qdrant 数据。
+远程模型权重、凭据和记忆数据均不进入 Actions 缓存。
+远程配置复用依赖缓存，不下载 Ollama 安装包及权重。
+
+### 查看结果和更换 Embedding 模型
+
+从工作流运行的 Artifacts 区域下载 `owner-model-quality`。
+JSON 报告记录源码、语料和配置指纹、模型 ID、真实向量维度、
+API 尝试、HTTP 状态计数、有限重试、延迟百分位数和失败分类。
+如供应商提供费用，则记录该费用。缺少费用数据视为未验证，不能记录为实测零费用。
+质量报告保留 precision、正例召回率、Recall@5、MRR@5、mutation 和上下文结果。
+冒烟报告保留每项生命周期检查，不能替代质量报告。
+
+如需更换 Embedding 模型，将对应 Variable 或手动输入设为固定免费 ID。
+探针在创建新测试数据之前探测替代模型的实际维度。
+不同模型或维度不得复用已有 collection。
+后续响应宽度变化会失败。将新运行保留为独立基线。
+不要降低原有质量阈值以接受更换后的模型。
+
+所有质量配置使用完整的固定语料和相同质量阈值。
 报告标识配置、生成路由、向量维度及本地模型摘要。
 小模型结果不替代历史 reference 测量。
 独立的双主体 Ollama 原生探针仅在 `reference` 配置运行。
-每种配置均运行完整基线和 mutation 门禁。
+每种质量配置均运行完整基线和 mutation 门禁。
 仅有工作流配置不能证明已执行。应单独记录运行链接和实际结果。
 
 每次手动触发仅运行一个选定配置，不运行模型矩阵。
 使用工作流输入选择其他固定模型配置。模型名称属于配置，不需要 Secret。
-模型变更必须提供固定的清单摘要。不接受任意未经校验的模型标签。
+本地模型变更必须提供固定的清单摘要。不接受任意未经校验的本地模型标签。
 托管 Ollama 配置使用相同的嵌入模型、生成预算和关闭思考设置进行对比。
 本地 1.7B 对比能以较低资源用量完成基线，但尚未通过质量门禁。
 保留失败的质量结果。独立冒烟工作流不能提供质量 PASS。
@@ -252,8 +328,8 @@ Provider 错误和作用域泄漏均为零。这是失败证据，不能作为�
 [3B 托管尝试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39573848777) 也在基线完成前失败。
 观测到五次模型响应，没有 provider 或记录错误。后台 ValueError 阻断了生命周期。
 这不能作为模型质量通过的证据。实验性本地配置现使用更小的 `qwen3:1.7b`，保留相同的超时和质量门禁。
-可选 Free Router 配置使用远程生成及本地 0.6B 嵌入模型。
-其 main 分支探索在基线完成前失败，详见[托管 CI 证据](#2026-10-21-托管-ci-证据)。
+历史 Free Router 探索使用远程生成及本地 0.6B 嵌入模型。
+该探索在基线完成前失败。当前固定基线拒绝动态路由，详见[托管 CI 证据](#2026-10-21-托管-ci-证据)。
 质量阈值保持不变。
 初始化将 Ollama 报告的已加载模型大小记录在 `quality-model-resources.json` 中。这不是进程内存峰值。
 3B 尝试报告生成模型占 2,168,360,795 字节，嵌入模型占 1,237,875,425 字节，GPU 内存为零。

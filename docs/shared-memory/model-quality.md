@@ -174,7 +174,10 @@ These values describe loaded models, not peak process memory.
 The [4B comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39681606697) also passed five lifecycles, but loaded 3,146,734,631 generation bytes.
 The [0.6B comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39681613565) still failed with empty project capture.
 Select 0.8B as the default. Other profiles remain manual options; CI does not run a model matrix.
-The effective prompt changed, so the earlier full OpenRouter quality PASS does not certify the new adapter. Repeat the full quality evaluation on main.
+The effective prompt changed, so earlier quality results do not certify the new adapter.
+The [main-branch comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39691877748) at `24f9b11` repeated the full evaluation with Liquid Chat and local embeddings.
+Precision, positive-case recall, Recall@5 and MRR@5 were each 1.0. Mutation and context gates passed, with 29 observed Chat responses and zero provider failures.
+This comparison does not verify the new remote Embedding profiles.
 
 ## Manual quality workflow
 
@@ -185,7 +188,7 @@ Select one of these profiles:
 
 | Profile | Runner | Generation | Embeddings |
 | --- | --- | --- | --- |
-| `openrouter-free` (default quality) | GitHub `ubuntu-24.04` | OpenRouter `liquid/lfm-2.5-2.6b:free` | `qwen3-embedding:0.6b`, 1024 dimensions |
+| `openrouter-free` (optional comparison) | GitHub `ubuntu-24.04` | OpenRouter `liquid/lfm-2.5-2.6b:free` | `qwen3-embedding:0.6b`, 1024 dimensions |
 | `hosted-ollama` (optional comparison) | GitHub `ubuntu-24.04` | `qwen3:1.7b` | The same local 0.6B model |
 | `hosted-qwen35` (experimental) | GitHub `ubuntu-24.04` | `qwen3.5:2b` | The same local 0.6B model |
 | `hosted-qwen35-4b` (experimental) | GitHub `ubuntu-24.04` | `qwen3.5:4b` | The same local 0.6B model |
@@ -206,44 +209,117 @@ Run the reference profile from `main` only.
 The pinned cache actions use version 6.1.0 with Node.js 24. The reference runner must be version 2.327.1 or later.
 The setup loads local models before measurement. Reported model latency excludes initial model download and load.
 
-The OpenRouter profile requires the `model-quality` GitHub Environment with the test secret `OPENROUTER_API_KEY`.
-No other credential is required. Run this profile from `main` only.
-Only its generation step receives the secret. Embeddings remain on the runner.
-Only this profile uses the credential environment. All local profiles use `model-smoke`.
-The [Free Router](https://openrouter.ai/docs/guides/routing/routers/free-router) selects an available free model for each request.
-Reports record the observed model IDs and HTTP status counts.
-Model selection can change between requests, so results describe that run only.
-The evaluator spaces requests by at least 3.1 seconds. Quotas and service availability can still cause failures.
-There is no paid fallback or automatic retry after a provider denial.
-A missing secret, rate limit, provider error, or missing model observation cannot produce PASS.
-Use synthetic test data only. OpenRouter receives the synthetic generation prompts.
+## OpenRouter Cloud Smoke and Cloud Quality
 
-For a fixed quality model, set the manual `generation_model` input to an explicit model ID ending in `:free`.
-You can also set `OPENROUTER_QUALITY_MODEL` as an Environment variable or Secret. Prefer a variable for this public model name.
-The manual input takes precedence, then the variable, then the Secret. An empty selection uses the fixed Liquid free model.
-Select `openrouter/free` explicitly for dynamic exploration.
-Paid model IDs and malformed values fail before provider requests. There is no model fallback.
-The Owner requests `provider.require_parameters=true` so OpenRouter must select an endpoint that supports the requested structured output parameters.
-The existing Owner LLM adapter accepts the optional boolean `provider_require_parameters`; other profiles omit it.
-Unsupported endpoints must fail instead of silently discarding required parameters.
-See [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs).
+These optional modes run from `main` by manual request. They do not run on pull requests or forks.
+Both use the existing Owner Runtime and the official API at `https://openrouter.ai/api/v1`.
+They use no local model weights. The `openrouter-free` comparison retains local embeddings.
 
-Reports distinguish `fixed-route` from `dynamic-free-router`.
-A fixed model requires matching actual response model IDs. Missing, different, or mixed IDs fail the gate.
-The `:free` suffix is significant. A response without it does not establish the configured variant.
-Free Router results are exploratory. Even a passing score does not provide the fixed-model baseline required for release-candidate acceptance.
-Keep the model ID, observed IDs, embedding manifests, dataset and prompt fingerprints with each run.
+| Mode | Profile | Default Chat | Default Embedding | Expected dimensions |
+| --- | --- | --- | --- | --- |
+| Cloud Smoke | `openrouter-cloud-smoke` | `liquid/lfm-2.5-2.6b:free` | `liquid/lfm-2.5-embedding-350m:free` | 1024 |
+| Cloud Quality | `openrouter-cloud-quality` | `google/gemma-4-26b-a4b-it:free` | `nvidia/nemotron-3.5-embed-1b:free` | 2048 |
 
-All profiles use the full frozen corpus and the same quality thresholds.
+The dimensions in this table are expected values. An actual batched response must confirm them before Qdrant starts.
+A mismatch fails the run. Each run uses a new temporary Embedded Qdrant collection and removes it after the test.
+Cloud Smoke runs one synthetic Hermes and Pi lifecycle through HTTPS MCP.
+It checks extraction, vectors, authorized recall, private isolation, replay and restart.
+Success is `SMOKE_PASS`, with `quality_evaluated=false` and `baseline_executed=false`.
+Cloud Quality runs the full frozen corpus, scorer and mutation evaluator with the existing thresholds.
+HTTP 200, valid JSON and one search result cannot establish quality PASS.
+
+### Configure and run
+
+1. Open repository Settings, then Environments, then `model-quality`.
+2. Add the test Secret `OPENROUTER_API_KEY`. Do not put this key in a Variable, log or artifact.
+3. To override a default, add an optional Repository or Environment Variable from the table below.
+4. Open Actions, select “Optional real-model Owner lifecycle quality”, and select “Run workflow”.
+5. Select branch `main` and the required profile. Leave both model inputs empty to use configured defaults.
+
+| Optional Variable | Applies to |
+| --- | --- |
+| `OPENROUTER_SMOKE_CHAT_MODEL` | Cloud Smoke Chat |
+| `OPENROUTER_SMOKE_EMBEDDING_MODEL` | Cloud Smoke Embedding |
+| `OPENROUTER_QUALITY_CHAT_MODEL` | Cloud Quality or comparison Chat |
+| `OPENROUTER_QUALITY_EMBEDDING_MODEL` | Cloud Quality Embedding |
+
+Only the API key is required. Model names are public configuration.
+Selection order is the explicit `generation_model` or `embedding_model` input, then the matching Variable, then the default.
+For quality Chat, the compatible `OPENROUTER_QUALITY_MODEL` Variable or Secret follows the new Variable and precedes the default.
+An empty value is unset. The four Variables also work directly in a local shell.
+Local dispatch-equivalent inputs are `OPENROUTER_CHAT_MODEL_INPUT` and `OPENROUTER_EMBEDDING_MODEL_INPUT`.
+For a controlled comparison, run `openrouter-free` with the same explicit Chat model as Cloud Quality.
+This keeps the existing local embedding model. Compare this result with the full remote profile.
+The manual alternate Embedding model `nvidia/nemotron-3-embed-1b:free` requires an explicit override.
+There is no automatic model substitution.
+
+Missing credentials in a manual cloud run produce a redacted FAIL artifact with `required_secret=OPENROUTER_API_KEY`.
+Ordinary PR jobs skip cloud evaluation and receive no API key.
+Only the explicit cloud evaluation step receives this key. The Pi child process does not inherit it.
+For local runs, install the same locked test dependencies and set the key through the shell's secure environment.
+Use a new output path with either command:
+
+```sh
+python scripts/smoke_owner_lifecycle.py --model-profile openrouter-cloud-smoke \
+  --adapter-root /path/to/qdrant-memory-mcp --output /tmp/cloud-smoke-new.json
+python scripts/evaluate_owner_lifecycle.py --model-profile openrouter-cloud-quality \
+  --adapter-root /path/to/qdrant-memory-mcp --scenarios tests/quality/lifecycle-mutations-v1.json \
+  --output /tmp/cloud-quality-new.json
+```
+
+### Free route and failure checks
+
+The runner checks the official Chat or Embedding catalog and active endpoint metadata before inference.
+It requires zero declared prices, text input, the correct output type and Chat `response_format` support.
+An actual strict JSON probe and an actual vector batch then test these capabilities.
+Requests retain the exact fixed `:free` ID, require supported Chat parameters, and set a zero prompt and completion price ceiling.
+Paid IDs and `openrouter/free` are rejected. There is no paid opt-in in these workflows.
+The [free variant guide](https://openrouter.ai/docs/guides/routing/model-variants/free) explains the base model and variant relationship.
+Response IDs must match the selected official entry or its catalog-bound canonical family.
+A base ID is allowed only when the selected free entry binds that family. Unknown or mixed model families fail.
+Reports retain requested IDs, actual IDs, allowed aliases and metadata hashes.
+
+All requests are serialized with at least 3.1 seconds between starts.
+Each request has a 30-second timeout and at most two attempts.
+The budgets are 40 total API attempts for Cloud Smoke and 256 for Cloud Quality, including metadata and retries.
+Temporary network errors, rate limits and selected server errors permit one retry.
+A valid `Retry-After` is observed. Values above the bounded wait budget stop the run.
+A daily quota denial stops without retry. Other authentication and capability denials also stop.
+The runner never changes account privacy settings or falls back to another model.
+Free routes can retire, lose capacity or exhaust daily limits. These conditions produce FAIL with a diagnostic category.
+Infrastructure failure is distinct from the `quality_gate` category. Neither can produce PASS.
+
+Only the frozen anonymous cases and mutation corpus can reach the remote evaluator.
+Known synthetic retrieval inputs use batched embeddings and a temporary exact-input vector cache.
+The cache, clients and isolated Qdrant data are closed or removed after success or failure.
+No remote model weights, credentials or memory data enter Actions caches.
+Remote profiles reuse dependency caches and omit Ollama archive and weight downloads.
+
+### Read the results and change an Embedding model
+
+Download `owner-model-quality` from the workflow run's Artifacts section.
+The JSON report records source, corpus and configuration fingerprints; model IDs; actual vector dimensions;
+API attempts, HTTP status counts, bounded retries, latency percentiles and failure categories.
+It records provider-reported cost when present. Missing cost data is unverified, not a measured zero.
+Quality reports retain precision, positive-case recall, Recall@5, MRR@5, mutation and context results.
+Smoke reports retain each lifecycle check and cannot replace a quality report.
+
+To change an Embedding model, set the appropriate Variable or manual input to a fixed free ID.
+The probe discovers the alternate model's actual dimensions before creating fresh test data.
+Never reuse an existing collection with a different model or dimension.
+A later response with a different width fails. Keep the new run as a separate baseline.
+Do not lower the existing quality thresholds to accept a changed model.
+
+All quality profiles use the full frozen corpus and the same quality thresholds.
 Reports identify the profile, generation route, embedding dimensions, and local model digests.
 Results from a smaller model do not replace the historical reference measurements.
 The separate two-subject native Ollama probe runs only for `reference`.
-The full baseline and mutation gates run for every profile.
+The full baseline and mutation gates run for every quality profile.
 Workflow configuration alone does not prove execution. Record the run URL and actual result separately.
 
 Each dispatch runs one selected profile. It does not run a model matrix.
 Use the workflow input to select another fixed model profile. A model name is configuration and needs no Secret.
-Model changes require a fixed manifest digest. Arbitrary unverified model tags are not accepted.
+Local model changes require a fixed manifest digest. Arbitrary unverified local model tags are not accepted.
 The hosted Ollama profiles use the same embedding model, generation budget, and disabled thinking for comparison.
 The local 1.7B comparison completes the baseline with low resource use. It has not passed the quality gates.
 Keep failed quality results visible. The separate smoke workflow cannot supply a quality PASS.
@@ -256,8 +332,8 @@ Four generation calls reached the existing 30-second request timeout. This resul
 The [3B hosted attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39573848777) also failed before baseline completion.
 Five model responses were observed, with no provider or recording errors. A background ValueError blocked the lifecycle.
 This is not passing model-quality evidence. The experimental local profile now tests the smaller `qwen3:1.7b` under the same timeouts and quality gates.
-The optional Free Router profile uses remote generation and the local 0.6B embedding model.
-Its main-branch exploration failed before baseline completion. See the [hosted CI evidence](#hosted-ci-evidence-on-2026-10-21).
+The historical Free Router exploration used remote generation and the local 0.6B embedding model.
+That exploration failed before baseline completion. The current fixed baseline rejects dynamic routing. See the [hosted CI evidence](#hosted-ci-evidence-on-2026-10-21).
 The quality thresholds remain unchanged.
 Setup records Ollama's loaded-model size in `quality-model-resources.json`. This is not peak process memory.
 The 3B attempt reported 2,168,360,795 bytes for generation and 1,237,875,425 bytes for embeddings, with zero GPU memory.
