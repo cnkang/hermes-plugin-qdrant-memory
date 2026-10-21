@@ -16,6 +16,16 @@ def runner():
     return runpy.run_path(str(ROOT / "scripts/evaluate_owner_lifecycle.py"))
 
 
+def test_smoke_profile_uses_small_fixed_local_models():
+    """Smoke does not require external credentials or the quality embedding model."""
+    profile = runner()["model_profile"]("smoke-ollama")
+    assert profile["llm"]["model"] == "qwen3:0.6b"
+    assert profile["llm"]["reasoning_effort"] == "none"
+    assert profile["embedding"]["model"] == "all-minilm:22m"
+    assert profile["embedding"]["dimensions"] == 384
+    assert all(len(value) == 64 for value in profile["local_models"].values())
+
+
 def test_hosted_models_are_separate_from_the_reference_models():
     """The hosted profile has its own fixed models and embedding dimensions."""
     module = runner()

@@ -1,31 +1,40 @@
 name: Optional real-model Owner lifecycle quality
 
 on:
+  workflow_call:
+    inputs:
+      profile:
+        type: string
+        required: true
+      mode:
+        type: string
+        default: quality
   workflow_dispatch:
     inputs:
       profile:
         description: Model profile (OpenRouter requires main and model-quality secret)
         type: choice
-        default: hosted-ollama
+        default: openrouter-free
         options: [openrouter-free, hosted-ollama, hosted-qwen35, hosted-qwen35-4b, reference]
 
 permissions:
   contents: read
 
 concurrency:
-  group: owner-model-quality-${{ inputs.profile }}
+  group: ${{ github.workflow }}-${{ inputs.mode || 'quality' }}-${{ inputs.profile }}
   cancel-in-progress: false
 
 jobs:
   quality:
     # Secrets are available only to the explicit main-branch OpenRouter step.
     # The reference profile retains the separately provisioned test runner.
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'cnkang/hermes-plugin-qdrant-memory' && ((inputs.profile != 'openrouter-free' && inputs.profile != 'reference') || github.ref == 'refs/heads/main')
+    if: github.repository == 'cnkang/hermes-plugin-qdrant-memory' && ((inputs.mode == 'smoke' && inputs.profile == 'smoke-ollama') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && ((inputs.profile != 'openrouter-free' && inputs.profile != 'reference') || github.ref == 'refs/heads/main')))
     runs-on: ${{ fromJSON(inputs.profile == 'reference' && '["self-hosted","linux","qdrant-memory-models"]' || '"ubuntu-24.04"') }}
-    environment: model-quality
-    timeout-minutes: 90
+    environment: ${{ inputs.mode == 'smoke' && 'model-smoke' || 'model-quality' }}
+    timeout-minutes: ${{ inputs.mode == 'smoke' && 30 || 90 }}
     env:
       MODEL_PROFILE: ${{ inputs.profile }}
+      MODEL_EVALUATION_MODE: ${{ inputs.mode || 'quality' }}
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
       QUALITY_OUTPUT: ${{ github.workspace }}/.quality/owner-quality-${{ github.run_id }}-${{ github.run_attempt }}.json
     steps:
@@ -100,7 +109,7 @@ jobs:
       - name: Require scorer contracts before the actual model run
         env:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
-        run: .quality/venv/bin/python -m pytest tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_quality_mutations.py tests/test_quality_profiles.py tests/test_quality_ollama_setup.py -q
+        run: .quality/venv/bin/python -m pytest tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_quality_mutations.py tests/test_quality_profiles.py tests/test_quality_ollama_setup.py tests/test_model_smoke.py -q
       - name: Install and start isolated Ollama models
         if: inputs.profile != 'reference'
         run: bash scripts/start_quality_ollama.sh
@@ -133,20 +142,29 @@ jobs:
           assert not any(totals[key] for key in ("failures", "errors", "skipped")), totals
           PY
       - name: Actual Ollama Hermes and Pi lifecycle quality
-        if: inputs.profile != 'openrouter-free'
+        if: inputs.mode != 'smoke' && inputs.profile != 'openrouter-free'
         run: .quality/venv/bin/python scripts/evaluate_owner_lifecycle.py --model-profile "$MODEL_PROFILE" --adapter-root .quality/mcp --scenarios tests/quality/lifecycle-mutations-v1.json --output "$QUALITY_OUTPUT"
       - name: Actual OpenRouter Free Router lifecycle quality
-        if: inputs.profile == 'openrouter-free' && github.ref == 'refs/heads/main'
+        if: inputs.mode != 'smoke' && inputs.profile == 'openrouter-free' && github.ref == 'refs/heads/main'
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: .quality/venv/bin/python scripts/evaluate_owner_lifecycle.py --model-profile "$MODEL_PROFILE" --adapter-root .quality/mcp --scenarios tests/quality/lifecycle-mutations-v1.json --output "$QUALITY_OUTPUT"
-      - name: Require full baseline and mutation evidence
-        run: >-
-          .quality/venv/bin/python -c "import json,os;
-          d=json.load(open(os.environ['QUALITY_OUTPUT']));
-          assert d['model_profile']==os.environ['MODEL_PROFILE'];
-          assert d['status']=='PASS' and d['baseline_executed'] is True;
-          assert d['mutation_scenarios']['status']=='PASS'"
+      - name: Actual small-model lifecycle smoke
+        if: inputs.mode == 'smoke'
+        run: .quality/venv/bin/python scripts/smoke_owner_lifecycle.py --adapter-root .quality/mcp --output "$QUALITY_OUTPUT"
+      - name: Require evidence for the selected evaluation mode
+        run: |
+          .quality/venv/bin/python - <<'PY'
+          import json, os
+          d = json.load(open(os.environ['QUALITY_OUTPUT']))
+          assert d['model_profile'] == os.environ['MODEL_PROFILE']
+          if os.environ['MODEL_EVALUATION_MODE'] == 'smoke':
+              assert d['status'] == 'SMOKE_PASS' and d['evaluation_mode'] == 'smoke'
+              assert d['quality_evaluated'] is False and d['baseline_executed'] is False
+          else:
+              assert d['status'] == 'PASS' and d['baseline_executed'] is True
+              assert d['mutation_scenarios']['status'] == 'PASS'
+          PY
       - name: Stop the test-owned Ollama process
         if: always() && inputs.profile != 'reference'
         shell: bash

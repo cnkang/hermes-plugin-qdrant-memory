@@ -1,0 +1,31 @@
+name: Small-model Owner lifecycle smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - qdrant_memory/**
+      - scripts/*owner*lifecycle.py
+      - scripts/start_quality_ollama.sh
+      - tests/test_model_smoke.py
+      - tests/quality/model-profiles.json
+      - .github/workflows/owner-model-*.yml
+  push:
+    branches: [main]
+    paths:
+      - qdrant_memory/**
+      - scripts/*owner*lifecycle.py
+      - scripts/start_quality_ollama.sh
+      - tests/test_model_smoke.py
+      - tests/quality/model-profiles.json
+      - .github/workflows/owner-model-*.yml
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    uses: ./.github/workflows/owner-model-quality.yml
+    with:
+      profile: smoke-ollama
+      mode: smoke

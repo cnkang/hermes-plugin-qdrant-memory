@@ -113,7 +113,24 @@ The job rejects skipped or absent tests.
 This workflow never selects the model runner.
 Its result needs a completed CI run.
 
-## Manual workflow
+## Small-model smoke workflow
+
+`owner-model-smoke.yml` runs on relevant pull requests and main changes. It also accepts a manual request.
+It selects only `qwen3:0.6b`, with thinking disabled, and `all-minilm:22m` with 384 embedding dimensions.
+The fixed downloads total about 569 MB, excluding Ollama and dependencies.
+The alternative `qwen3.5:0.8b` default package is about 1.3 GB and includes vision components.
+These package sizes do not measure process memory. The smaller text model is the first smoke candidate.
+The workflow uses the shared setup and caches. It requires no API key or self-hosted runner.
+The separate `model-smoke` environment contains no required secrets.
+
+The smoke test uses real model calls, Hermes native capture, the Pi SDK, and HTTPS MCP.
+It checks authorized recall, private isolation, replay, and durable restart without new generation calls.
+It queries the model's captured text to check the storage round trip. It does not score semantic accuracy.
+Empty captures, provider failures, invalid payloads, missing observations, or failed checks produce FAIL.
+Success is `SMOKE_PASS`, with `quality_evaluated=false` and `baseline_executed=false`.
+This result cannot certify the full quality baseline or mutation gates.
+
+## Manual quality workflow
 
 The `owner-model-quality.yml` workflow runs only by manual request.
 It has no pull-request or fork trigger and uses no production credentials.
@@ -122,8 +139,8 @@ Select one of these profiles:
 
 | Profile | Runner | Generation | Embeddings |
 | --- | --- | --- | --- |
-| `hosted-ollama` (default diagnostic) | GitHub `ubuntu-24.04` | `qwen3:1.7b` | `qwen3-embedding:0.6b`, 1024 dimensions |
-| `openrouter-free` (optional) | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | The same local 0.6B model |
+| `openrouter-free` (default quality) | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`, 1024 dimensions |
+| `hosted-ollama` (optional comparison) | GitHub `ubuntu-24.04` | `qwen3:1.7b` | The same local 0.6B model |
 | `hosted-qwen35` (experimental) | GitHub `ubuntu-24.04` | `qwen3.5:2b` | The same local 0.6B model |
 | `hosted-qwen35-4b` (experimental) | GitHub `ubuntu-24.04` | `qwen3.5:4b` | The same local 0.6B model |
 | `reference` | Disposable Linux runner with `qdrant-memory-models` label | Installed `qwen3:8b` | Installed `qwen3-embedding:4b`, 2560 dimensions |
@@ -165,8 +182,8 @@ Each dispatch runs one selected profile. It does not run a model matrix.
 Use the workflow input to select another fixed model profile. A model name is configuration and needs no Secret.
 Model changes require a fixed manifest digest. Arbitrary unverified model tags are not accepted.
 The hosted Ollama profiles use the same embedding model, generation budget, and disabled thinking for comparison.
-The default local model completes the baseline with low resource use. It has not passed the quality gates.
-Keep failed quality results visible. The default is a diagnostic choice, not a passing acceptance result.
+The local 1.7B comparison completes the baseline with low resource use. It has not passed the quality gates.
+Keep failed quality results visible. The separate smoke workflow cannot supply a quality PASS.
 
 The [initial hosted run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) used `qwen3:4b-instruct-2507-q4_K_M` and failed.
 Precision was 1.0, but positive-case recall and Recall@5 were 0.4375. Mutation checks also failed.
@@ -214,7 +231,7 @@ Diagnostic reports retain background exception types and source stages, without 
 The [4B diagnostic rerun](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39583106933) located the failure in the existing memory importance validation.
 The generated importance did not satisfy the finite numeric range from 0 to 1. The Runtime correctly rejected it.
 Do not rescale invalid output or relax validation to obtain PASS.
-Use `qwen3:1.7b` with thinking disabled as the single default diagnostic model.
+Keep `qwen3:1.7b` with thinking disabled as an optional comparison model.
 It completed the baseline with less loaded-model memory and lower latency than the tested Qwen3.5 models.
 It still fails the frozen quality thresholds. Neither Qwen3.5 candidate qualifies as a replacement.
 
