@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
-from qdrant_client.models import PointIdsList
+from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
 
 from qdrant_memory.config import validate_url
 from qdrant_memory.extraction import Extractor
@@ -38,7 +38,9 @@ def test_scoped_cloud_owner_devices_cas_and_recovery(tmp_path, request):
     cfg = config(qdrant={"mode": "cloud", "url": settings["url"], "collection": collection})
     client = QdrantClient(url=settings["url"], api_key=key, trust_env=False)
     rt = None
-    saved_ids = set()
+    owner_id = "fixture-" + uuid.uuid4().hex
+    cleanup_filter = Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=owner_id))])
+    initialized = False
     try:
         client.get_collection(collection)
         with pytest.raises(UnexpectedResponse) as denied:
@@ -48,9 +50,9 @@ def test_scoped_cloud_owner_devices_cas_and_recovery(tmp_path, request):
         # Provisioning and fingerprint enrollment belong to a separate trusted
         # operator step. The Owner lane must never create or delete collections.
         store.initialize(create=False)
+        initialized = True
         rt = Runtime(cfg, store, Ledger(tmp_path, collection), Extractor(LLM(), cfg["llm"]))
         a, b, other = [uuid.uuid4().hex + uuid.uuid4().hex for _ in range(3)]
-        owner_id = "fixture-" + uuid.uuid4().hex
         clients = [
             grant(a, "device-a", owner_id=owner_id),
             grant(b, "device-b", owner_id=owner_id),
@@ -74,7 +76,6 @@ def test_scoped_cloud_owner_devices_cas_and_recovery(tmp_path, request):
             "qdrant_memory_add",
             {"text": "cats synthetic shared project", "request_id": "project"},
         )
-        saved_ids.add(project["id"])
         assert (
             owner.call(project_b, "qdrant_memory_search", {"query": "cats"})["memories"][0]["id"]
             == project["id"]
@@ -93,7 +94,6 @@ def test_scoped_cloud_owner_devices_cas_and_recovery(tmp_path, request):
         saved = owner.call(
             a, "qdrant_memory_add", {"text": "cats synthetic Cloud decision", "request_id": "one"}
         )
-        saved_ids.add(saved["id"])
         assert (
             owner.call(b, "qdrant_memory_search", {"query": "cats"})["memories"][0]["id"]
             == saved["id"]
@@ -115,10 +115,16 @@ def test_scoped_cloud_owner_devices_cas_and_recovery(tmp_path, request):
         assert owner.call(project_b, "qdrant_memory_update", project_update) == project_changed
     finally:
         try:
-            if saved_ids:
+            if initialized:
+                # Use the invocation's unique Owner scope, including writes whose
+                # responses were lost. Keep other Owners and the identity marker.
                 client.delete(
-                    collection, points_selector=PointIdsList(points=sorted(saved_ids)), wait=True
+                    collection, points_selector=FilterSelector(filter=cleanup_filter), wait=True
                 )
+                assert (
+                    client.count(collection, count_filter=cleanup_filter, exact=True).count == 0
+                ), "Cloud Owner cleanup left synthetic records"
+                print("Cloud Owner cleanup verified: zero records remain for this invocation.")
         finally:
             if rt is not None:
                 rt.ledger.close()

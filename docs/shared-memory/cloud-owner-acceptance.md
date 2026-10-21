@@ -27,12 +27,16 @@ The job writes these values to a private temporary configuration file and remove
 it in `always()`. It checks that the key cannot access a distinct collection. It
 then validates same-agent independent devices and different-agent private
 isolation. It also validates authorized project sharing, stale CAS rejection and
-durable receipt replay after the Ledger reopens. Only known synthetic record IDs from that invocation are removed.
+durable receipt replay after the Ledger reopens. Cleanup selects only the unique
+Owner ID from that invocation. This includes writes with a lost response. The test
+waits for deletion and checks that the exact record count for this Owner is zero.
+If records remain or the check fails, the job fails. The test log reports successful
+cleanup without database credentials or record contents.
 The provisioned collection and embedding marker are never deleted by the test.
 
 This is deterministic Owner-to-Cloud integration, separate from the real HTTPS MCP
 network acceptance and actual Host tests. It does not certify Host UI or model quality.
-No real Cloud run has been performed for this new lane without explicit authorization.
+Run this lane only with explicit authorization. A skipped job is not a Cloud test result.
 
 For an authorized local run, use a mode-0600 file with `url`, `owner_collection` and
 `owner_api_key` fields, then execute:
