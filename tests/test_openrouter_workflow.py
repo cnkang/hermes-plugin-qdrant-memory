@@ -2,16 +2,14 @@
 
 from pathlib import Path
 
-import yaml
+from ruamel.yaml import YAML
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def workflow():
     """Read workflow strings without YAML 1.1 rewriting the on key."""
-    return yaml.load(
-        (ROOT / ".github/workflows/owner-model-quality.yml").read_text(), Loader=yaml.BaseLoader
-    )
+    return YAML(typ="base").load((ROOT / ".github/workflows/owner-model-quality.yml").read_text())
 
 
 def test_cloud_profiles_share_one_account_concurrency_group():
