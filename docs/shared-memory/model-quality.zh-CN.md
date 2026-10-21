@@ -121,6 +121,8 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 独立的 `model-smoke` Environment 不要求任何 Secret。
 
 冒烟测试使用真实模型调用、Hermes 原生捕获、Pi SDK 和 HTTPS MCP。
+其两个合成对话轮次显式请求保存简单的用户偏好。
+具名主体提取、多语言语义和替换能力仍由完整质量语料评估。
 它检查授权召回、私有隔离、重放，以及不新增生成调用的持久化重启。
 它查询模型已捕获的文本来检查存储往返，不评估语义准确率。
 空捕获、provider 失败、无效 payload、缺少观测或检查失败均产生 FAIL。

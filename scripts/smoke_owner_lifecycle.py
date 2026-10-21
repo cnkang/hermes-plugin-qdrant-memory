@@ -23,20 +23,19 @@ CHECKS = {
     "restart_no_model_calls",
     "provider_observed",
 }
+CASES = [
+    {"id": "smoke-native", "session": "smoke-native", "user": "Remember that I prefer dark mode."},
+    {
+        "id": "smoke-project",
+        "session": "smoke-project",
+        "user": "Remember that I prefer Vim as my text editor.",
+    },
+]
 
 
 def exercise(adapter, home, recorder, tokens):
     """Use actual Hermes and Pi callbacks, HTTPS MCP, and the existing Owner Runtime."""
-    native = {
-        "id": "smoke-native",
-        "session": "smoke-native",
-        "user": "Project Cedar uses SQLite WAL for its primary database.",
-    }
-    project = {
-        "id": "smoke-project",
-        "session": "smoke-project",
-        "user": "Project Atlas uses Ninja for its build system.",
-    }
+    native, project = CASES
     policy_path = home / "policy.json"
     policy_path.write_text(json.dumps(core.policy(tokens)), encoding="utf-8")
     policy_path.chmod(0o600)
@@ -51,11 +50,15 @@ def exercise(adapter, home, recorder, tokens):
             or provider._native_owner.owner.blocked
         ):
             raise RuntimeError("Native smoke capture failed")
+        if not recorder.extractions.get(native["id"]):
+            raise RuntimeError("Native smoke capture produced no memory")
         native_text = recorder.extractions[native["id"]][0]
         with core.tls_owner(provider, home) as (url, cert):
             captured = core.pi_capture(
                 adapter, home / "pi", [project], url, cert, tokens["PROJECT"], tokens["READER"]
             )
+            if not recorder.extractions.get(project["id"]):
+                raise RuntimeError("Pi smoke capture produced no memory")
             project_text = recorder.extractions[project["id"]][0]
             receipt = captured["captures"][0]
             before = [
@@ -121,11 +124,7 @@ def run_smoke(adapter):
         response.raise_for_status()
         models = core.select_installed_models(profile, response.json()["models"])
     llm = core.OwnerLLM(profile["llm"])
-    cases = [
-        {"id": "smoke-native", "user": "Project Cedar uses SQLite WAL for its primary database."},
-        {"id": "smoke-project", "user": "Project Atlas uses Ninja for its build system."},
-    ]
-    recorder = core.RecordingLLM(llm, cases, profile)
+    recorder = core.RecordingLLM(llm, CASES, profile)
     tokens = {key: secrets.token_hex(32) for key in ("NATIVE", "SECOND", "PI", "PROJECT", "READER")}
     try:
         with tempfile.TemporaryDirectory(prefix="qm-model-smoke-") as directory:
