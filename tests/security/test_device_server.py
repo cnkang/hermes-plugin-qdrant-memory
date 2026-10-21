@@ -4,12 +4,48 @@ import os
 import uuid
 
 import pytest
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, models
 
 from qdrant_memory.shared_service import SharedConflictError, SharedOwner
 
 from ..helpers import config, runtime
 from ..standalone.test_device_grants import grant
+from .test_cloud_owner import _exercise_cloud_owner
+
+
+def test_cloud_owner_contracts_on_strict_server(tmp_path):
+    """Reproduce Cloud's indexed-filter requirement without Cloud credentials."""
+    url = os.environ.get("QDRANT_DEVICE_FIXTURE_URL")
+    if not url:
+        pytest.skip("SKIPPED: explicit disposable local Qdrant Server fixture URL required")
+    from qdrant_memory.shared_protocol import validate_loopback_url
+
+    validate_loopback_url(url)
+    collection = "qm_strict_owner_" + uuid.uuid4().hex
+    cfg = config(qdrant={"mode": "server", "url": url, "collection": collection})
+    rt = runtime(tmp_path, client=QdrantClient(url=url), cfg=cfg)
+    client = rt.store.client
+    rt.ledger.close()
+    try:
+        client.update_collection(
+            collection,
+            strict_mode_config=models.StrictModeConfig(
+                enabled=True,
+                unindexed_filtering_retrieve=False,
+                unindexed_filtering_update=False,
+            ),
+        )
+        _exercise_cloud_owner(
+            tmp_path / "owner",
+            client,
+            {
+                "url": url,
+                "owner_collection": collection,
+            },
+        )
+    finally:
+        client.delete_collection(collection)
+        client.close()
 
 
 def test_device_private_identity_cas_and_restart_on_real_server(tmp_path):

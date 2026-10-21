@@ -17,6 +17,12 @@ fingerprint is `test-embedding-space-v1`. Use `QdrantStore.initialize(create=Tru
 in the trusted provisioning step. That step is separate from all Agent credentials.
 Never provision or run this fixture against real user collections.
 
+Initialization creates keyword indexes for the Owner filters `shared_protocol`,
+`space_id`, `visibility` and `logical_agent_id`. Strict-mode backends require these
+indexes. For an existing test collection, run the trusted initialization step
+without reset to add missing indexes. Owner startup with `create=False` does not
+create indexes. Keep strict mode and all Owner filters enabled.
+
 Configure protected Environment secrets:
 
 - `QDRANT_CLOUD_URL`: HTTPS database endpoint;

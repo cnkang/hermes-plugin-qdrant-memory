@@ -18,6 +18,11 @@ INDEXES = {
             "source",
             "content_hash",
             "cloud_origin.id",
+            # Shared Owner filters also need indexes on strict-mode backends.
+            "shared_protocol",
+            "space_id",
+            "visibility",
+            "logical_agent_id",
         ),
         "keyword",
     ),

@@ -118,7 +118,8 @@ jobs:
               collection = settings['owner_collection']
               assert re.fullmatch(r'qm_owner_ci_[0-9a-f]{32}', collection)
               validate_url(settings['url'], cloud=True, api_key=settings['test_api_key'])
-              with QdrantClient(url=settings['url'], api_key=settings['test_api_key'], trust_env=False) as client:
+              from contextlib import closing
+              with closing(QdrantClient(url=settings['url'], api_key=settings['test_api_key'], trust_env=False)) as client:
                   if client.collection_exists(collection):
                       client.delete_collection(collection)
                   assert not client.collection_exists(collection), 'Cloud test collection cleanup failed'
