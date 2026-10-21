@@ -167,7 +167,7 @@ def main():
     parser.add_argument("--repetitions", type=int, choices=range(1, 6), default=1)
     parser.add_argument(
         "--model-profile",
-        choices=["smoke-ollama", "smoke-qwen06", "smoke-qwen08", "smoke-qwen17"],
+        choices=["smoke-ollama", "smoke-qwen06", "smoke-qwen08", "smoke-qwen17", "smoke-qwen2"],
         default="smoke-ollama",
     )
     args = parser.parse_args()

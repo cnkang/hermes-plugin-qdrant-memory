@@ -6,12 +6,12 @@
   },
   "profiles": {
     "smoke-ollama": {
-      "generation_model": "qwen3:1.7b",
+      "generation_model": "qwen3.5:2b",
       "reasoning_effort": "none",
       "embedding_model": "all-minilm:22m",
       "embedding_dimensions": 384,
       "local_models": {
-        "qwen3:1.7b": "8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7",
+        "qwen3.5:2b": "0689d44085e06d165161a8a9a1731344278cfb5aade63a3c3dbdb48ab54b130a",
         "all-minilm:22m": "1b226e2802dbb772b5fc32a58f103ca1804ef7501331012de126ab22f67475ef"
       }
     },
@@ -42,6 +42,16 @@
       "embedding_dimensions": 384,
       "local_models": {
         "qwen3:1.7b": "8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7",
+        "all-minilm:22m": "1b226e2802dbb772b5fc32a58f103ca1804ef7501331012de126ab22f67475ef"
+      }
+    },
+    "smoke-qwen2": {
+      "generation_model": "qwen3.5:2b",
+      "reasoning_effort": "none",
+      "embedding_model": "all-minilm:22m",
+      "embedding_dimensions": 384,
+      "local_models": {
+        "qwen3.5:2b": "0689d44085e06d165161a8a9a1731344278cfb5aade63a3c3dbdb48ab54b130a",
         "all-minilm:22m": "1b226e2802dbb772b5fc32a58f103ca1804ef7501331012de126ab22f67475ef"
       }
     },
