@@ -124,6 +124,8 @@ The workflow uses the shared setup and caches. It requires no API key or self-ho
 The separate `model-smoke` environment contains no required secrets.
 
 The smoke test uses real model calls, Hermes native capture, the Pi SDK, and HTTPS MCP.
+Its two synthetic turns explicitly request storage of simple user preferences.
+Named-subject extraction, multilingual meaning, and supersession remain in the full quality corpus.
 It checks authorized recall, private isolation, replay, and durable restart without new generation calls.
 It queries the model's captured text to check the storage round trip. It does not score semantic accuracy.
 Empty captures, provider failures, invalid payloads, missing observations, or failed checks produce FAIL.
