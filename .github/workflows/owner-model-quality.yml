@@ -6,8 +6,8 @@ on:
       profile:
         description: Model profile (OpenRouter requires main and model-quality secret)
         type: choice
-        default: hosted-ollama
-        options: [hosted-ollama, openrouter-free, reference]
+        default: openrouter-free
+        options: [openrouter-free, hosted-ollama, reference]
 
 permissions:
   contents: read
