@@ -123,7 +123,7 @@ Select one of these profiles:
 | Profile | Runner | Generation | Embeddings |
 | --- | --- | --- | --- |
 | `openrouter-free` (default) | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`, 1024 dimensions |
-| `hosted-ollama` (experimental) | GitHub `ubuntu-24.04` | `qwen2.5:3b` | The same local 0.6B model |
+| `hosted-ollama` (experimental) | GitHub `ubuntu-24.04` | `qwen3:1.7b` | The same local 0.6B model |
 | `reference` | Disposable Linux runner with `qdrant-memory-models` label | Installed `qwen3:8b` | Installed `qwen3-embedding:4b`, 2560 dimensions |
 
 The first two profiles need no self-hosted runner.
@@ -164,13 +164,13 @@ The [8B hosted attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/ac
 Four generation calls reached the existing 30-second request timeout. This result does not prove a memory shortage.
 The [3B hosted attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39573848777) also failed before baseline completion.
 Five model responses were observed, with no provider or recording errors. A background ValueError blocked the lifecycle.
-This is not passing model-quality evidence. The experimental local profile retains this model for reproducible diagnosis.
+This is not passing model-quality evidence. The experimental local profile now tests the smaller `qwen3:1.7b` under the same timeouts and quality gates.
 The default workflow now uses Free Router generation and the local 0.6B embedding model. Its actual result requires a separate main-branch run.
 The quality thresholds remain unchanged.
 Setup records Ollama's loaded-model size in `quality-model-resources.json`. This is not peak process memory.
 The 3B attempt reported 2,168,360,795 bytes for generation and 1,237,875,425 bytes for embeddings, with zero GPU memory.
 Dependency and Ollama installation caches were restored in that run. The changed model set was downloaded and saved under a new key.
-The 3B model uses the [Qwen Research License](https://ollama.com/library/qwen2.5:3b); CI downloads it for evaluation and does not bundle its weights.
+The 1.7B model uses [Apache License 2.0](https://ollama.com/library/qwen3:1.7b); CI downloads it for evaluation and does not bundle its weights.
 
 ### Container alternative
 
