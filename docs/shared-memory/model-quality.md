@@ -174,6 +174,15 @@ Dependency and historical Ollama installation caches were restored in that run. 
 Current runs cache the verified archive and extract it again, so cached executables cannot bypass archive validation.
 The 1.7B model uses [Apache License 2.0](https://ollama.com/library/qwen3:1.7b); CI downloads it for evaluation and does not bundle its weights.
 
+The [first 1.7B attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39578556397) used provider-default thinking and failed before baseline completion.
+It observed 27 successful responses and five 30-second read timeouts. Model-call p50 was 10.74 seconds and p95 was 30.03 seconds.
+Ollama reported 1,886,629,395 loaded bytes for generation and 1,237,875,425 bytes for embeddings, with zero GPU memory.
+The experimental 1.7B profile now explicitly requests `reasoning_effort: "none"` through the existing Owner LLM adapter.
+Ollama documents this as the [OpenAI-compatible control to disable thinking](https://docs.ollama.com/api/openai-compatibility).
+Reports record this setting. The 30-second timeout, strict output validation, and quality thresholds remain unchanged.
+The Owner LLM adapter accepts optional `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` values when the selected provider supports them.
+When omitted, the request keeps the provider default. Reference and Free Router profiles omit this option.
+
 ### Container alternative
 
 An official [Ollama container](https://docs.ollama.com/docker) can isolate installation dependencies.

@@ -132,3 +132,51 @@ def test_output_budget_is_explicit_and_bounded(budget):
     with pytest.raises(ValueError):
         llm = OwnerLLM(cfg)
         llm.close()
+
+
+@pytest.mark.parametrize("effort", [None, "none", "low"])
+def test_reasoning_effort_requires_explicit_configuration(effort):
+    """Preserve provider defaults unless an operator selects a supported control."""
+    cfg = {
+        "mode": "override",
+        "provider": "openai-compatible",
+        "model": "fixture",
+        "base_url": "http://127.0.0.1:1/v1",
+    }
+    if effort is not None:
+        cfg["reasoning_effort"] = effort
+    llm = OwnerLLM(cfg)
+    llm.client.close()
+    requests = []
+
+    def response(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"memories": []}'}}]})
+
+    llm.client = httpx.Client(transport=httpx.MockTransport(response))
+    try:
+        assert Extractor(llm, cfg).extract({"user": "synthetic", "assistant": "ack"}) == []
+        if effort is None:
+            assert "reasoning_effort" not in requests[0]
+        else:
+            assert requests[0]["reasoning_effort"] == effort
+        assert requests[0]["response_format"]["json_schema"]["strict"] is True
+        assert llm.client.follow_redirects is False
+    finally:
+        llm.close()
+
+
+@pytest.mark.parametrize("effort", [True, {}, [], 0, "unsupported"])
+def test_invalid_reasoning_effort_fails_before_provider_io(effort):
+    """Malformed inference options must fail without changing transport policy."""
+    with pytest.raises(ValueError, match="reasoning"):
+        llm = OwnerLLM(
+            {
+                "mode": "override",
+                "provider": "openai-compatible",
+                "model": "fixture",
+                "base_url": "http://127.0.0.1:1/v1",
+                "reasoning_effort": effort,
+            }
+        )
+        llm.close()

@@ -25,6 +25,8 @@ def test_hosted_models_are_separate_from_the_reference_models():
     assert reference["embedding"]["dimensions"] == 2560
     assert hosted["llm"]["base_url"] == "http://127.0.0.1:19134/v1"
     assert hosted["llm"]["api_key_env"] == "QM_QUALITY_UNUSED_KEY"
+    assert hosted["llm"]["reasoning_effort"] == "none"
+    assert "reasoning_effort" not in reference["llm"]
     assert len(hosted["local_models"]) == 2
     assert all(len(value) == 64 for value in hosted["local_models"].values())
 
@@ -49,6 +51,7 @@ def test_free_router_has_no_paid_fallback_and_only_local_embeddings():
     assert profile["llm"]["api_key_env"] == "OPENROUTER_API_KEY"
     assert list(profile["local_models"]) == ["qwen3-embedding:0.6b"]
     assert "models" not in profile["llm"]
+    assert "reasoning_effort" not in profile["llm"]
 
 
 @pytest.mark.parametrize("selected", ["qwen/qwen3:free", "synthetic-secret"])
