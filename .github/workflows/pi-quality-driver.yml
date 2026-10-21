@@ -16,6 +16,7 @@ on:
       - scripts/evaluate_owner_lifecycle.py
       - scripts/start_quality_ollama.sh
       - tests/test_quality_profiles.py
+      - tests/test_quality_ollama_setup.py
       - tests/quality/model-profiles.json
       - qdrant_memory/quality_metrics.py
       - tests/test_quality_dependencies.py
@@ -38,6 +39,7 @@ on:
       - scripts/evaluate_owner_lifecycle.py
       - scripts/start_quality_ollama.sh
       - tests/test_quality_profiles.py
+      - tests/test_quality_ollama_setup.py
       - tests/quality/model-profiles.json
       - qdrant_memory/quality_metrics.py
       - tests/test_quality_dependencies.py
@@ -93,7 +95,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
         run: |
-          .quality/venv/bin/python -m pytest tests/test_quality_dependencies.py tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_quality_profiles.py tests/test_dependency_security.py -q --junitxml=quality-dependencies.xml
+          .quality/venv/bin/python -m pytest tests/test_quality_dependencies.py tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_quality_profiles.py tests/test_quality_ollama_setup.py tests/test_dependency_security.py -q --junitxml=quality-dependencies.xml
       - name: Verify actual Pi driver attribution
         env:
           QDRANT_QUALITY_ADAPTER_ROOT: ${{ github.workspace }}/.quality/mcp

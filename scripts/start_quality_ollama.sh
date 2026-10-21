@@ -10,13 +10,13 @@ p = json.load(open("tests/quality/model-profiles.json"))["ollama"]
 print(p["version"], p["archive_sha256"])
 PY
 )
-if [ ! -x "$quality_root/bin/ollama" ]; then
+if [ ! -f "$quality_root/ollama.tar.zst" ]; then
   curl --fail --location --retry 3 --output "$quality_root/ollama.tar.zst" \
     "https://github.com/ollama/ollama/releases/download/v${quality_version}/ollama-linux-amd64.tar.zst"
-  echo "$quality_sha  $quality_root/ollama.tar.zst" | sha256sum --check --strict
-  tar --zstd -xf "$quality_root/ollama.tar.zst" -C "$quality_root"
-  rm "$quality_root/ollama.tar.zst"
 fi
+# Verify every restored archive before extracting or executing any of its files.
+echo "$quality_sha  $quality_root/ollama.tar.zst" | sha256sum --check --strict
+tar --zstd -xf "$quality_root/ollama.tar.zst" -C "$quality_root"
 export OLLAMA_HOST=127.0.0.1:19134
 export OLLAMA_MODELS="$quality_root/models"
 export OLLAMA_CONTEXT_LENGTH=4096

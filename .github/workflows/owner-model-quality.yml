@@ -70,15 +70,13 @@ jobs:
             ~/.cache/pip
             ~/.npm
           key: quality-deps-${{ runner.os }}-${{ runner.arch }}-py311-${{ hashFiles('requirements-quality.txt', '.quality/mcp/integrations/agent-hosts/package-lock.json') }}
-      - name: Cache the fixed Ollama installation
+      - name: Cache the fixed Ollama archive
         id: ollama-cache
         if: inputs.profile != 'reference'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
-          path: |
-            ${{ runner.temp }}/quality-ollama/bin
-            ${{ runner.temp }}/quality-ollama/lib
-          key: quality-ollama-${{ runner.os }}-${{ runner.arch }}-${{ steps.model-cache-keys.outputs.installation }}
+          path: ${{ runner.temp }}/quality-ollama/ollama.tar.zst
+          key: quality-ollama-archive-${{ runner.os }}-${{ runner.arch }}-${{ steps.model-cache-keys.outputs.installation }}
       - name: Cache fixed local model manifests and blobs
         id: model-cache
         if: inputs.profile != 'reference'
@@ -102,18 +100,16 @@ jobs:
       - name: Require scorer contracts before the actual model run
         env:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
-        run: .quality/venv/bin/python -m pytest tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_quality_mutations.py tests/test_quality_profiles.py -q
+        run: .quality/venv/bin/python -m pytest tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_quality_mutations.py tests/test_quality_profiles.py tests/test_quality_ollama_setup.py -q
       - name: Install and start isolated Ollama models
         if: inputs.profile != 'reference'
         run: bash scripts/start_quality_ollama.sh
       # Preserve verified downloads even when later model quality checks fail.
-      - name: Save the verified Ollama installation
+      - name: Save the verified Ollama archive
         if: inputs.profile != 'reference' && steps.ollama-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
-          path: |
-            ${{ runner.temp }}/quality-ollama/bin
-            ${{ runner.temp }}/quality-ollama/lib
+          path: ${{ runner.temp }}/quality-ollama/ollama.tar.zst
           key: ${{ steps.ollama-cache.outputs.cache-primary-key }}
       - name: Save verified local model manifests and blobs
         if: inputs.profile != 'reference' && steps.model-cache.outputs.cache-hit != 'true'
@@ -155,9 +151,16 @@ jobs:
         if: always() && inputs.profile != 'reference'
         shell: bash
         run: |
-          if [ -f "$RUNNER_TEMP/quality-ollama/pid" ]; then
-            kill "$(cat "$RUNNER_TEMP/quality-ollama/pid")"
-          fi
+          python - <<'PY'
+          import os, signal
+          from pathlib import Path
+          pid = Path(os.environ["RUNNER_TEMP"]) / "quality-ollama/pid"
+          if pid.is_file():
+              try:
+                  os.kill(int(pid.read_text()), signal.SIGTERM)
+              except ProcessLookupError:
+                  pass
+          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
