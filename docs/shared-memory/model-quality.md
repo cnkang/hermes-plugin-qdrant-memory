@@ -136,6 +136,7 @@ Model digests and the running Ollama version are checked after cache restore.
 Credentials, evaluation reports, process IDs, and temporary memory data are excluded from caches.
 The model workflow saves verified downloads before quality checks, so a later quality failure does not discard them.
 The reference profile retains port 11434 and requires a separately provisioned test runner.
+The pinned cache actions use version 6.1.0 with Node.js 24. The reference runner must be version 2.327.1 or later.
 The setup loads local models before measurement. Reported model latency excludes initial model download and load.
 
 The OpenRouter profile requires the `model-quality` GitHub Environment with the test secret `OPENROUTER_API_KEY`.
@@ -180,7 +181,7 @@ Bind the port to loopback, cache a mounted model directory across runs, and remo
 A Docker volume alone does not persist across fresh hosted runners.
 Do not use an unbounded `docker logs --follow` command as a readiness check.
 The current fixed-binary lane already checks readiness, version, model digests, cleanup, and cache restore.
-Both hosted attempts completed setup. Their observed failures do not justify a second installation path.
+All three hosted attempts completed setup. Their observed failures do not justify a second installation path.
 
 Ordinary test CI also runs the scorer unit tests.
 
