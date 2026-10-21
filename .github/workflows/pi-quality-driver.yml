@@ -14,6 +14,9 @@ on:
       - pyproject.toml
       - scripts/install_quality_dependencies.sh
       - scripts/evaluate_owner_lifecycle.py
+      - scripts/start_quality_ollama.sh
+      - tests/test_quality_profiles.py
+      - tests/quality/model-profiles.json
       - qdrant_memory/quality_metrics.py
       - tests/test_quality_dependencies.py
       - tests/test_quality_metrics.py
@@ -33,6 +36,9 @@ on:
       - pyproject.toml
       - scripts/install_quality_dependencies.sh
       - scripts/evaluate_owner_lifecycle.py
+      - scripts/start_quality_ollama.sh
+      - tests/test_quality_profiles.py
+      - tests/quality/model-profiles.json
       - qdrant_memory/quality_metrics.py
       - tests/test_quality_dependencies.py
       - tests/test_quality_metrics.py
@@ -69,9 +75,16 @@ jobs:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
           repository: cnkang/qdrant-memory-mcp
-          ref: 4cc2f36048ae15460f0db339523d69e1a332e093
+          ref: c52437c85bce0bd6d1a81ec9bd5ddbbb98a58e9d
           path: .quality/mcp
           persist-credentials: false
+      - name: Cache verified dependency downloads
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.npm
+          key: quality-deps-${{ runner.os }}-${{ runner.arch }}-py311-${{ hashFiles('requirements-quality.txt', '.quality/mcp/integrations/agent-hosts/package-lock.json') }}
       - name: Install locked Pi SDK and test runner
         run: |
           bash scripts/install_quality_dependencies.sh .quality/venv
@@ -80,7 +93,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
         run: |
-          .quality/venv/bin/python -m pytest tests/test_quality_dependencies.py tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_dependency_security.py -q --junitxml=quality-dependencies.xml
+          .quality/venv/bin/python -m pytest tests/test_quality_dependencies.py tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_quality_profiles.py tests/test_dependency_security.py -q --junitxml=quality-dependencies.xml
       - name: Verify actual Pi driver attribution
         env:
           QDRANT_QUALITY_ADAPTER_ROOT: ${{ github.workspace }}/.quality/mcp
