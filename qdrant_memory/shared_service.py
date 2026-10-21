@@ -492,11 +492,19 @@ def make_server(owner, port):
                 return
             size = int(lengths[0])
             # One extra byte covers the size-limit probe. Never parse or admit
-            # rejected data; use a short drain timeout and the existing worker cap.
+            # rejected data; bound the whole drain, including slow repeated reads.
             if 0 < size <= 131073:
+                deadline = time.monotonic() + 1
                 try:
-                    self.connection.settimeout(1)
-                    self.rfile.read(size)
+                    while size:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        self.connection.settimeout(remaining)
+                        chunk = self.rfile.read1(min(size, 8192))
+                        if not chunk:
+                            break
+                        size -= len(chunk)
                 except OSError:
                     pass
 

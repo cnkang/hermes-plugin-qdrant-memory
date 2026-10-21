@@ -15,7 +15,17 @@ if [ ! -f "$quality_root/ollama.tar.zst" ]; then
     "https://github.com/ollama/ollama/releases/download/v${quality_version}/ollama-linux-amd64.tar.zst"
 fi
 # Verify every restored archive before extracting or executing any of its files.
-if ! echo "$quality_sha  $quality_root/ollama.tar.zst" | sha256sum --check --strict; then
+if ! .quality/venv/bin/python - "$quality_root/ollama.tar.zst" "$quality_sha" <<'PY'
+import hashlib
+import sys
+
+with open(sys.argv[1], "rb") as archive:
+    actual = hashlib.file_digest(archive, "sha256").hexdigest()
+if actual != sys.argv[2]:
+    raise SystemExit("Ollama archive checksum mismatch")
+print("Ollama archive checksum: OK")
+PY
+then
   rm -f "$quality_root/ollama.tar.zst"
   exit 1
 fi

@@ -514,7 +514,7 @@ def main():
             "openrouter-free",
         ),
         default="reference",
-        help="Model identity and endpoint selection; never a paid fallback",
+        help="Quality model identity; smoke-ollama uses smoke_owner_lifecycle.py instead",
     )
     parser.add_argument("--scenarios", type=Path, help="Optional frozen mutation/isolation corpus")
     parser.add_argument(

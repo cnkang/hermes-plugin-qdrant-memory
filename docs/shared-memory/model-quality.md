@@ -132,8 +132,8 @@ This result cannot certify the full quality baseline or mutation gates.
 
 ## Manual quality workflow
 
-The `owner-model-quality.yml` workflow runs only by manual request.
-It has no pull-request or fork trigger and uses no production credentials.
+The quality mode in `owner-model-quality.yml` runs only by manual request.
+This mode does not run on pull requests or forks and uses no production credentials.
 It checks out immutable Hermes and MCP candidates.
 Select one of these profiles:
 
@@ -163,6 +163,7 @@ The setup loads local models before measurement. Reported model latency excludes
 The OpenRouter profile requires the `model-quality` GitHub Environment with the test secret `OPENROUTER_API_KEY`.
 No other credential is required. Run this profile from `main` only.
 Only its generation step receives the secret. Embeddings remain on the runner.
+Only this profile uses the credential environment. All local profiles use `model-smoke`.
 The [Free Router](https://openrouter.ai/docs/guides/routing/routers/free-router) selects an available free model for each request.
 Reports record the observed model IDs and HTTP status counts.
 Model selection can change between requests, so results describe that run only.
