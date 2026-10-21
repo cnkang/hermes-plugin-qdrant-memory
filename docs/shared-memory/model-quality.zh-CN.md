@@ -63,8 +63,8 @@ PYTHONPATH="$PWD:/path/to/hermes-agent" python scripts/evaluate_owner_lifecycle.
 | 证据 | 含义 |
 | --- | --- |
 | [owner-model-quality-evidence.json](owner-model-quality-evidence.json) | 评估器复审修复前的基线。原始重启差异仅涉及计算出的分数。 |
-| [owner-model-quality-reviewed-evidence.json](owner-model-quality-reviewed-evidence.json) | 评估器修复后的运行，包含明确的重启后模型调用和记录错误观测。 |
-| [owner-model-quality-drained-evidence.json](owner-model-quality-drained-evidence.json) | 先完成公共 Host 准入屏障，再完成 Provider 空闲屏障后的新基线 PASS。 |
+| [owner-model-quality-reviewed-evidence.json](owner-model-quality-reviewed-evidence.json) | 评估器修复后较早的运行，包含明确的重启后模型调用和记录错误观测。 |
+| [owner-model-quality-drained-evidence.json](owner-model-quality-drained-evidence.json) | 仅基线运行的 PASS，先完成公共 Host 准入屏障，再完成 Provider 空闲屏障。 |
 | [owner-mutation-initial-failure.json](owner-mutation-initial-failure.json) | 首次完整基线与 mutation 运行。在替换意图、Host 准入屏障和拒绝探针修复前记录 FAIL。 |
 | [owner-mutation-quality-evidence.json](owner-mutation-quality-evidence.json) | 历史原始 PASS。因读写凭据均属于 `pi`，跨 Agent 交接结论已撤回。 |
 | [owner-mutation-identity-evidence.json](owner-mutation-identity-evidence.json) | 新的完整基线与 mutation PASS，存储的写入者为 `pi`，独立授权的读取者为 `hermes`。 |
@@ -115,7 +115,24 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 操作员必须显式配置此 runner。工作流不由 pull request 或 fork 触发，也不使用生产凭据。
 它检出不可变的 Hermes 和 MCP 候选版本，并要求模型已在本地安装。
 仅有工作流配置不能证明已执行；注册 runner 和远端执行需要分别操作。
+
 普通测试 CI 也运行评分器单元测试。
+
+两个工作流均在 Python 3.11 下安装 `requirements-quality.txt` 中带哈希的 wheel。
+本地 Runtime 构建使用固定的构建后端，并离线检查依赖。
+安装器保留正常依赖解析，并运行 `pip check`。
+托管驱动 job 不加载模型，单独验证此环境。
+
+更新快照时，从 Runtime 检出目录运行以下命令：
+
+```sh
+uv pip compile pyproject.toml requirements-quality.in --extra remote \
+  --constraint requirements.txt --python-version 3.11 \
+  --python-platform x86_64-unknown-linux-gnu --generate-hashes \
+  --no-header --no-annotate --output-file requirements-quality.txt
+```
+
+使用新快照前，检查生成的版本与哈希。
 
 ## 真实模型输入观测
 
