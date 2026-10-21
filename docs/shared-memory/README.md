@@ -56,7 +56,7 @@ for principal, permission in [("hermes", "write"), ("dsh", "write"), ("reviewer"
         {
             "token_sha256": hashlib.sha256(token.encode()).hexdigest(),
             "principal": principal,
-            "owner_id": "my-user",
+            "owner_id": "owner-admin",
             "space_id": "my-project",
             "permission": permission,
             "visibility": "shared",
@@ -188,8 +188,9 @@ The owner replays pending Runtime operations and unfinished request plans before
 readiness. On terminal failure it blocks new writes and requires intervention.
 Stop the owner. Restore the Qdrant/embedding dependency. Run the existing
 operator `qdrant-memory --home OWNER retry`. Then restart. No second owner should run
-maintenance concurrently. While shared plans are unfinished, ordinary tool
-sessions and mutating init/delete/import commands fail closed. Operator retry
+maintenance concurrently. While shared plans are unfinished, shared write calls
+and mutating init/delete/import commands fail closed. Shared search remains
+available. Operator retry
 remains available, followed by owner restart to reconcile receipts. Pending destructive intents and raw host extraction
 events continue to block incompatible startup. Use a separate owner home rather
 than reusing a Native Provider's active profile.
