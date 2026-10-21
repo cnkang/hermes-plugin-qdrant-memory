@@ -481,9 +481,27 @@ def make_server(owner, port):
             """Never fingerprint the Python runtime in the Server header."""
             return "qdrant-memory"
 
+        def discard_rejected_body(self):
+            """Bound a rejected-body drain so Windows can receive the denial response."""
+            lengths = self.headers.get_all("Content-Length", [])
+            if (
+                self.headers.get("Transfer-Encoding") is not None
+                or len(lengths) != 1
+                or re.fullmatch(r"[0-9]{1,6}", lengths[0]) is None
+            ):
+                return
+            size = int(lengths[0])
+            # One extra byte covers the size-limit probe. Never parse or admit
+            # rejected data; the existing socket timeout and worker cap apply.
+            if 0 < size <= 131073:
+                try:
+                    self.rfile.read(size)
+                except OSError:
+                    pass
+
         def do_POST(self):
             """Validate transport boundaries before resolving a trusted identity."""
-            status, result = 200, None
+            status, result, body_read = 200, None, False
             try:
                 if (
                     self.path != "/v1/tool"
@@ -500,11 +518,14 @@ def make_server(owner, port):
                 size = int(self.headers.get("Content-Length", "0"))
                 if not 0 < size <= 131072:
                     raise ValueError("Invalid request size")
+                body_read = True
                 data = json.loads(self.rfile.read(size))
                 if not isinstance(data, dict) or set(data) != {"name", "arguments"}:
                     raise ValueError("Invalid request envelope")
                 result = owner.call(auth[7:], data["name"], data["arguments"])
             except Exception as exc:
+                if not body_read:
+                    self.discard_rejected_body()
                 status = _error_status(exc)
                 result = {"error": safe_error(exc)}
             body = json.dumps(result, ensure_ascii=False).encode()
