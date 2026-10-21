@@ -9,10 +9,10 @@ The Owner Runtime controls memory extraction and writes. The evaluation uses its
 MCP means Model Context Protocol. SDK means software development kit.
 
 The Pi assistant gives a fixed acknowledgement for each turn.
-Extraction and embeddings use installed local models through Ollama on loopback HTTP.
+Extraction and embeddings use the selected model profile.
 An embedding represents text as a numeric vector.
-The models are `qwen3:8b` and `qwen3-embedding:4b`.
-The evaluation needs no API key, Cloud service, or model download.
+The `reference` profile uses installed `qwen3:8b` and `qwen3-embedding:4b` models through Ollama on loopback HTTP.
+This profile needs no API key, Cloud service, or model download.
 
 ## Frozen baseline and quality gate
 
@@ -115,11 +115,45 @@ Its result needs a completed CI run.
 
 ## Manual workflow
 
-The `owner-model-quality.yml` workflow uses a disposable Linux test runner with the `qdrant-memory-models` label.
-An operator must provision this runner explicitly.
-The workflow has no pull-request or fork trigger and uses no production credentials.
-It checks out immutable Hermes and MCP candidates and requires installed local models.
-Workflow configuration alone does not prove execution. Runner registration and remote execution require separate operator actions.
+The `owner-model-quality.yml` workflow runs only by manual request.
+It has no pull-request or fork trigger and uses no production credentials.
+It checks out immutable Hermes and MCP candidates.
+Select one of these profiles:
+
+| Profile | Runner | Generation | Embeddings |
+| --- | --- | --- | --- |
+| `hosted-ollama` (default) | GitHub `ubuntu-24.04` | `qwen3:4b-instruct-2507-q4_K_M` | `qwen3-embedding:0.6b`, 1024 dimensions |
+| `openrouter-free` | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | The same local 0.6B model |
+| `reference` | Disposable Linux runner with `qdrant-memory-models` label | Installed `qwen3:8b` | Installed `qwen3-embedding:4b`, 2560 dimensions |
+
+The first two profiles need no self-hosted runner.
+They download a fixed Ollama release and fixed model manifests from [Ollama](https://github.com/ollama/ollama/releases).
+The setup checks the archive checksum and model digests in [model-profiles.json](../../tests/quality/model-profiles.json).
+It starts a private process on loopback port 19134. It stops that process after the test.
+CI caches dependency downloads, the fixed Ollama installation, and each profile's local models.
+Cache keys include the platform and the relevant lock or model configuration hash.
+Model digests and the running Ollama version are checked after cache restore.
+Credentials, evaluation reports, process IDs, and temporary memory data are excluded from caches.
+The reference profile retains port 11434 and requires a separately provisioned test runner.
+The setup loads local models before measurement. Reported model latency excludes initial model download and load.
+
+The OpenRouter profile requires the `model-quality` GitHub Environment with the test secret `OPENROUTER_API_KEY`.
+No other credential is required. Run this profile from `main` only.
+Only its generation step receives the secret. Embeddings remain on the runner.
+The [Free Router](https://openrouter.ai/docs/guides/routing/routers/free-router) selects an available free model for each request.
+Reports record the observed model IDs and HTTP status counts.
+Model selection can change between requests, so results describe that run only.
+The evaluator spaces requests by at least 3.1 seconds. Quotas and service availability can still cause failures.
+There is no paid fallback or automatic retry after a provider denial.
+A missing secret, rate limit, provider error, or missing model observation cannot produce PASS.
+Use synthetic test data only. OpenRouter receives the synthetic generation prompts.
+
+All profiles use the full frozen corpus and the same quality thresholds.
+Reports identify the profile, generation route, embedding dimensions, and local model digests.
+Results from a smaller model do not replace the historical reference measurements.
+The separate two-subject native Ollama probe runs only for `reference`.
+The full baseline and mutation gates run for every profile.
+Workflow configuration alone does not prove execution. Record the run URL and actual result separately.
 
 Ordinary test CI also runs the scorer unit tests.
 

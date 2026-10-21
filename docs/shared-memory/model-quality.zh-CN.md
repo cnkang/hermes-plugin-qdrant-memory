@@ -8,9 +8,10 @@
 Owner Runtime 控制记忆提取和写入。评估使用其现有提取与写入路径。
 MCP 指 Model Context Protocol（模型上下文协议）。SDK 指软件开发工具包。
 
-Pi assistant 对每轮给出固定确认。提取和向量化通过回环 HTTP 上的 Ollama 使用已安装的本地模型。
-Embedding 将文本表示为数值向量。模型为 `qwen3:8b` 和 `qwen3-embedding:4b`。
-评估不需要 API key、Cloud 服务或模型下载。
+Pi assistant 对每轮给出固定确认。提取和向量化使用所选模型配置。
+Embedding 将文本表示为数值向量。
+`reference` 配置通过回环 HTTP 上的 Ollama 使用已安装的 `qwen3:8b` 和 `qwen3-embedding:4b`。
+此配置不需要 API key、Cloud 服务或模型下载。
 
 ## 固定基线与质量门禁
 
@@ -111,10 +112,44 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 
 ## 手动工作流
 
-`owner-model-quality.yml` 工作流使用带 `qdrant-memory-models` 标签的一次性 Linux 测试 runner。
-操作员必须显式配置此 runner。工作流不由 pull request 或 fork 触发，也不使用生产凭据。
-它检出不可变的 Hermes 和 MCP 候选版本，并要求模型已在本地安装。
-仅有工作流配置不能证明已执行；注册 runner 和远端执行需要分别操作。
+`owner-model-quality.yml` 工作流仅由手动请求触发。
+工作流不由 pull request 或 fork 触发，也不使用生产凭据。
+它检出不可变的 Hermes 和 MCP 候选版本。选择以下配置之一：
+
+| 配置 | Runner | 生成 | 向量化 |
+| --- | --- | --- | --- |
+| `hosted-ollama`（默认） | GitHub `ubuntu-24.04` | `qwen3:4b-instruct-2507-q4_K_M` | `qwen3-embedding:0.6b`，1024 维 |
+| `openrouter-free` | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | 同一个本地 0.6B 模型 |
+| `reference` | 带 `qdrant-memory-models` 标签的一次性 Linux runner | 已安装的 `qwen3:8b` | 已安装的 `qwen3-embedding:4b`，2560 维 |
+
+前两种配置不需要 self-hosted runner。
+它们从 [Ollama](https://github.com/ollama/ollama/releases) 下载固定版本的 Ollama 和固定模型清单。
+初始化检查 [model-profiles.json](../../tests/quality/model-profiles.json) 中的安装包校验和及模型摘要。
+它在回环端口 19134 启动私有进程，并在测试后停止该进程。
+CI 缓存依赖下载、固定的 Ollama 安装，以及各配置的本地模型。
+缓存键包含平台，以及对应依赖锁或模型配置的哈希。
+恢复缓存后仍检查模型摘要和运行中的 Ollama 版本。
+凭据、评估报告、进程 ID 和临时记忆数据均不纳入缓存。
+reference 配置保留端口 11434，并要求单独配置测试 runner。
+初始化在测量前加载本地模型。报告的模型延迟不包含首次下载及加载。
+
+OpenRouter 配置要求 GitHub Environment `model-quality` 中包含测试 Secret `OPENROUTER_API_KEY`。
+不需要其他凭据。仅从 `main` 运行此配置。
+只有它的生成步骤接收此 Secret。向量化仍在 runner 上执行。
+[Free Router](https://openrouter.ai/docs/guides/routing/routers/free-router) 为每次请求选择可用的免费模型。
+报告记录观测到的模型 ID 和 HTTP 状态计数。
+各次请求可能选择不同模型，因此结果仅描述本次运行。
+评估器使请求至少间隔 3.1 秒。配额和服务可用性仍可能导致失败。
+不设付费回退，也不在 provider 拒绝后自动重试。
+缺少 Secret、限流、provider 错误或缺少模型观测均不能产生 PASS。
+仅使用合成测试数据。OpenRouter 会收到合成的生成提示词。
+
+所有配置使用完整的固定语料和相同质量阈值。
+报告标识配置、生成路由、向量维度及本地模型摘要。
+小模型结果不替代历史 reference 测量。
+独立的双主体 Ollama 原生探针仅在 `reference` 配置运行。
+每种配置均运行完整基线和 mutation 门禁。
+仅有工作流配置不能证明已执行。应单独记录运行链接和实际结果。
 
 普通测试 CI 也运行评分器单元测试。
 
