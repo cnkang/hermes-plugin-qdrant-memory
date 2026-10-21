@@ -36,8 +36,7 @@ jobs:
       - name: Prepare isolated test dependencies
         shell: bash
         run: |
-          python3.11 -m venv .quality/venv
-          .quality/venv/bin/python -m pip install '.[remote]' 'pytest>=8,<10' 'PyYAML>=6,<7' 'requests>=2,<3' 'ruamel.yaml>=0.18,<0.20'
+          bash scripts/install_quality_dependencies.sh .quality/venv
           npm ci --prefix .quality/mcp/integrations/agent-hosts --ignore-scripts --no-audit --no-fund
       - name: Require scorer contracts before the actual model run
         run: .quality/venv/bin/python -m pytest tests/test_quality_metrics.py -q

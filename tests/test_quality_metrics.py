@@ -53,7 +53,17 @@ def test_complete_quality_evidence_passes():
     assert result["recall_at_5"] == result["mrr"] == 1
 
 
-@pytest.mark.parametrize("missing", ["extractions", "retrievals", "replay_safe", "restart_safe"])
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "extractions",
+        "retrievals",
+        "scope_leaks",
+        "provider_failures",
+        "replay_safe",
+        "restart_safe",
+    ],
+)
 def test_missing_evidence_never_defaults_to_success(missing):
     """Absence of a required measurement cannot become a green gate."""
     observed = evidence()

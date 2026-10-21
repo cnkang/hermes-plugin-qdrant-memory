@@ -7,11 +7,35 @@ on:
       - scripts/pi_lifecycle_quality.mjs
       - tests/test_pi_quality_driver.py
       - .github/workflows/pi-quality-driver.yml
+      - .github/workflows/owner-model-quality.yml
+      - requirements-quality.in
+      - requirements-quality.txt
+      - requirements.txt
+      - pyproject.toml
+      - scripts/install_quality_dependencies.sh
+      - scripts/evaluate_owner_lifecycle.py
+      - qdrant_memory/quality_metrics.py
+      - tests/test_quality_dependencies.py
+      - tests/test_quality_metrics.py
+      - tests/test_quality_runner.py
+      - tests/test_dependency_security.py
   pull_request:
     paths:
       - scripts/pi_lifecycle_quality.mjs
       - tests/test_pi_quality_driver.py
       - .github/workflows/pi-quality-driver.yml
+      - .github/workflows/owner-model-quality.yml
+      - requirements-quality.in
+      - requirements-quality.txt
+      - requirements.txt
+      - pyproject.toml
+      - scripts/install_quality_dependencies.sh
+      - scripts/evaluate_owner_lifecycle.py
+      - qdrant_memory/quality_metrics.py
+      - tests/test_quality_dependencies.py
+      - tests/test_quality_metrics.py
+      - tests/test_quality_runner.py
+      - tests/test_dependency_security.py
   workflow_dispatch:
 
 permissions:
@@ -35,31 +59,37 @@ jobs:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
           repository: cnkang/qdrant-memory-mcp
-          ref: 4a76bf9211ce48b5dcf40caa60e4a91107aa687f
+          ref: 4cc2f36048ae15460f0db339523d69e1a332e093
           path: .quality/mcp
           persist-credentials: false
       - name: Install locked Pi SDK and test runner
         run: |
-          python -m pip install 'pytest>=8,<10'
+          bash scripts/install_quality_dependencies.sh .quality/venv
           npm ci --prefix .quality/mcp/integrations/agent-hosts --ignore-scripts --no-audit --no-fund
+      - name: Verify model dependency snapshot and scorer contracts
+        run: |
+          .quality/venv/bin/python -m pytest tests/test_quality_dependencies.py tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_dependency_security.py -q --junitxml=quality-dependencies.xml
       - name: Verify actual Pi driver attribution
         env:
           QDRANT_QUALITY_ADAPTER_ROOT: ${{ github.workspace }}/.quality/mcp
-        run: python -m pytest tests/test_pi_quality_driver.py -q --junitxml=driver-contract.xml
+        run: .quality/venv/bin/python -m pytest tests/test_pi_quality_driver.py -q --junitxml=driver-contract.xml
       - name: Reject skipped or absent driver contracts
         if: always()
         run: |
           python - <<'PY'
           import xml.etree.ElementTree as ET
-          suites = list(ET.parse("driver-contract.xml").getroot().iter("testsuite"))
-          totals = {key: sum(int(suite.get(key, "0")) for suite in suites)
-                    for key in ("tests", "failures", "errors", "skipped")}
-          assert totals["tests"] > 0, "Driver contract did not execute"
-          assert not any(totals[key] for key in ("failures", "errors", "skipped")), totals
+          for report in ("driver-contract.xml", "quality-dependencies.xml"):
+              suites = list(ET.parse(report).getroot().iter("testsuite"))
+              totals = {key: sum(int(suite.get(key, "0")) for suite in suites)
+                        for key in ("tests", "failures", "errors", "skipped")}
+              assert totals["tests"] > 0, f"Contract did not execute: {report}"
+              assert not any(totals[key] for key in ("failures", "errors", "skipped")), totals
           PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: pi-quality-driver-contract
-          path: driver-contract.xml
+          path: |
+            driver-contract.xml
+            quality-dependencies.xml
           if-no-files-found: error

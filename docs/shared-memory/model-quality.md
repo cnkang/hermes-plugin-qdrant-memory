@@ -44,18 +44,36 @@ Committed evidence:
 
 - `owner-model-quality-evidence.json`: fingerprinted baseline before the evaluator
   review fixes; raw restart differences were limited to computed scores.
-- `owner-model-quality-reviewed-evidence.json`: final run after the evaluator fixes,
+- `owner-model-quality-reviewed-evidence.json`: earlier run after the evaluator fixes,
   including explicit post-restart model-call and recording-error measurements.
-- `owner-model-quality-drained-evidence.json`: fresh baseline PASS after awaiting
+- `owner-model-quality-drained-evidence.json`: current baseline PASS after awaiting
   the public Host admission barrier before the Provider idle barrier; all 24
   captures and 32 queries, replay and restart checks ran with real local models.
 
-`owner-model-quality.yml` is a manual lane for an explicitly provisioned,
-disposable Linux test runner labelled `qdrant-memory-models`. It has no PR/fork
-trigger and uses no production credentials. It checks out immutable Hermes and
-MCP candidates and requires already-installed local models. Registering that
-runner and executing the remote lane are separate operator tasks; defining the
-workflow does not prove it ran. Scorer unit tests also run in ordinary test CI.
+The `owner-model-quality.yml` workflow uses a disposable Linux test runner with the `qdrant-memory-models` label.
+An operator must provision this runner explicitly.
+The workflow has no pull-request or fork trigger and uses no production credentials.
+It checks out immutable Hermes and MCP candidates and requires installed local models.
+Workflow configuration alone does not prove execution.
+Runner registration and remote execution require separate operator actions.
+
+Ordinary test CI also runs the scorer unit tests.
+
+Both lanes install the hashed wheels in `requirements-quality.txt` with Python 3.11.
+The local Runtime build uses the pinned build backend and an offline dependency check.
+The installer keeps normal dependency resolution and runs `pip check`.
+The hosted driver job verifies this environment without loading models.
+
+To update the snapshot, run this command from the Runtime checkout:
+
+```sh
+uv pip compile pyproject.toml requirements-quality.in --extra remote \
+  --constraint requirements.txt --python-version 3.11 \
+  --python-platform x86_64-unknown-linux-gnu --generate-hashes \
+  --no-header --no-annotate --output-file requirements-quality.txt
+```
+
+Review the resulting versions and hashes before you use the new snapshot.
 
 ## Driver contract
 
