@@ -275,6 +275,7 @@ python scripts/evaluate_owner_lifecycle.py --model-profile openrouter-cloud-qual
 仅当选定免费条目绑定该模型族时，才接受基础 ID。未知或混合模型族会失败。
 报告保留请求 ID、实际 ID、允许的别名和元数据哈希。
 
+云工作流配置共用一个账户并发组，不取消正在执行的运行。
 全部请求串行执行，启动间隔至少为 3.1 秒。
 每次请求超时 30 秒，最多尝试两次。
 Cloud Smoke 总预算为 40 次 API 尝试，Cloud Quality 为 256 次，均包含元数据和重试。

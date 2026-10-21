@@ -279,6 +279,7 @@ Response IDs must match the selected official entry or its catalog-bound canonic
 A base ID is allowed only when the selected free entry binds that family. Unknown or mixed model families fail.
 Reports retain requested IDs, actual IDs, allowed aliases and metadata hashes.
 
+Cloud workflow profiles share one account concurrency group and do not cancel an active run.
 All requests are serialized with at least 3.1 seconds between starts.
 Each request has a 30-second timeout and at most two attempts.
 The budgets are 40 total API attempts for Cloud Smoke and 256 for Cloud Quality, including metadata and retries.
