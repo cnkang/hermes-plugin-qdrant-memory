@@ -24,11 +24,11 @@ CHECKS = {
     "provider_observed",
 }
 CASES = [
-    {"id": "smoke-native", "session": "smoke-native", "user": "Remember that I prefer dark mode."},
+    {"id": "smoke-native", "session": "smoke-native", "user": "I prefer dark mode."},
     {
         "id": "smoke-project",
         "session": "smoke-project",
-        "user": "Remember that I prefer Vim as my text editor.",
+        "user": "This project's text editor is Vim.",
     },
 ]
 
@@ -112,13 +112,13 @@ def exercise(adapter, home, recorder, tokens):
     }
 
 
-def run_smoke(adapter):
+def run_smoke(adapter, profile_name="smoke-ollama"):
     """Isolate synthetic credentials, vector data, models and host state for one run."""
     from agent.secret_scope import reset_secret_scope, set_secret_scope
 
     if os.environ.get("QM_QUALITY_UNUSED_KEY"):
         raise ValueError("Local smoke refuses supplied API credentials")
-    profile = core.model_profile("smoke-ollama")
+    profile = core.model_profile(profile_name)
     with core.httpx.Client(trust_env=False, timeout=5) as http:
         response = http.get(profile["ollama_url"] + "/api/tags")
         response.raise_for_status()
@@ -165,13 +165,20 @@ def main():
     parser.add_argument("--adapter-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, choices=range(1, 6), default=1)
+    parser.add_argument(
+        "--model-profile",
+        choices=["smoke-ollama", "smoke-qwen06", "smoke-qwen08", "smoke-qwen17"],
+        default="smoke-ollama",
+    )
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError("Choose a new smoke output path")
     report = {
         "status": "FAIL",
         "evaluation_mode": "smoke",
-        "model_profile": "smoke-ollama",
+        "model_profile": args.model_profile,
+        "smoke_cases_version": "owner-smoke-declarative-v2",
+        "smoke_cases_sha256": core.digest(json.dumps(CASES, sort_keys=True).encode()),
         "baseline_executed": False,
         "quality_evaluated": False,
         "requested_repetitions": args.repetitions,
@@ -188,7 +195,7 @@ def main():
     try:
         # Check fresh Owner lifecycles and stop at the first failure.
         for _ in range(args.repetitions):
-            evidence = run_smoke(args.adapter_root.resolve())
+            evidence = run_smoke(args.adapter_root.resolve(), args.model_profile)
             report["runs"].append(evidence)
             checks = evidence["checks"]
             if set(checks) != CHECKS or not all(value is True for value in checks.values()):

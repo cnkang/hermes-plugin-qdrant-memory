@@ -33,18 +33,27 @@ concurrency:
 
 jobs:
   quality:
-    # Secrets are available only to the explicit main-branch OpenRouter step.
+    # The OpenRouter API key is available only to the explicit main-branch step.
     # The reference profile retains the separately provisioned test runner.
-    if: github.repository == 'cnkang/hermes-plugin-qdrant-memory' && ((inputs.mode == 'smoke' && inputs.profile == 'smoke-ollama') || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && ((inputs.profile != 'openrouter-free' && inputs.profile != 'reference') || github.ref == 'refs/heads/main')))
+    if: github.repository == 'cnkang/hermes-plugin-qdrant-memory' && ((inputs.mode == 'smoke' && contains(fromJSON('["smoke-ollama","smoke-qwen06","smoke-qwen08","smoke-qwen17"]'), inputs.profile)) || (github.event_name == 'workflow_dispatch' && inputs.mode != 'smoke' && ((inputs.profile != 'openrouter-free' && inputs.profile != 'reference') || github.ref == 'refs/heads/main')))
     runs-on: ${{ fromJSON(inputs.profile == 'reference' && '["self-hosted","linux","qdrant-memory-models"]' || '"ubuntu-24.04"') }}
     environment: ${{ inputs.profile == 'openrouter-free' && 'model-quality' || 'model-smoke' }}
     timeout-minutes: ${{ inputs.mode == 'smoke' && 30 || 90 }}
     env:
-      MODEL_PROFILE: ${{ inputs.profile }}
+      MODEL_PROFILE: ${{ inputs.mode == 'smoke' && inputs.profile == 'smoke-ollama' && (vars.OLLAMA_SMOKE_PROFILE || secrets.OLLAMA_SMOKE_PROFILE) || inputs.profile }}
       MODEL_EVALUATION_MODE: ${{ inputs.mode || 'quality' }}
       PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
       QUALITY_OUTPUT: ${{ github.workspace }}/.quality/owner-quality-${{ github.run_id }}-${{ github.run_attempt }}.json
     steps:
+      - name: Validate the local smoke profile before setup
+        if: inputs.mode == 'smoke'
+        run: |
+          python3 - <<'PY'
+          import os
+          allowed = {'smoke-ollama', 'smoke-qwen06', 'smoke-qwen08', 'smoke-qwen17'}
+          if os.environ['MODEL_PROFILE'] not in allowed:
+              raise SystemExit('Unsupported local smoke profile')
+          PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -159,7 +168,7 @@ jobs:
         run: .quality/venv/bin/python scripts/evaluate_owner_lifecycle.py --model-profile "$MODEL_PROFILE" --adapter-root .quality/mcp --scenarios tests/quality/lifecycle-mutations-v1.json --output "$QUALITY_OUTPUT"
       - name: Actual small-model lifecycle smoke
         if: inputs.mode == 'smoke'
-        run: .quality/venv/bin/python scripts/smoke_owner_lifecycle.py --adapter-root .quality/mcp --output "$QUALITY_OUTPUT" --repetitions 5
+        run: .quality/venv/bin/python scripts/smoke_owner_lifecycle.py --adapter-root .quality/mcp --output "$QUALITY_OUTPUT" --repetitions 5 --model-profile "$MODEL_PROFILE"
       - name: Require evidence for the selected evaluation mode
         run: |
           .quality/venv/bin/python - <<'PY'

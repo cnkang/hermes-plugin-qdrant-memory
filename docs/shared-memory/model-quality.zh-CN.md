@@ -126,12 +126,23 @@ Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,9
 [后续 0.8B 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39624059913) 因 Pi 项目捕获未返回记忆而失败。
 两次生成请求均返回 HTTP 200。此前两次通过不能证明重复运行稳定性。
 此前 0.8B 组合的模型下载合计约 1.37 GB。
-1.7B 候选保留相同的两条偏好语料和有效性检查。
+[首次 1.7B 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39627174644) 同样因原生捕获为空而失败。
+这些失败使用以 "Remember" 开头的命令式请求。
+提取器排除命令并接受持久事实。命令解释是可能原因，但尚未验证。
+独立的 `owner-smoke-declarative-v2` 语料直接陈述用户偏好和项目事实。
+报告包含此版本及其 SHA-256 摘要。完整质量语料与有效性检查保持不变。
 工作流复用相同初始化与缓存，不需要 API Key 或 self-hosted runner。
 独立的 `model-smoke` Environment 不要求任何 Secret。
 
+手动运行可通过 `model_profile` 选择 `smoke-qwen06`、`smoke-qwen08` 或 `smoke-qwen17`。
+它们分别使用 `qwen3:0.6b`、`qwen3.5:0.8b` 和 `qwen3:1.7b`，嵌入模型和检查相同。
+每次运行仅选择一个模型。Pull request 使用单一的 `smoke-ollama` 默认配置。
+对此默认配置，可选的 `OLLAMA_SMOKE_PROFILE` Environment Variable 优先于同名 Secret。
+值必须为上述三个配置之一或 `smoke-ollama`。无效值在检出或模型初始化前失败。
+显式手动对比优先于此覆盖设置。仍要求五次重复全部通过。
+
 冒烟测试使用真实模型调用、Hermes 原生捕获、Pi SDK 和 HTTPS MCP。
-其两个合成对话轮次显式请求保存简单的用户偏好。
+其两个合成对话轮次陈述用户偏好和项目事实。
 具名主体提取、多语言语义和替换能力仍由完整质量语料评估。
 它检查授权召回、私有隔离、重放，以及不新增生成调用的持久化重启。
 它查询模型已捕获的文本来检查存储往返，不评估语义准确率。

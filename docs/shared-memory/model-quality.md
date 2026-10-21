@@ -129,12 +129,23 @@ These are loaded-model observations from one smoke run, not peak process memory 
 The [later 0.8B run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39624059913) failed because Pi project capture returned no memory.
 Both generation requests returned HTTP 200. The two earlier passes do not establish repeat stability.
 The earlier 0.8B pair required about 1.37 GB of model downloads.
-The 1.7B candidate retains the same two preference cases and validity checks.
+The [first 1.7B run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39627174644) also failed with empty native capture.
+These failures used imperative requests that began with "Remember".
+The extractor excludes commands and accepts durable facts. Command interpretation is a possible cause, but remains unverified.
+The separate `owner-smoke-declarative-v2` cases state a user preference and a project fact directly.
+Reports include this version and its SHA-256 digest. The full quality corpus and validity checks remain unchanged.
 The workflow uses the shared setup and caches. It requires no API key or self-hosted runner.
 The separate `model-smoke` environment contains no required secrets.
 
+Manual runs can select `smoke-qwen06`, `smoke-qwen08`, or `smoke-qwen17` through `model_profile`.
+These profiles use `qwen3:0.6b`, `qwen3.5:0.8b`, and `qwen3:1.7b`, respectively, with the same embedding model and checks.
+Each run selects one model. Pull requests use the single `smoke-ollama` default.
+For that default, the optional `OLLAMA_SMOKE_PROFILE` environment variable takes precedence over a secret of the same name.
+The value must be one of these three profiles or `smoke-ollama`. Invalid values fail before checkout or model setup.
+An explicit manual comparison takes precedence over this override. Five successful repetitions are still required.
+
 The smoke test uses real model calls, Hermes native capture, the Pi SDK, and HTTPS MCP.
-Its two synthetic turns explicitly request storage of simple user preferences.
+Its two synthetic turns state a user preference and a project fact.
 Named-subject extraction, multilingual meaning, and supersession remain in the full quality corpus.
 It checks authorized recall, private isolation, replay, and durable restart without new generation calls.
 It queries the model's captured text to check the storage round trip. It does not score semantic accuracy.
