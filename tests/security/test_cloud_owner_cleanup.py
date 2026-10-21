@@ -13,6 +13,10 @@ from qdrant_client.models import PointStruct
 from ..helpers import Embedder, config
 from . import test_cloud_owner as cloud
 
+pytestmark = pytest.mark.skipif(
+    os.name == "nt", reason="Cloud Owner credential files require verified POSIX permissions"
+)
+
 
 @pytest.mark.parametrize("fail_acceptance", [True, False])
 def test_disposable_collection_is_removed_after_acceptance(tmp_path, monkeypatch, fail_acceptance):
@@ -48,8 +52,7 @@ def test_disposable_collection_is_removed_after_acceptance(tmp_path, monkeypatch
         state = json.loads(filename.read_text())
         assert state["provision_started"] is True
         assert state["owner_collection"].startswith("qm_owner_ci_")
-        if os.name != "nt":
-            assert filename.stat().st_mode & 0o777 == 0o600
+        assert filename.stat().st_mode & 0o777 == 0o600
     finally:
         close()
 
