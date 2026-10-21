@@ -110,7 +110,24 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 此工作流不会选择模型 runner。
 它的实际结果需要已完成的 CI run。
 
-## 手动工作流
+## 小模型冒烟工作流
+
+`owner-model-smoke.yml` 在相关 pull request 和 main 变更时运行，也可手动触发。
+它只选择关闭思考后的 `qwen3:0.6b`，以及 384 维的 `all-minilm:22m` 嵌入模型。
+固定模型下载合计约 569 MB，不含 Ollama 和依赖。
+备选 `qwen3.5:0.8b` 默认模型包约 1.3 GB，且包含视觉组件。
+这些安装包体积不代表进程内存。较小的文本模型是首个冒烟候选。
+工作流复用相同初始化与缓存，不需要 API Key 或 self-hosted runner。
+独立的 `model-smoke` Environment 不要求任何 Secret。
+
+冒烟测试使用真实模型调用、Hermes 原生捕获、Pi SDK 和 HTTPS MCP。
+它检查授权召回、私有隔离、重放，以及不新增生成调用的持久化重启。
+它查询模型已捕获的文本来检查存储往返，不评估语义准确率。
+空捕获、provider 失败、无效 payload、缺少观测或检查失败均产生 FAIL。
+成功仅标记为 `SMOKE_PASS`，并设置 `quality_evaluated=false`、`baseline_executed=false`。
+该结果不能认证完整质量基线或 mutation 门禁。
+
+## 手动质量工作流
 
 `owner-model-quality.yml` 工作流仅由手动请求触发。
 工作流不由 pull request 或 fork 触发，也不使用生产凭据。
@@ -118,8 +135,8 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 
 | 配置 | Runner | 生成 | 向量化 |
 | --- | --- | --- | --- |
-| `hosted-ollama`（默认诊断） | GitHub `ubuntu-24.04` | `qwen3:1.7b` | `qwen3-embedding:0.6b`，1024 维 |
-| `openrouter-free`（可选） | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | 同一个本地 0.6B 模型 |
+| `openrouter-free`（默认质量） | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`，1024 维 |
+| `hosted-ollama`（可选对比） | GitHub `ubuntu-24.04` | `qwen3:1.7b` | 同一个本地 0.6B 模型 |
 | `hosted-qwen35`（实验性） | GitHub `ubuntu-24.04` | `qwen3.5:2b` | 同一个本地 0.6B 模型 |
 | `hosted-qwen35-4b`（实验性） | GitHub `ubuntu-24.04` | `qwen3.5:4b` | 同一个本地 0.6B 模型 |
 | `reference` | 带 `qdrant-memory-models` 标签的一次性 Linux runner | 已安装的 `qwen3:8b` | 已安装的 `qwen3-embedding:4b`，2560 维 |
@@ -161,8 +178,8 @@ OpenRouter 配置要求 GitHub Environment `model-quality` 中包含测试 Secre
 使用工作流输入选择其他固定模型配置。模型名称属于配置，不需要 Secret。
 模型变更必须提供固定的清单摘要。不接受任意未经校验的模型标签。
 托管 Ollama 配置使用相同的嵌入模型、生成预算和关闭思考设置进行对比。
-默认本地模型能以较低资源用量完成基线，但尚未通过质量门禁。
-保留失败的质量结果。默认配置仅用于诊断，不代表验收通过。
+本地 1.7B 对比能以较低资源用量完成基线，但尚未通过质量门禁。
+保留失败的质量结果。独立冒烟工作流不能提供质量 PASS。
 
 [首次托管运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) 使用 `qwen3:4b-instruct-2507-q4_K_M`，结果失败。
 Precision 为 1.0，但正例召回率和 Recall@5 均为 0.4375。Mutation 检查也失败。
@@ -210,7 +227,7 @@ Ollama 报告生成模型加载 3,146,734,631 字节，GPU 内存为零。
 [4B 诊断复测](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39583106933) 将失败定位到现有记忆重要性验证。
 生成的重要性值不满足 0 到 1 的有限数值范围，Runtime 正确拒绝了它。
 不能通过重新缩放无效输出或放宽验证获得 PASS。
-使用关闭思考后的 `qwen3:1.7b` 作为唯一默认诊断模型。
+保留关闭思考后的 `qwen3:1.7b` 作为可选对比模型。
 它以低于已测 Qwen3.5 模型的加载内存与延迟完成了基线。
 它仍未通过固定质量阈值，两个 Qwen3.5 候选均不构成合格替代。
 

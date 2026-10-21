@@ -5,6 +5,16 @@
     "archive_sha256": "7f082e625b4c334df84ed1558fe282d6d8091fe3545790aef30b3a9c50d44d41"
   },
   "profiles": {
+    "smoke-ollama": {
+      "generation_model": "qwen3:0.6b",
+      "reasoning_effort": "none",
+      "embedding_model": "all-minilm:22m",
+      "embedding_dimensions": 384,
+      "local_models": {
+        "qwen3:0.6b": "7df6b6e09427a769808717c0a93cadc4ae99ed4eb8bf5ca557c90846becea435",
+        "all-minilm:22m": "1b226e2802dbb772b5fc32a58f103ca1804ef7501331012de126ab22f67475ef"
+      }
+    },
     "reference": {
       "generation_model": "qwen3:8b",
       "embedding_model": "qwen3-embedding:4b",
