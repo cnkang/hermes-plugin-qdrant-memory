@@ -116,7 +116,7 @@ Its result needs a completed CI run.
 ## Small-model smoke workflow
 
 `owner-model-smoke.yml` runs on relevant pull requests and main changes. It also accepts a manual request.
-The current smoke profile selects `qwen3:1.7b`, with thinking disabled, and `all-minilm:22m` with 384 embedding dimensions.
+The current smoke candidate selects `qwen3.5:2b`, with thinking disabled, and `all-minilm:22m` with 384 embedding dimensions.
 Both model manifests are fixed in the profile. CI requires five independent lifecycle runs before acceptance.
 The smaller `qwen3:0.6b` package is about 523 MB. It failed both initial smoke attempts with empty extraction.
 The [explicit-preference attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39586687759) did not complete the native capture check.
@@ -137,11 +137,11 @@ Reports include this version and its SHA-256 digest. The full quality corpus and
 The workflow uses the shared setup and caches. It requires no API key or self-hosted runner.
 The separate `model-smoke` environment contains no required secrets.
 
-Manual runs can select `smoke-qwen06`, `smoke-qwen08`, or `smoke-qwen17` through `model_profile`.
-These profiles use `qwen3:0.6b`, `qwen3.5:0.8b`, and `qwen3:1.7b`, respectively, with the same embedding model and checks.
+Manual runs can select `smoke-qwen06`, `smoke-qwen08`, `smoke-qwen17`, or `smoke-qwen2` through `model_profile`.
+These profiles use `qwen3:0.6b`, `qwen3.5:0.8b`, `qwen3:1.7b`, and `qwen3.5:2b`, respectively, with the same embedding model and checks.
 Each run selects one model. Pull requests use the single `smoke-ollama` default.
 For that default, the optional `OLLAMA_SMOKE_PROFILE` environment variable takes precedence over a secret of the same name.
-The value must be one of these three profiles or `smoke-ollama`. Invalid values fail before checkout or model setup.
+The value must be one of these four profiles or `smoke-ollama`. Invalid values fail before checkout or model setup.
 An explicit manual comparison takes precedence over this override. Five successful repetitions are still required.
 
 The smoke test uses real model calls, Hermes native capture, the Pi SDK, and HTTPS MCP.
@@ -155,6 +155,10 @@ Any failed repetition stops the run. A later success cannot replace that failure
 The report retains each completed repetition in `runs`; `requested_repetitions` records the required count.
 Success is `SMOKE_PASS`, with `quality_evaluated=false` and `baseline_executed=false`.
 This result cannot certify the full quality baseline or mutation gates.
+
+The declarative-v2 comparisons failed with [0.6B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678861759), [0.8B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678867271), and [1.7B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678857488).
+Each stopped during its first lifecycle with empty capture. HTTP 200 responses did not establish capture success.
+The 2B candidate retains the same v2 cases, prompts, embedding model, and gates. Its stability remains unverified.
 
 ## Manual quality workflow
 
