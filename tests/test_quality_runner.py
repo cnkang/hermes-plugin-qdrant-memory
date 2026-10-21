@@ -185,6 +185,7 @@ def test_diagnostic_success_cannot_certify_baseline(tmp_path, monkeypatch, capsy
             recorder.recording_errors["KeyError"] += 1
         if problem == "provider":
             recorder.errors["TimeoutError"] += 1
+            recorder.failed_calls["extract/n-db"] += 1
         if problem == "gate_exception" and only:
             raise RuntimeError("synthetic scenario failure")
         return {"status": "FAIL" if problem == "mutation" else "PASS"}
@@ -205,5 +206,6 @@ def test_diagnostic_success_cannot_certify_baseline(tmp_path, monkeypatch, capsy
     assert report["status"] == expected
     assert exit_code == (1 if problem != "none" else 0)
     assert emitted["status"] == expected
+    assert report["failed_model_calls"] == ({"extract/n-db": 1} if problem == "provider" else {})
     if only:
         assert report["cases"] == report["queries"] == 0

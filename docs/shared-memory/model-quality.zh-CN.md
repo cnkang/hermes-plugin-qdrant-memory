@@ -362,6 +362,9 @@ Embedding 和存储的 payload schema 保持不变。一次显式替换可能需
 
 Dots 运行选择了 `dots-studio/dots-3-note-preview:free`。
 其 HTTP 400 响应的精确原因仍未验证。
+后续报告通过 `failed_model_calls`，按冻结语料的案例 ID 标识失败的提取调用。
+关系判断失败记为 `relation`；未知调用记为 `other` 或 `extract/unattributed`。
+这些计数不包含原始输入、响应正文或异常消息。
 Free Router 运行实际观察到 `liquid/lfm-2.5-2.6b:free` 和 `dots-studio/dots-3-note-preview:free`。
 每次已完成的外部运行均停止了测试自有的 Ollama 进程。
 这些运行保留严格输出校验、TLS 检查、冻结语料和质量阈值。

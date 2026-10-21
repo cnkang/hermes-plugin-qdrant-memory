@@ -134,6 +134,38 @@ def test_background_failure_observation_keeps_stages_without_private_details():
     assert "synthetic-private-data" not in json.dumps(recorder.background_failures)
 
 
+@pytest.mark.parametrize(
+    "purpose,input_value,expected",
+    [
+        ("qdrant-memory.extract", [{"text": '{"user":"fixture text"}'}], "extract/known"),
+        (
+            "qdrant-memory.extract",
+            [{"text": '{"user":"synthetic-private-data"}'}],
+            "extract/unattributed",
+        ),
+        ("qdrant-memory.extract", None, "extract/unattributed"),
+        ("qdrant-memory.relation", None, "relation"),
+        ("synthetic-private-data", None, "other"),
+    ],
+)
+def test_provider_failure_identifies_only_known_cases(purpose, input_value, expected):
+    """Locate the failing frozen case without retaining input or replacing the failure."""
+    failure = RuntimeError("synthetic-private-data")
+
+    def fail(**kwargs):
+        raise failure
+
+    recorder = runner()["RecordingLLM"](
+        SimpleNamespace(complete_structured=fail), [{"id": "known", "user": "fixture text"}]
+    )
+    with pytest.raises(RuntimeError) as caught:
+        recorder.complete_structured(purpose=purpose, input=input_value)
+    assert caught.value is failure
+    assert recorder.failed_calls == {expected: 1}
+    assert recorder.errors == {"RuntimeError": 1}
+    assert "synthetic-private-data" not in json.dumps(dict(recorder.failed_calls))
+
+
 @pytest.mark.parametrize("selected", ["qwen/qwen3:free", "synthetic-secret"])
 def test_real_facade_records_selected_models_without_disclosing_credentials(monkeypatch, selected):
     """Observe the actual HTTP response rather than inferring a model from the route name."""
