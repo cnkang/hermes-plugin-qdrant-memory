@@ -117,8 +117,12 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 固定模型下载合计约 1.37 GB，不含 Ollama 和依赖。
 较小的 `qwen3:0.6b` 安装包约 523 MB，但它在前两次冒烟尝试中均返回空提取而失败。
 [显式偏好尝试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39586687759) 未完成原生捕获检查。
-0.8B 候选使用相同的偏好语料和有效性检查。当前被选中不代表已运行通过。
+0.8B 模型使用与 0.6B 尝试相同的偏好语料和有效性检查。
 安装包体积不代表进程内存。0.8B 安装包还包含视觉组件。
+[首次 0.8B 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39610058850) 通过了全部八项冒烟检查。
+它发起两次生成请求，观测 p50 为 6.00 秒，p95 为 6.31 秒。
+Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,928 字节，GPU 内存为零。
+这些是一次冒烟运行的模型加载观测，不是进程内存峰值或质量基准。
 工作流复用相同初始化与缓存，不需要 API Key 或 self-hosted runner。
 独立的 `model-smoke` Environment 不要求任何 Secret。
 
@@ -171,6 +175,20 @@ OpenRouter 配置要求 GitHub Environment `model-quality` 中包含测试 Secre
 不设付费回退，也不在 provider 拒绝后自动重试。
 缺少 Secret、限流、provider 错误或缺少模型观测均不能产生 PASS。
 仅使用合成测试数据。OpenRouter 会收到合成的生成提示词。
+
+如需固定质量模型，将手动输入 `generation_model` 设为以 `:free` 结尾的明确模型 ID。
+也可将 `OPENROUTER_QUALITY_MODEL` 配置为 Environment Variable 或 Secret。该公开模型名称优先使用 Variable。
+优先级为手动输入、Variable、Secret。选择为空时保留 `openrouter/free`。
+付费模型 ID 与格式错误值会在 provider 请求前失败，不设模型回退。
+Owner 请求 `provider.require_parameters=true`，要求 OpenRouter 选择支持所请求结构化输出参数的端点。
+现有 Owner LLM 适配器接受可选布尔值 `provider_require_parameters`；其他配置省略该值。
+不支持的端点必须失败，不能静默丢弃必需参数。
+参见 [OpenRouter 结构化输出](https://openrouter.ai/docs/guides/features/structured-outputs)。
+
+报告区分 `fixed-route` 与 `dynamic-free-router`。
+固定模型要求实际响应中的模型 ID 匹配；缺失、不同或混合 ID 均使门禁失败。
+Free Router 结果属于探索性结果，即使分数通过，也不构成发布候选验收要求的固定模型基线。
+每次运行均保留模型 ID、观测 ID、嵌入模型清单、数据集与提示词指纹。
 
 所有配置使用完整的固定语料和相同质量阈值。
 报告标识配置、生成路由、向量维度及本地模型摘要。

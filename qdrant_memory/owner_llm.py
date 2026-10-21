@@ -24,6 +24,11 @@ class OwnerLLM:
         ):
             raise ValueError("Owner output budget must be an integer between 1 and 8192")
         self.reasoning_effort = cfg.get("reasoning_effort")
+        self.provider_require_parameters = cfg.get("provider_require_parameters")
+        if self.provider_require_parameters is not None and not isinstance(
+            self.provider_require_parameters, bool
+        ):
+            raise ValueError("provider_require_parameters must be a boolean")
         if self.reasoning_effort is not None and (
             not isinstance(self.reasoning_effort, str)
             or self.reasoning_effort not in {"none", "minimal", "low", "medium", "high", "xhigh"}
@@ -62,6 +67,8 @@ class OwnerLLM:
         }
         if self.reasoning_effort is not None:
             body["reasoning_effort"] = self.reasoning_effort
+        if self.provider_require_parameters is not None:
+            body["provider"] = {"require_parameters": self.provider_require_parameters}
         response = self.client.post(self.url, json=body)
         if response.status_code != 200:
             raise RuntimeError("Owner extraction provider request failed")

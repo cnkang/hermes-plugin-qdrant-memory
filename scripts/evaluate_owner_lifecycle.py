@@ -52,6 +52,23 @@ def model_profile(name):
     selected = definitions["profiles"][name]
     local = "http://127.0.0.1:" + ("11434" if name == "reference" else "19134")
     external = name == "openrouter-free"
+    generation = (
+        (os.environ.get("OPENROUTER_QUALITY_MODEL") or selected["generation_model"])
+        if external
+        else selected["generation_model"]
+    )
+    if (
+        external
+        and generation != "openrouter/free"
+        and (
+            len(generation) > 200
+            or re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:-]*:free", generation
+            )
+            is None
+        )
+    ):
+        raise ValueError("Quality CI accepts only explicit free OpenRouter model routes")
     return {
         "name": name,
         "ollama_url": local,
@@ -66,10 +83,11 @@ def model_profile(name):
         "llm": {
             "mode": "override",
             "provider": "openai-compatible",
-            "model": "openrouter/free" if external else selected["generation_model"],
+            "model": generation,
             "base_url": "https://openrouter.ai/api/v1" if external else local + "/v1",
             "max_output_tokens": 2048,
             "api_key_env": "OPENROUTER_API_KEY" if external else "QM_QUALITY_UNUSED_KEY",
+            **({"provider_require_parameters": True} if external else {}),
             **(
                 {"reasoning_effort": selected["reasoning_effort"]}
                 if "reasoning_effort" in selected
@@ -77,6 +95,15 @@ def model_profile(name):
             ),
         },
     }
+
+
+def fixed_generation_observed(route, observed):
+    """Require actual response identities to match a named route, excluding the free router."""
+    return (
+        route != "openrouter/free"
+        and bool(observed)
+        and all(name.removesuffix(":free") == route.removesuffix(":free") for name in observed)
+    )
 
 
 def select_installed_models(profile, models):
@@ -567,6 +594,9 @@ def main():
             models = http.get(profile["ollama_url"] + "/api/tags").json()["models"]
         report["models"] = select_installed_models(profile, models)
         report["generation_route"] = profile["llm"]["model"]
+        report["model_selection"] = (
+            "dynamic-free-router" if profile["llm"]["model"] == "openrouter/free" else "fixed-route"
+        )
         report["generation_reasoning_effort"] = profile["llm"].get(
             "reasoning_effort", "provider-default"
         )
@@ -701,6 +731,13 @@ def main():
     report["provider_error_types"] = dict(recorder.errors) if recorder else {}
     report["recording_error_types"] = dict(recorder.recording_errors) if recorder else {}
     report["observed_provider_models"] = dict(recorder.provider_models) if recorder else {}
+    if args.model_profile == "openrouter-free":
+        route = report.get("generation_route", "openrouter/free")
+        report["fixed_model_observed"] = fixed_generation_observed(
+            route, report["observed_provider_models"]
+        )
+        if route != "openrouter/free" and not report["fixed_model_observed"]:
+            report["status"] = "FAIL"
     report["provider_http_statuses"] = dict(recorder.http_statuses) if recorder else {}
     if args.model_profile != "reference" and not report["observed_provider_models"]:
         report["status"] = "FAIL"
