@@ -113,7 +113,7 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 ## 小模型冒烟工作流
 
 `owner-model-smoke.yml` 在相关 pull request 和 main 变更时运行，也可手动触发。
-当前冒烟候选选择关闭思考后的 `qwen3.5:2b`，以及 384 维的 `all-minilm:22m` 嵌入模型。
+当前冒烟候选选择关闭思考后的 `qwen3.5:4b`，以及 384 维的 `all-minilm:22m` 嵌入模型。
 两个模型清单均固定在配置中。CI 要求五次独立生命周期运行全部通过后才能验收。
 较小的 `qwen3:0.6b` 安装包约 523 MB，但它在前两次冒烟尝试中均返回空提取而失败。
 [显式偏好尝试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39586687759) 未完成原生捕获检查。
@@ -134,11 +134,11 @@ Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,9
 工作流复用相同初始化与缓存，不需要 API Key 或 self-hosted runner。
 独立的 `model-smoke` Environment 不要求任何 Secret。
 
-手动运行可通过 `model_profile` 选择 `smoke-qwen06`、`smoke-qwen08`、`smoke-qwen17` 或 `smoke-qwen2`。
-它们分别使用 `qwen3:0.6b`、`qwen3.5:0.8b`、`qwen3:1.7b` 和 `qwen3.5:2b`，嵌入模型和检查相同。
+手动运行可通过 `model_profile` 选择 `smoke-qwen06`、`smoke-qwen08`、`smoke-qwen17`、`smoke-qwen2` 或 `smoke-qwen4`。
+它们分别使用 `qwen3:0.6b`、`qwen3.5:0.8b`、`qwen3:1.7b`、`qwen3.5:2b` 和 `qwen3.5:4b`，嵌入模型和检查相同。
 每次运行仅选择一个模型。Pull request 使用单一的 `smoke-ollama` 默认配置。
 对此默认配置，可选的 `OLLAMA_SMOKE_PROFILE` Environment Variable 优先于同名 Secret。
-值必须为上述四个配置之一或 `smoke-ollama`。无效值在检出或模型初始化前失败。
+值必须为上述五个配置之一或 `smoke-ollama`。无效值在检出或模型初始化前失败。
 显式手动对比优先于此覆盖设置。仍要求五次重复全部通过。
 
 冒烟测试使用真实模型调用、Hermes 原生捕获、Pi SDK 和 HTTPS MCP。
@@ -155,7 +155,8 @@ Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,9
 
 陈述句 v2 比较中，[0.6B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678861759)、[0.8B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678867271) 和 [1.7B](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39678857488) 均失败。
 每次均在首个生命周期中因空捕获停止。HTTP 200 响应不能证明捕获成功。
-2B 候选保留相同的 v2 语料、Prompt、嵌入模型和门禁。其稳定性仍未验证。
+[2B 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39680318405) 提取出原生记忆，但其重要性数值未通过 Runtime 校验。
+Owner 阻止了写入。4B 候选保留相同的 v2 语料、Prompt、嵌入模型和门禁。其稳定性仍未验证。
 
 ## 手动质量工作流
 

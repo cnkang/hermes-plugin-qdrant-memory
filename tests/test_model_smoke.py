@@ -102,7 +102,9 @@ def test_smoke_repetitions_are_bounded(tmp_path, monkeypatch, repetitions):
     assert caught.value.code == 2
 
 
-@pytest.mark.parametrize("profile", ["smoke-qwen06", "smoke-qwen08", "smoke-qwen17", "smoke-qwen2"])
+@pytest.mark.parametrize(
+    "profile", ["smoke-qwen06", "smoke-qwen08", "smoke-qwen17", "smoke-qwen2", "smoke-qwen4"]
+)
 def test_smoke_cli_selects_one_frozen_comparison_profile(tmp_path, monkeypatch, profile):
     """A manual comparison uses exactly the requested local profile and existing checks."""
     module = runpy.run_path(str(ROOT / "scripts/smoke_owner_lifecycle.py"))
