@@ -164,5 +164,6 @@ jobs:
           name: owner-model-quality
           path: |
             ${{ github.workspace }}/.quality/owner-quality-${{ github.run_id }}-${{ github.run_attempt }}.json
+            ${{ runner.temp }}/quality-model-resources.json
             relation-model.xml
           if-no-files-found: error

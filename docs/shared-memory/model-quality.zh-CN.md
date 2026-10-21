@@ -118,7 +118,7 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 
 | 配置 | Runner | 生成 | 向量化 |
 | --- | --- | --- | --- |
-| `hosted-ollama`（默认） | GitHub `ubuntu-24.04` | `qwen3:8b` | `qwen3-embedding:0.6b`，1024 维 |
+| `hosted-ollama`（默认） | GitHub `ubuntu-24.04` | `qwen2.5:3b` | `qwen3-embedding:0.6b`，1024 维 |
 | `openrouter-free` | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | 同一个本地 0.6B 模型 |
 | `reference` | 带 `qdrant-memory-models` 标签的一次性 Linux runner | 已安装的 `qwen3:8b` | 已安装的 `qwen3-embedding:4b`，2560 维 |
 
@@ -155,7 +155,22 @@ OpenRouter 配置要求 GitHub Environment `model-quality` 中包含测试 Secre
 [首次托管运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) 使用 `qwen3:4b-instruct-2507-q4_K_M`，结果失败。
 Precision 为 1.0，但正例召回率和 Recall@5 均为 0.4375。Mutation 检查也失败。
 Provider 错误和作用域泄漏均为零。这是失败证据，不能作为通过验收的证据。
-托管配置现使用 reference 生成模型，并保留较小的嵌入模型。质量阈值保持不变。
+[8B 托管尝试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39572169059) 在基线完成前失败。
+四次生成调用触及现有的 30 秒请求超时。此结果不能证明内存不足。
+托管配置现测试 `qwen2.5:3b`，并保留较小的嵌入模型。质量阈值保持不变。
+初始化将 Ollama 报告的已加载模型大小记录在 `quality-model-resources.json` 中。这不是进程内存峰值。
+3B 模型使用 [Qwen Research License](https://ollama.com/library/qwen2.5:3b)；CI 仅下载进行评估，不在软件包中分发权重。
+
+### 容器替代方案
+
+官方 [Ollama 容器](https://docs.ollama.com/docker) 可以隔离安装依赖。
+它不会增加 RAM 或 CPU 资源、提高提取质量，或消除请求超时。
+若添加容器测试，应固定镜像摘要，先启动服务再拉取模型，并在有截止时间的循环中轮询 API。
+端口应仅绑定回环地址，挂载的模型目录应通过缓存跨运行保存，并在始终执行的步骤中删除测试容器。
+仅使用 Docker volume 不能在全新的托管 runner 之间持久化数据。
+不要用无限期的 `docker logs --follow` 命令作为就绪检查。
+现有固定二进制方案已检查就绪、版本、模型摘要、清理和缓存恢复。
+两次托管尝试均完成了初始化。已观察到的失败不足以支持增加第二套安装路径。
 
 普通测试 CI 也运行评分器单元测试。
 

@@ -12,11 +12,11 @@
       "local_models": {"qwen3:8b": null, "qwen3-embedding:4b": null}
     },
     "hosted-ollama": {
-      "generation_model": "qwen3:8b",
+      "generation_model": "qwen2.5:3b",
       "embedding_model": "qwen3-embedding:0.6b",
       "embedding_dimensions": 1024,
       "local_models": {
-        "qwen3:8b": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "qwen2.5:3b": "357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b",
         "qwen3-embedding:0.6b": "ac6da0dfba84a81fdbfbaf330198c33cd77c4cdfc53e8bc50eb581914a15621d"
       }
     },
