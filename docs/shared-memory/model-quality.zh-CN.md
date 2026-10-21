@@ -119,7 +119,7 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 | 配置 | Runner | 生成 | 向量化 |
 | --- | --- | --- | --- |
 | `openrouter-free`（默认） | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`，1024 维 |
-| `hosted-ollama`（实验性） | GitHub `ubuntu-24.04` | `qwen2.5:3b` | 同一个本地 0.6B 模型 |
+| `hosted-ollama`（实验性） | GitHub `ubuntu-24.04` | `qwen3:1.7b` | 同一个本地 0.6B 模型 |
 | `reference` | 带 `qdrant-memory-models` 标签的一次性 Linux runner | 已安装的 `qwen3:8b` | 已安装的 `qwen3-embedding:4b`，2560 维 |
 
 前两种配置不需要 self-hosted runner。
@@ -160,13 +160,13 @@ Provider 错误和作用域泄漏均为零。这是失败证据，不能作为�
 四次生成调用触及现有的 30 秒请求超时。此结果不能证明内存不足。
 [3B 托管尝试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39573848777) 也在基线完成前失败。
 观测到五次模型响应，没有 provider 或记录错误。后台 ValueError 阻断了生命周期。
-这不能作为模型质量通过的证据。实验性本地配置保留此模型，用于可复现诊断。
+这不能作为模型质量通过的证据。实验性本地配置现使用更小的 `qwen3:1.7b`，保留相同的超时和质量门禁。
 默认工作流现使用 Free Router 生成及本地 0.6B 嵌入模型。实际结果仍需要单独在 main 上运行。
 质量阈值保持不变。
 初始化将 Ollama 报告的已加载模型大小记录在 `quality-model-resources.json` 中。这不是进程内存峰值。
 3B 尝试报告生成模型占 2,168,360,795 字节，嵌入模型占 1,237,875,425 字节，GPU 内存为零。
 该次运行恢复了依赖和 Ollama 安装缓存。变化后的模型集合完成下载，并以新缓存键保存。
-3B 模型使用 [Qwen Research License](https://ollama.com/library/qwen2.5:3b)；CI 仅下载进行评估，不在软件包中分发权重。
+1.7B 模型使用 [Apache License 2.0](https://ollama.com/library/qwen3:1.7b)；CI 仅下载进行评估，不在软件包中分发权重。
 
 ### 容器替代方案
 
