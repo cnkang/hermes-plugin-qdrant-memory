@@ -187,6 +187,7 @@ Owner 请求 `provider.require_parameters=true`，要求 OpenRouter 选择支持
 
 报告区分 `fixed-route` 与 `dynamic-free-router`。
 固定模型要求实际响应中的模型 ID 匹配；缺失、不同或混合 ID 均使门禁失败。
+`:free` 后缀具有意义。缺少后缀的响应不能证明它就是所配置的变体。
 Free Router 结果属于探索性结果，即使分数通过，也不构成发布候选验收要求的固定模型基线。
 每次运行均保留模型 ID、观测 ID、嵌入模型清单、数据集与提示词指纹。
 

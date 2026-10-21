@@ -99,11 +99,7 @@ def model_profile(name):
 
 def fixed_generation_observed(route, observed):
     """Require actual response identities to match a named route, excluding the free router."""
-    return (
-        route != "openrouter/free"
-        and bool(observed)
-        and all(name.removesuffix(":free") == route.removesuffix(":free") for name in observed)
-    )
+    return route != "openrouter/free" and bool(observed) and all(name == route for name in observed)
 
 
 def select_installed_models(profile, models):
