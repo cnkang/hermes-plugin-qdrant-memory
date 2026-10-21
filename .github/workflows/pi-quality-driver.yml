@@ -60,6 +60,12 @@ jobs:
           python-version: '3.11'
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
+          repository: NousResearch/hermes-agent
+          ref: 8f5693af418256b89da17ddda18a9242f113dcf6
+          path: .quality/hermes
+          persist-credentials: false
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
           repository: cnkang/qdrant-memory-mcp
           ref: 4cc2f36048ae15460f0db339523d69e1a332e093
           path: .quality/mcp
@@ -69,6 +75,8 @@ jobs:
           bash scripts/install_quality_dependencies.sh .quality/venv
           npm ci --prefix .quality/mcp/integrations/agent-hosts --ignore-scripts --no-audit --no-fund
       - name: Verify model dependency snapshot and scorer contracts
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
         run: |
           .quality/venv/bin/python -m pytest tests/test_quality_dependencies.py tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_dependency_security.py -q --junitxml=quality-dependencies.xml
       - name: Verify actual Pi driver attribution
