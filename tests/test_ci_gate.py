@@ -70,6 +70,7 @@ def test_cloud_smoke_uses_qdrant_cloud_environment():
 
 
 @pytest.mark.parametrize("authorized,available", [("false", False), ("true", True)])
+@pytest.mark.skipif(os.name == "nt", reason="The checked workflow step is POSIX Bash.")
 def test_existing_cloud_test_key_requires_explicit_opt_in(tmp_path, authorized, available):
     """Execute availability logic: a broad test key must not enable the lane by default."""
     path = Path(__file__).resolve().parents[1] / ".github/workflows/cloud-smoke.yml"
