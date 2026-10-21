@@ -1,6 +1,8 @@
 """Credentialed L2 Owner contracts on an explicitly provisioned disposable collection."""
 
 import json
+import os
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -68,7 +70,17 @@ def test_cloud_owner_disposable_collection(tmp_path, request):
         provision_started = True
         # Retain the exact fresh name for an independent always() cleanup step
         # if the test process exits before its finally block can run.
-        path.write_text(json.dumps({**settings, "provision_started": True}))
+        state_path = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as state:
+                state_path = Path(state.name)
+                json.dump({**settings, "provision_started": True}, state)
+                state.flush()
+                os.fsync(state.fileno())
+            os.replace(state_path, path)
+        finally:
+            if state_path is not None:
+                state_path.unlink(missing_ok=True)
         QdrantStore(client, cfg, Embedder()).initialize(create=True)
         print("Cloud Owner test-key lane: database credential scope is not certified.")
         _exercise_cloud_owner(tmp_path, client, settings)

@@ -1,6 +1,7 @@
 """Exercise Cloud fixture cleanup with a real local Qdrant store."""
 
 import json
+import os
 import uuid
 from types import SimpleNamespace
 
@@ -47,6 +48,8 @@ def test_disposable_collection_is_removed_after_acceptance(tmp_path, monkeypatch
         state = json.loads(filename.read_text())
         assert state["provision_started"] is True
         assert state["owner_collection"].startswith("qm_owner_ci_")
+        if os.name != "nt":
+            assert filename.stat().st_mode & 0o777 == 0o600
     finally:
         close()
 
