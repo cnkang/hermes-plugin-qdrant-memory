@@ -122,8 +122,8 @@ Select one of these profiles:
 
 | Profile | Runner | Generation | Embeddings |
 | --- | --- | --- | --- |
-| `openrouter-free` (default) | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`, 1024 dimensions |
-| `hosted-ollama` (experimental) | GitHub `ubuntu-24.04` | `qwen3:1.7b` | The same local 0.6B model |
+| `hosted-ollama` (default diagnostic) | GitHub `ubuntu-24.04` | `qwen3:1.7b` | `qwen3-embedding:0.6b`, 1024 dimensions |
+| `openrouter-free` (optional) | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | The same local 0.6B model |
 | `hosted-qwen35` (experimental) | GitHub `ubuntu-24.04` | `qwen3.5:2b` | The same local 0.6B model |
 | `hosted-qwen35-4b` (experimental) | GitHub `ubuntu-24.04` | `qwen3.5:4b` | The same local 0.6B model |
 | `reference` | Disposable Linux runner with `qdrant-memory-models` label | Installed `qwen3:8b` | Installed `qwen3-embedding:4b`, 2560 dimensions |
@@ -165,7 +165,8 @@ Each dispatch runs one selected profile. It does not run a model matrix.
 Use the workflow input to select another fixed model profile. A model name is configuration and needs no Secret.
 Model changes require a fixed manifest digest. Arbitrary unverified model tags are not accepted.
 The hosted Ollama profiles use the same embedding model, generation budget, and disabled thinking for comparison.
-The final default local model depends on the completed CI results; the comparison itself is not acceptance evidence.
+The default local model completes the baseline with low resource use. It has not passed the quality gates.
+Keep failed quality results visible. The default is a diagnostic choice, not a passing acceptance result.
 
 The [initial hosted run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) used `qwen3:4b-instruct-2507-q4_K_M` and failed.
 Precision was 1.0, but positive-case recall and Recall@5 were 0.4375. Mutation checks also failed.
@@ -175,7 +176,7 @@ Four generation calls reached the existing 30-second request timeout. This resul
 The [3B hosted attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39573848777) also failed before baseline completion.
 Five model responses were observed, with no provider or recording errors. A background ValueError blocked the lifecycle.
 This is not passing model-quality evidence. The experimental local profile now tests the smaller `qwen3:1.7b` under the same timeouts and quality gates.
-The default workflow now uses Free Router generation and the local 0.6B embedding model. Its actual result requires a separate main-branch run.
+The optional Free Router profile uses remote generation and the local 0.6B embedding model. Its actual result requires a separate main-branch run.
 The quality thresholds remain unchanged.
 Setup records Ollama's loaded-model size in `quality-model-resources.json`. This is not peak process memory.
 The 3B attempt reported 2,168,360,795 bytes for generation and 1,237,875,425 bytes for embeddings, with zero GPU memory.
@@ -209,6 +210,13 @@ It observed one successful response before a background ValueError blocked the l
 Ollama reported 3,146,734,631 loaded bytes for generation, with zero GPU memory.
 Neither Qwen3.5 run provides complete quality scores. The exact failure needs a diagnostic rerun.
 Diagnostic reports retain background exception types and source stages, without exception messages or local values.
+
+The [4B diagnostic rerun](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39583106933) located the failure in the existing memory importance validation.
+The generated importance did not satisfy the finite numeric range from 0 to 1. The Runtime correctly rejected it.
+Do not rescale invalid output or relax validation to obtain PASS.
+Use `qwen3:1.7b` with thinking disabled as the single default diagnostic model.
+It completed the baseline with less loaded-model memory and lower latency than the tested Qwen3.5 models.
+It still fails the frozen quality thresholds. Neither Qwen3.5 candidate qualifies as a replacement.
 
 ### Container alternative
 

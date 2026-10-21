@@ -118,8 +118,8 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 
 | 配置 | Runner | 生成 | 向量化 |
 | --- | --- | --- | --- |
-| `openrouter-free`（默认） | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`，1024 维 |
-| `hosted-ollama`（实验性） | GitHub `ubuntu-24.04` | `qwen3:1.7b` | 同一个本地 0.6B 模型 |
+| `hosted-ollama`（默认诊断） | GitHub `ubuntu-24.04` | `qwen3:1.7b` | `qwen3-embedding:0.6b`，1024 维 |
+| `openrouter-free`（可选） | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | 同一个本地 0.6B 模型 |
 | `hosted-qwen35`（实验性） | GitHub `ubuntu-24.04` | `qwen3.5:2b` | 同一个本地 0.6B 模型 |
 | `hosted-qwen35-4b`（实验性） | GitHub `ubuntu-24.04` | `qwen3.5:4b` | 同一个本地 0.6B 模型 |
 | `reference` | 带 `qdrant-memory-models` 标签的一次性 Linux runner | 已安装的 `qwen3:8b` | 已安装的 `qwen3-embedding:4b`，2560 维 |
@@ -161,7 +161,8 @@ OpenRouter 配置要求 GitHub Environment `model-quality` 中包含测试 Secre
 使用工作流输入选择其他固定模型配置。模型名称属于配置，不需要 Secret。
 模型变更必须提供固定的清单摘要。不接受任意未经校验的模型标签。
 托管 Ollama 配置使用相同的嵌入模型、生成预算和关闭思考设置进行对比。
-最终默认本地模型取决于已完成的 CI 结果；对比配置本身不构成验收证据。
+默认本地模型能以较低资源用量完成基线，但尚未通过质量门禁。
+保留失败的质量结果。默认配置仅用于诊断，不代表验收通过。
 
 [首次托管运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) 使用 `qwen3:4b-instruct-2507-q4_K_M`，结果失败。
 Precision 为 1.0，但正例召回率和 Recall@5 均为 0.4375。Mutation 检查也失败。
@@ -171,7 +172,7 @@ Provider 错误和作用域泄漏均为零。这是失败证据，不能作为�
 [3B 托管尝试](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39573848777) 也在基线完成前失败。
 观测到五次模型响应，没有 provider 或记录错误。后台 ValueError 阻断了生命周期。
 这不能作为模型质量通过的证据。实验性本地配置现使用更小的 `qwen3:1.7b`，保留相同的超时和质量门禁。
-默认工作流现使用 Free Router 生成及本地 0.6B 嵌入模型。实际结果仍需要单独在 main 上运行。
+可选 Free Router 配置使用远程生成及本地 0.6B 嵌入模型。实际结果仍需要单独在 main 上运行。
 质量阈值保持不变。
 初始化将 Ollama 报告的已加载模型大小记录在 `quality-model-resources.json` 中。这不是进程内存峰值。
 3B 尝试报告生成模型占 2,168,360,795 字节，嵌入模型占 1,237,875,425 字节，GPU 内存为零。
@@ -205,6 +206,13 @@ Ollama 报告生成模型加载 2,369,666,414 字节，嵌入模型加载 1,237,
 Ollama 报告生成模型加载 3,146,734,631 字节，GPU 内存为零。
 两次 Qwen3.5 运行均没有完整质量分数。精确失败原因需要诊断复测。
 诊断报告保留后台异常类型及源码位置，不保留异常消息或局部变量值。
+
+[4B 诊断复测](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39583106933) 将失败定位到现有记忆重要性验证。
+生成的重要性值不满足 0 到 1 的有限数值范围，Runtime 正确拒绝了它。
+不能通过重新缩放无效输出或放宽验证获得 PASS。
+使用关闭思考后的 `qwen3:1.7b` 作为唯一默认诊断模型。
+它以低于已测 Qwen3.5 模型的加载内存与延迟完成了基线。
+它仍未通过固定质量阈值，两个 Qwen3.5 候选均不构成合格替代。
 
 ### 容器替代方案
 

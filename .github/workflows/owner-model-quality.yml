@@ -6,7 +6,7 @@ on:
       profile:
         description: Model profile (OpenRouter requires main and model-quality secret)
         type: choice
-        default: openrouter-free
+        default: hosted-ollama
         options: [openrouter-free, hosted-ollama, hosted-qwen35, hosted-qwen35-4b, reference]
 
 permissions:
