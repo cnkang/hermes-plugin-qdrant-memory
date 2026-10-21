@@ -480,7 +480,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--model-profile",
-        choices=("reference", "hosted-ollama", "openrouter-free"),
+        choices=("reference", "hosted-ollama", "hosted-qwen35", "openrouter-free"),
         default="reference",
         help="Model identity and endpoint selection; never a paid fallback",
     )

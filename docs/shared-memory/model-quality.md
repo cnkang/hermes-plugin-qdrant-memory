@@ -124,9 +124,10 @@ Select one of these profiles:
 | --- | --- | --- | --- |
 | `openrouter-free` (default) | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`, 1024 dimensions |
 | `hosted-ollama` (experimental) | GitHub `ubuntu-24.04` | `qwen3:1.7b` | The same local 0.6B model |
+| `hosted-qwen35` (experimental) | GitHub `ubuntu-24.04` | `qwen3.5:2b` | The same local 0.6B model |
 | `reference` | Disposable Linux runner with `qdrant-memory-models` label | Installed `qwen3:8b` | Installed `qwen3-embedding:4b`, 2560 dimensions |
 
-The first two profiles need no self-hosted runner.
+The first three profiles need no self-hosted runner.
 They download a fixed Ollama release and fixed model manifests from [Ollama](https://github.com/ollama/ollama/releases).
 The setup checks the archive checksum and model digests in [model-profiles.json](../../tests/quality/model-profiles.json).
 It starts a private process on loopback port 19134. It stops that process after the test.
@@ -157,6 +158,12 @@ Results from a smaller model do not replace the historical reference measurement
 The separate two-subject native Ollama probe runs only for `reference`.
 The full baseline and mutation gates run for every profile.
 Workflow configuration alone does not prove execution. Record the run URL and actual result separately.
+
+Each dispatch runs one selected profile. It does not run a model matrix.
+Use the workflow input to select another fixed model profile. A model name is configuration and needs no Secret.
+Model changes require a fixed manifest digest. Arbitrary unverified model tags are not accepted.
+The two hosted Ollama profiles use the same embedding model, generation budget, and disabled thinking for comparison.
+The final default local model depends on the completed CI results; the comparison itself is not acceptance evidence.
 
 The [initial hosted run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39570844284) used `qwen3:4b-instruct-2507-q4_K_M` and failed.
 Precision was 1.0, but positive-case recall and Recall@5 were 0.4375. Mutation checks also failed.
