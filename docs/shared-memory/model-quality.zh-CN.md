@@ -129,8 +129,8 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 
 ## 手动质量工作流
 
-`owner-model-quality.yml` 工作流仅由手动请求触发。
-工作流不由 pull request 或 fork 触发，也不使用生产凭据。
+`owner-model-quality.yml` 中的质量模式仅由手动请求触发。
+该模式不在 pull request 或 fork 上运行，也不使用生产凭据。
 它检出不可变的 Hermes 和 MCP 候选版本。选择以下配置之一：
 
 | 配置 | Runner | 生成 | 向量化 |
@@ -159,6 +159,7 @@ reference 配置仅从 `main` 运行。
 OpenRouter 配置要求 GitHub Environment `model-quality` 中包含测试 Secret `OPENROUTER_API_KEY`。
 不需要其他凭据。仅从 `main` 运行此配置。
 只有它的生成步骤接收此 Secret。向量化仍在 runner 上执行。
+只有此配置使用凭据 Environment。所有本地配置均使用 `model-smoke`。
 [Free Router](https://openrouter.ai/docs/guides/routing/routers/free-router) 为每次请求选择可用的免费模型。
 报告记录观测到的模型 ID 和 HTTP 状态计数。
 各次请求可能选择不同模型，因此结果仅描述本次运行。

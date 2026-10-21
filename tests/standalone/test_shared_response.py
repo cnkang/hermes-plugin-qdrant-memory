@@ -31,6 +31,9 @@ def test_rejected_body_is_consumed_once_within_the_limit(rejection):
             reads.append(size)
             return super().read(size)
 
+        def read1(self, size=-1):
+            return self.read(size)
+
     def authenticate(_token):
         """Keep invalid credentials rejected before any tool admission."""
         if rejection == "invalid-token":
@@ -49,9 +52,46 @@ def test_rejected_body_is_consumed_once_within_the_limit(rejection):
         handler.do_POST()
     assert statuses == [403 if rejection in {"missing-token", "invalid-token", "origin"} else 400]
     assert handler.rfile.tell() == len(body)
-    assert reads == [len(body)]
-    assert timeouts == ([] if rejection == "invalid-json" else [1])
+    assert sum(reads) == len(body)
+    if rejection == "invalid-json":
+        assert not timeouts
+    else:
+        assert len(timeouts) == len(reads)
+        assert all(0 < value <= 1 for value in timeouts)
     assert not calls
+
+
+def test_rejected_slow_drip_has_one_total_drain_deadline(monkeypatch):
+    """Repeated successful reads cannot keep a rejected connection alive indefinitely."""
+    clock, timeouts = [0.0], []
+    monkeypatch.setattr("qdrant_memory.shared_service.time.monotonic", lambda: clock[0])
+
+    class Drip(io.BytesIO):
+        """Model a sender that supplies one byte every 0.4 seconds."""
+
+        def read(self, size=-1):
+            result = b""
+            for _ in range(size):
+                clock[0] += 0.4
+                result += super().read(1)
+            return result
+
+        def read1(self, size=-1):
+            if timeouts[-1] < 0.4:
+                clock[0] += timeouts[-1]
+                raise TimeoutError("Synthetic deadline")
+            return self.read(1)
+
+    owner = SimpleNamespace()
+    with make_server(owner, 0) as server:
+        handler = object.__new__(server.RequestHandlerClass)
+        handler.headers = Message()
+        handler.headers["Content-Length"] = "6"
+        handler.connection = SimpleNamespace(settimeout=timeouts.append)
+        handler.rfile = Drip(b"abcdef")
+        handler.discard_rejected_body()
+    assert clock[0] <= 1
+    assert handler.rfile.tell() < 6
 
 
 @pytest.mark.parametrize("framing", ["large", "chunked", "duplicate"])

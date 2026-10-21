@@ -1,6 +1,7 @@
 """Verify the Linux workflow's cached installer boundary and process cleanup."""
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -19,8 +20,10 @@ def test_cached_executable_cannot_bypass_the_archive_checksum(tmp_path):
     checksum = hashlib.sha256(b"trusted synthetic archive").hexdigest()
     python = tmp_path / ".quality/venv/bin/python"
     python.parent.mkdir(parents=True)
-    python.write_text(f"#!/bin/sh\nprintf '0.40.7 {checksum}\\n'\n")
-    python.chmod(0o700)
+    python.symlink_to(sys.executable)
+    profiles = tmp_path / "tests/quality/model-profiles.json"
+    profiles.parent.mkdir(parents=True)
+    profiles.write_text(json.dumps({"ollama": {"version": "0.40.7", "archive_sha256": checksum}}))
     temporary = tmp_path / "temporary"
     root = temporary / "quality-ollama"
     binary = root / "bin/ollama"
@@ -29,18 +32,11 @@ def test_cached_executable_cannot_bypass_the_archive_checksum(tmp_path):
     binary.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n")
     binary.chmod(0o700)
     (root / "ollama.tar.zst").write_bytes(b"corrupt cached archive")
-    tools = tmp_path / "tools"
-    tools.mkdir()
-    # The Linux workflow requires GNU checksum options; use coreutils on macOS too.
-    checksum_tool = shutil.which("gsha256sum") or shutil.which("sha256sum")
-    assert checksum_tool is not None, "Install GNU coreutils to run the archive integrity contract"
-    (tools / "sha256sum").symlink_to(checksum_tool)
     result = subprocess.run(
         [shutil.which("bash"), str(ROOT / "scripts/start_quality_ollama.sh")],
         cwd=tmp_path,
         env={
             **os.environ,
-            "PATH": str(tools) + os.pathsep + os.environ["PATH"],
             "RUNNER_TEMP": str(temporary),
             "MODEL_PROFILE": "hosted-ollama",
         },
