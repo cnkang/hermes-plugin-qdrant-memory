@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import json
 import os
+import re
 import runpy
 import secrets
 import socket
@@ -45,6 +46,46 @@ MODEL = "qwen3:8b"
 EMBEDDING = "qwen3-embedding:4b"
 
 
+def model_profile(name):
+    """Keep hosted and routed model results distinct from the original reference."""
+    definitions = json.loads((ROOT / "tests/quality/model-profiles.json").read_text())
+    selected = definitions["profiles"][name]
+    local = "http://127.0.0.1:" + ("11434" if name == "reference" else "19134")
+    external = name == "openrouter-free"
+    return {
+        "name": name,
+        "ollama_url": local,
+        "local_models": selected["local_models"],
+        "embedding": {
+            "provider": "ollama",
+            "model": selected["embedding_model"],
+            "dimensions": selected["embedding_dimensions"],
+            "base_url": local,
+            "timeout_seconds": 30,
+        },
+        "llm": {
+            "mode": "override",
+            "provider": "openai-compatible",
+            "model": "openrouter/free" if external else selected["generation_model"],
+            "base_url": "https://openrouter.ai/api/v1" if external else local + "/v1",
+            "max_output_tokens": 2048,
+            "api_key_env": "OPENROUTER_API_KEY" if external else "QM_QUALITY_UNUSED_KEY",
+        },
+    }
+
+
+def select_installed_models(profile, models):
+    """Reject missing models and changed hosted model tags before inference."""
+    expected = profile["local_models"]
+    installed = {row["name"]: row["digest"] for row in models if row["name"] in expected}
+    if set(installed) != set(expected):
+        raise ValueError("Evaluation requires the explicit installed local models")
+    for name, checksum in expected.items():
+        if checksum and installed[name].removeprefix("sha256:") != checksum:
+            raise ValueError("Installed model digest differs from the frozen profile")
+    return installed
+
+
 def digest(value):
     """Fingerprint evaluation inputs without exposing their contents."""
     return hashlib.sha256(value).hexdigest()
@@ -53,18 +94,53 @@ def digest(value):
 class RecordingLLM:
     """Observe actual model output while delegating all decisions to the existing facade."""
 
-    def __init__(self, delegate, cases):
+    def __init__(self, delegate, cases, profile=None):
         """Bind a real facade and the anonymous case IDs being observed."""
         self.delegate = delegate
+        self.model_profile = profile or model_profile("reference")
         self.case_ids = {case["user"]: case["id"] for case in cases}
         self.extractions, self.latencies, self.errors = {}, [], Counter()
         self.recording_errors = Counter()
         self.lock = threading.Lock()
+        self.provider_models, self.http_statuses = Counter(), Counter()
+        self.request_lock, self.last_request = threading.Lock(), 0.0
+        hooks = getattr(getattr(delegate, "client", None), "event_hooks", None)
+        if isinstance(hooks, dict):
+            hooks.setdefault("response", []).append(self.observe_response)
+
+    def observe_response(self, response):
+        """Record public model IDs and status codes, never provider bodies or credentials."""
+        with self.lock:
+            self.http_statuses[response.status_code] += 1
+        if response.status_code != 200:
+            return
+        try:
+            response.read()
+            name = response.json().get("model")
+            key = os.environ.get(self.model_profile["llm"]["api_key_env"])
+            if (
+                not isinstance(name, str)
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}", name)
+                or (key and key in name)
+            ):
+                raise ValueError("Provider model identity is unavailable or unsafe")
+        except Exception as exc:
+            with self.lock:
+                self.recording_errors[type(exc).__name__] += 1
+        else:
+            with self.lock:
+                self.provider_models[name] += 1
 
     def complete_structured(self, **kwargs):
         """Record extraction observations and latency, preserving facade failures."""
         started = time.monotonic()
         try:
+            if self.model_profile["name"] == "openrouter-free":
+                # Keep sequential free-tier requests below 20 requests/minute.
+                # There is no paid fallback or automatic retry after a denial.
+                with self.request_lock:
+                    time.sleep(max(0, 3.1 - (time.monotonic() - self.last_request)))
+                    self.last_request = time.monotonic()
             result = self.delegate.complete_structured(**kwargs)
         except Exception as exc:
             with self.lock:
@@ -126,13 +202,7 @@ def start_host(home, policy_path, recorder):
         {
             "scope": {"user_id": "evaluation-user", "agent_id": None},
             "qdrant": {"path": str(home / "vectors")},
-            "embedding": {
-                "provider": "ollama",
-                "model": EMBEDDING,
-                "dimensions": 2560,
-                "base_url": "http://127.0.0.1:11434",
-                "timeout_seconds": 30,
-            },
+            "embedding": recorder.model_profile["embedding"],
             "native_owner": {
                 "enabled": True,
                 "policy": str(policy_path),
@@ -403,6 +473,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adapter-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--model-profile",
+        choices=("reference", "hosted-ollama", "openrouter-free"),
+        default="reference",
+        help="Model identity and endpoint selection; never a paid fallback",
+    )
     parser.add_argument("--scenarios", type=Path, help="Optional frozen mutation/isolation corpus")
     parser.add_argument(
         "--scenarios-only",
@@ -426,6 +502,7 @@ def main():
         "dataset": data["version"],
         "dataset_sha256": digest(dataset_bytes),
         "models": {},
+        "model_profile": args.model_profile,
         "cases": 0 if args.scenarios_only else len(data["cases"]),
         "queries": 0 if args.scenarios_only else len(data["queries"]),
         "prompt_sha256": digest(inspect.getsource(Extractor.extract).encode()),
@@ -435,6 +512,7 @@ def main():
             for path in [
                 ROOT / "scripts" / "evaluate_owner_lifecycle.py",
                 ROOT / "scripts" / "pi_lifecycle_quality.mjs",
+                ROOT / "tests" / "quality" / "model-profiles.json",
                 *sorted((ROOT / "scripts").glob("evaluate_owner_mutations.py")),
                 *sorted((ROOT / "qdrant_memory").glob("*.py")),
             ]
@@ -445,28 +523,19 @@ def main():
     try:
         if os.environ.get("QM_QUALITY_UNUSED_KEY"):
             raise ValueError("Local quality evaluation refuses supplied API credentials")
+        profile = model_profile(args.model_profile)
+        if args.model_profile == "openrouter-free" and not os.environ.get("OPENROUTER_API_KEY"):
+            raise ValueError("Explicit OpenRouter test credential required")
         with httpx.Client(trust_env=False, timeout=5) as http:
-            models = http.get("http://127.0.0.1:11434/api/tags").json()["models"]
-        installed = {
-            row["name"]: row["digest"] for row in models if row["name"] in {MODEL, EMBEDDING}
-        }
-        report["models"] = installed
-        if set(installed) != {MODEL, EMBEDDING}:
-            raise ValueError("Evaluation requires both explicit already-installed local models")
+            models = http.get(profile["ollama_url"] + "/api/tags").json()["models"]
+        report["models"] = select_installed_models(profile, models)
+        report["generation_route"] = profile["llm"]["model"]
+        report["embedding_dimensions"] = profile["embedding"]["dimensions"]
         report["pi_extension_sha256"] = digest(
             (args.adapter_root / "integrations" / "pi" / "owner-memory.mjs").read_bytes()
         )
-        llm = OwnerLLM(
-            {
-                "mode": "override",
-                "provider": "openai-compatible",
-                "model": MODEL,
-                "base_url": "http://127.0.0.1:11434/v1",
-                "max_output_tokens": 2048,
-                "api_key_env": "QM_QUALITY_UNUSED_KEY",
-            }
-        )
-        recorder = RecordingLLM(llm, data["cases"])
+        llm = OwnerLLM(profile["llm"])
+        recorder = RecordingLLM(llm, data["cases"], profile)
         from agent.secret_scope import reset_secret_scope, set_secret_scope
 
         with tempfile.TemporaryDirectory(prefix="qm-model-quality-") as directory:
@@ -590,6 +659,10 @@ def main():
     report["model_latency"] = latency_summary(recorder.latencies if recorder else [])
     report["provider_error_types"] = dict(recorder.errors) if recorder else {}
     report["recording_error_types"] = dict(recorder.recording_errors) if recorder else {}
+    report["observed_provider_models"] = dict(recorder.provider_models) if recorder else {}
+    report["provider_http_statuses"] = dict(recorder.http_statuses) if recorder else {}
+    if args.model_profile != "reference" and not report["observed_provider_models"]:
+        report["status"] = "FAIL"
     with args.output.open("x", encoding="utf-8") as output:
         json.dump(report, output, ensure_ascii=False, indent=2)
     print(json.dumps(report, ensure_ascii=False))
