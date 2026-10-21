@@ -39,6 +39,8 @@ jobs:
           bash scripts/install_quality_dependencies.sh .quality/venv
           npm ci --prefix .quality/mcp/integrations/agent-hosts --ignore-scripts --no-audit --no-fund
       - name: Require scorer contracts before the actual model run
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.quality/hermes
         run: .quality/venv/bin/python -m pytest tests/test_quality_metrics.py tests/test_quality_runner.py tests/test_quality_mutations.py -q
       - name: Verify multi-subject replacement with the local model
         env:
