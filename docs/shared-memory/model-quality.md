@@ -59,7 +59,8 @@ Runner registration and remote execution require separate operator actions.
 
 Ordinary test CI also runs the scorer unit tests.
 
-Both lanes install the hashed wheels in `requirements-quality.txt` with Python 3.11.
+Both lanes require Linux x86_64 and Python 3.11.
+They install the hashed wheels in `requirements-quality.txt`.
 The local Runtime build uses the pinned build backend and an offline dependency check.
 The installer keeps normal dependency resolution and runs `pip check`.
 The hosted driver job verifies this environment without loading models.
