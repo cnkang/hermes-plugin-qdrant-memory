@@ -736,7 +736,13 @@ def main():
     except Exception as exc:
         report["status"] = "FAIL"
         report["failure_type"] = type(exc).__name__
-        report["failure_classification"] = getattr(exc, "classification", "lifecycle_failure")
+        report["failure_classification"] = getattr(
+            exc,
+            "classification",
+            "configuration_error"
+            if isinstance(exc, ValueError) and recorder is None
+            else "lifecycle_failure",
+        )
         if args.model_profile.startswith("openrouter-") and not os.environ.get(
             "OPENROUTER_API_KEY"
         ):

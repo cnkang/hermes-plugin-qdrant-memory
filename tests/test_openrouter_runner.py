@@ -10,6 +10,39 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize(
+    "script,profile,tier",
+    [
+        ("smoke_owner_lifecycle.py", "openrouter-cloud-smoke", "SMOKE"),
+        ("evaluate_owner_lifecycle.py", "openrouter-cloud-quality", "QUALITY"),
+    ],
+)
+def test_paid_model_configuration_writes_a_fail_closed_artifact(
+    tmp_path, monkeypatch, script, profile, tier
+):
+    """Bad configuration is diagnosed before model calls without echoing its value."""
+    module = runpy.run_path(str(ROOT / "scripts" / script))
+    monkeypatch.setenv(f"OPENROUTER_{tier}_CHAT_MODEL", "synthetic/paid-private-value")
+    output = tmp_path / "configuration.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "runner",
+            "--adapter-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+            "--model-profile",
+            profile,
+        ],
+    )
+    assert module["main"]() == 1
+    report = json.loads(output.read_text())
+    assert report["status"] == "FAIL"
+    assert report["failure_classification"] == "configuration_error"
+    assert "paid-private-value" not in output.read_text()
+
+
 def test_smoke_policy_probes_a_distinct_owner_with_the_same_agent_and_space():
     """The user isolation probe must not rely on a different logical Agent."""
     module = runpy.run_path(str(ROOT / "scripts/smoke_owner_lifecycle.py"))
