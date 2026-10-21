@@ -52,10 +52,17 @@ class OwnerLLM:
         """Return structured output to the existing Extractor validation pipeline."""
         import json
 
+        # Ground field meanings and numeric bounds in the model's context too.
+        # A provider's schema decoder alone need not enforce numeric ranges.
+        system = (
+            instructions
+            + "\n\nReturn JSON that satisfies this schema:\n"
+            + json.dumps(json_schema, ensure_ascii=False)
+        )
         body = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": instructions},
+                {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(input, ensure_ascii=False)},
             ],
             "temperature": 0,

@@ -43,6 +43,12 @@ def test_configured_owner_extraction_uses_structured_schema(monkeypatch, require
         body = json.loads(request.content)
         assert body["model"] == "fixture"
         assert body["response_format"]["json_schema"]["strict"] is True
+        schema = body["response_format"]["json_schema"]["schema"]
+        assert json.dumps(schema, ensure_ascii=False) in body["messages"][0]["content"]
+        assert body["messages"][0]["content"].startswith("Extract durable facts")
+        assert json.loads(body["messages"][1]["content"]) == [
+            {"type": "text", "text": json.dumps({"user": "cats", "assistant": "ack"})}
+        ]
         assert body.get("provider") == (
             None if required is None else {"require_parameters": required}
         )
