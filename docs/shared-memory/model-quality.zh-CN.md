@@ -158,6 +158,12 @@ Ollama 报告生成模型加载 574,074,386 字节，嵌入模型加载 49,387,9
 [2B 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39680318405) 提取出原生记忆，但其重要性数值未通过 Runtime 校验。
 Owner 阻止了写入。4B 候选保留相同的 v2 语料、Prompt、嵌入模型和门禁。其稳定性仍未验证。
 
+[首次 4B 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39680955844) 也在完成生命周期前因重要性数值校验失败。
+这些运行发生在 Owner 适配器将 Schema 加入模型上下文之前。
+现在适配器除 `response_format` 外，还在系统消息中包含可信的 JSON Schema，遵循 [Ollama 结构化输出指南](https://docs.ollama.com/capabilities/structured-outputs)的建议。
+这会改变模型的实际 Prompt。提取指令、语料、Schema 和 Runtime 校验保持完整。
+此前质量与冒烟结果仅适用于其记录的源码指纹。需要新运行验证此适配器变更。
+
 ## 手动质量工作流
 
 `owner-model-quality.yml` 中的质量模式仅由手动请求触发。

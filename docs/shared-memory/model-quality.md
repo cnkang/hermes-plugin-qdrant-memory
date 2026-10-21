@@ -161,6 +161,12 @@ Each stopped during its first lifecycle with empty capture. HTTP 200 responses d
 The [2B run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39680318405) extracted a native memory but failed Runtime validation of its importance value.
 The Owner blocked the write. The 4B candidate retains the same v2 cases, prompts, embedding model, and gates. Its stability remains unverified.
 
+The [initial 4B run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39680955844) also failed importance validation before a complete lifecycle.
+These runs predate schema grounding in the Owner adapter.
+The adapter now includes the trusted JSON schema in its system message as well as `response_format`, as recommended in the [Ollama structured output guide](https://docs.ollama.com/capabilities/structured-outputs).
+This changes the effective model prompt. The extraction instructions, cases, schema, and Runtime validation remain intact.
+Earlier quality and smoke results apply to their recorded source fingerprints. New runs must validate this adapter change.
+
 ## Manual quality workflow
 
 The quality mode in `owner-model-quality.yml` runs only by manual request.
