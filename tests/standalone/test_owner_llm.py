@@ -25,7 +25,8 @@ def test_private_content_transport_requires_tls_without_an_api_key():
     validate_url("http://localhost:11434/v1", require_tls=True)
 
 
-def test_configured_owner_extraction_uses_structured_schema(monkeypatch):
+@pytest.mark.parametrize("required", [None, True, False])
+def test_configured_owner_extraction_uses_structured_schema(monkeypatch, required):
     """Non-Hermes capture does not infer a host account or perform paid model calls."""
     monkeypatch.delenv("QDRANT_MEMORY_LLM_API_KEY", raising=False)
     cfg = {
@@ -33,6 +34,7 @@ def test_configured_owner_extraction_uses_structured_schema(monkeypatch):
         "provider": "openai-compatible",
         "model": "fixture",
         "base_url": "http://127.0.0.1:1/v1",
+        "provider_require_parameters": required,
     }
     llm = OwnerLLM(cfg)
     llm.client.close()
@@ -41,6 +43,9 @@ def test_configured_owner_extraction_uses_structured_schema(monkeypatch):
         body = json.loads(request.content)
         assert body["model"] == "fixture"
         assert body["response_format"]["json_schema"]["strict"] is True
+        assert body.get("provider") == (
+            None if required is None else {"require_parameters": required}
+        )
         return httpx.Response(
             200,
             json={
@@ -71,6 +76,21 @@ def test_configured_owner_extraction_uses_structured_schema(monkeypatch):
         )
     finally:
         llm.close()
+
+
+@pytest.mark.parametrize("required", [0, "true", []])
+def test_owner_rejects_invalid_provider_parameter_policy(required):
+    """Provider routing options are explicit booleans, not arbitrary request fragments."""
+    with pytest.raises(ValueError, match="provider_require_parameters"):
+        OwnerLLM(
+            {
+                "mode": "override",
+                "provider": "openai-compatible",
+                "model": "fixture",
+                "base_url": "http://127.0.0.1:1/v1",
+                "provider_require_parameters": required,
+            }
+        )
 
 
 def test_owner_llm_requires_explicit_encrypted_external_configuration():

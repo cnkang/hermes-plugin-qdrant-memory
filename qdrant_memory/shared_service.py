@@ -494,6 +494,7 @@ def make_server(owner, port):
             # One extra byte covers the size-limit probe. Never parse or admit
             # rejected data; bound the whole drain, including slow repeated reads.
             if 0 < size <= 131073:
+                previous_timeout = self.connection.gettimeout()
                 deadline = time.monotonic() + 1
                 try:
                     while size:
@@ -507,6 +508,8 @@ def make_server(owner, port):
                         size -= len(chunk)
                 except OSError:
                     pass
+                finally:
+                    self.connection.settimeout(previous_timeout)
 
         def do_POST(self):
             """Validate transport boundaries before resolving a trusted identity."""

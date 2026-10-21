@@ -44,7 +44,7 @@ def test_rejected_body_is_consumed_once_within_the_limit(rejection):
         headers["Host"] = f"127.0.0.1:{server.server_port}"
         handler = object.__new__(server.RequestHandlerClass)
         handler.server, handler.path, handler.headers = server, "/v1/tool", headers
-        handler.connection = SimpleNamespace(settimeout=timeouts.append)
+        handler.connection = SimpleNamespace(settimeout=timeouts.append, gettimeout=lambda: 10)
         handler.rfile, handler.wfile = Reader(body), io.BytesIO()
         handler.send_response = statuses.append
         handler.send_header = lambda *_args: None
@@ -56,8 +56,9 @@ def test_rejected_body_is_consumed_once_within_the_limit(rejection):
     if rejection == "invalid-json":
         assert not timeouts
     else:
-        assert len(timeouts) == len(reads)
-        assert all(0 < value <= 1 for value in timeouts)
+        assert len(timeouts) == len(reads) + 1
+        assert all(0 < value <= 1 for value in timeouts[:-1])
+        assert timeouts[-1] == 10
     assert not calls
 
 
@@ -87,11 +88,12 @@ def test_rejected_slow_drip_has_one_total_drain_deadline(monkeypatch):
         handler = object.__new__(server.RequestHandlerClass)
         handler.headers = Message()
         handler.headers["Content-Length"] = "6"
-        handler.connection = SimpleNamespace(settimeout=timeouts.append)
+        handler.connection = SimpleNamespace(settimeout=timeouts.append, gettimeout=lambda: 10)
         handler.rfile = Drip(b"abcdef")
         handler.discard_rejected_body()
     assert clock[0] <= 1
     assert handler.rfile.tell() < 6
+    assert timeouts[-1] == 10
 
 
 @pytest.mark.parametrize("framing", ["large", "chunked", "duplicate"])

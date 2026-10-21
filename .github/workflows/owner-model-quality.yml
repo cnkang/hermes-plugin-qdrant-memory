@@ -9,6 +9,9 @@ on:
       mode:
         type: string
         default: quality
+      generation_model:
+        type: string
+        default: ''
   workflow_dispatch:
     inputs:
       profile:
@@ -16,6 +19,10 @@ on:
         type: choice
         default: openrouter-free
         options: [openrouter-free, hosted-ollama, hosted-qwen35, hosted-qwen35-4b, reference]
+      generation_model:
+        description: Optional fixed OpenRouter model ending in :free
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -144,10 +151,11 @@ jobs:
       - name: Actual Ollama Hermes and Pi lifecycle quality
         if: inputs.mode != 'smoke' && inputs.profile != 'openrouter-free'
         run: .quality/venv/bin/python scripts/evaluate_owner_lifecycle.py --model-profile "$MODEL_PROFILE" --adapter-root .quality/mcp --scenarios tests/quality/lifecycle-mutations-v1.json --output "$QUALITY_OUTPUT"
-      - name: Actual OpenRouter Free Router lifecycle quality
+      - name: Actual OpenRouter lifecycle quality
         if: inputs.mode != 'smoke' && inputs.profile == 'openrouter-free' && github.ref == 'refs/heads/main'
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_QUALITY_MODEL: ${{ inputs.generation_model || vars.OPENROUTER_QUALITY_MODEL || secrets.OPENROUTER_QUALITY_MODEL }}
         run: .quality/venv/bin/python scripts/evaluate_owner_lifecycle.py --model-profile "$MODEL_PROFILE" --adapter-root .quality/mcp --scenarios tests/quality/lifecycle-mutations-v1.json --output "$QUALITY_OUTPUT"
       - name: Actual small-model lifecycle smoke
         if: inputs.mode == 'smoke'

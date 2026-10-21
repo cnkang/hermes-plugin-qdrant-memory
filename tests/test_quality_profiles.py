@@ -11,6 +11,12 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def isolate_model_selection(monkeypatch):
+    """Unit contracts never inherit an operator's external model selection."""
+    monkeypatch.delenv("OPENROUTER_QUALITY_MODEL", raising=False)
+
+
 def runner():
     """Load the actual evaluator without an ambient scripts package."""
     return runpy.run_path(str(ROOT / "scripts/evaluate_owner_lifecycle.py"))
@@ -77,6 +83,40 @@ def test_free_router_has_no_paid_fallback_and_only_local_embeddings():
     assert list(profile["local_models"]) == ["qwen3-embedding:0.6b"]
     assert "models" not in profile["llm"]
     assert "reasoning_effort" not in profile["llm"]
+    assert profile["llm"]["provider_require_parameters"] is True
+
+
+@pytest.mark.parametrize("model", ["nvidia/nemotron-3-super-120b-a12b:free", "openrouter/free"])
+def test_openrouter_quality_route_can_select_an_explicit_free_model(monkeypatch, model):
+    """Model selection is explicit configuration, never a paid fallback."""
+    monkeypatch.setenv("OPENROUTER_QUALITY_MODEL", model)
+    profile = runner()["model_profile"]("openrouter-free")
+    assert profile["llm"]["model"] == model
+    assert runner()["model_profile"]("smoke-ollama")["llm"]["model"] == "qwen3.5:0.8b"
+
+
+@pytest.mark.parametrize("model", ["openai/gpt-4.1", "https://untrusted.invalid", "x:free\nsecret"])
+def test_openrouter_quality_rejects_paid_or_invalid_model_configuration(monkeypatch, model):
+    """A free-only CI credential cannot silently request a paid or injected route."""
+    monkeypatch.setenv("OPENROUTER_QUALITY_MODEL", model)
+    with pytest.raises(ValueError, match="free"):
+        runner()["model_profile"]("openrouter-free")
+
+
+@pytest.mark.parametrize(
+    "route,observed,expected",
+    [
+        ("openrouter/free", {"nvidia/example": 1}, False),
+        ("nvidia/example:free", {}, False),
+        ("nvidia/example:free", {"nvidia/example": 2}, True),
+        ("nvidia/example:free", {"nvidia/example:free": 2}, True),
+        ("nvidia/example:free", {"nvidia/other": 1}, False),
+        ("nvidia/example:free", {"nvidia/example": 1, "nvidia/other": 1}, False),
+    ],
+)
+def test_fixed_quality_model_requires_matching_actual_observations(route, observed, expected):
+    """Dynamic routing, absent observations and a changed model cannot certify a fixed model."""
+    assert runner()["fixed_generation_observed"](route, observed) is expected
 
 
 def test_background_failure_observation_keeps_stages_without_private_details():

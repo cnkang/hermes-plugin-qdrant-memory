@@ -120,8 +120,12 @@ It currently tests `qwen3.5:0.8b`, with thinking disabled, and `all-minilm:22m` 
 The fixed downloads total about 1.37 GB, excluding Ollama and dependencies.
 The smaller `qwen3:0.6b` package is about 523 MB. It failed both initial smoke attempts with empty extraction.
 The [explicit-preference attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39586687759) did not complete the native capture check.
-The 0.8B candidate uses the same preference cases and validity checks. Its current selection does not imply a passing run.
+The 0.8B model uses the same preference cases and validity checks as the 0.6B attempt.
 Package sizes do not measure process memory. The 0.8B package also contains vision components.
+The [first 0.8B run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39610058850) passed all eight smoke checks.
+It made two generation requests, with observed p50 6.00 seconds and p95 6.31 seconds.
+Ollama reported 574,074,386 loaded bytes for generation and 49,387,928 for embeddings, with zero GPU memory.
+These are loaded-model observations from one smoke run, not peak process memory or a quality benchmark.
 The workflow uses the shared setup and caches. It requires no API key or self-hosted runner.
 The separate `model-smoke` environment contains no required secrets.
 
@@ -175,6 +179,20 @@ The evaluator spaces requests by at least 3.1 seconds. Quotas and service availa
 There is no paid fallback or automatic retry after a provider denial.
 A missing secret, rate limit, provider error, or missing model observation cannot produce PASS.
 Use synthetic test data only. OpenRouter receives the synthetic generation prompts.
+
+For a fixed quality model, set the manual `generation_model` input to an explicit model ID ending in `:free`.
+You can also set `OPENROUTER_QUALITY_MODEL` as an Environment variable or Secret. Prefer a variable for this public model name.
+The manual input takes precedence, then the variable, then the Secret. An empty selection retains `openrouter/free`.
+Paid model IDs and malformed values fail before provider requests. There is no model fallback.
+The Owner requests `provider.require_parameters=true` so OpenRouter must select an endpoint that supports the requested structured output parameters.
+The existing Owner LLM adapter accepts the optional boolean `provider_require_parameters`; other profiles omit it.
+Unsupported endpoints must fail instead of silently discarding required parameters.
+See [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs).
+
+Reports distinguish `fixed-route` from `dynamic-free-router`.
+A fixed model requires matching actual response model IDs. Missing, different, or mixed IDs fail the gate.
+Free Router results are exploratory. Even a passing score does not provide the fixed-model baseline required for release-candidate acceptance.
+Keep the model ID, observed IDs, embedding manifests, dataset and prompt fingerprints with each run.
 
 All profiles use the full frozen corpus and the same quality thresholds.
 Reports identify the profile, generation route, embedding dimensions, and local model digests.
