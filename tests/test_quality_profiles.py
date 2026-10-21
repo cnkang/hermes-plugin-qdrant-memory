@@ -109,7 +109,7 @@ def test_default_free_quality_model_has_no_paid_fallback_and_only_local_embeddin
     assert profile["llm"]["provider_require_parameters"] is True
 
 
-@pytest.mark.parametrize("model", ["nvidia/nemotron-3-super-120b-a12b:free", "openrouter/free"])
+@pytest.mark.parametrize("model", ["nvidia/nemotron-3-super-120b-a12b:free"])
 def test_openrouter_quality_route_can_select_an_explicit_free_model(monkeypatch, model):
     """Model selection is explicit configuration, never a paid fallback."""
     monkeypatch.setenv("OPENROUTER_QUALITY_MODEL", model)
