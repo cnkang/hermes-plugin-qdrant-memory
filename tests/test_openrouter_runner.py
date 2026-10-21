@@ -10,6 +10,41 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_smoke_value_error_before_recorder_is_a_configuration_failure(tmp_path, monkeypatch):
+    """An inner default category must not hide setup errors from the CLI artifact."""
+    module = runpy.run_path(str(ROOT / "scripts/smoke_owner_lifecycle.py"))
+    core = module["core"]
+    session = SimpleNamespace(
+        preflight=lambda: None,
+        close=lambda: None,
+        report=lambda: {"resources_closed": True, "final_failure_classification": None},
+    )
+    monkeypatch.setattr(core.OPENROUTER, "OpenRouterSession", lambda *_a, **_kw: session)
+
+    def invalid(_cfg):
+        raise ValueError("synthetic-private-value")
+
+    monkeypatch.setattr(core, "OwnerLLM", invalid)
+    output = tmp_path / "setup-failure.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "runner",
+            "--adapter-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+            "--model-profile",
+            "openrouter-cloud-smoke",
+        ],
+    )
+    assert module["main"]() == 1
+    report = json.loads(output.read_text())
+    assert report["failure_classification"] == "configuration_error"
+    assert report["openrouter"]["resources_closed"] is True
+    assert "synthetic-private-value" not in output.read_text()
+
+
 @pytest.mark.parametrize(
     "script,profile,tier",
     [
