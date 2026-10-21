@@ -209,6 +209,10 @@ def run_smoke(adapter, profile_name="smoke-ollama"):
             result.update(final)
         if failure is not None:
             failure.smoke_observations.update(final)
+            if remote and final["openrouter"].get("final_failure_classification"):
+                failure.smoke_observations["failure_classification"] = final["openrouter"][
+                    "final_failure_classification"
+                ]
 
 
 def main():

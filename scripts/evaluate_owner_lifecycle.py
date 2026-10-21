@@ -1,4 +1,4 @@
-"""Opt-in anonymous multi-turn Hermes/Pi evaluation against installed local models."""
+"""Opt-in anonymous Hermes/Pi evaluation with local or fixed free cloud models."""
 
 import argparse
 import hashlib
@@ -546,7 +546,7 @@ def evaluate(data, adapter, home, recorder, tokens):
 
 
 def main():
-    """Run only installed local models and write a new, redacted evidence artifact."""
+    """Run the selected model profile and write a new, redacted evidence artifact."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adapter-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
