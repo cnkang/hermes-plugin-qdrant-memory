@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
+from ruamel.yaml import YAML
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="The Ollama setup workflow uses POSIX bash")
@@ -54,7 +54,9 @@ def test_cached_executable_cannot_bypass_the_archive_checksum(tmp_path):
 @pytest.mark.parametrize("alive", [False, True])
 def test_workflow_cleanup_accepts_an_exited_test_owned_process(tmp_path, alive):
     """Execute the actual cleanup step against a disposable child, alive or already exited."""
-    workflow = yaml.safe_load((ROOT / ".github/workflows/owner-model-quality.yml").read_text())
+    workflow = YAML(typ="safe").load(
+        (ROOT / ".github/workflows/owner-model-quality.yml").read_text()
+    )
     step = next(
         row
         for row in workflow["jobs"]["quality"]["steps"]
