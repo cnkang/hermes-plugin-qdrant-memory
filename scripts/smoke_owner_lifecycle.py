@@ -18,6 +18,7 @@ CHECKS = {
     "pi_capture",
     "authorized_recall",
     "private_isolation",
+    "user_isolation",
     "replay_safe",
     "restart_durable",
     "restart_no_model_calls",
@@ -33,11 +34,28 @@ CASES = [
 ]
 
 
+def smoke_policy(tokens, foreign_token):
+    """Probe a different Owner with the same private Agent and space identity."""
+    document = core.policy(tokens)
+    document["clients"].append(
+        {
+            **document["clients"][0],
+            "token_sha256": core.digest(foreign_token.encode()),
+            "owner_id": "synthetic-other-user",
+            "principal": "synthetic-other-device",
+            "device_id": "synthetic-other-device",
+            "permission": "read",
+        }
+    )
+    return document
+
+
 def exercise(adapter, home, recorder, tokens):
     """Use actual Hermes and Pi callbacks, HTTPS MCP, and the existing Owner Runtime."""
     native, project = CASES
     policy_path = home / "policy.json"
-    policy_path.write_text(json.dumps(core.policy(tokens)), encoding="utf-8")
+    foreign_token = secrets.token_hex(32)
+    policy_path.write_text(json.dumps(smoke_policy(tokens, foreign_token)), encoding="utf-8")
     policy_path.chmod(0o600)
     provider, manager = core.start_host(home, policy_path, recorder)
     try:
@@ -74,6 +92,7 @@ def exercise(adapter, home, recorder, tokens):
                 hit["id"] in native_ids
                 for hit in core.remote_query(url, cert, tokens["PI"], native_text)
             )
+            user_isolated = not core.remote_query(url, cert, foreign_token, native_text)
             calls = len(recorder.latencies)
             replay = (
                 core.event_replay(url, cert, tokens["PROJECT"], receipt["event"])
@@ -101,6 +120,7 @@ def exercise(adapter, home, recorder, tokens):
         "pi_capture": receipt["status"] == "COMMITTED" and bool(project_text),
         "authorized_recall": recall,
         "private_isolation": isolated,
+        "user_isolation": user_isolated,
         "replay_safe": replay,
         "restart_durable": all(
             core.durable_snapshot(left) == core.durable_snapshot(right)
@@ -119,14 +139,24 @@ def run_smoke(adapter, profile_name="smoke-ollama"):
     if os.environ.get("QM_QUALITY_UNUSED_KEY"):
         raise ValueError("Local smoke refuses supplied API credentials")
     profile = core.model_profile(profile_name)
-    with core.httpx.Client(trust_env=False, timeout=5) as http:
-        response = http.get(profile["ollama_url"] + "/api/tags")
-        response.raise_for_status()
-        models = core.select_installed_models(profile, response.json()["models"])
-    llm = core.OwnerLLM(profile["llm"])
-    recorder = core.RecordingLLM(llm, CASES, profile)
+    llm, recorder, remote, result, failure = None, None, None, None, None
+    home = None
+    models = {}
     tokens = {key: secrets.token_hex(32) for key in ("NATIVE", "SECOND", "PI", "PROJECT", "READER")}
     try:
+        if profile["llm"]["base_url"] == core.OPENROUTER.BASE_URL:
+            remote = core.OPENROUTER.OpenRouterSession(profile, max_requests=40)
+            remote.preflight()
+        if profile["local_models"]:
+            with core.httpx.Client(trust_env=False, timeout=5) as http:
+                response = http.get(profile["ollama_url"] + "/api/tags")
+                response.raise_for_status()
+                models = core.select_installed_models(profile, response.json()["models"])
+        llm = core.OwnerLLM(profile["llm"])
+        if remote:
+            remote.attach_llm(llm)
+        recorder = core.RecordingLLM(llm, CASES, profile)
+        recorder.remote_session = remote
         with tempfile.TemporaryDirectory(prefix="qm-model-smoke-") as directory:
             home = Path(directory).resolve()
             env = {"QM_QUALITY_" + key: value for key, value in tokens.items()}
@@ -136,27 +166,49 @@ def run_smoke(adapter, profile_name="smoke-ollama"):
                     checks = exercise(adapter, home, recorder, tokens)
                 finally:
                     reset_secret_scope(scoped)
-        return {
+        result = {
             "checks": checks,
             "models": models,
             "model_latency": core.latency_summary(recorder.latencies),
             "observed_provider_models": dict(recorder.provider_models),
         }
+        if remote:
+            result["pi_extension_sha256"] = core.digest(
+                (adapter / "integrations/pi/owner-memory.mjs").read_bytes()
+            )
+        return result
     except Exception as exc:
-        exc.smoke_background_failures = recorder.background_failures
+        failure = exc
+        exc.smoke_background_failures = recorder.background_failures if recorder else []
         exc.smoke_observations = {
-            "model_latency": core.latency_summary(recorder.latencies),
-            "observed_provider_models": dict(recorder.provider_models),
-            "provider_http_statuses": dict(recorder.http_statuses),
-            "provider_error_types": dict(recorder.errors),
-            "recording_error_types": dict(recorder.recording_errors),
-            "capture_counts": {
-                row["id"]: len(recorder.extractions.get(row["id"], [])) for row in CASES
-            },
+            "failure_classification": getattr(exc, "classification", "lifecycle_failure")
         }
+        if recorder:
+            exc.smoke_observations.update(
+                {
+                    "model_latency": core.latency_summary(recorder.latencies),
+                    "observed_provider_models": dict(recorder.provider_models),
+                    "provider_http_statuses": dict(recorder.http_statuses),
+                    "provider_error_types": dict(recorder.errors),
+                    "recording_error_types": dict(recorder.recording_errors),
+                    "capture_counts": {
+                        row["id"]: len(recorder.extractions.get(row["id"], [])) for row in CASES
+                    },
+                }
+            )
         raise
     finally:
-        llm.close()
+        if llm:
+            llm.close()
+        if remote:
+            remote.close()
+        final = {"temporary_data_cleaned": home is None or not home.exists()}
+        if remote:
+            final["openrouter"] = remote.report()
+        if result is not None:
+            result.update(final)
+        if failure is not None:
+            failure.smoke_observations.update(final)
 
 
 def main():
@@ -174,6 +226,7 @@ def main():
             "smoke-qwen17",
             "smoke-qwen2",
             "smoke-qwen4",
+            "openrouter-cloud-smoke",
         ],
         default="smoke-ollama",
     )
@@ -196,6 +249,10 @@ def main():
                 Path(__file__),
                 ROOT / "scripts/evaluate_owner_lifecycle.py",
                 ROOT / "tests/quality/model-profiles.json",
+                ROOT / "scripts/quality_openrouter.py",
+                ROOT / "scripts/quality_openrouter_http.py",
+                ROOT / "qdrant_memory/owner_llm.py",
+                ROOT / "qdrant_memory/embedding.py",
             )
         },
     }
@@ -214,6 +271,18 @@ def main():
     except Exception as exc:
         report["failure_type"] = type(exc).__name__
         report.update(getattr(exc, "smoke_observations", {}))
+        report.setdefault(
+            "failure_classification",
+            getattr(
+                exc,
+                "classification",
+                "configuration_error" if isinstance(exc, ValueError) else "lifecycle_failure",
+            ),
+        )
+        if args.model_profile == "openrouter-cloud-smoke" and not os.environ.get(
+            "OPENROUTER_API_KEY"
+        ):
+            report["required_secret"] = "OPENROUTER_API_KEY"
         report["background_failures"] = getattr(exc, "smoke_background_failures", [])
         report["failure_stages"] = [
             {"file": Path(frame.filename).name, "line": frame.lineno, "function": frame.name}

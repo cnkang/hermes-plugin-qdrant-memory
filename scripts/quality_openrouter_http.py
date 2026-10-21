@@ -270,11 +270,22 @@ class OpenRouterHTTP(httpx.BaseTransport):
                         self._embedding(prepared, response)
                     return response
                 category = classification(status)
+                if status == 429:
+                    try:
+                        message = response.json().get("error", {}).get("message", "")
+                        if isinstance(message, str) and any(
+                            marker in message.lower()
+                            for marker in ("free-models-per-day", "daily quota", "requests per day")
+                        ):
+                            category = "quota_exhausted"
+                    except (ValueError, TypeError, AttributeError):
+                        pass
                 self.errors[category] += 1
                 delay = self._backoff(response, attempt)
                 response.close()
                 if (
-                    status not in {429, 500, 502, 503, 504}
+                    category == "quota_exhausted"
+                    or status not in {429, 500, 502, 503, 504}
                     or attempt + 1 == self.max_attempts
                     or delay is None
                 ):

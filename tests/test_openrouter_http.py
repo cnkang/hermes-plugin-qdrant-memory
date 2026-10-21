@@ -56,6 +56,32 @@ def post(client):
     )
 
 
+@pytest.mark.parametrize("recover", [True, False])
+def test_network_retries_are_bounded_and_classified(recover):
+    """A transient connection failure cannot become quality failure or an endless retry."""
+    attempts = []
+
+    def handler(request):
+        attempts.append(True)
+        if recover and len(attempts) == 2:
+            return answer()
+        raise httpx.ConnectError("synthetic-private-key", request=request)
+
+    transport, _ = build(handler)
+    try:
+        with transport.client() as client:
+            if recover:
+                assert post(client).status_code == 200
+            else:
+                with pytest.raises(RuntimeError) as error:
+                    post(client)
+                assert error.value.classification == "network_error"
+        assert len(attempts) == 2
+        assert "synthetic-private-key" not in json.dumps(transport.report())
+    finally:
+        transport.shutdown()
+
+
 def test_transport_enforces_price_and_metadata_bound_identity():
     """Canonical aliases are allowed only when official metadata provided them."""
     bodies = []
@@ -177,6 +203,26 @@ def test_excessive_retry_after_fails_without_retrying_early():
         with transport.client() as client, pytest.raises(RuntimeError):
             post(client)
         assert len(calls) == 1 and not clock.sleeps
+    finally:
+        transport.shutdown()
+
+
+def test_daily_free_quota_is_not_retried_as_a_short_rate_limit():
+    """Known daily-quota responses stop without consuming more daily requests."""
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(
+            429, json={"error": {"message": "Rate limit exceeded: free-models-per-day"}}
+        )
+
+    transport, _ = build(handler)
+    try:
+        with transport.client() as client, pytest.raises(RuntimeError) as error:
+            post(client)
+        assert error.value.classification == "quota_exhausted"
+        assert len(calls) == 1
     finally:
         transport.shutdown()
 
