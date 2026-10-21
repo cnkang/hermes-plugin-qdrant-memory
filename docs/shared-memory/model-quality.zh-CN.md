@@ -118,7 +118,8 @@ Precision、positive-case recall、Recall@5 和 MRR@5 均为 1.0。全部十一�
 
 普通测试 CI 也运行评分器单元测试。
 
-两个工作流均在 Python 3.11 下安装 `requirements-quality.txt` 中带哈希的 wheel。
+两个工作流均要求 Linux x86_64 和 Python 3.11。
+它们安装 `requirements-quality.txt` 中带哈希的 wheel。
 本地 Runtime 构建使用固定的构建后端，并离线检查依赖。
 安装器保留正常依赖解析，并运行 `pip check`。
 托管驱动 job 不加载模型，单独验证此环境。
