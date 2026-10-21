@@ -14,6 +14,14 @@ def workflow():
     )
 
 
+def test_cloud_profiles_share_one_account_concurrency_group():
+    """Two manual cloud tiers must not multiply the free account's request rate."""
+    group = workflow()["concurrency"]["group"]
+    assert "startsWith(inputs.profile, 'openrouter-')" in group
+    assert "'cloud-account'" in group
+    assert workflow()["concurrency"]["cancel-in-progress"] == "false"
+
+
 def test_manual_cloud_tiers_and_both_inputs_are_available():
     """Model retirement can be handled by explicit inputs without source changes."""
     inputs = workflow()["on"]["workflow_dispatch"]["inputs"]

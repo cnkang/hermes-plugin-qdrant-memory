@@ -35,7 +35,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.mode || 'quality' }}-${{ inputs.profile }}
+  group: ${{ github.workflow }}-${{ startsWith(inputs.profile, 'openrouter-') && 'cloud-account' || format('{0}-{1}', inputs.mode || 'quality', inputs.profile) }}
   cancel-in-progress: false
 
 jobs:
