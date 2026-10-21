@@ -366,6 +366,9 @@ These results describe the recorded runs. They do not establish production accep
 
 The Dots run selected `dots-studio/dots-3-note-preview:free`.
 The exact cause of its HTTP 400 response remains unverified.
+Later reports use `failed_model_calls` to identify failed extraction cases by their frozen case IDs.
+Relation failures use `relation`; unknown calls use `other` or `extract/unattributed`.
+These counters do not contain raw input, response bodies, or exception messages.
 The Free Router run observed `liquid/lfm-2.5-2.6b:free` and `dots-studio/dots-3-note-preview:free`.
 Each completed external run stopped its test-owned Ollama process.
 The runs retained strict output validation, TLS checks, the frozen dataset, and the quality thresholds.

@@ -129,6 +129,7 @@ class RecordingLLM:
         self.case_ids = {case["user"]: case["id"] for case in cases}
         self.extractions, self.latencies, self.errors = {}, [], Counter()
         self.recording_errors = Counter()
+        self.failed_calls = Counter()
         self.background_failures = []
         self.lock = threading.Lock()
         self.provider_models, self.http_statuses = Counter(), Counter()
@@ -196,8 +197,20 @@ class RecordingLLM:
                     self.last_request = time.monotonic()
             result = self.delegate.complete_structured(**kwargs)
         except Exception as exc:
+            stage = "other"
+            if kwargs.get("purpose") == "qdrant-memory.relation":
+                stage = "relation"
+            elif kwargs.get("purpose") == "qdrant-memory.extract":
+                case_id = "unattributed"
+                try:
+                    event = json.loads(kwargs["input"][0]["text"])
+                    case_id = self.case_ids.get(event["user"], case_id)
+                except (KeyError, IndexError, TypeError, ValueError):
+                    pass
+                stage = "extract/" + case_id
             with self.lock:
                 self.errors[type(exc).__name__] += 1
+                self.failed_calls[stage] += 1
             raise
         finally:
             with self.lock:
@@ -725,6 +738,7 @@ def main():
     report["background_failures"] = recorder.background_failures if recorder else []
     report["model_latency"] = latency_summary(recorder.latencies if recorder else [])
     report["provider_error_types"] = dict(recorder.errors) if recorder else {}
+    report["failed_model_calls"] = dict(recorder.failed_calls) if recorder else {}
     report["recording_error_types"] = dict(recorder.recording_errors) if recorder else {}
     report["observed_provider_models"] = dict(recorder.provider_models) if recorder else {}
     if args.model_profile == "openrouter-free":
