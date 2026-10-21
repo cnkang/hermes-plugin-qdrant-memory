@@ -122,8 +122,8 @@ Select one of these profiles:
 
 | Profile | Runner | Generation | Embeddings |
 | --- | --- | --- | --- |
-| `hosted-ollama` (default) | GitHub `ubuntu-24.04` | `qwen2.5:3b` | `qwen3-embedding:0.6b`, 1024 dimensions |
-| `openrouter-free` | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | The same local 0.6B model |
+| `openrouter-free` (default) | GitHub `ubuntu-24.04` | OpenRouter `openrouter/free` | `qwen3-embedding:0.6b`, 1024 dimensions |
+| `hosted-ollama` (experimental) | GitHub `ubuntu-24.04` | `qwen2.5:3b` | The same local 0.6B model |
 | `reference` | Disposable Linux runner with `qdrant-memory-models` label | Installed `qwen3:8b` | Installed `qwen3-embedding:4b`, 2560 dimensions |
 
 The first two profiles need no self-hosted runner.
@@ -161,8 +161,14 @@ Precision was 1.0, but positive-case recall and Recall@5 were 0.4375. Mutation c
 Provider errors and scope leaks were zero. This is failure evidence, not acceptance evidence.
 The [8B hosted attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39572169059) failed before baseline completion.
 Four generation calls reached the existing 30-second request timeout. This result does not prove a memory shortage.
-The hosted profile now tests `qwen2.5:3b` with the smaller embedding model. The quality thresholds remain unchanged.
+The [3B hosted attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39573848777) also failed before baseline completion.
+Five model responses were observed, with no provider or recording errors. A background ValueError blocked the lifecycle.
+This is not passing model-quality evidence. The experimental local profile retains this model for reproducible diagnosis.
+The default workflow now uses Free Router generation and the local 0.6B embedding model. Its actual result requires a separate main-branch run.
+The quality thresholds remain unchanged.
 Setup records Ollama's loaded-model size in `quality-model-resources.json`. This is not peak process memory.
+The 3B attempt reported 2,168,360,795 bytes for generation and 1,237,875,425 bytes for embeddings, with zero GPU memory.
+Dependency and Ollama installation caches were restored in that run. The changed model set was downloaded and saved under a new key.
 The 3B model uses the [Qwen Research License](https://ollama.com/library/qwen2.5:3b); CI downloads it for evaluation and does not bundle its weights.
 
 ### Container alternative
