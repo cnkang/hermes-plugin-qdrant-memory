@@ -1,5 +1,6 @@
 """Explicit Owner-side structured LLM adapter for non-Hermes lifecycle capture."""
 
+import math
 import os
 from types import SimpleNamespace
 
@@ -11,6 +12,14 @@ from .config import validate_url
 def _reject_non_json_number(value):
     """Reject NaN and Infinity without retaining provider output in the error."""
     raise ValueError("Owner output contains a non-JSON number")
+
+
+def _finite_json_float(value):
+    """Reject exponent overflow as well as explicit non-standard constants."""
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("Owner output contains a non-finite number")
+    return number
 
 
 class OwnerLLM:
@@ -106,7 +115,9 @@ class OwnerLLM:
 
             failure = None
             try:
-                parsed = json.loads(value, parse_constant=_reject_non_json_number)
+                parsed = json.loads(
+                    value, parse_constant=_reject_non_json_number, parse_float=_finite_json_float
+                )
             except ValueError:
                 failure = "Owner output is not valid JSON"
             if failure:

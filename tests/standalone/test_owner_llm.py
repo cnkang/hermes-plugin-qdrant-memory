@@ -108,8 +108,8 @@ def test_json_object_mode_preserves_nested_numeric_bounds(importance):
         llm.close()
 
 
-@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
-def test_json_object_mode_rejects_non_json_numeric_constants(constant):
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity", "1e999", "-1e999"])
+def test_json_object_mode_rejects_non_finite_numbers(constant):
     """Python's permissive JSON decoder must not admit non-finite model output."""
     llm = OwnerLLM(
         {
@@ -135,7 +135,7 @@ def test_json_object_mode_rejects_non_json_numeric_constants(constant):
                 input=[],
                 json_schema={
                     "type": "object",
-                    "properties": {"score": {"type": "number", "minimum": 0, "maximum": 1}},
+                    "properties": {"score": {"type": "number"}},
                 },
             )
     finally:
