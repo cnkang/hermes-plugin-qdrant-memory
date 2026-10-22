@@ -20,7 +20,9 @@ def test_cross_visibility_add_does_not_expose_or_conflict(tmp_path):
         new_token, "qdrant_memory_add", {"text": "Project Alpha", "request_id": "b1"}
     )
     assert result["action"] == "ADD"
-    assert owner.call(new_token, "qdrant_memory_search", {"query": "Project Alpha"})["memories"]
+    memories = owner.call(new_token, "qdrant_memory_search", {"query": "Project Alpha"})["memories"]
+    assert [row["id"] for row in memories] == [result["id"]]
+    assert all(row["visibility"] == "shared" for row in memories)
     # The previous generation's record is not returned to this caller.
     assert len(list(rt.store.scroll())) == 2
 
@@ -56,6 +58,16 @@ def test_lifecycle_collision_skips_instead_of_blocking_every_writer(tmp_path):
         },
     )
     assert second_owner.blocked is False
+    second_memories = second_owner.call(
+        second_token, "qdrant_memory_search", {"query": "Alpha uses WAL"}
+    )["memories"]
+    assert len(second_memories) == 1
+    assert second_memories[0]["visibility"] == "project"
+    first_memories = first_owner.call(
+        first_token, "qdrant_memory_search", {"query": "Alpha uses WAL"}
+    )["memories"]
+    assert len(first_memories) == 1
+    assert first_memories[0]["visibility"] == "shared"
 
     other_token, other = grant("other", visibility="shared", space="elsewhere")
     other_owner = SharedOwner(rt, [other])
