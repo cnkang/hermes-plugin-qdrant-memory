@@ -600,17 +600,22 @@ def make_server(owner, port):
             connection keeps admission bounded while the listener stays responsive.
             """
             if not self.slots.acquire(blocking=False):
+                body = b'{"error":{"type":"SharedAdmissionError","retryable":true}}'
                 try:
                     request.sendall(
                         b"HTTP/1.0 429 Too Many Requests\r\n"
-                        b"Retry-After: 1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        b"Retry-After: 1\r\nContent-Type: application/json\r\n"
+                        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                        b"Connection: close\r\n\r\n" + body
                     )
-                    # Drain the refused request briefly so close() does not reset the
-                    # connection before the client reads the refusal.
-                    request.settimeout(0.2)
-                    deadline = time.monotonic() + 0.2
-                    while time.monotonic() < deadline:
-                        if not request.recv(65536):
+                    # Drain only bytes already buffered, without waiting on the
+                    # accept loop. A later segment may reset the connection.
+                    request.setblocking(False)
+                    while True:
+                        try:
+                            if not request.recv(65536):
+                                break
+                        except OSError:
                             break
                 except OSError:
                     pass
