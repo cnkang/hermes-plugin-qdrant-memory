@@ -305,6 +305,7 @@ Download `owner-model-quality` from the workflow run's Artifacts section.
 The JSON report records source, corpus and configuration fingerprints; model IDs; actual vector dimensions;
 API attempts, HTTP status counts, bounded retries, latency percentiles and failure categories.
 It records provider-reported cost when present. Missing cost data is unverified, not a measured zero.
+A failed attempt also keeps total cost unverified, even if a retry succeeds.
 Quality reports retain precision, positive-case recall, Recall@5, MRR@5, mutation and context results.
 Smoke reports retain each lifecycle check and cannot replace a quality report.
 

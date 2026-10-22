@@ -77,6 +77,7 @@ def test_network_retries_are_bounded_and_classified(recover):
                     post(client)
                 assert error.value.classification == "network_error"
         assert len(attempts) == 2
+        assert transport.report()["cost_verified"] is False
         assert "synthetic-private-key" not in json.dumps(transport.report())
     finally:
         transport.shutdown()
