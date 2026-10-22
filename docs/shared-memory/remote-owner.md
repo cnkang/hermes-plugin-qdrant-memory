@@ -113,6 +113,7 @@ An Nginx TLS-only example (replace the certificate paths, account and hostname):
 
 ```nginx
 limit_req_zone $binary_remote_addr zone=memory_pre_auth:10m rate=10r/s;
+limit_conn_zone $binary_remote_addr zone=memory_conn:10m;
 server {
     listen 443 ssl;
     server_name memory.example.com;
@@ -124,6 +125,7 @@ server {
     client_body_timeout 10s;
     location ~ ^/(mcp|events|events/manage)$ {
         limit_req zone=memory_pre_auth burst=20 nodelay;
+        limit_conn memory_conn 8;
         if ($http_forwarded != '') { return 403; }
         if ($http_x_forwarded_host != '') { return 403; }
         proxy_set_header Host memory.example.com;
@@ -145,7 +147,11 @@ inactivity to 10 seconds. It allows 240 requests per minute per authenticated
 principal. Authentication work has a separate worker limit. Unauthenticated
 requests cannot consume authenticated
 body slots or quotas. Per-source limits and TLS/header timeouts at the proxy are
-required. Application quotas do not prevent network-layer denial of service. Logs must not retain
+required. Application quotas do not prevent network-layer denial of service: the
+listener accepts connections before Host, bearer and quota checks run, so the proxy
+must cap concurrent connections per source (`limit_conn`) and keep the listener on
+loopback. A local process that bypasses the proxy is bounded by the OS descriptor
+limit, not by an application-wide admission cap. Logs must not retain
 Authorization, query text, raw memory or exception bodies. HTTP client redirects
 and ambient proxy settings are disabled. TLS validation cannot be disabled.
 
