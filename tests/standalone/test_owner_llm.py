@@ -10,6 +10,172 @@ from qdrant_memory.extraction import Extractor
 from qdrant_memory.owner_llm import OwnerLLM
 
 
+@pytest.mark.parametrize("value", ["json", "auto", "", None, [], True])
+def test_owner_rejects_unknown_response_format(value):
+    """An explicit output mode cannot silently disable schema enforcement."""
+    with pytest.raises(ValueError, match="response_format_mode"):
+        OwnerLLM(
+            {
+                "mode": "override",
+                "provider": "openai-compatible",
+                "model": "fixture",
+                "base_url": "http://127.0.0.1:1/v1",
+                "response_format_mode": value,
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "value,valid",
+    [
+        ({"ready": True}, True),
+        ({"ready": "true"}, False),
+        ({"ready": 1}, False),
+        ({"ready": True, "extra": "synthetic-private-output"}, False),
+        ({}, False),
+    ],
+)
+def test_json_object_mode_enforces_the_same_local_schema(value, valid):
+    """JSON-only providers must satisfy types, required fields and extra-field limits."""
+    llm = OwnerLLM(
+        {
+            "mode": "override",
+            "provider": "openai-compatible",
+            "model": "fixture",
+            "base_url": "http://127.0.0.1:1/v1",
+            "response_format_mode": "json_object",
+        }
+    )
+    llm.client.close()
+
+    def complete(request):
+        body = json.loads(request.content)
+        assert body["response_format"] == {"type": "json_object"}
+        assert '"additionalProperties": false' in body["messages"][0]["content"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(value)}}]})
+
+    llm.client = httpx.Client(transport=httpx.MockTransport(complete))
+    schema = {
+        "type": "object",
+        "properties": {"ready": {"type": "boolean"}},
+        "required": ["ready"],
+        "additionalProperties": False,
+    }
+    try:
+        if valid:
+            assert (
+                llm.complete_structured(
+                    instructions="Return JSON", input=[], json_schema=schema
+                ).parsed
+                == value
+            )
+        else:
+            with pytest.raises(ValueError, match="schema") as error:
+                llm.complete_structured(instructions="Return JSON", input=[], json_schema=schema)
+            assert "synthetic-private-output" not in str(error.value)
+            assert error.value.__context__ is None
+            assert error.value.__cause__ is None
+    finally:
+        llm.close()
+
+
+@pytest.mark.parametrize("importance", [-0.1, 1.1, True, "0.5"])
+def test_json_object_mode_preserves_nested_numeric_bounds(importance):
+    """A valid JSON object cannot bypass the extraction schema's numeric bounds."""
+    cfg = {
+        "mode": "override",
+        "provider": "openai-compatible",
+        "model": "fixture",
+        "base_url": "http://127.0.0.1:1/v1",
+        "response_format_mode": "json_object",
+    }
+    llm = OwnerLLM(cfg)
+    llm.client.close()
+    value = {
+        "memories": [{"text": "synthetic", "category": ["preference"], "importance": importance}]
+    }
+    llm.client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200, json={"choices": [{"message": {"content": json.dumps(value)}}]}
+            )
+        )
+    )
+    try:
+        with pytest.raises(ValueError, match="schema"):
+            Extractor(llm, cfg).extract({"user": "synthetic", "assistant": "ack"})
+    finally:
+        llm.close()
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_json_object_mode_rejects_non_json_numeric_constants(constant):
+    """Python's permissive JSON decoder must not admit non-finite model output."""
+    llm = OwnerLLM(
+        {
+            "mode": "override",
+            "provider": "openai-compatible",
+            "model": "fixture",
+            "base_url": "http://127.0.0.1:1/v1",
+            "response_format_mode": "json_object",
+        }
+    )
+    llm.client.close()
+    llm.client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200, json={"choices": [{"message": {"content": '{"score": ' + constant + "}"}}]}
+            )
+        )
+    )
+    try:
+        with pytest.raises(ValueError):
+            llm.complete_structured(
+                instructions="Return JSON",
+                input=[],
+                json_schema={
+                    "type": "object",
+                    "properties": {"score": {"type": "number", "minimum": 0, "maximum": 1}},
+                },
+            )
+    finally:
+        llm.close()
+
+
+def test_json_object_decode_failure_does_not_retain_provider_exception():
+    """A JSONDecodeError would retain the whole model response in its doc field."""
+    llm = OwnerLLM(
+        {
+            "mode": "override",
+            "provider": "openai-compatible",
+            "model": "fixture",
+            "base_url": "http://127.0.0.1:1/v1",
+            "response_format_mode": "json_object",
+        }
+    )
+    llm.client.close()
+    llm.client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "synthetic-private-output not JSON"}}]},
+            )
+        )
+    )
+    try:
+        with pytest.raises(ValueError) as error:
+            llm.complete_structured(
+                instructions="Return JSON", input=[], json_schema={"type": "object"}
+            )
+        assert type(error.value) is ValueError
+        assert "synthetic-private-output" not in str(error.value)
+        assert error.value.__context__ is None
+        assert error.value.__cause__ is None
+        assert not hasattr(error.value, "doc")
+    finally:
+        llm.close()
+
+
 @pytest.fixture(autouse=True)
 def isolate_provider_credentials(monkeypatch):
     """Mock-provider tests never inherit a real optional account credential."""
