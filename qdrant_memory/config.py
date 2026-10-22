@@ -151,7 +151,8 @@ def validate_embedding(cfg):
 
         validate_local_config(emb)
     else:
-        validate_url(emb["base_url"], api_key=emb.get("api_key"))
+        # Private memory text crosses this endpoint; require TLS off loopback.
+        validate_url(emb["base_url"], api_key=emb.get("api_key"), require_tls=True)
     if emb["distance"] not in {"Cosine", "Dot", "Euclid"}:
         raise ValueError("Unsupported distance metric")
     return emb

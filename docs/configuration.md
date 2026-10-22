@@ -21,7 +21,9 @@ prompt. The wizard still requests missing settings. The wizard reports variable
 names only.
 An existing environment URL supersedes a previously saved explicit URL. Setup saves
 `url_env` and `api_key_env` references, without copying environment values or credentials.
-Endpoint and HTTPS transport checks still apply. Deployment mode remains a user choice.
+Endpoint and HTTPS transport checks still apply. Any non-loopback endpoint that
+receives memory text must use HTTPS, with or without a credential; loopback HTTP
+remains supported. Deployment mode remains a user choice.
 
 ```json
 {

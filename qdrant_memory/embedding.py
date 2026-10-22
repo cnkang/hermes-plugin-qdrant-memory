@@ -44,7 +44,9 @@ class HTTPEmbeddingProvider:
 
         reader = secret if secret_reader is None else secret_reader
         key = cfg.get("api_key") or reader(cfg.get("api_key_env", "EMBEDDING_API_KEY"))
-        validate_url(cfg["base_url"], api_key=key)
+        # Memory text is private content: a non-loopback endpoint must use TLS even
+        # when no credential is attached. Loopback HTTP stays supported.
+        validate_url(cfg["base_url"], api_key=key, require_tls=True)
         self.cfg = cfg
         self.dimensions = int(cfg["dimensions"])
         self.fingerprint = fingerprint(cfg)

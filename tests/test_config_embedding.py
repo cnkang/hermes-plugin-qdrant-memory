@@ -95,6 +95,18 @@ def test_fingerprint_normalizes_trailing_base_url_slashes():
     assert fingerprint(cfg) == fingerprint({**cfg, "base_url": "https://embed.example/v1///"})
 
 
+def test_keyless_remote_embedding_requires_https_before_client_creation(monkeypatch):
+    """Private memory text needs TLS off loopback even without a credential."""
+    monkeypatch.setattr("qdrant_memory.embedding.secret", lambda name: None)
+    created = []
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: created.append(kwargs))
+    cfg = merge(DEFAULTS["embedding"], {"base_url": "http://embed.example"})
+
+    with pytest.raises(ValueError, match="Private-content endpoints require HTTPS"):
+        HTTPEmbeddingProvider(cfg)
+    assert created == []
+
+
 def test_embedding_secret_requires_https_before_http_client_creation(monkeypatch):
     """Environment-resolved embedding keys cannot reach remote HTTP endpoints."""
     monkeypatch.setattr("qdrant_memory.embedding.secret", lambda name: "resolved-key")
@@ -102,7 +114,7 @@ def test_embedding_secret_requires_https_before_http_client_creation(monkeypatch
     monkeypatch.setattr(httpx, "Client", lambda **kwargs: created.append(kwargs))
     cfg = merge(DEFAULTS["embedding"], {"base_url": "http://embed.example"})
 
-    with pytest.raises(ValueError, match="API-key endpoints require HTTPS"):
+    with pytest.raises(ValueError, match="Private-content endpoints require HTTPS"):
         HTTPEmbeddingProvider(cfg)
 
     assert created == []
@@ -129,7 +141,9 @@ def test_embedding_wire_contract(provider, monkeypatch):
         {
             "provider": provider,
             "dimensions": 2,
-            "base_url": "http://example.test/v1" if provider != "ollama" else "http://example.test",
+            "base_url": "https://example.test/v1"
+            if provider != "ollama"
+            else "https://example.test",
         },
     )
     client = httpx.Client(transport=httpx.MockTransport(handler))
