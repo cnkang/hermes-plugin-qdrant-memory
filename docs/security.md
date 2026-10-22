@@ -33,6 +33,9 @@ and revoke temporary credentials after verification. Use HTTPS for Qdrant Cloud
 and rotate keys. Endpoint URLs must not contain inline credentials, query strings
 or fragments. See [Qdrant security guidance](https://qdrant.tech/documentation/security/).
 
+Embedding endpoints outside loopback require HTTPS even when no credential is
+configured, because memory text crosses that endpoint. Loopback HTTP is allowed.
+
 Secrets can be injected by a launcher such as
 `bws run --project-id ... -- hermes`. The plugin does not invoke Bitwarden or read
 a vault. Injected values and existing shell environment values are indistinguishable
