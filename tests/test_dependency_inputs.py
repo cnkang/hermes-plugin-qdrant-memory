@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from packaging.markers import Marker
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/check_dependency_inputs.py"
 SPEC = importlib.util.spec_from_file_location("check_dependency_inputs", SCRIPT)
@@ -105,6 +106,37 @@ def test_rejects_disjunctive_windows_marker(tmp_path):
     base = BASE + "winreg==1.0 ; sys_platform == 'win32' or sys_platform == 'linux'\n"
     with pytest.raises(MODULE.Failure, match="missing the hashed entry for winreg"):
         MODULE.check(write(tmp_path, base=base))
+
+
+def test_quoted_windows_text_does_not_exempt_linux_dependency(tmp_path):
+    """Windows text inside a literal must not bypass the Linux snapshot policy."""
+    marker = '''os_name not in "sys_platform == 'win32'"'''
+    assert Marker(marker).evaluate({"os_name": "posix", "sys_platform": "linux"})
+    base = BASE + f"linux-required==1.0 ; {marker}\n"
+    with pytest.raises(MODULE.Failure, match="missing the hashed entry for linux-required"):
+        MODULE.check(write(tmp_path, base=base))
+
+
+@pytest.mark.parametrize(
+    "marker,expected",
+    [
+        ("sys_platform == 'win32'", True),
+        ("'win32' == sys_platform", True),
+        ("platform_system == 'Windows'", True),
+        ("sys_platform == 'win32' and python_version >= '3.11'", True),
+        ("sys_platform == 'win32' or platform_system == 'Windows'", True),
+        ("sys_platform == 'win32' or sys_platform == 'darwin'", False),
+        ("sys_platform != 'win32'", False),
+        ("python_version >= '3.11'", False),
+        ("sys_platform in 'win32,linux'", False),
+        ("sys_platform == 'win32' or (os_name == 'posix' and python_version >= '9')", False),
+        ("not a valid marker !", False),
+        ("", False),
+    ],
+)
+def test_windows_exemption_requires_structural_proof(marker, expected):
+    """Only expressions proved false on every non-Windows platform qualify."""
+    assert MODULE.windows_only([marker]) is expected
 
 
 def test_comment_with_backslash_does_not_swallow_next_pin(tmp_path):
