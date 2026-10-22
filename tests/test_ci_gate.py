@@ -9,11 +9,22 @@ from pathlib import Path
 import pytest
 from ruamel.yaml import YAML
 
-CASES = [("success", "success", "success", "success", "success", "success", "success", 0)] + [
-    tuple(result if position == failed else "success" for position in range(7)) + (1,)
-    for failed in range(7)
-    for result in ("failure", "skipped", "cancelled")
-]
+CASES = (
+    [("success",) * 8 + ("true", 0)]
+    + [
+        tuple(result if position == failed else "success" for position in range(8)) + ("true", 1)
+        for failed in range(8)
+        for result in ("failure", "skipped", "cancelled")
+    ]
+    + [
+        # A pull request and other branch pushes never run the credentialed
+        # dependency scan, so the gate accepts its skip there.
+        ("success",) * 5 + ("success", "skipped", "success", "false", 0),
+        # The main tree must produce a real dependency scan result.
+        ("success",) * 5 + ("success", "skipped", "success", "true", 1),
+        ("success",) * 8 + ("false", 0),
+    ]
+)
 
 
 def test_required_gate_cannot_skip_on_workflow_cancellation():
@@ -23,10 +34,12 @@ def test_required_gate_cannot_skip_on_workflow_cancellation():
     assert gate["if"] == "always()", "The required gate must run even after cancellation"
 
 
-@pytest.mark.parametrize("lint,tests,mcp,host_pins,sonar,snyk,snyk_code,expected", CASES)
+@pytest.mark.parametrize(
+    "lint,tests,mcp,host_pins,dep_lock,sonar,snyk,snyk_code,main_ref,expected", CASES
+)
 @pytest.mark.skipif(os.name == "nt", reason="The checked workflow step is POSIX Bash.")
 def test_required_gate_executes_actual_workflow_step(
-    lint, tests, mcp, host_pins, sonar, snyk, snyk_code, expected
+    lint, tests, mcp, host_pins, dep_lock, sonar, snyk, snyk_code, main_ref, expected
 ):
     """Verify required gate executes actual workflow step."""
     workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text(
@@ -41,9 +54,11 @@ def test_required_gate_executes_actual_workflow_step(
             "TEST_RESULT": tests,
             "MCP_RESULT": mcp,
             "HOST_PINS_RESULT": host_pins,
+            "DEP_LOCK_RESULT": dep_lock,
             "SONAR_RESULT": sonar,
             "SNYK_RESULT": snyk,
             "SNYK_CODE_RESULT": snyk_code,
+            "MAIN_REF": main_ref,
         },
         capture_output=True,
         text=True,
