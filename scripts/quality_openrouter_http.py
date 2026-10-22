@@ -309,7 +309,10 @@ class OpenRouterHTTP(httpx.BaseTransport):
             "error_classifications": dict(self.errors),
             "final_failure_classification": self.final_failure,
             "reported_cost_usd": str(self.cost) if self.cost_samples else None,
-            "cost_verified": self.cost_samples == self.inference_responses > 0,
+            "cost_verified": self.cost_samples
+            == self.inference_responses
+            == sum(self.attempts[kind] for kind in self.models)
+            > 0,
             "api_latency": {k: latency_summary(v) for k, v in self.latencies.items()},
             "resources_closed": self.closed,
             "embedding_dimensions": self.embedding_dimensions,
