@@ -284,7 +284,11 @@ jobs:
 
   snyk:
     name: Snyk dependency security
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')
+    # The organization token must never enter a process that runs contributor
+    # code. Dependency scanning therefore runs only for the trusted main tree.
+    # Pull requests verify the dependency inputs without credentials in the
+    # dependency-lock job. See docs/ci.md.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -391,9 +395,20 @@ jobs:
             esac
           done
 
+  dependency-lock:
+    name: Dependency lock policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify exact pins and hashes without credentials
+        run: python3 scripts/check_dependency_inputs.py
+
   scan-gate:
     name: Required security scan gate
-    needs: [lint, tests, mcp-coverage, host-pins, sonarcloud, snyk, snyk-code]
+    needs: [lint, tests, mcp-coverage, host-pins, sonarcloud, dependency-lock, snyk, snyk-code]
     # A skipped required job permits merge. Cancellation must still fail this gate.
     if: always()
     runs-on: ubuntu-latest
@@ -405,13 +420,15 @@ jobs:
           TEST_RESULT: ${{ needs.tests.result }}
           MCP_RESULT: ${{ needs.mcp-coverage.result }}
           HOST_PINS_RESULT: ${{ needs.host-pins.result }}
+          DEP_LOCK_RESULT: ${{ needs.dependency-lock.result }}
           SONAR_RESULT: ${{ needs.sonarcloud.result }}
           SNYK_RESULT: ${{ needs.snyk.result }}
           SNYK_CODE_RESULT: ${{ needs.snyk-code.result }}
+          MAIN_REF: ${{ github.ref == 'refs/heads/main' }}
           DEPENDABOT: ${{ github.event_name == 'pull_request' && github.actor == 'dependabot[bot]' }}
         run: |
-          if [ "$LINT_RESULT" != success ] || [ "$TEST_RESULT" != success ] || [ "$MCP_RESULT" != success ] || [ "$HOST_PINS_RESULT" != success ]; then
-            echo "::error::Required checks did not succeed: lint=$LINT_RESULT tests=$TEST_RESULT mcp=$MCP_RESULT host-pins=$HOST_PINS_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
+          if [ "$LINT_RESULT" != success ] || [ "$TEST_RESULT" != success ] || [ "$MCP_RESULT" != success ] || [ "$HOST_PINS_RESULT" != success ] || [ "$DEP_LOCK_RESULT" != success ]; then
+            echo "::error::Required checks did not succeed: lint=$LINT_RESULT tests=$TEST_RESULT mcp=$MCP_RESULT host-pins=$HOST_PINS_RESULT dependency-lock=$DEP_LOCK_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
             exit 1
           fi
           if [ "$DEPENDABOT" = "true" ]; then
@@ -427,7 +444,21 @@ jobs:
             echo "Dependabot pull request: credentialed scans are skipped by design and re-run on main after merge."
             exit 0
           fi
-          if [ "$SONAR_RESULT" != success ] || [ "$SNYK_RESULT" != success ] || [ "$SNYK_CODE_RESULT" != success ]; then
-            echo "::error::Required checks did not succeed: sonarcloud=$SONAR_RESULT snyk=$SNYK_RESULT snyk-code=$SNYK_CODE_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
+          if [ "$SONAR_RESULT" != success ] || [ "$SNYK_CODE_RESULT" != success ]; then
+            echo "::error::Required checks did not succeed: sonarcloud=$SONAR_RESULT snyk-code=$SNYK_CODE_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
             exit 1
+          fi
+          if [ "$MAIN_REF" = "true" ]; then
+            if [ "$SNYK_RESULT" != success ]; then
+              echo "::error::The main tree requires a successful dependency scan: snyk=$SNYK_RESULT."
+              exit 1
+            fi
+          else
+            case "$SNYK_RESULT" in
+              success|skipped) ;;
+              *)
+                echo "::error::The dependency scan must be skipped outside main, got snyk=$SNYK_RESULT. The token stays out of contributor-controlled trees."
+                exit 1
+                ;;
+            esac
           fi
