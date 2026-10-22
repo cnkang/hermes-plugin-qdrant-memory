@@ -219,6 +219,18 @@ def create_gateway(owner, *, allowed_hosts, lifecycle=None):
     )
 
 
+LISTENER_OPTIONS = {
+    "proxy_headers": False,
+    "access_log": False,
+    "server_header": False,
+    "log_level": "critical",
+    "timeout_keep_alive": 5,
+}
+# No listener-wide limit_concurrency: uvicorn counts accepted connections before a
+# request exists, so a local peer could otherwise turn idle sockets into a global 503
+# that bypasses the authenticated per-principal gates below.
+
+
 def serve(home, policy_path, *, port, local_port, allowed_hosts, enable_lifecycle=False):
     """Run both listeners in one Owner process and drain before releasing storage."""
     import json
@@ -280,12 +292,7 @@ def serve(home, policy_path, *, port, local_port, allowed_hosts, enable_lifecycl
                     app,
                     host="127.0.0.1",
                     port=port,
-                    proxy_headers=False,
-                    access_log=False,
-                    server_header=False,
-                    log_level="critical",
-                    timeout_keep_alive=5,
-                    limit_concurrency=64,
+                    **LISTENER_OPTIONS,
                 )
                 service = uvicorn.Server(config)
                 print(
