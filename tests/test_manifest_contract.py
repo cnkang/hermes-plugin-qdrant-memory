@@ -50,5 +50,6 @@ def test_hermes_manifest_parser_surfaces_v2_metadata():
         "qdrant-client>=1.15,<2",
         "httpx>=0.28,<1",
         "portalocker>=3.2,<4",
+        "jsonschema>=4.23,<5",
     ]
     assert parsed.provides_hooks == []

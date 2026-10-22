@@ -44,7 +44,7 @@ def metadata(kind):
             "input_modalities": ["text"],
             "output_modalities": ["text" if kind == "chat" else "embeddings"],
         },
-        "supported_parameters": ["response_format"] if kind == "chat" else [],
+        "supported_parameters": ["response_format", "structured_outputs"] if kind == "chat" else [],
     }
 
 
@@ -82,7 +82,12 @@ def prepare(*, change=None, width=3, expected=3, ready=True, response_base=False
             return httpx.Response(200, json={"data": [rows[kind]]})
         body = json.loads(request.content)
         if path.endswith("/chat/completions"):
-            assert body["response_format"]["json_schema"]["strict"] is True
+            assert body["provider"]["require_parameters"] is True
+            assert body["provider"]["max_price"] == {"prompt": 0, "completion": 0}
+            if "structured_outputs" in rows["chat"]["supported_parameters"]:
+                assert body["response_format"]["json_schema"]["strict"] is True
+            else:
+                assert body["response_format"] == {"type": "json_object"}
             return httpx.Response(
                 200,
                 json={
@@ -110,6 +115,28 @@ def prepare(*, change=None, width=3, expected=3, ready=True, response_base=False
         sleep=lambda _: None,
     )
     return session, selected, calls
+
+
+@pytest.mark.parametrize("ready", [True, "wrong-type"])
+def test_json_only_metadata_selects_locally_validated_object_mode(ready):
+    """A free route can support JSON objects without native JSON Schema decoding."""
+
+    def change(rows):
+        rows["chat"]["supported_parameters"] = ["response_format"]
+
+    session, selected, _ = prepare(change=change, ready=ready)
+    try:
+        if ready is True:
+            session.preflight()
+            assert session.report()["preflight"]["structured_json_verified"] is True
+        else:
+            with pytest.raises(RuntimeError) as error:
+                session.preflight()
+            assert error.value.classification == "capability_incompatible"
+        assert selected["llm"]["response_format_mode"] == "json_object"
+        assert session.report()["preflight"]["chat"]["schema_enforcement"] == "local"
+    finally:
+        session.close()
 
 
 def test_preflight_checks_real_json_and_batched_dimensions():

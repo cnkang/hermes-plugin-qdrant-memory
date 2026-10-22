@@ -8,6 +8,11 @@ import httpx
 from .config import validate_url
 
 
+def _reject_non_json_number(value):
+    """Reject NaN and Infinity without retaining provider output in the error."""
+    raise ValueError("Owner output contains a non-JSON number")
+
+
 class OwnerLLM:
     """Implement the existing Extractor facade using a trusted configured endpoint."""
 
@@ -16,6 +21,12 @@ class OwnerLLM:
         if cfg.get("mode") != "override" or cfg.get("provider") != "openai-compatible":
             raise ValueError("Lifecycle Owner requires an explicit openai-compatible LLM override")
         self.model = cfg.get("model")
+        self.response_format_mode = cfg.get("response_format_mode", "json_schema")
+        if not isinstance(self.response_format_mode, str) or self.response_format_mode not in {
+            "json_schema",
+            "json_object",
+        }:
+            raise ValueError("Unsupported Owner response_format_mode")
         self.max_output_tokens = cfg.get("max_output_tokens", 800)
         if (
             isinstance(self.max_output_tokens, bool)
@@ -72,6 +83,11 @@ class OwnerLLM:
                 "json_schema": {"name": "qdrant_memory", "strict": True, "schema": json_schema},
             },
         }
+        if self.response_format_mode == "json_object":
+            # Some providers support JSON output without a schema decoder. Keep
+            # the full schema in the prompt and enforce it locally before the
+            # existing Extractor can admit any memory or acknowledge an event.
+            body["response_format"] = {"type": "json_object"}
         if self.reasoning_effort is not None:
             body["reasoning_effort"] = self.reasoning_effort
         if self.provider_require_parameters is not None:
@@ -83,4 +99,29 @@ class OwnerLLM:
         if choice.get("finish_reason") == "length":
             raise ValueError("Owner extraction output was truncated; retain the event")
         value = choice["message"]["content"]
-        return SimpleNamespace(parsed=json.loads(value))
+        if self.response_format_mode == "json_object":
+            from jsonschema import Draft202012Validator
+            from jsonschema.exceptions import ValidationError
+            from referencing import Registry
+
+            failure = None
+            try:
+                parsed = json.loads(value, parse_constant=_reject_non_json_number)
+            except ValueError:
+                failure = "Owner output is not valid JSON"
+            if failure:
+                # Raise after leaving the handler so JSONDecodeError.doc cannot
+                # survive through the new exception's implicit context chain.
+                raise ValueError(failure)
+            try:
+                # An explicit empty registry prevents external schema lookups.
+                Draft202012Validator(json_schema, registry=Registry()).validate(parsed)
+            except ValidationError:
+                failure = "Owner output does not satisfy the JSON schema"
+            if failure:
+                # ValidationError also retains model output. An error raised
+                # outside its handler has no provider exception as context.
+                raise ValueError(failure)
+        else:
+            parsed = json.loads(value)
+        return SimpleNamespace(parsed=parsed)

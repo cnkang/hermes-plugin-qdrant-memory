@@ -271,6 +271,14 @@ python scripts/evaluate_owner_lifecycle.py --model-profile openrouter-cloud-qual
 
 The runner checks the official Chat or Embedding catalog and active endpoint metadata before inference.
 It requires zero declared prices, text input, the correct output type and Chat `response_format` support.
+The catalog and an active free endpoint must both list `structured_outputs` to select native `json_schema` output.
+Otherwise, the runner selects `json_object` before inference and validates each response locally against the same JSON Schema.
+This applies to the Gemma free route, which [supports JSON output without schema enforcement](https://openrouter.ai/google/gemma-4-26b-a4b-it%3Afree).
+The existing OwnerLLM adapter performs this validation before the Extractor can admit a memory.
+Required fields, types, numeric limits and extra-field rules still apply. External schema lookups are disabled.
+The report records `response_format_mode` and `schema_enforcement` for Chat.
+An explicitly configured production Owner can select `llm.response_format_mode: json_object`.
+Its default remains `json_schema`. Invalid mode values fail before a request.
 An actual strict JSON probe and an actual vector batch then test these capabilities.
 After metadata checks, the vector probe runs before Chat. Its dimensions and model ID remain in a failed report if Chat is rejected.
 Requests retain the exact fixed `:free` ID, require supported Chat parameters, and set a zero prompt and completion price ceiling.

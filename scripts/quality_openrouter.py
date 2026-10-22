@@ -126,6 +126,14 @@ class OpenRouterSession:
             ]
             if not active:
                 self.http.fail("model_unavailable")
+            if kind == "chat":
+                native_schema = "structured_outputs" in row.get("supported_parameters", []) and any(
+                    "structured_outputs" in e.get("supported_parameters", []) for e in active
+                )
+                mode = "json_schema" if native_schema else "json_object"
+                # Select the wire format from official capabilities, before any
+                # inference. This never changes the model or the local schema.
+                self.profile["llm"]["response_format_mode"] = mode
             canonical = row["canonical_slug"]
             if not canonical:
                 self.http.fail("model_metadata_invalid")
@@ -148,6 +156,11 @@ class OpenRouterSession:
                 ).hexdigest(),
                 "active_free_endpoints": len(active),
             }
+            if kind == "chat":
+                self.preflight_evidence[kind].update(
+                    response_format_mode=mode,
+                    schema_enforcement="provider" if native_schema else "local",
+                )
         except (KeyError, TypeError, ValueError, AttributeError):
             self.http.fail("model_metadata_invalid")
 

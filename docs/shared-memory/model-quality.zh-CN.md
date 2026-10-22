@@ -267,6 +267,14 @@ python scripts/evaluate_owner_lifecycle.py --model-profile openrouter-cloud-qual
 
 运行器在推理前检查官方 Chat 或 Embedding 目录以及有效端点元数据。
 它要求声明价格全部为零、支持文本输入及正确输出类型，且 Chat 支持 `response_format`。
+仅当目录与有效免费端点均列出 `structured_outputs` 时，才选择原生 `json_schema` 输出。
+否则，运行器在推理前选择 `json_object`，并在本地用同一份 JSON Schema 验证每个响应。
+这适用于 Gemma 免费路由，其[支持 JSON 输出，但不强制执行 Schema](https://openrouter.ai/google/gemma-4-26b-a4b-it%3Afree)。
+现有 OwnerLLM 适配器在 Extractor 准入记忆前完成该验证。
+必填字段、类型、数值范围及额外字段规则仍然生效。禁止外部 Schema 查询。
+报告为 Chat 记录 `response_format_mode` 与 `schema_enforcement`。
+显式配置的生产 Owner 可选择 `llm.response_format_mode: json_object`。
+默认值仍为 `json_schema`。无效模式值会在发送请求前失败。
 随后通过实际严格 JSON 探针和实际向量批次检查能力。
 元数据检查后，先运行向量探针，再运行 Chat。若 Chat 被拒绝，失败报告仍保留向量维度和模型 ID。
 请求保留明确的固定 `:free` ID，要求支持 Chat 参数，并将 prompt 和 completion 价格上限设为零。
