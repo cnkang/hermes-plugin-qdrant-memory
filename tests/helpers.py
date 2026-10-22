@@ -87,6 +87,27 @@ def config(**overrides):
     )
 
 
+def grant(name, *, visibility, space="team", permission="write", logical=None):
+    """Build one explicit shared grant without loading a policy file."""
+    import hashlib
+
+    token = ("synthetic-credential-" + name).ljust(48, "x").encode()
+    value = {
+        "token_sha256": hashlib.sha256(token).hexdigest(),
+        "principal": name,
+        "owner_id": "user",
+        "space_id": space,
+        "permission": permission,
+        "visibility": visibility,
+    }
+    if logical is not None:
+        value["logical_agent_id"] = logical
+        value["device_id"] = "device-" + name
+    if visibility != "private":
+        value["capture_rule_id"] = "rule-" + name
+    return token.decode(), value
+
+
 def runtime(home, client=None, cfg=None, llm=None, ledger_namespace=None):
     """Build a real Qdrant store and ledger with deterministic injected services."""
     cfg = cfg or config()

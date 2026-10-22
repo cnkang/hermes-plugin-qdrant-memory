@@ -10,19 +10,24 @@ class SharedRecoveryRequiredError(RuntimeError):
 
 
 def require_no_pending_shared(home, namespace):
-    """Inspect without creating storage; legacy profiles without this table are unchanged."""
+    """Inspect without creating storage; legacy profiles without these tables are unchanged."""
     path = Path(home).resolve() / "qdrant-memory" / "state.db"
     if not path.is_file():
         return
     with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as db:
-        exists = db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='shared_requests_v1'"
-        ).fetchone()
-        if (
-            exists
-            and db.execute(
+        checks = (
+            (
+                "shared_requests_v1",
                 "SELECT 1 FROM shared_requests_v1 WHERE collection=? AND done=0 LIMIT 1",
-                (namespace,),
+            ),
+            (
+                "owner_events_v1",
+                "SELECT 1 FROM owner_events_v1 WHERE collection=? AND event_json!='{}' LIMIT 1",
+            ),
+        )
+        for table, query in checks:
+            exists = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
             ).fetchone()
-        ):
-            raise SharedRecoveryRequiredError()
+            if exists and db.execute(query, (namespace,)).fetchone():
+                raise SharedRecoveryRequiredError()

@@ -76,12 +76,31 @@ class Ledger:
             self._scrub_terminal_payloads()
 
     def clear_destination(self):
-        """Forget only this destination's work so cleared memories cannot replay.
+        """Forget every destination-scoped replay record so cleared memories cannot replay.
 
-        Transcript authorship and quarantine remain in place across collection resets.
+        Transcript authorship and quarantine remain in place across collection resets,
+        but admission receipts and prepared shared plans hold raw input or prepared
+        payloads: they are replay work too, and a retained receipt can re-create a
+        cleared memory on the next Owner start.
         """
         with self.lock, self.db:
-            for table in ("events", "operations", "manifests", "metrics", "counters"):
+            tables = [
+                "events",
+                "operations",
+                "manifests",
+                "metrics",
+                "counters",
+                "owner_events_v1",
+                "shared_requests_v1",
+            ]
+            for table in tables:
+                if (
+                    table in {"owner_events_v1", "shared_requests_v1"}
+                    and not self.db.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                    ).fetchone()
+                ):
+                    continue
                 self.db.execute(f"DELETE FROM {table} WHERE collection=?", (self.collection,))
             self._resumable_operation_keys = set()
 
