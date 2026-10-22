@@ -102,9 +102,9 @@
       }
     },
     "openrouter-cloud-smoke": {
-      "generation_model": "liquid/lfm-2.5-2.6b:free",
-      "embedding_model": "liquid/lfm-2.5-embedding-350m:free",
-      "embedding_dimensions": 1024,
+      "generation_model": "google/gemma-4-31b-it:free",
+      "embedding_model": "nvidia/nemotron-3.5-embed-1b:free",
+      "embedding_dimensions": 2048,
       "local_models": {}
     },
     "openrouter-cloud-quality": {

@@ -217,10 +217,13 @@ They use no local model weights. The `openrouter-free` comparison retains local 
 
 | Mode | Profile | Default Chat | Default Embedding | Expected dimensions |
 | --- | --- | --- | --- | --- |
-| Cloud Smoke | `openrouter-cloud-smoke` | `liquid/lfm-2.5-2.6b:free` | `liquid/lfm-2.5-embedding-350m:free` | 1024 |
+| Cloud Smoke | `openrouter-cloud-smoke` | `google/gemma-4-31b-it:free` | `nvidia/nemotron-3.5-embed-1b:free` | 2048 |
 | Cloud Quality | `openrouter-cloud-quality` | `google/gemma-4-26b-a4b-it:free` | `nvidia/nemotron-3.5-embed-1b:free` | 2048 |
 
 The dimensions in this table are expected values. An actual batched response must confirm them before Qdrant starts.
+The [main-branch Smoke run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39726193083) verified this default pair with all nine lifecycle checks, 2048 dimensions and complete cleanup.
+It reported zero inference cost. This `SMOKE_PASS` does not certify full model quality.
+These defaults replace the unavailable Liquid route. No runtime fallback changes a selected model.
 A mismatch fails the run. Each run uses a new temporary Embedded Qdrant collection and removes it after the test.
 Cloud Smoke runs one synthetic Hermes and Pi lifecycle through HTTPS MCP.
 It checks extraction, vectors, authorized recall, private Agent and user isolation, replay and restart.
@@ -253,6 +256,8 @@ This keeps the existing local embedding model. Compare this result with the full
 The manual alternate Embedding model `nvidia/nemotron-3-embed-1b:free` requires an explicit override.
 You can also select `nvidia/nemotron-3.5-embed-8b:free` with the tier's Embedding variable or the workflow input.
 Each run must check its free route and actual vector dimensions before it creates a temporary collection.
+The [8B Embedding comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39726636351) also returned `SMOKE_PASS` with the same Chat model.
+It verified `nvidia/nemotron-3.5-embed-8b:free` at 4096 dimensions, zero reported inference cost and complete cleanup.
 There is no automatic model substitution.
 
 Missing credentials in a manual cloud run produce a redacted FAIL artifact with `required_secret=OPENROUTER_API_KEY`.
