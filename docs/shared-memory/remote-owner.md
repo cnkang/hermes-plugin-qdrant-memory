@@ -153,8 +153,12 @@ belongs to the terminating proxy. Application quotas do not prevent
 network-layer denial of service: the
 listener accepts connections before Host, bearer and quota checks run, so the proxy
 must cap concurrent connections per source (`limit_conn`) and keep the listener on
-loopback. A local process that bypasses the proxy is bounded by the OS descriptor
-limit, not by an application-wide admission cap. Logs must not retain
+loopback. The listener closes connections whose request headers are incomplete
+after 10 seconds, including requests on reused connections. Complete headers end
+that deadline; active MCP requests use the gateway's existing deadlines.
+Set an OS descriptor limit (`LimitNOFILE=4096` in systemd) as a further resource
+bound. A local process that bypasses the proxy can still exhaust that limit
+through a rapid connection flood. Logs must not retain
 Authorization, query text, raw memory or exception bodies. HTTP client redirects
 and ambient proxy settings are disabled. TLS validation cannot be disabled.
 

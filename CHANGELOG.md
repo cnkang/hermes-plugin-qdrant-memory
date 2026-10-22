@@ -2,8 +2,11 @@
 
 ## Unreleased
 
-- Require HTTPS for non-loopback embedding endpoints even when no credential is
-  configured, matching the Owner LLM egress rule. Loopback HTTP remains supported.
+- Breaking configuration change: non-loopback embedding endpoints now require
+  HTTPS even without a credential. Before upgrade, put a trusted TLS proxy in
+  front of a remote embedding service, or use a loopback address for a service
+  on the same host. Keep its model and dimensions unchanged. Loopback HTTP remains
+  supported.
 - Clear Lifecycle and shared admission receipts during an authorized destination
   reset, and treat an uncommitted lifecycle receipt as pending replay work, so a
   cleared conversation cannot be re-created on the next Owner start.

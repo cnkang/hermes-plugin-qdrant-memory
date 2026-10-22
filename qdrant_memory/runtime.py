@@ -256,9 +256,9 @@ class Runtime:
                     else {}
                 ),
             )
-            self.decisions[action] += 1
-            self.ledger.increment(action)
             if action == "SKIP":
+                self.decisions[action] += 1
+                self.ledger.increment(action)
                 continue
             candidate_hash = content_hash(candidate["text"])
             source = event["source"]
@@ -271,6 +271,8 @@ class Runtime:
             if self.ledger.is_delete_fenced(
                 identifier, scope, event.get("created_at"), candidate_hash
             ):
+                self.decisions[action] += 1
+                self.ledger.increment(action)
                 continue
             old = self.store.get(identifier, scope)
             value = payload(
@@ -292,7 +294,12 @@ class Runtime:
                 except PermissionError:
                     # A record outside this authority's boundary is not this event's
                     # target; skip it rather than latching the Owner-wide interlock.
+                    self.ledger.increment("owner_record_boundary_skip")
+                    self.decisions["SKIP"] += 1
+                    self.ledger.increment("SKIP")
                     continue
+            self.decisions[action] += 1
+            self.ledger.increment(action)
             keys.append(self.operation(identifier, "UPSERT", value))
         return keys
 
@@ -336,6 +343,8 @@ class Runtime:
         if event.get("source") == "owner_lifecycle":
             from .owner_lifecycle import record_fields
 
+            # Builtin events name an exact mutation target, unlike extracted
+            # candidates. A boundary violation must fail closed here.
             value.update(record_fields(event, self.store.get(identifier, scope), identifier))
         keys = []
         if old_id and old_id != identifier:

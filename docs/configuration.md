@@ -6,6 +6,12 @@ without LLM adjudication. Similarity settings continue to govern automatic
 Hermes extraction only. Upgrades must retain the same profile, collection and
 embedding pipeline. Incompatible dimensions/fingerprints fail closed.
 
+The current source preview adds a breaking transport requirement. A non-loopback
+HTTP embedding URL, including a container service name or LAN address, is rejected.
+Before upgrade, configure a trusted TLS proxy and use its HTTPS URL. For a service
+on the same host, a loopback HTTP URL is also supported. Keep the embedding model
+and dimensions unchanged; do not disable certificate checks.
+
 The additive host-independent CLI and MCP interface is documented in
 [standalone setup](standalone.md), including its separate profile, operator-secret
 resolution, fixed scope and no-Hermes acceptance requirements.
