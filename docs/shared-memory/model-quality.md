@@ -251,6 +251,8 @@ Local dispatch-equivalent inputs are `OPENROUTER_CHAT_MODEL_INPUT` and `OPENROUT
 For a controlled comparison, run `openrouter-free` with the same explicit Chat model as Cloud Quality.
 This keeps the existing local embedding model. Compare this result with the full remote profile.
 The manual alternate Embedding model `nvidia/nemotron-3-embed-1b:free` requires an explicit override.
+You can also select `nvidia/nemotron-3.5-embed-8b:free` with the tier's Embedding variable or the workflow input.
+Each run must check its free route and actual vector dimensions before it creates a temporary collection.
 There is no automatic model substitution.
 
 Missing credentials in a manual cloud run produce a redacted FAIL artifact with `required_secret=OPENROUTER_API_KEY`.
@@ -270,15 +272,20 @@ python scripts/evaluate_owner_lifecycle.py --model-profile openrouter-cloud-qual
 ### Free route and failure checks
 
 The runner checks the official Chat or Embedding catalog and active endpoint metadata before inference.
-It requires zero declared prices, text input, the correct output type and Chat `response_format` support.
+It requires zero declared prices, text input, the correct output type and a supported structured Chat return format.
 The catalog and an active free endpoint must both list `structured_outputs` to select native `json_schema` output.
-Otherwise, the runner selects `json_object` before inference and validates each response locally against the same JSON Schema.
+If both list `response_format` without shared native schema support, the runner selects `json_object` before inference.
+It validates each response locally against the same JSON Schema.
 This applies to the Gemma free route, which [supports JSON output without schema enforcement](https://openrouter.ai/google/gemma-4-26b-a4b-it%3Afree).
 The existing OwnerLLM adapter performs this validation before the Extractor can admit a memory.
 Required fields, types, numeric limits and extra-field rules still apply. External schema lookups are disabled.
 The report records `response_format_mode` and `schema_enforcement` for Chat.
 An explicitly configured production Owner can select `llm.response_format_mode: json_object`.
 Its default remains `json_schema`. Invalid mode values fail before a request.
+If a model has no `response_format` support, both the catalog and an active free endpoint must support `tools` and `tool_choice`.
+The runner then selects `tool_call`. It requests one fixed function response and validates its JSON arguments against the same schema.
+The adapter does not execute a tool. Missing, multiple, or differently named function responses fail.
+An explicitly configured Owner can also select `llm.response_format_mode: tool_call`.
 An actual strict JSON probe and an actual vector batch then test these capabilities.
 After metadata checks, the vector probe runs before Chat. Its dimensions and model ID remain in a failed report if Chat is rejected.
 Requests retain the exact fixed `:free` ID, require supported Chat parameters, and set a zero prompt and completion price ceiling.
@@ -300,6 +307,8 @@ Free routes can retire, lose capacity or exhaust daily limits. These conditions 
 Infrastructure failure is distinct from the `quality_gate` category. Neither can produce PASS.
 Known HTTP 404 router reasons distinguish unsupported parameters from account data-policy restrictions and unavailable routes.
 Reports retain only fixed categories and status codes. They do not retain provider error text.
+Rejected response identities remain failures. Reports record only a safe identity fingerprint or a missing, invalid, or redacted marker.
+Compare the fingerprint with official catalog IDs before adding a documented alias. A rejected identity is never counted as a verified model response.
 
 Only the frozen anonymous cases and mutation corpus can reach the remote evaluator.
 Known synthetic retrieval inputs use batched embeddings and a temporary exact-input vector cache.
