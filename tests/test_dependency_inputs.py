@@ -88,34 +88,56 @@ def test_rejects_marked_pin_missing_from_snapshot(tmp_path):
 
 def test_accepts_windows_only_pin_without_snapshot_entry(tmp_path):
     """A Windows-only pin has no place in the Linux hashed snapshot."""
-    MODULE.check(write(tmp_path))
+    base = "requests==2.32.3\npywin32==312 ; sys_platform == 'win32'\n"
+    local = f"requests==2.32.3 \\\n    --hash=sha256:{Hash}\n"
+    MODULE.check(write(tmp_path, base=base, local=local))
 
 
 def test_rejects_negated_windows_marker(tmp_path):
     """A negated Windows marker selects Linux and must keep a snapshot entry."""
     base = BASE + "requests-toolbelt==1.0.0 ; sys_platform != 'win32'\n"
-    with pytest.raises(MODULE.Failure):
+    with pytest.raises(MODULE.Failure, match="missing the hashed entry for requests-toolbelt"):
         MODULE.check(write(tmp_path, base=base))
 
 
 def test_rejects_disjunctive_windows_marker(tmp_path):
     """A marker that also selects Linux is not Windows-only."""
     base = BASE + "winreg==1.0 ; sys_platform == 'win32' or sys_platform == 'linux'\n"
-    with pytest.raises(MODULE.Failure):
+    with pytest.raises(MODULE.Failure, match="missing the hashed entry for winreg"):
         MODULE.check(write(tmp_path, base=base))
 
 
 def test_comment_with_backslash_does_not_swallow_next_pin(tmp_path):
     """A comment line never continues, so the next requirement is still checked."""
     base = "# pinned for the runtime \\\nevil==1.0\n"
-    with pytest.raises(MODULE.Failure):
-        MODULE.check(write(tmp_path, base=base))
+    root = write(tmp_path, base=base)
+    assert "evil" in MODULE.parse_pins(root / "requirements.txt")
+    with pytest.raises(MODULE.Failure, match="missing the hashed entry for evil"):
+        MODULE.check(root)
+
+
+def test_hashed_parser_keeps_pin_after_comment_with_backslash(tmp_path):
+    """A comment line never continues in the hashed snapshot either."""
+    local = f"# pinned for the runtime \\\nrequests==2.32.3 \\\n    --hash=sha256:{Hash}\n"
+    root = write(tmp_path, local=local)
+    assert MODULE.parse_hashed(root / "requirements-local.txt")["requests"] == "2.32.3"
 
 
 def test_normalizes_package_names(tmp_path):
     """PEP 503 normalization lets the snapshot spell a name differently."""
     local = f"typing-extensions==4.16.0 \\\n    --hash=sha256:{Hash}\n"
     MODULE.check(write(tmp_path, base="typing_extensions==4.16.0\n", local=local))
+
+
+def test_rejects_duplicate_normalized_snapshot_names(tmp_path):
+    """Duplicate detection compares PEP 503 normalized names."""
+    local = (
+        f"typing-extensions==4.16.0 --hash=sha256:{Hash}\n"
+        f"typing_extensions==4.16.0 --hash=sha256:{Hash}\n"
+    )
+    root = write(tmp_path, base="typing-extensions==4.16.0\n", local=local)
+    with pytest.raises(MODULE.Failure, match="duplicate requirement: typing-extensions"):
+        MODULE.check(root)
 
 
 def test_accepts_inline_comment(tmp_path):
