@@ -91,6 +91,12 @@ Private grants require a unique principal for that owner/space. Shared/project
 grants may authorize multiple principals. Use separate credentials for separate
 spaces. Tool calls cannot select or widen a space.
 
+Newly written shared points include the grant's visibility in their derived
+identity, and the duplicate-add lookup is constrained to the caller's
+marker/space/visibility boundary. Records written by earlier versions remain
+readable and deduplicate within their own visibility; a later policy generation
+cannot collide with, or learn about, an earlier visibility class.
+
 Payloads retain schema-v1 core fields and add `shared_protocol`, `space_id`,
 `visibility`, `created_by`, `updated_by`, and `version`. `created_by` survives
 updates. `version` is an opaque random UUID revision, an equivalent CAS token

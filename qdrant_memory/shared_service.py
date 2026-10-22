@@ -240,6 +240,28 @@ class SharedOwner:
             )
         )
 
+    @staticmethod
+    def boundary(grant):
+        """Return the exact marker/space/visibility filter set for one grant."""
+        result = {
+            "shared_protocol": MARKER,
+            "space_id": grant["space_id"],
+            "visibility": grant["visibility"],
+        }
+        if grant["visibility"] == "private" and "logical_agent_id" in grant:
+            result["logical_agent_id"] = grant["logical_agent_id"]
+        return result
+
+    @staticmethod
+    def point(scope, grant, source, text):
+        """Derive a shared point ID inside the grant's visibility boundary.
+
+        Older records used the same scope and content hash without the visibility
+        suffix; the filtered hash lookup still finds them, so this only prevents a
+        later visibility generation from colliding with the previous one.
+        """
+        return point_id(scope, source + ":" + grant["visibility"], content_hash(text))
+
     def call(self, token, name, args):
         """Audit allow/deny without credentials, text, query, IDs or exception messages."""
         if self.execution_context is not None:
@@ -272,15 +294,9 @@ class SharedOwner:
 
     def _search(self, grant, scope, args):
         """Read only the authenticated space and explicit shared marker."""
-        filters = {
-            "shared_protocol": MARKER,
-            "space_id": grant["space_id"],
-            "visibility": grant["visibility"],
-        }
+        filters = self.boundary(grant)
         if args.get("category"):
             filters["category"] = args["category"]
-        if grant["visibility"] == "private" and "logical_agent_id" in grant:
-            filters["logical_agent_id"] = grant["logical_agent_id"]
         return {
             "memories": [
                 {"id": str(hit.id), "score": hit.score, **hit.payload}
@@ -359,10 +375,19 @@ class SharedOwner:
     def _plan(self, grant, scope, name, args):
         source_id, source_version = "", ""
         if name.endswith("add"):
-            identifier = point_id(scope, MARKER, content_hash(args["text"]))
+            identifier = self.point(scope, grant, MARKER, args["text"])
             old = self.runtime.store.lookup_hash(
-                scope, content_hash(args["text"])
-            ) or self.runtime.store.get(identifier, scope)
+                scope, content_hash(args["text"]), filters=self.boundary(grant)
+            )
+            # A same-partition record from another visibility generation is outside
+            # this caller's boundary, not a conflict: ignore it and keep the new ID.
+            if old is None:
+                candidate = self.runtime.store.get(identifier, scope)
+                old = (
+                    candidate
+                    if candidate is not None and self.belongs(candidate.payload, grant)
+                    else None
+                )
             if old:
                 identifier = str(old.id)
                 self._validate_existing_add(old, grant, args["text"])
@@ -552,7 +577,7 @@ def make_server(owner, port):
                 pass  # Durable admission is independent of the response connection.
 
     class BoundedServer(ThreadingHTTPServer):
-        """Bound workers while retaining drain-before-lease-release semantics."""
+        """Bound workers while keeping the accept loop available to every peer."""
 
         daemon_threads = False
         block_on_close = True
@@ -568,8 +593,30 @@ def make_server(owner, port):
             self.server_port = self.server_address[1]
 
         def process_request(self, request, client_address):
-            """Apply admission backpressure before creating another worker."""
-            self.slots.acquire()
+            """Refuse overflow in-band instead of parking the accept loop.
+
+            Taking the permit here with a blocking acquire lets an unauthenticated
+            peer stop every later connection from being read at all. Refusing the
+            connection keeps admission bounded while the listener stays responsive.
+            """
+            if not self.slots.acquire(blocking=False):
+                try:
+                    request.sendall(
+                        b"HTTP/1.0 429 Too Many Requests\r\n"
+                        b"Retry-After: 1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    # Drain the refused request briefly so close() does not reset the
+                    # connection before the client reads the refusal.
+                    request.settimeout(0.2)
+                    deadline = time.monotonic() + 0.2
+                    while time.monotonic() < deadline:
+                        if not request.recv(65536):
+                            break
+                except OSError:
+                    pass
+                finally:
+                    self.shutdown_request(request)
+                return
             try:
                 super().process_request(request, client_address)
             except BaseException:
