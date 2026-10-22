@@ -98,6 +98,26 @@ def test_rejects_negated_windows_marker(tmp_path):
         MODULE.check(write(tmp_path, base=base))
 
 
+def test_rejects_disjunctive_windows_marker(tmp_path):
+    """A marker that also selects Linux is not Windows-only."""
+    base = BASE + "winreg==1.0 ; sys_platform == 'win32' or sys_platform == 'linux'\n"
+    with pytest.raises(MODULE.Failure):
+        MODULE.check(write(tmp_path, base=base))
+
+
+def test_comment_with_backslash_does_not_swallow_next_pin(tmp_path):
+    """A comment line never continues, so the next requirement is still checked."""
+    base = "# pinned for the runtime \\\nevil==1.0\n"
+    with pytest.raises(MODULE.Failure):
+        MODULE.check(write(tmp_path, base=base))
+
+
+def test_normalizes_package_names(tmp_path):
+    """PEP 503 normalization lets the snapshot spell a name differently."""
+    local = f"typing-extensions==4.16.0 \\\n    --hash=sha256:{Hash}\n"
+    MODULE.check(write(tmp_path, base="typing_extensions==4.16.0\n", local=local))
+
+
 def test_accepts_inline_comment(tmp_path):
     """A trailing comment does not change the pinned requirement."""
     MODULE.check(write(tmp_path, base="requests==2.32.3  # runtime pin\n"))
