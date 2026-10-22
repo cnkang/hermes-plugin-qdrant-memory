@@ -123,6 +123,7 @@ server {
     access_log off;
     client_max_body_size 128k;
     client_body_timeout 10s;
+    client_header_timeout 10s;
     location ~ ^/(mcp|events|events/manage)$ {
         limit_req zone=memory_pre_auth burst=20 nodelay;
         limit_conn memory_conn 8;
@@ -147,7 +148,9 @@ inactivity to 10 seconds. It allows 240 requests per minute per authenticated
 principal. Authentication work has a separate worker limit. Unauthenticated
 requests cannot consume authenticated
 body slots or quotas. Per-source limits and TLS/header timeouts at the proxy are
-required. Application quotas do not prevent network-layer denial of service: the
+required. The example sets header and body timeouts; the TLS handshake timeout
+belongs to the terminating proxy. Application quotas do not prevent
+network-layer denial of service: the
 listener accepts connections before Host, bearer and quota checks run, so the proxy
 must cap concurrent connections per source (`limit_conn`) and keep the listener on
 loopback. A local process that bypasses the proxy is bounded by the OS descriptor
