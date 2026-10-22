@@ -122,7 +122,7 @@ class NativeOwner:
 
             import uvicorn
 
-            from .remote_gateway import create_gateway
+            from .remote_gateway import LISTENER_OPTIONS, create_gateway
 
             app = create_gateway(
                 self.owner,
@@ -135,11 +135,7 @@ class NativeOwner:
             self.remote = uvicorn.Server(
                 uvicorn.Config(
                     app,
-                    proxy_headers=False,
-                    access_log=False,
-                    server_header=False,
-                    log_level="critical",
-                    limit_concurrency=64,
+                    **LISTENER_OPTIONS,
                 )
             )
             self.remote_thread = spawn_context_thread(
