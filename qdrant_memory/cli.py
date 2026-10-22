@@ -772,7 +772,11 @@ def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=No
         if command in {"init", "migrate", "delete-all"}:
             from .shared_state import require_no_pending_shared
 
-            require_no_pending_shared(home, ledger_namespace(cfg))
+            # `init` is the authorized path that clears receipts, so it must not be
+            # blocked by the receipts it is about to remove.
+            require_no_pending_shared(
+                home, ledger_namespace(cfg), allow_pending_receipts=command == "init"
+            )
         embedder = _open_embedder(command, cfg, resources, progress, secret_reader)
         report(progress, "Connecting to target")
         store = QdrantStore(build_client(cfg), cfg, embedder)
