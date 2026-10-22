@@ -48,7 +48,9 @@ def metadata(kind):
     }
 
 
-def prepare(*, change=None, width=3, expected=3, ready=True, response_base=False):
+def prepare(
+    *, change=None, width=3, expected=3, ready=True, response_base=False, finish_reason=None
+):
     """Serve public metadata and actual model responses through MockTransport."""
     module = runpy.run_path(str(ROOT / "scripts/quality_openrouter.py"))
     calls = []
@@ -84,16 +86,36 @@ def prepare(*, change=None, width=3, expected=3, ready=True, response_base=False
         if path.endswith("/chat/completions"):
             assert body["provider"]["require_parameters"] is True
             assert body["provider"]["max_price"] == {"prompt": 0, "completion": 0}
+            message = {"content": json.dumps({"ready": ready})}
             if "structured_outputs" in rows["chat"]["supported_parameters"]:
                 assert body["response_format"]["json_schema"]["strict"] is True
-            else:
+            elif "response_format" in rows["chat"]["supported_parameters"]:
                 assert body["response_format"] == {"type": "json_object"}
+            else:
+                assert "response_format" not in body
+                assert body["tool_choice"] == {
+                    "type": "function",
+                    "function": {"name": "qdrant_memory"},
+                }
+                assert len(body["tools"]) == 1
+                message = {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "qdrant_memory",
+                                "arguments": json.dumps({"ready": ready}),
+                            },
+                        }
+                    ],
+                }
             return httpx.Response(
                 200,
                 json={
                     "model": "fixture/chat" if response_base else "fixture/chat-20261022",
                     "usage": {"cost": 0},
-                    "choices": [{"message": {"content": json.dumps({"ready": ready})}}],
+                    "choices": [{"message": message, "finish_reason": finish_reason}],
                 },
             )
         assert len(body["input"]) == 2
@@ -135,6 +157,57 @@ def test_json_only_metadata_selects_locally_validated_object_mode(ready):
             assert error.value.classification == "capability_incompatible"
         assert selected["llm"]["response_format_mode"] == "json_object"
         assert session.report()["preflight"]["chat"]["schema_enforcement"] == "local"
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("ready", [True, "wrong-type"])
+def test_tool_only_metadata_selects_locally_validated_function_arguments(ready):
+    """A tool-only model must return the same validated data without executing a tool."""
+
+    def change(rows):
+        rows["chat"]["supported_parameters"] = ["tools", "tool_choice"]
+
+    session, selected, _ = prepare(change=change, ready=ready)
+    try:
+        if ready is True:
+            session.preflight()
+            assert session.report()["preflight"]["structured_json_verified"] is True
+        else:
+            with pytest.raises(RuntimeError) as error:
+                session.preflight()
+            assert error.value.classification == "capability_incompatible"
+        assert selected["llm"]["response_format_mode"] == "tool_call"
+        assert session.report()["preflight"]["chat"]["schema_enforcement"] == "local"
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("parameters", [None, "response_format", {"response_format": False}, [1]])
+def test_malformed_capability_metadata_fails_before_inference(parameters):
+    """A string or mapping must not masquerade as a declared parameter list."""
+
+    def change(rows):
+        rows["chat"]["supported_parameters"] = parameters
+
+    session, _, calls = prepare(change=change)
+    try:
+        with pytest.raises(RuntimeError) as error:
+            session.preflight()
+        assert error.value.classification == "model_metadata_invalid"
+        assert not any(method == "POST" for method, _ in calls)
+    finally:
+        session.close()
+
+
+def test_probe_failure_records_a_fixed_reason_without_provider_output():
+    """An HTTP 200 truncation must remain distinct from schema or JSON failures."""
+    session, _, _ = prepare(finish_reason="length")
+    try:
+        with pytest.raises(RuntimeError):
+            session.preflight()
+        assert session.report()["preflight"]["chat_probe_error"] == "output_truncated"
+        assert session.report()["preflight"].get("structured_json_verified") is not True
     finally:
         session.close()
 

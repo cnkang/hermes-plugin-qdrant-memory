@@ -69,6 +69,20 @@ def free_pricing(pricing):
         return False
 
 
+def structured_modes(parameters):
+    """Recognize declared structured return formats without relaxing the schema."""
+    if not isinstance(parameters, list) or not all(isinstance(p, str) for p in parameters):
+        raise ValueError("Invalid model capability metadata")
+    modes = set()
+    if "response_format" in parameters:
+        modes.add("json_object")
+        if "structured_outputs" in parameters:
+            modes.add("json_schema")
+    if "tools" in parameters and "tool_choice" in parameters:
+        modes.add("tool_call")
+    return modes
+
+
 class OpenRouterSession:
     """Preflight and observe the existing Chat and Embedding adapters."""
 
@@ -108,7 +122,7 @@ class OpenRouterSession:
                 or output not in architecture["output_modalities"]
             ):
                 self.http.fail("capability_incompatible")
-            if kind == "chat" and "response_format" not in row.get("supported_parameters", []):
+            if kind == "chat" and not structured_modes(row.get("supported_parameters", [])):
                 self.http.fail("capability_incompatible")
             endpoint_data = self.client.get(BASE_URL + "/models/" + selected + "/endpoints").json()[
                 "data"
@@ -122,15 +136,17 @@ class OpenRouterSession:
                 and e["status"] == 0
                 and (e.get("uptime_last_30m") is None or e["uptime_last_30m"] > 0)
                 and free_pricing(e.get("pricing"))
-                and (kind != "chat" or "response_format" in e.get("supported_parameters", []))
             ]
             if not active:
                 self.http.fail("model_unavailable")
             if kind == "chat":
-                native_schema = "structured_outputs" in row.get("supported_parameters", []) and any(
-                    "structured_outputs" in e.get("supported_parameters", []) for e in active
+                modes = structured_modes(row.get("supported_parameters", [])) & set().union(
+                    *(structured_modes(e.get("supported_parameters", [])) for e in active)
                 )
-                mode = "json_schema" if native_schema else "json_object"
+                if not modes:
+                    self.http.fail("capability_incompatible")
+                mode = next(m for m in ("json_schema", "json_object", "tool_call") if m in modes)
+                native_schema = mode == "json_schema"
                 # Select the wire format from official capabilities, before any
                 # inference. This never changes the model or the local schema.
                 self.profile["llm"]["response_format_mode"] = mode
@@ -202,8 +218,15 @@ class OpenRouterSession:
                 },
             )
             if result.parsed != {"ready": True} or type(result.parsed.get("ready")) is not bool:
+                self.preflight_evidence["chat_probe_error"] = "unexpected_probe_value"
                 self.http.fail("capability_incompatible")
-        except ValueError:
+        except ValueError as error:
+            self.preflight_evidence["chat_probe_error"] = {
+                "Owner extraction output was truncated; retain the event": "output_truncated",
+                "Owner output is not valid JSON": "invalid_json",
+                "Owner output does not satisfy the JSON schema": "schema_mismatch",
+                "Owner output must contain one structured function response": "invalid_tool_response",
+            }.get(str(error), "invalid_structured_output")
             self.http.fail("capability_incompatible")
         except (KeyError, TypeError):
             self.http.fail("invalid_response")

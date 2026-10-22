@@ -1,5 +1,6 @@
 """Bounded, serialized OpenRouter HTTP for synthetic model tests only."""
 
+import hashlib
 import json
 import re
 import threading
@@ -72,6 +73,7 @@ class OpenRouterHTTP(httpx.BaseTransport):
         self.max_attempts, self.max_requests = max_attempts, max_requests
         self.aliases, self.clients = {}, []
         self.observed = defaultdict(Counter)
+        self.rejected_model_identities = defaultdict(Counter)
         self.attempts, self.statuses, self.errors = Counter(), Counter(), Counter()
         self.latencies = defaultdict(list)
         self.retries, self.cost_samples, self.cost = 0, 0, Decimal(0)
@@ -183,7 +185,18 @@ class OpenRouterHTTP(httpx.BaseTransport):
         try:
             data = response.json()
             name = data.get("model")
-            if name not in self.aliases[kind] or self.key in name:
+            if not isinstance(name, str) or name not in self.aliases[kind] or self.key in name:
+                if name is None:
+                    identity = "missing"
+                elif not isinstance(name, str) or len(name) > 200:
+                    identity = "invalid"
+                elif self.key in name:
+                    identity = "redacted"
+                else:
+                    # Compare this digest with official catalog identifiers.
+                    # Do not retain an untrusted name or treat it as verified.
+                    identity = "sha256:" + hashlib.sha256(name.encode()).hexdigest()
+                self.rejected_model_identities[kind][identity] += 1
                 self.fail("model_identity_mismatch")
             self.observed[kind][name] += 1
             self.inference_responses += 1
@@ -305,6 +318,9 @@ class OpenRouterHTTP(httpx.BaseTransport):
             "api_attempts": dict(self.attempts),
             "http_statuses": dict(self.statuses),
             "observed_models": {k: dict(v) for k, v in self.observed.items()},
+            "rejected_model_identities": {
+                k: dict(v) for k, v in self.rejected_model_identities.items()
+            },
             "retries": self.retries,
             "error_classifications": dict(self.errors),
             "final_failure_classification": self.final_failure,

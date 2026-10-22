@@ -247,6 +247,8 @@ HTTP 200、有效 JSON 或单条搜索结果均不能证明质量 PASS。
 需要归因对照时，以与 Cloud Quality 相同的显式 Chat 模型运行 `openrouter-free`。
 这会保留现有本地嵌入模型。将结果与完整远程配置比较。
 手动备选 Embedding 模型 `nvidia/nemotron-3-embed-1b:free` 必须通过显式覆盖选择。
+也可通过对应档位的 Embedding 变量或工作流输入选择 `nvidia/nemotron-3.5-embed-8b:free`。
+每次运行均须先检查其免费路由和实际向量维度，再创建临时集合。
 不进行自动模型替换。
 
 手动云运行缺少凭据时，会生成脱敏 FAIL artifact，并记录 `required_secret=OPENROUTER_API_KEY`。
@@ -266,15 +268,20 @@ python scripts/evaluate_owner_lifecycle.py --model-profile openrouter-cloud-qual
 ### 免费路由和失败检查
 
 运行器在推理前检查官方 Chat 或 Embedding 目录以及有效端点元数据。
-它要求声明价格全部为零、支持文本输入及正确输出类型，且 Chat 支持 `response_format`。
+它要求声明价格全部为零、支持文本输入及正确输出类型，且 Chat 支持一种结构化返回格式。
 仅当目录与有效免费端点均列出 `structured_outputs` 时，才选择原生 `json_schema` 输出。
-否则，运行器在推理前选择 `json_object`，并在本地用同一份 JSON Schema 验证每个响应。
+如果两者均列出 `response_format`，但不同时支持原生 Schema，则运行器在推理前选择 `json_object`。
+它在本地用同一份 JSON Schema 验证每个响应。
 这适用于 Gemma 免费路由，其[支持 JSON 输出，但不强制执行 Schema](https://openrouter.ai/google/gemma-4-26b-a4b-it%3Afree)。
 现有 OwnerLLM 适配器在 Extractor 准入记忆前完成该验证。
 必填字段、类型、数值范围及额外字段规则仍然生效。禁止外部 Schema 查询。
 报告为 Chat 记录 `response_format_mode` 与 `schema_enforcement`。
 显式配置的生产 Owner 可选择 `llm.response_format_mode: json_object`。
 默认值仍为 `json_schema`。无效模式值会在发送请求前失败。
+如模型不支持 `response_format`，则目录及有效免费端点必须均支持 `tools` 和 `tool_choice`。
+运行器随后选择 `tool_call`，要求返回一个固定名称的函数响应，并用同一份 Schema 验证其 JSON 参数。
+适配器不会执行工具。函数响应缺失、数量超过一个或名称不匹配均会失败。
+显式配置的 Owner 也可选择 `llm.response_format_mode: tool_call`。
 随后通过实际严格 JSON 探针和实际向量批次检查能力。
 元数据检查后，先运行向量探针，再运行 Chat。若 Chat 被拒绝，失败报告仍保留向量维度和模型 ID。
 请求保留明确的固定 `:free` ID，要求支持 Chat 参数，并将 prompt 和 completion 价格上限设为零。
@@ -296,6 +303,8 @@ Cloud Smoke 总预算为 40 次 API 尝试，Cloud Quality 为 256 次，均包�
 基础设施失败与 `quality_gate` 分类不同，两者均不能产生 PASS。
 对于已知的 HTTP 404 路由原因，区分参数不支持、账户数据策略限制和路由不可用。
 报告仅保留固定分类和状态码，不保留供应商错误原文。
+被拒绝的响应身份仍视为失败。报告仅记录安全的身份指纹，或缺失、无效、已脱敏标记。
+增加有文档依据的别名前，先将指纹与官方目录 ID 比较。被拒绝的身份不能计为已验证的模型响应。
 
 远程评估器仅允许使用固定匿名样例和 mutation 语料。
 已知合成检索输入使用批量嵌入和临时的精确输入向量缓存。

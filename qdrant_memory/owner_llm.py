@@ -34,6 +34,7 @@ class OwnerLLM:
         if not isinstance(self.response_format_mode, str) or self.response_format_mode not in {
             "json_schema",
             "json_object",
+            "tool_call",
         }:
             raise ValueError("Unsupported Owner response_format_mode")
         self.max_output_tokens = cfg.get("max_output_tokens", 800)
@@ -97,6 +98,21 @@ class OwnerLLM:
             # the full schema in the prompt and enforce it locally before the
             # existing Extractor can admit any memory or acknowledge an event.
             body["response_format"] = {"type": "json_object"}
+        elif self.response_format_mode == "tool_call":
+            # This function is a structured return envelope, not an executable
+            # tool. Accept exactly one named response and validate its arguments.
+            del body["response_format"]
+            body["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "qdrant_memory",
+                        "description": "Return the requested structured data.",
+                        "parameters": json_schema,
+                    },
+                }
+            ]
+            body["tool_choice"] = {"type": "function", "function": {"name": "qdrant_memory"}}
         if self.reasoning_effort is not None:
             body["reasoning_effort"] = self.reasoning_effort
         if self.provider_require_parameters is not None:
@@ -107,8 +123,22 @@ class OwnerLLM:
         choice = response.json()["choices"][0]
         if choice.get("finish_reason") == "length":
             raise ValueError("Owner extraction output was truncated; retain the event")
-        value = choice["message"]["content"]
-        if self.response_format_mode == "json_object":
+        if self.response_format_mode == "tool_call":
+            calls = choice["message"].get("tool_calls")
+            if (
+                not isinstance(calls, list)
+                or len(calls) != 1
+                or not isinstance(calls[0], dict)
+                or calls[0].get("type") != "function"
+                or not isinstance(calls[0].get("function"), dict)
+                or calls[0]["function"].get("name") != "qdrant_memory"
+                or not isinstance(calls[0]["function"].get("arguments"), str)
+            ):
+                raise ValueError("Owner output must contain one structured function response")
+            value = calls[0]["function"]["arguments"]
+        else:
+            value = choice["message"]["content"]
+        if self.response_format_mode != "json_schema":
             from jsonschema import Draft202012Validator
             from jsonschema.exceptions import ValidationError
             from referencing import Registry

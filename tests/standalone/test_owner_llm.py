@@ -176,6 +176,87 @@ def test_json_object_decode_failure_does_not_retain_provider_exception():
         llm.close()
 
 
+@pytest.mark.parametrize(
+    "issue",
+    [
+        None,
+        "missing",
+        "multiple",
+        "wrong_name",
+        "wrong_type",
+        "not_json",
+        "invalid_schema",
+        "overflow",
+    ],
+)
+def test_forced_tool_response_is_data_and_must_satisfy_the_schema(issue):
+    """Tool-only providers cannot execute tools or bypass the structured result contract."""
+    llm = OwnerLLM(
+        {
+            "mode": "override",
+            "provider": "openai-compatible",
+            "model": "fixture",
+            "base_url": "http://127.0.0.1:1/v1",
+            "response_format_mode": "tool_call",
+        }
+    )
+    llm.client.close()
+    schema = {
+        "type": "object",
+        "properties": {"ready": {"type": "boolean"}},
+        "required": ["ready"],
+        "additionalProperties": False,
+    }
+
+    def complete(request):
+        body = json.loads(request.content)
+        assert "response_format" not in body
+        assert body["tool_choice"] == {"type": "function", "function": {"name": "qdrant_memory"}}
+        assert body["tools"][0]["function"]["parameters"] == schema
+        call = {
+            "type": "function",
+            "function": {"name": "qdrant_memory", "arguments": '{"ready":true}'},
+        }
+        if issue == "wrong_name":
+            call["function"]["name"] = "arbitrary_tool"
+        if issue == "wrong_type":
+            call["type"] = "custom"
+        if issue == "not_json":
+            call["function"]["arguments"] = "synthetic-private-output"
+        if issue == "invalid_schema":
+            call["function"]["arguments"] = '{"ready":"synthetic-private-output"}'
+        if issue == "overflow":
+            call["function"]["arguments"] = '{"ready":1e999}'
+        calls = [] if issue == "missing" else [call, call] if issue == "multiple" else [call]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {"content": None, "tool_calls": calls},
+                    }
+                ]
+            },
+        )
+
+    llm.client = httpx.Client(transport=httpx.MockTransport(complete))
+    try:
+        if issue is None:
+            assert llm.complete_structured(
+                instructions="Return structured data", input=[], json_schema=schema
+            ).parsed == {"ready": True}
+        else:
+            with pytest.raises(ValueError) as error:
+                llm.complete_structured(
+                    instructions="Return structured data", input=[], json_schema=schema
+                )
+            assert "synthetic-private-output" not in str(error.value)
+            assert error.value.__context__ is None
+    finally:
+        llm.close()
+
+
 @pytest.fixture(autouse=True)
 def isolate_provider_credentials(monkeypatch):
     """Mock-provider tests never inherit a real optional account credential."""

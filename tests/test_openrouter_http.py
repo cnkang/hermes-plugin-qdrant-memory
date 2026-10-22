@@ -1,5 +1,6 @@
 """Free API requests retain identity, price, retry and credential boundaries."""
 
+import hashlib
 import json
 import runpy
 from pathlib import Path
@@ -116,6 +117,28 @@ def test_unknown_or_secret_response_identity_fails_closed(model):
         assert error.value.classification == "model_identity_mismatch"
         assert model not in str(error.value)
         assert "synthetic-private-key" not in json.dumps(transport.report())
+    finally:
+        transport.shutdown()
+
+
+@pytest.mark.parametrize("model", [None, "fixture/upstream-embedding", "synthetic-private-key"])
+def test_rejected_identity_has_a_safe_diagnostic_fingerprint(model):
+    """Failed identities remain rejected and cannot leak a provider-controlled name or key."""
+    transport, _ = build(lambda _: answer(model))
+    try:
+        with transport.client() as client, pytest.raises(RuntimeError):
+            post(client)
+        expected = (
+            "missing"
+            if model is None
+            else "redacted"
+            if model == "synthetic-private-key"
+            else "sha256:" + hashlib.sha256(model.encode()).hexdigest()
+        )
+        assert transport.report()["rejected_model_identities"] == {"chat": {expected: 1}}
+        assert transport.report()["observed_models"] == {}
+        assert "synthetic-private-key" not in json.dumps(transport.report())
+        assert "fixture/upstream-embedding" not in json.dumps(transport.report())
     finally:
         transport.shutdown()
 
