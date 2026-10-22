@@ -691,6 +691,11 @@ def _initialize_target(args, store, home, cfg, pending_reset, resources, progres
         action = "clear"
     elif command == "init" and store.client.collection_exists(store.collection):
         action = existing_collection_action(args, store.collection)
+    if command == "init" and action != "clear":
+        # A plain init keeps the destination: pending receipts still require recovery.
+        from .shared_state import require_no_pending_shared
+
+        require_no_pending_shared(home, ledger_namespace(cfg))
     if action == "clear":
         ledger = Ledger(home, ledger_namespace(cfg))
         resources.callback(ledger.close)
@@ -769,14 +774,10 @@ def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=No
             ledger = Ledger(home, ledger_namespace(cfg))
             resources.callback(ledger.close)
             return ledger.discard_unadmitted_event(args.event_id)
-        if command in {"init", "migrate", "delete-all"}:
+        if command in {"migrate", "delete-all"}:
             from .shared_state import require_no_pending_shared
 
-            # `init` is the authorized path that clears receipts, so it must not be
-            # blocked by the receipts it is about to remove.
-            require_no_pending_shared(
-                home, ledger_namespace(cfg), allow_pending_receipts=command == "init"
-            )
+            require_no_pending_shared(home, ledger_namespace(cfg))
         embedder = _open_embedder(command, cfg, resources, progress, secret_reader)
         report(progress, "Connecting to target")
         store = QdrantStore(build_client(cfg), cfg, embedder)

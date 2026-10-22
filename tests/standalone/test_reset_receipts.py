@@ -1,9 +1,11 @@
 """Private reset must discard admission receipts that can replay raw input."""
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
+from qdrant_memory import cli
 from qdrant_memory.owner_lifecycle import OwnerLifecycle
 from qdrant_memory.shared_service import SharedOwner
 from qdrant_memory.shared_state import SharedRecoveryRequiredError, require_no_pending_shared
@@ -43,9 +45,6 @@ def test_reset_clears_only_this_destination_receipts(tmp_path):
 
     with pytest.raises(SharedRecoveryRequiredError):
         require_no_pending_shared(tmp_path, rt.ledger.collection)
-    # `init` is the authorized recovery path and must not be blocked by receipts.
-    require_no_pending_shared(tmp_path, rt.ledger.collection, allow_pending_receipts=True)
-
     rt.ledger.clear_destination()
     counts = {
         table: rt.ledger.db.execute(
@@ -74,3 +73,25 @@ def test_terminal_event_receipt_does_not_block_startup(tmp_path):
             ("committed-event", "{}", "COMMITTED", rt.ledger.collection),
         )
     require_no_pending_shared(tmp_path, rt.ledger.collection)
+
+
+def test_plain_init_does_not_skip_pending_receipts(tmp_path, monkeypatch):
+    """Only an authorized clear may pass the receipt interlock."""
+    rt = runtime(tmp_path)
+    OwnerLifecycle(SharedOwner(rt, [grant("owner", visibility="private", logical="agent")[1]]))
+    _insert_receipt(rt, rt.ledger.collection)
+    monkeypatch.setattr(cli, "ledger_namespace", lambda cfg: rt.ledger.collection)
+
+    class Store:
+        collection = rt.ledger.collection
+        client = SimpleNamespace(collection_exists=lambda name: False)
+
+    class Resources:
+        def callback(self, function):
+            return None
+
+    args = SimpleNamespace(qdrant_command="init")
+    with pytest.raises(SharedRecoveryRequiredError):
+        cli._initialize_target(
+            args, Store(), tmp_path, rt.cfg, False, Resources(), lambda *a, **k: None
+        )
