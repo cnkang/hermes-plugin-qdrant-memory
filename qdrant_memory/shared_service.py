@@ -12,7 +12,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from socketserver import TCPServer
-from threading import BoundedSemaphore
+from threading import BoundedSemaphore, Thread
 
 from .models import (
     Scope,
@@ -584,6 +584,7 @@ def make_server(owner, port):
 
         def __init__(self, *args, **kwargs):
             self.slots = BoundedSemaphore(32)
+            self.drains = BoundedSemaphore(64)
             super().__init__(*args, **kwargs)
 
         def server_bind(self):
@@ -591,6 +592,41 @@ def make_server(owner, port):
             TCPServer.server_bind(self)
             self.server_name = "127.0.0.1"
             self.server_port = self.server_address[1]
+
+        def _refuse(self, request):
+            """Answer one refusal and drain it off the accept loop.
+
+            The peer still has to read the response, and closing with unread
+            request bytes resets the connection on some kernels. A bounded pool
+            of short-lived drain threads keeps that wait off the accept loop.
+            """
+            body = b'{"error":{"type":"SharedAdmissionError","retryable":true}}'
+            try:
+                request.sendall(
+                    b"HTTP/1.0 429 Too Many Requests\r\n"
+                    b"Retry-After: 1\r\nContent-Type: application/json\r\n"
+                    b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + body
+                )
+            except OSError:
+                self.shutdown_request(request)
+                return
+            if not self.drains.acquire(blocking=False):
+                self.shutdown_request(request)
+                return
+
+            def drain():
+                try:
+                    request.settimeout(0.5)
+                    while request.recv(65536):
+                        pass
+                except OSError:
+                    pass
+                finally:
+                    self.shutdown_request(request)
+                    self.drains.release()
+
+            Thread(target=drain, daemon=True).start()
 
         def process_request(self, request, client_address):
             """Refuse overflow in-band instead of parking the accept loop.
@@ -600,27 +636,7 @@ def make_server(owner, port):
             connection keeps admission bounded while the listener stays responsive.
             """
             if not self.slots.acquire(blocking=False):
-                body = b'{"error":{"type":"SharedAdmissionError","retryable":true}}'
-                try:
-                    request.sendall(
-                        b"HTTP/1.0 429 Too Many Requests\r\n"
-                        b"Retry-After: 1\r\nContent-Type: application/json\r\n"
-                        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-                        b"Connection: close\r\n\r\n" + body
-                    )
-                    # Drain only bytes already buffered, without waiting on the
-                    # accept loop. A later segment may reset the connection.
-                    request.setblocking(False)
-                    while True:
-                        try:
-                            if not request.recv(65536):
-                                break
-                        except OSError:
-                            break
-                except OSError:
-                    pass
-                finally:
-                    self.shutdown_request(request)
+                self._refuse(request)
                 return
             try:
                 super().process_request(request, client_address)
