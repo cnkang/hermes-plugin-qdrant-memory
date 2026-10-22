@@ -91,6 +91,13 @@ def test_accepts_windows_only_pin_without_snapshot_entry(tmp_path):
     MODULE.check(write(tmp_path))
 
 
+def test_rejects_negated_windows_marker(tmp_path):
+    """A negated Windows marker selects Linux and must keep a snapshot entry."""
+    base = BASE + "requests-toolbelt==1.0.0 ; sys_platform != 'win32'\n"
+    with pytest.raises(MODULE.Failure):
+        MODULE.check(write(tmp_path, base=base))
+
+
 def test_accepts_inline_comment(tmp_path):
     """A trailing comment does not change the pinned requirement."""
     MODULE.check(write(tmp_path, base="requests==2.32.3  # runtime pin\n"))

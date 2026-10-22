@@ -119,6 +119,12 @@ credential-free `dependency-lock` job instead. That job rejects ranges, remote o
 VCS sources, option lines, unpinned entries, unhashed snapshot entries and
 snapshot drift. Snyk Code
 stays on pull requests because it analyzes text and executes no contributor code.
+The dependency scan is therefore a post-merge gate: a failure on `main` blocks
+later work and needs a fix-forward, because the merge already happened. A
+repository writer can still edit a workflow that holds a scanner token, because
+write access is the GitHub trust boundary. Least-privilege scanner tokens and
+protected environments bound that exposure, and the dependency scan no longer
+adds a manifest-only path to it.
 The credentialed Cloud smoke lane is narrower: it runs only on `main` pushes
 (plus manual dispatch). Branch pushes receive repository secrets, so the lane
 excludes them.

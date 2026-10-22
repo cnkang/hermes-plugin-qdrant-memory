@@ -30,6 +30,10 @@ REQUIREMENT = re.compile(
 )
 HASH = re.compile(r"^--hash=sha256:([0-9a-f]{64})$")
 COMMENT = re.compile(r"\s+#.*$")
+WINDOWS = re.compile(
+    r"(sys_platform\s*==\s*['\"]win32['\"]|platform_system\s*==\s*['\"]Windows['\"])",
+    re.IGNORECASE,
+)
 FORBIDDEN = (
     "://",
     "git+",
@@ -172,8 +176,10 @@ def check(root: Path) -> None:
 
 
 def windows_only(markers: list[str]) -> bool:
-    """Return whether every marker restricts the requirement to Windows."""
-    return bool(markers) and all("win32" in marker for marker in markers)
+    """Return whether every marker positively restricts the requirement to Windows."""
+    return bool(markers) and all(
+        "!=" not in marker and WINDOWS.search(marker) for marker in markers
+    )
 
 
 def main() -> int:
