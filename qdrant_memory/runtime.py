@@ -261,7 +261,13 @@ class Runtime:
             if action == "SKIP":
                 continue
             candidate_hash = content_hash(candidate["text"])
-            identifier = identifier or point_id(scope, event["source"], candidate_hash)
+            source = event["source"]
+            if source == "owner_lifecycle":
+                # Visibility is part of the shared identity: a later policy generation
+                # must not reuse the previous generation's point ID.
+                authority = event.get("owner_authority") or {}
+                source = f"{source}:{authority.get('visibility', '')}"
+            identifier = identifier or point_id(scope, source, candidate_hash)
             if self.ledger.is_delete_fenced(
                 identifier, scope, event.get("created_at"), candidate_hash
             ):
@@ -281,7 +287,12 @@ class Runtime:
             if event.get("source") == "owner_lifecycle":
                 from .owner_lifecycle import record_fields
 
-                value.update(record_fields(event, old, identifier))
+                try:
+                    value.update(record_fields(event, old, identifier))
+                except PermissionError:
+                    # A record outside this authority's boundary is not this event's
+                    # target; skip it rather than latching the Owner-wide interlock.
+                    continue
             keys.append(self.operation(identifier, "UPSERT", value))
         return keys
 
