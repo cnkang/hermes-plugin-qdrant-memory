@@ -24,7 +24,8 @@ All three CPU CI lanes build it. They install with `--find-links .ci-wheels` and
 require Pillow 13.0.0 and the exact compatibility version. They run `pip check`
 and the existing contracts: the real offline CPU model, CRUD, restart, retrieval
 and MCP.
-The Snyk job installs and scans the same hash-checked snapshot. Hub stays at
+The Snyk dependency job installs and scans the same hash-checked snapshot on
+`main`. Hub stays at
 1.33.0: upgrading it to 2 is a separate compatibility change. The runtime only
 accepts the exact official or temporary version, never arbitrary local builds.
 Its inference fingerprint stays at the official 0.9.0 identity because the
@@ -96,7 +97,8 @@ Snyk dependency and code jobs run
 independently in parallel. Both Python versions run files serially because remote
 tests restart their disposable server. Python 3.14 collects coverage. SonarCloud
 waits for the test matrix and consumes that artifact, then waits for its quality
-gate. Snyk runs dependency and code scans and monitors main. The required test matrix
+gate. Snyk runs the code scan for every event and the dependency scan only from
+`main`. The required test matrix
 validates the support range endpoints. It covers the minimum supported release
 v0.21.5 (v2026.9.24, `f97608f`) and the latest Hermes `main`. The `main` ref
 moves, and each run records its checked-out SHA in the run summary. The latest-main lane
@@ -110,6 +112,12 @@ Ruff is pinned to 0.15.1 in CI and the local
 [pre-commit setup](development.md). Lint includes docstrings and import ordering.
 Actions use immutable SHA pins. Authenticated scans run on same-repository PRs,
 pushes to `main` and repository development branches, and manual workflow dispatches.
+The dependency scan is the one exception. It holds the organization Snyk token
+and never runs on a tree that a contributor controls: it runs only from `main`.
+Pull requests and branch pushes verify the dependency inputs with the
+credential-free `dependency-lock` job instead. That job rejects ranges, remote or
+VCS sources, option lines, missing sha256 hashes and snapshot drift. Snyk Code
+stays on pull requests because it analyzes text and executes no contributor code.
 The credentialed Cloud smoke lane is narrower: it runs only on `main` pushes
 (plus manual dispatch). Branch pushes receive repository secrets, so the lane
 excludes them.
@@ -118,7 +126,9 @@ tests without scanner credentials. Their scanner jobs are skipped by conditions.
 A missing required token fails a scanner job only when that job is scheduled.
 The `Required security scan gate` runs even after workflow cancellation.
 It rejects failed, skipped, or cancelled prerequisites.
-It requires successful lint, tests, MCP protocol coverage, host pin compatibility, SonarCloud, and both Snyk jobs.
+It requires successful lint, tests, MCP protocol coverage, host pin compatibility,
+dependency lock, and SonarCloud. It requires a successful dependency scan on
+`main` and accepts its skip elsewhere.
 [GitHub permits a merge when a required job skips execution](https://docs.github.com/en/pull-requests/reference/status-checks).
 The gate uses `always()` to prevent this result after cancellation.
 The gate also fails on safely skipped fork scans.
@@ -204,7 +214,8 @@ test covers indexes, scope, mutation, migration and reconnection. Deployment res
 remains a Server lane check because Cloud infrastructure is service-owned.
 
 SonarCloud and Snyk use maintainer-managed repository secrets. Contributors do
-not need scanner credentials. Snyk runs dependency and code scans. High or
+not need scanner credentials. Snyk runs the code scan on every event and the
+dependency scan from `main` only. High or
 critical findings fail the job, and authentication errors also fail.
 `requirements.txt` is the PM-exported runtime lock snapshot.
 
