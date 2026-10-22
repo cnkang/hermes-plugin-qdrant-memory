@@ -18,6 +18,7 @@ Usage: ``python3 scripts/check_dependency_inputs.py [repo root]``.
 
 from __future__ import annotations
 
+import ast
 import re
 import sys
 from dataclasses import dataclass, field
@@ -30,10 +31,6 @@ REQUIREMENT = re.compile(
 )
 HASH = re.compile(r"^--hash=sha256:([0-9a-f]{64})$")
 COMMENT = re.compile(r"\s+#.*$")
-WINDOWS = re.compile(
-    r"(sys_platform\s*==\s*['\"]win32['\"]|platform_system\s*==\s*['\"]Windows['\"])",
-    re.IGNORECASE,
-)
 FORBIDDEN = (
     "://",
     "git+",
@@ -189,13 +186,44 @@ def check(root: Path) -> None:
 
 
 def windows_only(markers: list[str]) -> bool:
-    """Return whether every marker positively restricts the requirement to Windows."""
-    return bool(markers) and all(
-        "!=" not in marker
-        and not re.search(r"\bor\b", marker, re.IGNORECASE)
-        and WINDOWS.search(marker)
-        for marker in markers
-    )
+    """Prove each marker false on all non-Windows environments.
+
+    Parse the Python-compatible equality/boolean subset of PEP 508 with the
+    standard-library AST. Only actual variable-to-literal Windows equalities
+    supply proof; quoted text and all other comparisons remain unknown. An AND
+    needs one false term, while an OR needs every term false. Unsupported syntax
+    fails closed and requires a hashed entry. No marker text is executed, and the
+    credential-free CI check needs no third-party bootstrap dependency.
+    """
+
+    def excludes_non_windows(node: ast.AST) -> bool:
+        if isinstance(node, ast.BoolOp):
+            proofs = [excludes_non_windows(value) for value in node.values]
+            return any(proofs) if isinstance(node.op, ast.And) else all(proofs)
+        if not isinstance(node, ast.Compare) or len(node.ops) != 1:
+            return False
+        if not isinstance(node.ops[0], ast.Eq):
+            return False
+        left, right = node.left, node.comparators[0]
+        if isinstance(right, ast.Name):
+            left, right = right, left
+        return (
+            isinstance(left, ast.Name)
+            and isinstance(right, ast.Constant)
+            and (left.id, right.value)
+            in (("sys_platform", "win32"), ("platform_system", "Windows"))
+        )
+
+    if not markers:
+        return False
+    for marker in markers:
+        try:
+            expression = ast.parse(marker, mode="eval")
+        except (SyntaxError, ValueError, RecursionError):
+            return False
+        if not excludes_non_windows(expression.body):
+            return False
+    return True
 
 
 def main() -> int:
