@@ -10,6 +10,42 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_quality_failure_causes_keep_the_safe_provider_status(tmp_path, monkeypatch):
+    """A guarded API failure retains its status without exposing provider text."""
+    module = runpy.run_path(str(ROOT / "scripts/evaluate_owner_lifecycle.py"))
+    failure = module["OPENROUTER"].HTTP["OpenRouterFailure"]("capability_incompatible", 404)
+
+    def rejected():
+        raise failure
+
+    session = SimpleNamespace(
+        preflight=rejected,
+        close=lambda: None,
+        http=SimpleNamespace(aliases={}),
+        report=lambda: {
+            "resources_closed": True,
+            "final_failure_classification": "capability_incompatible",
+        },
+    )
+    monkeypatch.setattr(module["OPENROUTER"], "OpenRouterSession", lambda *_a, **_kw: session)
+    output = tmp_path / "provider-failure.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "runner",
+            "--adapter-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+            "--model-profile",
+            "openrouter-cloud-quality",
+        ],
+    )
+    assert module["main"]() == 1
+    report = json.loads(output.read_text())
+    assert report["failure_causes"][0]["http_status"] == 404
+
+
 def test_smoke_value_error_before_recorder_is_a_configuration_failure(tmp_path, monkeypatch):
     """An inner default category must not hide setup errors from the CLI artifact."""
     module = runpy.run_path(str(ROOT / "scripts/smoke_owner_lifecycle.py"))

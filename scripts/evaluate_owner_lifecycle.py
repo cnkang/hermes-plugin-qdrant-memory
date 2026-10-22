@@ -765,7 +765,8 @@ def main():
             causes.append(
                 {
                     "type": type(cause).__name__,
-                    "http_status": getattr(getattr(cause, "response", None), "status_code", None),
+                    "http_status": getattr(cause, "http_status", None)
+                    or getattr(getattr(cause, "response", None), "status_code", None),
                     "mcp_code": getattr(getattr(cause, "error", None), "code", None),
                 }
             )

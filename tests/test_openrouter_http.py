@@ -147,6 +147,32 @@ def test_http_failures_are_classified_without_provider_body(status, classificati
         transport.shutdown()
 
 
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("No endpoints found that support the requested parameters.", "capability_incompatible"),
+        ("No endpoints found matching your data policy.", "account_policy_restricted"),
+        ("No endpoints found for the selected model.", "model_unavailable"),
+    ],
+)
+def test_404_route_denials_have_safe_specific_categories(message, expected):
+    """Known router reasons are enums; arbitrary provider text stays private."""
+    transport, _ = build(
+        lambda _: httpx.Response(
+            404, json={"error": {"message": message + " synthetic-private-key"}}
+        )
+    )
+    try:
+        with transport.client() as client, pytest.raises(RuntimeError) as error:
+            post(client)
+        assert error.value.classification == expected
+        assert transport.report()["retries"] == 0
+        assert "synthetic-private-key" not in str(error.value) + json.dumps(transport.report())
+        assert message not in json.dumps(transport.report())
+    finally:
+        transport.shutdown()
+
+
 def test_retry_after_and_global_spacing_have_bounded_attempts():
     """A successful retry is visible and respects server delay without changing models."""
     calls = []

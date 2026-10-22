@@ -24,8 +24,19 @@ class OpenRouterFailure(RuntimeError):
         super().__init__("OpenRouter test failed: " + classification)
 
 
-def classification(status):
+def classification(status, message=""):
     """Distinguish infrastructure and capability failures from semantic quality."""
+    # Inspect known router reasons, but retain only fixed diagnostic categories.
+    text = message.casefold() if isinstance(message, str) else ""
+    if status == 404:
+        if "data policy" in text or "privacy settings" in text:
+            return "account_policy_restricted"
+        if "support the requested parameters" in text:
+            return "capability_incompatible"
+    if status == 429 and any(
+        marker in text for marker in ("free-models-per-day", "daily quota", "requests per day")
+    ):
+        return "quota_exhausted"
     return {
         400: "capability_incompatible",
         401: "authentication",
@@ -269,17 +280,11 @@ class OpenRouterHTTP(httpx.BaseTransport):
                     if kind == "embedding":
                         self._embedding(prepared, response)
                     return response
-                category = classification(status)
-                if status == 429:
-                    try:
-                        message = response.json().get("error", {}).get("message", "")
-                        if isinstance(message, str) and any(
-                            marker in message.lower()
-                            for marker in ("free-models-per-day", "daily quota", "requests per day")
-                        ):
-                            category = "quota_exhausted"
-                    except (ValueError, TypeError, AttributeError):
-                        pass
+                try:
+                    message = response.json().get("error", {}).get("message", "")
+                except (ValueError, TypeError, AttributeError):
+                    message = ""
+                category = classification(status, message)
                 self.errors[category] += 1
                 delay = self._backoff(response, attempt)
                 response.close()
