@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Require HTTPS for non-loopback embedding endpoints even when no credential is
+  configured, matching the Owner LLM egress rule. Loopback HTTP remains supported.
+- Clear Lifecycle and shared admission receipts during an authorized destination
+  reset, and treat an uncommitted lifecycle receipt as pending replay work, so a
+  cleared conversation cannot be re-created on the next Owner start.
+- Refuse Shared Owner admission overflow with 429 instead of blocking the accept
+  loop, and stop capping the HTTPS listener by accepted connections so idle local
+  sockets cannot turn into a global 503 before authentication.
+- Include visibility in newly written shared point identities and constrain the
+  duplicate-add lookup to the caller's marker/space/visibility boundary. Existing
+  records remain readable and deduplicate within their own visibility.
+
 ## 0.4.0
 
 - Add an opt-in single-owner authenticated loopback service and stdio bridge for
