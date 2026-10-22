@@ -183,6 +183,15 @@ def _recovery(home, cfg):
             ("operations", "status IN ('PENDING','FAILED')"),
             ("events", "status IN ('PENDING','FAILED')"),
             ("shared_requests_v1", "done=0"),
+            (
+                "owner_events_v1",
+                """event_json!='{}' AND NOT EXISTS (
+                    SELECT 1 FROM events e
+                    WHERE e.collection=owner_events_v1.collection
+                    AND e.event_id=owner_events_v1.event_key
+                    AND e.status IN ('COMMITTED','CANCELLED','SUPERSEDED')
+                )""",
+            ),
             ("qdrant_reset_intents", "1=1"),
             ("qdrant_scope_deletes", "1=1"),
         ):
