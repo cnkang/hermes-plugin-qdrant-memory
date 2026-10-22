@@ -137,7 +137,8 @@ ledger restored against unrelated target state may replay prepared changes. Do
 not mix arbitrary snapshots. Back up remote Qdrant through its deployment's own
 snapshot procedure, coordinated with the stopped plugin ledger. Deleting a Qdrant
 point does not clear its ledger identity or pending/failed work. `init --existing
-clear` removes the chosen destination's ledger rows as part of collection reset.
+clear` removes the chosen destination's ledger rows, admission receipts and
+prepared shared plans as part of collection reset.
 It does not guarantee secure erasure from SQLite pages/WAL storage or copied
 backups.
 
