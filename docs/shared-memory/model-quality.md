@@ -272,6 +272,7 @@ python scripts/evaluate_owner_lifecycle.py --model-profile openrouter-cloud-qual
 The runner checks the official Chat or Embedding catalog and active endpoint metadata before inference.
 It requires zero declared prices, text input, the correct output type and Chat `response_format` support.
 An actual strict JSON probe and an actual vector batch then test these capabilities.
+After metadata checks, the vector probe runs before Chat. Its dimensions and model ID remain in a failed report if Chat is rejected.
 Requests retain the exact fixed `:free` ID, require supported Chat parameters, and set a zero prompt and completion price ceiling.
 Paid IDs and `openrouter/free` are rejected. There is no paid opt-in in these workflows.
 The [free variant guide](https://openrouter.ai/docs/guides/routing/model-variants/free) explains the base model and variant relationship.
@@ -289,6 +290,8 @@ A daily quota denial stops without retry. Other authentication and capability de
 The runner never changes account privacy settings or falls back to another model.
 Free routes can retire, lose capacity or exhaust daily limits. These conditions produce FAIL with a diagnostic category.
 Infrastructure failure is distinct from the `quality_gate` category. Neither can produce PASS.
+Known HTTP 404 router reasons distinguish unsupported parameters from account data-policy restrictions and unavailable routes.
+Reports retain only fixed categories and status codes. They do not retain provider error text.
 
 Only the frozen anonymous cases and mutation corpus can reach the remote evaluator.
 Known synthetic retrieval inputs use batched embeddings and a temporary exact-input vector cache.
@@ -310,6 +313,17 @@ The probe discovers the alternate model's actual dimensions before creating fres
 Never reuse an existing collection with a different model or dimension.
 A later response with a different width fails. Keep the new run as a separate baseline.
 Do not lower the existing quality thresholds to accept a changed model.
+
+### Initial cloud runs on main
+
+The [default Smoke run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39698763707) failed its metadata check at `f03d11d`.
+The Liquid Chat free endpoint had status `-5`. No inference request ran, and the clients closed.
+The [default Quality run](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39698820949) passed metadata checks but received HTTP 404 from its Gemma Chat probe.
+The [same-Chat local-embedding comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39699248654) also received HTTP 404.
+These runs did not execute baseline scoring. Actual remote vector dimensions and model quality remained unverified.
+All three failure artifacts confirmed temporary-data cleanup. The comparison also stopped its test-owned Ollama process.
+The initial diagnostic category was `model_unavailable`; it did not identify the specific HTTP 404 router reason.
+These failures do not establish low semantic quality. Keep the failures and obtain new evidence after a route or capability correction.
 
 All quality profiles use the full frozen corpus and the same quality thresholds.
 Reports identify the profile, generation route, embedding dimensions, and local model digests.

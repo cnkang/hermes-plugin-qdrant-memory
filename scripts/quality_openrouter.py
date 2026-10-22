@@ -160,6 +160,21 @@ class OpenRouterSession:
         """Verify structured Chat and actual vector dimensions before Qdrant creation."""
         for kind in self.http.models:
             self._metadata(kind)
+        # Keep vector evidence independent from the Chat capability probe. Both
+        # still must pass before an Owner or temporary Qdrant collection starts.
+        if "embedding" in self.http.models:
+            self.client.post(
+                BASE_URL + "/embeddings",
+                json={
+                    "model": self.http.models["embedding"],
+                    "input": ["Synthetic dimension probe one.", "Synthetic dimension probe two."],
+                },
+            )
+            actual = self.http.embedding_dimensions
+            expected = self.profile.get("expected_embedding_dimensions")
+            if expected is not None and actual != expected:
+                self.http.fail("dimension_mismatch")
+            self.profile["embedding"]["dimensions"] = actual
         llm = OwnerLLM(self.profile["llm"])
         self.attach_llm(llm)
         try:
@@ -182,19 +197,6 @@ class OpenRouterSession:
         finally:
             llm.close()
         self.preflight_evidence["structured_json_verified"] = True
-        if "embedding" in self.http.models:
-            self.client.post(
-                BASE_URL + "/embeddings",
-                json={
-                    "model": self.http.models["embedding"],
-                    "input": ["Synthetic dimension probe one.", "Synthetic dimension probe two."],
-                },
-            )
-            actual = self.http.embedding_dimensions
-            expected = self.profile.get("expected_embedding_dimensions")
-            if expected is not None and actual != expected:
-                self.http.fail("dimension_mismatch")
-            self.profile["embedding"]["dimensions"] = actual
 
     def embedding_provider(self, cfg):
         """Keep the existing strict vector adapter and one isolated network pool."""

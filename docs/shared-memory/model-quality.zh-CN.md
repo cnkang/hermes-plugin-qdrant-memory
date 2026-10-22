@@ -268,6 +268,7 @@ python scripts/evaluate_owner_lifecycle.py --model-profile openrouter-cloud-qual
 运行器在推理前检查官方 Chat 或 Embedding 目录以及有效端点元数据。
 它要求声明价格全部为零、支持文本输入及正确输出类型，且 Chat 支持 `response_format`。
 随后通过实际严格 JSON 探针和实际向量批次检查能力。
+元数据检查后，先运行向量探针，再运行 Chat。若 Chat 被拒绝，失败报告仍保留向量维度和模型 ID。
 请求保留明确的固定 `:free` ID，要求支持 Chat 参数，并将 prompt 和 completion 价格上限设为零。
 付费 ID 和 `openrouter/free` 均被拒绝。这些工作流不提供付费 opt-in。
 [免费变体指南](https://openrouter.ai/docs/guides/routing/model-variants/free)说明了基础模型和变体的关系。
@@ -285,6 +286,8 @@ Cloud Smoke 总预算为 40 次 API 尝试，Cloud Quality 为 256 次，均包�
 运行器不修改账户隐私设置，也不回退到其他模型。
 免费路由可能退役、容量不足或用尽每日额度。这些情况产生 FAIL 及诊断分类。
 基础设施失败与 `quality_gate` 分类不同，两者均不能产生 PASS。
+对于已知的 HTTP 404 路由原因，区分参数不支持、账户数据策略限制和路由不可用。
+报告仅保留固定分类和状态码，不保留供应商错误原文。
 
 远程评估器仅允许使用固定匿名样例和 mutation 语料。
 已知合成检索输入使用批量嵌入和临时的精确输入向量缓存。
@@ -306,6 +309,17 @@ API 尝试、HTTP 状态计数、有限重试、延迟百分位数和失败分�
 不同模型或维度不得复用已有 collection。
 后续响应宽度变化会失败。将新运行保留为独立基线。
 不要降低原有质量阈值以接受更换后的模型。
+
+### main 上的首次云运行
+
+位于 `f03d11d` 的[默认 Smoke 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39698763707)在元数据检查阶段失败。
+Liquid Chat 免费端点状态为 `-5`。没有发送推理请求，客户端已关闭。
+[默认 Quality 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39698820949)通过元数据检查，但 Gemma Chat 探针收到 HTTP 404。
+[相同 Chat 的本地嵌入对照](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39699248654)也收到 HTTP 404。
+这些运行没有执行基线评分，真实远程向量维度和模型质量仍未验证。
+三份失败 artifact 均确认临时数据清理。对照运行也停止了测试专用 Ollama 进程。
+初始诊断分类为 `model_unavailable`，未能识别具体 HTTP 404 路由原因。
+这些失败不能证明语义质量低下。保留失败记录，在路由或能力修正后取得新证据。
 
 所有质量配置使用完整的固定语料和相同质量阈值。
 报告标识配置、生成路由、向量维度及本地模型摘要。

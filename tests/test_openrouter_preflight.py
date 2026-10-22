@@ -186,6 +186,20 @@ def test_override_dimension_is_discovered_without_reusing_a_collection():
         session.close()
 
 
+def test_embedding_probe_remains_observable_when_chat_schema_is_incompatible():
+    """Independent vector evidence cannot be hidden by the Chat capability gate."""
+    session, _, _ = prepare(ready="wrong-type")
+    try:
+        with pytest.raises(RuntimeError) as error:
+            session.preflight()
+        assert error.value.classification == "capability_incompatible"
+        assert session.report()["embedding_dimensions"] == 3
+        assert session.report()["observed_models"]["embedding"] == {"fixture/embed-20261022": 1}
+        assert session.report()["preflight"].get("structured_json_verified") is not True
+    finally:
+        session.close()
+
+
 def test_missing_key_is_a_configuration_error(monkeypatch):
     """Manual cloud requests cannot produce a passing availability-only result."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
