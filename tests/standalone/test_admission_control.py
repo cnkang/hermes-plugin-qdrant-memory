@@ -52,6 +52,7 @@ def test_admission_overflow_is_refused_instead_of_parking_the_listener():
             server.server_port, {"name": "qdrant_memory_search", "arguments": {"query": "x"}}
         )
         assert refused.startswith(b"HTTP/1.0 429")
+        assert b'"type":"SharedAdmissionError"' in refused
         for _ in range(32):
             server.slots.release()
         accepted = request(
