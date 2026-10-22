@@ -1,6 +1,7 @@
 """Enforce the credential-free dependency input policy for pull requests."""
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts/check_dependency_inputs.
 SPEC = importlib.util.spec_from_file_location("check_dependency_inputs", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 Hash = "a" * 64
@@ -75,3 +77,32 @@ def test_rejects_missing_unmarked_pin(tmp_path):
     entry = f"requests==2.32.3 \\\n    --hash=sha256:{Hash}\n"
     with pytest.raises(MODULE.Failure):
         MODULE.check(write(tmp_path, local=LOCAL.replace(entry, "")))
+
+
+def test_rejects_marked_pin_missing_from_snapshot(tmp_path):
+    """A marker must not exempt a Linux-relevant pin from the hashed snapshot."""
+    base = BASE + "typing-extensions==4.16.0 ; python_version >= '3'\n"
+    with pytest.raises(MODULE.Failure):
+        MODULE.check(write(tmp_path, base=base))
+
+
+def test_accepts_windows_only_pin_without_snapshot_entry(tmp_path):
+    """A Windows-only pin has no place in the Linux hashed snapshot."""
+    MODULE.check(write(tmp_path))
+
+
+def test_accepts_inline_comment(tmp_path):
+    """A trailing comment does not change the pinned requirement."""
+    MODULE.check(write(tmp_path, base="requests==2.32.3  # runtime pin\n"))
+
+
+def test_rejects_duplicate_unmarked_pin(tmp_path):
+    """Two unpinned entries for one name make the resolved version ambiguous."""
+    base = "requests==2.32.3\nrequests==2.32.4\n"
+    with pytest.raises(MODULE.Failure):
+        MODULE.check(write(tmp_path, base=base))
+
+
+def test_repository_inputs_satisfy_policy():
+    """The committed dependency inputs pass the same policy CI enforces."""
+    MODULE.check(Path(__file__).resolve().parents[1])

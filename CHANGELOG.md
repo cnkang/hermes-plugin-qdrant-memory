@@ -14,8 +14,8 @@
   duplicate-add lookup to the caller's marker/space/visibility boundary. Existing
   records remain readable and deduplicate within their own visibility.
 - Keep the organization Snyk token out of contributor-controlled code paths.
-  Dependency scanning runs only from `main`. Pull requests verify exact pins and
-  sha256 hashes with a credential-free job.
+  Dependency scanning runs only from `main`. Pull requests and branch pushes
+  verify exact pins and sha256 hashes with a credential-free job.
 
 ## 0.4.0
 

@@ -34,6 +34,17 @@ def test_required_gate_cannot_skip_on_workflow_cancellation():
     assert gate["if"] == "always()", "The required gate must run even after cancellation"
 
 
+def test_snyk_dependency_scan_stays_on_main():
+    """The organization token must never run against contributor-controlled code."""
+    path = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+    jobs = YAML(typ="safe").load(path.read_text(encoding="utf-8"))["jobs"]
+    assert jobs["snyk"]["if"] == "github.ref == 'refs/heads/main'"
+    dependency_lock = json.dumps(jobs["dependency-lock"])
+    assert "secrets." not in dependency_lock
+    assert "check_dependency_inputs.py" in dependency_lock
+    assert "persist-credentials" in dependency_lock
+
+
 @pytest.mark.parametrize(
     "lint,tests,mcp,host_pins,dep_lock,sonar,snyk,snyk_code,main_ref,expected", CASES
 )
