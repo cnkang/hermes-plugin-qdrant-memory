@@ -97,8 +97,8 @@ Snyk dependency and code jobs run
 independently in parallel. Both Python versions run files serially because remote
 tests restart their disposable server. Python 3.14 collects coverage. SonarCloud
 waits for the test matrix and consumes that artifact, then waits for its quality
-gate. Snyk runs the code scan for every event and the dependency scan only from
-`main`. The required test matrix
+gate. Snyk runs the code scan on same-repository pull requests, branch pushes and
+dispatches, and the dependency scan only from `main`. The required test matrix
 validates the support range endpoints. It covers the minimum supported release
 v0.21.5 (v2026.9.24, `f97608f`) and the latest Hermes `main`. The `main` ref
 moves, and each run records its checked-out SHA in the run summary. The latest-main lane
@@ -116,7 +116,8 @@ The dependency scan is the one exception. It holds the organization Snyk token
 and never runs on a tree that a contributor controls: it runs only from `main`.
 Pull requests and branch pushes verify the dependency inputs with the
 credential-free `dependency-lock` job instead. That job rejects ranges, remote or
-VCS sources, option lines, missing sha256 hashes and snapshot drift. Snyk Code
+VCS sources, option lines, unpinned entries, unhashed snapshot entries and
+snapshot drift. Snyk Code
 stays on pull requests because it analyzes text and executes no contributor code.
 The credentialed Cloud smoke lane is narrower: it runs only on `main` pushes
 (plus manual dispatch). Branch pushes receive repository secrets, so the lane

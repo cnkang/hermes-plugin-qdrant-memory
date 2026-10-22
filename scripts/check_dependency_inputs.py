@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REQUIREMENT = re.compile(
@@ -28,6 +29,7 @@ REQUIREMENT = re.compile(
     r"==(?P<version>[A-Za-z0-9._+!-]+)$"
 )
 HASH = re.compile(r"^--hash=sha256:([0-9a-f]{64})$")
+COMMENT = re.compile(r"\s+#.*$")
 FORBIDDEN = (
     "://",
     "git+",
@@ -45,6 +47,15 @@ FORBIDDEN = (
 
 class Failure(Exception):
     """A dependency input violates the policy."""
+
+
+@dataclass
+class Pin:
+    """One base requirement with every pinned version and marker."""
+
+    versions: set[str] = field(default_factory=set)
+    markers: list[str] = field(default_factory=list)
+    unmarked: bool = False
 
 
 def logical_lines(text: str) -> list[tuple[int, str]]:
@@ -67,6 +78,11 @@ def logical_lines(text: str) -> list[tuple[int, str]]:
     return entries
 
 
+def content(line: str) -> str:
+    """Drop a trailing comment and surrounding whitespace."""
+    return COMMENT.sub("", line).strip()
+
+
 def split_marker(line: str) -> tuple[str, str]:
     """Split a requirement from its environment marker."""
     if ";" not in line:
@@ -75,15 +91,16 @@ def split_marker(line: str) -> tuple[str, str]:
     return requirement.strip(), marker.strip()
 
 
-def parse_pins(path: Path) -> dict[str, set[str]]:
-    """Return requirement name to the versions pinned in an exact-pin file."""
-    pins: dict[str, set[str]] = {}
-    for number, line in logical_lines(path.read_text(encoding="utf-8")):
+def parse_pins(path: Path) -> dict[str, Pin]:
+    """Return each requirement with its pinned versions and environment markers."""
+    pins: dict[str, Pin] = {}
+    for number, raw in logical_lines(path.read_text(encoding="utf-8")):
+        line = content(raw)
         if not line or line.startswith("#"):
             continue
         if line.startswith("-"):
             raise Failure(f"{path.name}:{number}: option lines are not allowed: {line}")
-        requirement, _marker = split_marker(line)
+        requirement, marker = split_marker(line)
         for token in FORBIDDEN:
             if token in requirement:
                 raise Failure(
@@ -94,7 +111,14 @@ def parse_pins(path: Path) -> dict[str, set[str]]:
             raise Failure(
                 f"{path.name}:{number}: expected an exact name==version pin, got: {requirement}"
             )
-        pins.setdefault(match.group("name").lower(), set()).add(match.group("version"))
+        name = match.group("name").lower()
+        pin = pins.setdefault(name, Pin())
+        if not marker:
+            if pin.unmarked:
+                raise Failure(f"{path.name}:{number}: duplicate unpinned requirement: {name}")
+            pin.unmarked = True
+        pin.versions.add(match.group("version"))
+        pin.markers.append(marker)
     if not pins:
         raise Failure(f"{path.name}: no requirements found")
     return pins
@@ -103,7 +127,8 @@ def parse_pins(path: Path) -> dict[str, set[str]]:
 def parse_hashed(path: Path) -> dict[str, str]:
     """Return requirement name to version, requiring a sha256 hash on each entry."""
     hashed: dict[str, str] = {}
-    for number, line in logical_lines(path.read_text(encoding="utf-8")):
+    for number, raw in logical_lines(path.read_text(encoding="utf-8")):
+        line = content(raw)
         if not line or line.startswith("#"):
             continue
         if line.startswith("-"):
@@ -135,32 +160,20 @@ def check(root: Path) -> None:
     base = parse_pins(root / "requirements.txt")
     local = parse_hashed(root / "requirements-local.txt")
 
-    for name, versions in base.items():
-        if name not in local:
-            continue
-        if local[name] not in versions:
-            raise Failure(
-                f"requirements-local.txt: {name}=={local[name]} does not match "
-                f"requirements.txt ({', '.join(sorted(versions))})"
-            )
-
-    unmarked = unmarked_names(root / "requirements.txt")
-    missing = sorted(name for name in unmarked if name not in local)
-    if missing:
-        raise Failure("requirements-local.txt is missing unmarked base pins: " + ", ".join(missing))
+    for name, pin in base.items():
+        if name in local:
+            if local[name] not in pin.versions:
+                raise Failure(
+                    f"requirements-local.txt: {name}=={local[name]} does not match "
+                    f"requirements.txt ({', '.join(sorted(pin.versions))})"
+                )
+        elif not windows_only(pin.markers):
+            raise Failure(f"requirements-local.txt is missing the hashed entry for {name}")
 
 
-def unmarked_names(path: Path) -> set[str]:
-    """Return base requirement names that have no environment marker."""
-    names: set[str] = set()
-    for number, line in logical_lines(path.read_text(encoding="utf-8")):
-        if not line or line.startswith("#"):
-            continue
-        requirement, marker = split_marker(line)
-        match = REQUIREMENT.match(requirement)
-        if match and not marker and "win32" not in requirement:
-            names.add(match.group("name").lower())
-    return names
+def windows_only(markers: list[str]) -> bool:
+    """Return whether every marker restricts the requirement to Windows."""
+    return bool(markers) and all("win32" in marker for marker in markers)
 
 
 def main() -> int:
