@@ -616,17 +616,23 @@ def make_server(owner, port):
                 return
 
             def drain():
+                deadline = time.monotonic() + 0.5
                 try:
-                    request.settimeout(0.5)
-                    while request.recv(65536):
-                        pass
+                    request.settimeout(0.1)
+                    while time.monotonic() < deadline:
+                        if not request.recv(65536):
+                            break
                 except OSError:
                     pass
                 finally:
                     self.shutdown_request(request)
                     self.drains.release()
 
-            Thread(target=drain, daemon=True).start()
+            try:
+                Thread(target=drain, daemon=True).start()
+            except RuntimeError:
+                self.drains.release()
+                self.shutdown_request(request)
 
         def process_request(self, request, client_address):
             """Refuse overflow in-band instead of parking the accept loop.
