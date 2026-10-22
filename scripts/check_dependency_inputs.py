@@ -63,12 +63,20 @@ class Pin:
 
 
 def logical_lines(text: str) -> list[tuple[int, str]]:
-    """Join backslash continuations and keep the first physical line number."""
+    """Join backslash continuations and keep the first physical line number.
+
+    A comment line never continues, even when its text ends with a backslash.
+    pip treats such a line as a comment; joining it would swallow the next
+    requirement and hide it from every policy check.
+    """
     entries: list[tuple[int, str]] = []
     buffer: list[str] = []
     first = 0
     for number, raw in enumerate(text.splitlines(), start=1):
         line = raw.rstrip()
+        if not buffer and line.strip().startswith("#"):
+            entries.append((number, line.strip()))
+            continue
         continued = line.endswith("\\")
         part = line[:-1] if continued else line
         if not buffer:
@@ -80,6 +88,11 @@ def logical_lines(text: str) -> list[tuple[int, str]]:
     if buffer:
         entries.append((first, " ".join(buffer).strip()))
     return entries
+
+
+def normalize(name: str) -> str:
+    """Normalize a package name as PEP 503 defines it."""
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def content(line: str) -> str:
@@ -115,7 +128,7 @@ def parse_pins(path: Path) -> dict[str, Pin]:
             raise Failure(
                 f"{path.name}:{number}: expected an exact name==version pin, got: {requirement}"
             )
-        name = match.group("name").lower()
+        name = normalize(match.group("name"))
         pin = pins.setdefault(name, Pin())
         if not marker:
             if pin.unmarked:
@@ -150,7 +163,7 @@ def parse_hashed(path: Path) -> dict[str, str]:
         hashes = [HASH.match(option) for option in options]
         if not options or not all(hashes):
             raise Failure(f"{path.name}:{number}: every entry needs --hash=sha256:<64 hex> values")
-        name = match.group("name").lower()
+        name = normalize(match.group("name"))
         if name in hashed:
             raise Failure(f"{path.name}:{number}: duplicate requirement: {name}")
         hashed[name] = match.group("version")
@@ -178,7 +191,10 @@ def check(root: Path) -> None:
 def windows_only(markers: list[str]) -> bool:
     """Return whether every marker positively restricts the requirement to Windows."""
     return bool(markers) and all(
-        "!=" not in marker and WINDOWS.search(marker) for marker in markers
+        "!=" not in marker
+        and not re.search(r"\bor\b", marker, re.IGNORECASE)
+        and WINDOWS.search(marker)
+        for marker in markers
     )
 
 
