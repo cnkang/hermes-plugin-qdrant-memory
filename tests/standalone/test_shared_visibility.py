@@ -44,7 +44,6 @@ def test_lifecycle_collision_skips_instead_of_blocking_every_writer(tmp_path):
             "assistant": "ack",
         },
     )
-
     second_owner = SharedOwner(rt, [second])
     second_lifecycle = OwnerLifecycle(second_owner)
     second_lifecycle.submit(
@@ -77,3 +76,40 @@ def test_lifecycle_collision_skips_instead_of_blocking_every_writer(tmp_path):
         )["action"]
         == "ADD"
     )
+
+
+def test_out_of_boundary_extraction_is_counted_as_skip(tmp_path, monkeypatch):
+    """A stale model-selected target is observable and never counted as an update."""
+    rt = runtime(tmp_path)
+    old_token, old = grant("old", visibility="shared")
+    old_owner = SharedOwner(rt, [old])
+    original = old_owner.call(
+        old_token,
+        "qdrant_memory_add",
+        {
+            "text": "Alpha uses WAL",
+            "request_id": "old-add",
+        },
+    )
+    token, current = grant("current", visibility="project", logical="agent-b")
+    owner = SharedOwner(rt, [current])
+    monkeypatch.setattr(
+        "qdrant_memory.runtime.decide", lambda *a, **kw: ("UPDATE", original["id"], {})
+    )
+    OwnerLifecycle(owner).submit(
+        token,
+        {
+            "event_id": "stale-target",
+            "session_id": "s",
+            "kind": "turn_completed",
+            "user": "Alpha uses WAL",
+            "assistant": "ack",
+        },
+    )
+    counts = rt.ledger.stats()["dedupe"]
+    assert counts["owner_record_boundary_skip"] == 1
+    assert counts.get("UPDATE", 0) == 0
+    assert rt.decisions.get("UPDATE", 0) == 0
+    assert counts["SKIP"] == 1
+    assert owner.blocked is False
+    assert owner.call(token, "qdrant_memory_search", {"query": "Alpha"})["memories"] == []

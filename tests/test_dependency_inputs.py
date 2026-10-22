@@ -108,9 +108,15 @@ def test_rejects_disjunctive_windows_marker(tmp_path):
         MODULE.check(write(tmp_path, base=base))
 
 
-def test_quoted_windows_text_does_not_exempt_linux_dependency(tmp_path):
+@pytest.mark.parametrize(
+    "marker",
+    [
+        '''os_name not in "sys_platform == 'win32'"''',
+        '''sys_platform in "linux sys_platform == 'win32'"''',
+    ],
+)
+def test_quoted_windows_text_does_not_exempt_linux_dependency(tmp_path, marker):
     """Windows text inside a literal must not bypass the Linux snapshot policy."""
-    marker = '''os_name not in "sys_platform == 'win32'"'''
     assert Marker(marker).evaluate({"os_name": "posix", "sys_platform": "linux"})
     base = BASE + f"linux-required==1.0 ; {marker}\n"
     with pytest.raises(MODULE.Failure, match="missing the hashed entry for linux-required"):

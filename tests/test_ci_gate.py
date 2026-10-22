@@ -22,6 +22,8 @@ CASES = (
         ("success",) * 5 + ("success", "skipped", "success", "false", 0),
         # The main tree must produce a real dependency scan result.
         ("success",) * 5 + ("success", "skipped", "success", "true", 1),
+        ("success",) * 5 + ("success", "failure", "success", "false", 1),
+        ("success",) * 5 + ("success", "cancelled", "success", "false", 1),
         ("success",) * 8 + ("false", 0),
     ]
 )

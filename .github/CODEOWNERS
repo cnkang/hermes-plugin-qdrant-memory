@@ -1,3 +1,7 @@
 # Workflow files execute with repository or publishing authority.
 /.github/CODEOWNERS @cnkang
 /.github/workflows/ @cnkang
+/scripts/check_dependency_inputs.py @cnkang
+/tests/test_dependency_inputs.py @cnkang
+/requirements.txt @cnkang
+/requirements-local.txt @cnkang

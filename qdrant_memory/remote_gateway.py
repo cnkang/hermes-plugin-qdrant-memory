@@ -220,6 +220,7 @@ def create_gateway(owner, *, allowed_hosts, lifecycle=None):
 
 
 LISTENER_OPTIONS = {
+    "http": "qdrant_memory.remote_protocol:HeaderTimeoutH11Protocol",
     "proxy_headers": False,
     "access_log": False,
     "server_header": False,
