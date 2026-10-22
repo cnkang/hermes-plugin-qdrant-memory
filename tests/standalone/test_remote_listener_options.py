@@ -61,7 +61,7 @@ def test_listener_bounds_headers_without_timing_out_active_requests(case):
                 await writer.drain()
                 headers = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 1)
                 assert b"200 OK" in headers
-                assert await reader.readexactly(2) == b"ok"
+                assert await asyncio.wait_for(reader.readexactly(2), 1) == b"ok"
                 if case == "active":
                     return
             if case in {"partial", "keepalive-partial"}:
