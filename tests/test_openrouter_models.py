@@ -31,7 +31,7 @@ def support():
 @pytest.mark.parametrize(
     "tier,chat,embedding,dimensions",
     [
-        ("smoke", "liquid/lfm-2.5-2.6b:free", "liquid/lfm-2.5-embedding-350m:free", 1024),
+        ("smoke", "google/gemma-4-31b-it:free", "nvidia/nemotron-3.5-embed-1b:free", 2048),
         ("quality", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3.5-embed-1b:free", 2048),
     ],
 )
@@ -86,7 +86,7 @@ def test_dispatch_then_tier_then_legacy_then_default():
     assert result["embedding"] == "fixture/dispatch-embed:free"
     del env["OPENROUTER_QUALITY_CHAT_MODEL"]
     assert resolve("quality", environ=env)["chat"] == "fixture/legacy:free"
-    assert resolve("smoke", environ=env)["chat"] == "liquid/lfm-2.5-2.6b:free"
+    assert resolve("smoke", environ=env)["chat"] == "google/gemma-4-31b-it:free"
 
 
 @pytest.mark.parametrize("kind", ["chat", "embedding"])
@@ -97,7 +97,7 @@ def test_paid_dynamic_and_unsafe_names_fail_before_network(kind, name):
         support()["resolve_models"]("quality", environ={}, **{kind: name})
 
 
-@pytest.mark.parametrize("tier,dimensions", [("smoke", 1024), ("quality", 2048)])
+@pytest.mark.parametrize("tier,dimensions", [("smoke", 2048), ("quality", 2048)])
 def test_cloud_profiles_use_the_existing_remote_facades(tier, dimensions):
     """Cloud profiles use the existing OpenAI-compatible adapters without Ollama."""
     core = runpy.run_path(str(ROOT / "scripts/evaluate_owner_lifecycle.py"))

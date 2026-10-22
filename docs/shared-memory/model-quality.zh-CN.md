@@ -213,10 +213,13 @@ reference 配置仅从 `main` 运行。
 
 | 模式 | 配置 | 默认 Chat | 默认 Embedding | 预期维度 |
 | --- | --- | --- | --- | --- |
-| Cloud Smoke | `openrouter-cloud-smoke` | `liquid/lfm-2.5-2.6b:free` | `liquid/lfm-2.5-embedding-350m:free` | 1024 |
+| Cloud Smoke | `openrouter-cloud-smoke` | `google/gemma-4-31b-it:free` | `nvidia/nemotron-3.5-embed-1b:free` | 2048 |
 | Cloud Quality | `openrouter-cloud-quality` | `google/gemma-4-26b-a4b-it:free` | `nvidia/nemotron-3.5-embed-1b:free` | 2048 |
 
 表中维度为预期值。实际批量响应必须在 Qdrant 启动前确认这些维度。
+[主线 Smoke 运行](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39726193083)已验证该默认组合：九项生命周期检查全通过，2048 维，清理完成。
+推理费用报告为零。该 `SMOKE_PASS` 不认证完整模型质量。
+这些默认值替代当前不可用的 Liquid 路由。运行时不会通过回退改变已选模型。
 不匹配时运行失败。每次运行使用新的临时 Embedded Qdrant collection，并在测试后删除。
 Cloud Smoke 通过 HTTPS MCP 执行一次合成 Hermes 和 Pi 生命周期。
 它检查提取、向量、授权召回、私有 Agent 及用户隔离、重放和重启。
@@ -249,6 +252,8 @@ HTTP 200、有效 JSON 或单条搜索结果均不能证明质量 PASS。
 手动备选 Embedding 模型 `nvidia/nemotron-3-embed-1b:free` 必须通过显式覆盖选择。
 也可通过对应档位的 Embedding 变量或工作流输入选择 `nvidia/nemotron-3.5-embed-8b:free`。
 每次运行均须先检查其免费路由和实际向量维度，再创建临时集合。
+[8B Embedding 对照](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39726636351)使用相同 Chat 模型，也取得 `SMOKE_PASS`。
+它验证了 `nvidia/nemotron-3.5-embed-8b:free` 的 4096 维向量、零报告推理费用和完整清理。
 不进行自动模型替换。
 
 手动云运行缺少凭据时，会生成脱敏 FAIL artifact，并记录 `required_secret=OPENROUTER_API_KEY`。
