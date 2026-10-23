@@ -1,6 +1,9 @@
 """The HTTPS Owner listener must rebind promptly after a normal restart."""
 
+import os
 import socket
+
+import pytest
 
 from qdrant_memory.remote_gateway import listener_socket
 
@@ -18,6 +21,10 @@ def _leave_time_wait(listener):
     return port
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows port reuse semantics differ; protected service is unsupported there",
+)
 def test_listener_rebinds_after_an_accepted_connection_closes():
     """A supervisor restart must not fail with address already in use."""
     port = _leave_time_wait(listener_socket(0))
