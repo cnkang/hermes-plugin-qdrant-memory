@@ -550,7 +550,7 @@ def test_relative_home_reaches_the_same_state_paths(profile):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Protected mode requires POSIX permissions")
-def test_retry_passes_the_protected_policy_to_the_writer_lease(profile, monkeypatch, capsys):
+def test_retry_passes_the_protected_policy_to_the_writer_lease(profile, monkeypatch):
     """Retry hands its explicit policy to the lease that owns destination admission.
 
     This covers the CLI wiring. Real admission refusal and acceptance are covered
@@ -560,7 +560,7 @@ def test_retry_passes_the_protected_policy_to_the_writer_lease(profile, monkeypa
     from types import SimpleNamespace
 
     from qdrant_memory import cli
-    from qdrant_memory.cli import main, register_cli
+    from qdrant_memory.cli import register_cli, run
 
     home, _ = profile
     path, binding = protected_policy(home)
@@ -575,28 +575,41 @@ def test_retry_passes_the_protected_policy_to_the_writer_lease(profile, monkeypa
     monkeypatch.setattr(cli, "WriterLease", SimpleNamespace(for_config=capture))
     parser = argparse.ArgumentParser()
     register_cli(parser)
-    monkeypatch.setattr(cli, "active_home", lambda: home)
     # The protected policy must stay inside the operator's invocation directory.
     monkeypatch.chdir(home)
-    assert main(parser.parse_args(["retry"])) == 1
-    assert json.loads(capsys.readouterr().out)["error"]["type"] == "PermissionError"
+    with pytest.raises(PermissionError):
+        run(
+            parser.parse_args(["retry"]),
+            home,
+            config_loader=load_standalone_config,
+            secret_reader=os.environ.get,
+        )
     assert seen == [None]
-    assert main(parser.parse_args(["retry", "--policy", str(path)])) == 1
-    assert json.loads(capsys.readouterr().out)["error"]["type"] == "PermissionError"
+    with pytest.raises(PermissionError):
+        run(
+            parser.parse_args(["retry", "--policy", str(path)]),
+            home,
+            config_loader=load_standalone_config,
+            secret_reader=os.environ.get,
+        )
     assert seen == [None, binding]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Protected mode requires POSIX permissions")
-def test_retry_rejects_a_policy_without_a_destination(profile, monkeypatch, capsys):
+def test_retry_rejects_a_policy_without_a_destination(profile, monkeypatch):
     """An explicit policy that cannot admit a destination is reported, not ignored."""
-    from qdrant_memory.cli import main, register_cli
+    from qdrant_memory.cli import register_cli, run
 
     home, _ = profile
     path = policy(home)
     make_private(home)
     parser = argparse.ArgumentParser()
     register_cli(parser)
-    monkeypatch.setattr("qdrant_memory.cli.active_home", lambda: home)
     monkeypatch.chdir(home)
-    assert main(parser.parse_args(["retry", "--policy", str(path)])) == 1
-    assert json.loads(capsys.readouterr().out)["error"]["type"] == "ValueError"
+    with pytest.raises(ValueError, match="no protected destination binding"):
+        run(
+            parser.parse_args(["retry", "--policy", str(path)]),
+            home,
+            config_loader=load_standalone_config,
+            secret_reader=os.environ.get,
+        )
