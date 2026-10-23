@@ -551,7 +551,12 @@ def test_relative_home_reaches_the_same_state_paths(profile):
 
 @pytest.mark.skipif(os.name == "nt", reason="Protected mode requires POSIX permissions")
 def test_retry_passes_the_protected_policy_to_the_writer_lease(profile, monkeypatch, capsys):
-    """The recovery command hands the explicit policy to destination admission."""
+    """Retry hands its explicit policy to the lease that owns destination admission.
+
+    This covers the CLI wiring. Real admission refusal and acceptance are covered
+    by test_claim_blocks_other_profile_and_private_admission, which drives
+    WriterLease and admit_claim directly on an enrolled destination.
+    """
     from types import SimpleNamespace
 
     from qdrant_memory import cli
