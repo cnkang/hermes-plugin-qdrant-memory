@@ -190,9 +190,11 @@ The owner replays pending Runtime operations and unfinished request plans before
 readiness. On terminal failure it blocks new writes and requires intervention.
 Stop the owner. Restore the Qdrant/embedding dependency. Run the existing
 operator `qdrant-memory --home OWNER retry`. Then restart. An enrolled
-destination also requires its protected policy: add
-`--policy /path/to/owner-policy.json`. Without that explicit input the command
-refuses an enrolled destination instead of opening it. No second owner should run
+destination also requires its protected policy: run from the directory that
+contains the policy, pass an absolute `--home`, and add
+`--policy ./owner-policy.json`. The policy path must resolve inside the
+invocation directory. Without that explicit input the command refuses an
+enrolled destination instead of opening it. No second owner should run
 maintenance concurrently. While shared plans are unfinished, shared write calls
 and mutating init/delete/import commands fail closed. Shared search remains
 available. Operator retry
