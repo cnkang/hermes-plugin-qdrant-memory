@@ -400,8 +400,8 @@ final commit.
 
 | Repository | Content | Pull request |
 | --- | --- | --- |
-| Runtime | three fixes, their regression tests, the documentation updates and this record | the Runtime pull request for this branch |
-| MCP | documentation alignment with the shipped pins | a separate documentation pull request |
+| Runtime | three fixes, their regression tests, the documentation updates and this record | [#89](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/89) |
+| MCP | documentation alignment with the shipped pins | [#42](https://github.com/cnkang/qdrant-memory-mcp/pull/42) |
 
 The Runtime pull request keeps the fixes and their evidence together so a
 reviewer can check each claim against the commits in one place. The distribution
