@@ -48,6 +48,26 @@ def test_snyk_dependency_scan_stays_on_main():
 
 
 @pytest.mark.parametrize(
+    "filename,job", [("ci.yml", "tests"), ("upstream-compat.yml", "latest-hermes")]
+)
+def test_exported_host_environments_keep_lock_overrides(filename, job):
+    """Keep host security overrides when resolving exported host requirements."""
+    path = Path(__file__).resolve().parents[1] / ".github/workflows" / filename
+    jobs = YAML(typ="safe").load(path.read_text(encoding="utf-8"))["jobs"]
+    steps = jobs[job]["steps"]
+    consumers = []
+    for step in steps:
+        # Join shell continuations so each install is checked independently.
+        commands = step.get("run", "").replace("\\\n", " ").splitlines()
+        consumers.extend(
+            line for line in commands if "pm.build_env" in line and "--requirements" in line
+        )
+    assert consumers, "The host compatibility lane must install its exported requirements"
+    for command in consumers:
+        assert '--lock "$GITHUB_WORKSPACE/.host/uv.lock"' in command
+
+
+@pytest.mark.parametrize(
     "lint,tests,mcp,host_pins,dep_lock,sonar,snyk,snyk_code,main_ref,expected", CASES
 )
 @pytest.mark.skipif(os.name == "nt", reason="The checked workflow step is POSIX Bash.")
