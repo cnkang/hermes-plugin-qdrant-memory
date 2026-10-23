@@ -27,8 +27,9 @@ fencing: direct writes with independent database credentials bypass Ledger and
 application CAS. Key scope and administrator access remain deployment concerns.
 No memory payload, shared protocol or Ledger migration is required.
 
-Authenticated cross-container transport changes the trust boundary and is
-deferred to a separate **0.5.0** design. Loopback binding remains unchanged.
+This historical proposal kept the private API on loopback. Runtime **0.5.0**
+later added a separate HTTPS MCP transport. Use its current release notes for
+installation and deployment. This proposal does not control release operations.
 
 ## 中文
 
@@ -48,5 +49,6 @@ deferred to a separate **0.5.0** design. Loopback binding remains unchanged.
 仍可绕过 Ledger 和应用层 CAS，凭据权限与管理员访问必须由部署方管理。
 无需更改记忆 payload、共享协议或迁移 Ledger。
 
-跨容器认证传输应另行设计为 **0.5.0**，本次保持 loopback 绑定。建议版本为
-**0.4.1**，仍需代码审查与必要 CI；此次不修改版本元数据、不创建 tag、不发布包。
+此历史提案将私有 API 保持在 loopback。Runtime **0.5.0** 随后新增了独立的
+HTTPS MCP 传输。安装和部署请使用该版本的当前发布说明。
+此提案不约束发布操作。

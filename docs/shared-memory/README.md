@@ -241,7 +241,7 @@ pending shared plan.
 The [official Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) offers
 semantic storage/retrieval with Qdrant persistence and metadata filtering.
 Qdrant Memory focuses on agent memory lifecycle, durable recovery and explicit
-controlled sharing. This feature is part of Runtime 0.4.0. It remains opt-in
+controlled sharing. This feature is available in Runtime 0.5.0. It remains opt-in
 and operator-configured.
 
 ## Local HTTP security boundary

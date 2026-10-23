@@ -210,7 +210,7 @@ Mem0 格式 export 仍是交换操作，不是完整的共享备份：它不保�
 
 官方 [Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) 提供带 Qdrant 持久化和
 metadata 过滤的语义存储/检索。Qdrant Memory 侧重 Agent 记忆生命周期、持久恢复和显式
-受控共享。此功能属于 Runtime 0.4.0，仍需显式启用并由运维方配置。
+受控共享。Runtime 0.5.0 提供此功能，仍需显式启用并由运维方配置。
 
 ## 本机 HTTP 安全边界
 
