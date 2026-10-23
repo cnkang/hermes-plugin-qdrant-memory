@@ -761,11 +761,16 @@ def _destination_policy(args):
     path = getattr(args, "policy", None)
     if path is None:
         return None
+    from .shared_security import private_entry
     from .shared_service import load_policy_document
     from .standalone import _operator_path
 
-    policy = load_policy_document(_operator_path(path, reject_symlinks=True))
-    return policy.get("destination")
+    resolved = _operator_path(path, reject_symlinks=True)
+    private_entry(resolved)
+    policy = load_policy_document(resolved)
+    if "destination" not in policy:
+        raise ValueError("The provided policy has no protected destination binding")
+    return policy["destination"]
 
 
 def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=None):

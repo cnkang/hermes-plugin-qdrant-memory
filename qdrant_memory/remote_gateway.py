@@ -232,9 +232,10 @@ LISTENER_OPTIONS = {
 def listener_socket(port):
     """Bind the loopback MCP listener so a restart can reuse the port.
 
-    Accepted connections leave the address in TIME_WAIT after a normal stop. The
-    option keeps a supervisor or operator restart from failing with EADDRINUSE,
-    and it never lets two live listeners share one port.
+    Accepted connections leave the address in TIME_WAIT after a normal stop. On
+    POSIX the option keeps a supervisor or operator restart from failing with
+    EADDRINUSE without letting two live listeners share one port. Windows treats
+    the option as permission to share a live port, so it is not set there.
     """
     import os
     import socket
