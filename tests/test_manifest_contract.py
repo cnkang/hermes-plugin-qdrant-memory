@@ -29,7 +29,11 @@ def test_manifests_declare_v2_metadata_and_match_runtime_dependencies():
     assert manifest["license"] == "MIT"
     assert manifest["homepage"] == "https://github.com/cnkang/hermes-plugin-qdrant-memory"
     assert manifest["tags"] == ["memory", "qdrant", "vector-search"]
-    assert manifest["python_dependencies"] == project["dependencies"]
+    # Hermes prepares manifest dependencies, not the wheel's optional extras.
+    # Native Owner remote_port needs both MCP and the ASGI server on every host.
+    assert manifest["python_dependencies"] == (
+        project["dependencies"] + project["optional-dependencies"]["remote"]
+    )
     assert manifest["provides_hooks"] == []
     assert "hooks" not in manifest
 
@@ -51,5 +55,7 @@ def test_hermes_manifest_parser_surfaces_v2_metadata():
         "httpx>=0.28,<1",
         "portalocker>=3.2,<4",
         "jsonschema>=4.23,<5",
+        "mcp>=1.30,<3",
+        "uvicorn>=0.35,<1",
     ]
     assert parsed.provides_hooks == []

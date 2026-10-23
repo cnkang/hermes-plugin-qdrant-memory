@@ -2,6 +2,9 @@
 
 ## 0.5.0
 
+- Declare MCP and uvicorn in both Hermes plugin manifests so the optional
+  Native Owner remote listener has its dependencies on every supported host.
+
 - Preserve the host lock's security overrides in compatibility CI. Use a pinned
   PM that carries Pillow 13 through exported-requirements installs and validates
   the resulting environment against the tested host lock.

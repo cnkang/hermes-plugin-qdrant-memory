@@ -16,6 +16,9 @@ WorkBuddy 的默认行为保持私有且不变。本次工作不会重新配置�
 使用 Python 3.11+ 和隔离环境。Runtime 0.5.0 包含此功能。请安装 PyPI 发行版，或在开发
 时使用固定 commit 的已审核 checkout。
 
+安装包前，请检查 [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.0/)
+是否已提供 Runtime 0.5.0。
+
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env
 /absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.0'
