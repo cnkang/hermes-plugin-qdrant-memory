@@ -9,6 +9,9 @@ installation uses 0.5.0.
 The distribution name remains `hermes-plugin-qdrant-memory`. Existing Hermes
 plugin discovery and `hermes qdrant-memory` grammar are compatible.
 
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.0/)
+for Runtime 0.5.0 availability before package installation.
+
 ```bash
 python3 -m venv .venv
 # POSIX; on Windows use .venv\Scripts\python.exe and the Scripts command directory.

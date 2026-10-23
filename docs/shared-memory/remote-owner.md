@@ -2,6 +2,9 @@
 
 Install Runtime 0.5.0 with the `[remote]` extra in a private environment:
 
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.0/)
+for Runtime 0.5.0 availability before running the package command.
+
 ```sh
 python -m pip install 'hermes-plugin-qdrant-memory[remote]==0.5.0'
 ```
@@ -206,6 +209,9 @@ together for consistent restore/rollback.
 Optional `remote_port` and `allowed_hosts` enable the same loopback MCP listener
 under the Native Owner, and require a protected destination policy. A same-host
 TLS proxy is still required. The Native lifecycle itself uses real Hermes callbacks.
+The 0.5.0 Hermes plugin manifest declares MCP and uvicorn for this listener.
+Hermes PM prepares these dependencies when it enables the plugin. Do not add
+packages directly to a managed Hermes environment.
 Optional `enable_lifecycle: true` enables the authenticated `/events` extension
 for other official Host adapters, reusing this Runtime and inherited host LLM.
 It requires the protected remote listener and defaults off. Do not register a
