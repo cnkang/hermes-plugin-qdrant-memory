@@ -584,3 +584,19 @@ def test_retry_passes_the_protected_policy_to_the_writer_lease(profile, monkeypa
     assert main(parser.parse_args(["retry", "--policy", str(path)])) == 1
     assert json.loads(capsys.readouterr().out)["error"]["type"] == "PermissionError"
     assert seen == [None, binding]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Protected mode requires POSIX permissions")
+def test_retry_rejects_a_policy_without_a_destination(profile, monkeypatch, capsys):
+    """An explicit policy that cannot admit a destination is reported, not ignored."""
+    from qdrant_memory.cli import main, register_cli
+
+    home, _ = profile
+    path = policy(home)
+    make_private(home)
+    parser = argparse.ArgumentParser()
+    register_cli(parser)
+    monkeypatch.setattr("qdrant_memory.cli.active_home", lambda: home)
+    monkeypatch.chdir(home)
+    assert main(parser.parse_args(["retry", "--policy", str(path)])) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["type"] == "ValueError"
