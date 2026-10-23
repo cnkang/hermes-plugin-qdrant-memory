@@ -1,8 +1,10 @@
-# Proposed maintenance release notes (unpublished)
+# Historical hardening proposal
 
-Recommended Runtime version: **0.4.1**, subject to review and required CI. Package
-metadata remains 0.4.0 until release preparation. No tag or publication is part
-of this change.
+This proposal predates the HTTPS Owner work. Runtime 0.5.0 includes this
+hardening and the later transport changes. See the [current release notes](../releases/0.5.0.md).
+
+此提案早于 HTTPS Owner 实现。Runtime 0.5.0 包含此处的加固及后续传输变更。
+参见[当前发布说明](../releases/0.5.0.zh-CN.md)。
 
 ## English
 

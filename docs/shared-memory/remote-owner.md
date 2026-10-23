@@ -1,10 +1,13 @@
-# HTTPS MCP Owner (unreleased source)
+# HTTPS MCP Owner (Runtime 0.5.0)
 
-This capability is newer than Runtime 0.4.0. Do not infer its availability from
-the unchanged source package version. Check `qdrant-memory --help` for
-`remote-serve`, `remote-mcp`, `remote-event` and `shared-device`. No package has
-been published by this work. Install a reviewed source checkout explicitly with
-`python -m pip install '.[remote]'` in a private environment.
+Install Runtime 0.5.0 with the `[remote]` extra in a private environment:
+
+```sh
+python -m pip install 'hermes-plugin-qdrant-memory[remote]==0.5.0'
+```
+
+The commands include `remote-serve`, `remote-mcp`, `remote-event` and
+`shared-device`. A source checkout must include the same extra.
 
 ## Roles and topology
 

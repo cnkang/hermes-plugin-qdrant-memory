@@ -1,7 +1,7 @@
 # One Memory, Multiple Agents — 可选启用的共享 owner
 
 生产部署前，请阅读[受保护目的地与诊断指南](deployment-security.md)和[威胁模型](threat-model-v1.md)。
-目的地保护是尚未发布的可选启用能力。Runtime 0.4.0 仅支持原有服务，不包含该保护能力。在应用客户端中，
+Runtime 0.5.0 包含可选启用的目的地保护。在应用客户端中，
 Qdrant 写凭据必须只属于 Owner。
 
 多个独立 Agent 可以通过同一个 Runtime owner 使用一份规范存储。本 checkout 实现了
@@ -13,12 +13,12 @@ WorkBuddy 的默认行为保持私有且不变。本次工作不会重新配置�
 
 ## 安装并创建独立的 owner profile
 
-使用 Python 3.11+ 和隔离环境。Runtime 0.4.0 包含此功能。请安装 PyPI 发行版，或在开发
+使用 Python 3.11+ 和隔离环境。Runtime 0.5.0 包含此功能。请安装 PyPI 发行版，或在开发
 时使用固定 commit 的已审核 checkout。
 
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env
-/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.4.0'
+/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.0'
 /absolute/path/shared-runtime-env/bin/qdrant-memory setup \
   --profile /absolute/path/shared-owner --embedding-provider ollama \
   --model qwen3-embedding:0.6b --dimensions 1024 \
@@ -125,8 +125,8 @@ env_vars = ["QDRANT_MEMORY_SHARED_TOKEN"]
 仍启动各自的私有 profile。仓库附带的 MCP 分发包含单独的预览配置示例。宿主 UI 或原生
 bundle 导入的验收仍是后续工作。
 
-**Hermes 兼容性：** Native Provider 保持私有，并执行现有的自动提取/预取。自动共享
-提取已列入计划，尚未实现。仅对未启用 qdrant-memory Native Provider 接口的 Hermes
+**Hermes 兼容性：** Native Provider 默认保持私有，并执行现有的自动提取/预取。
+Runtime 0.5.0 可显式启用 Native Owner 共享提取，配置见[远程 Owner 指南](remote-owner.md)。仅对未启用 qdrant-memory Native Provider 接口的 Hermes
 profile 使用共享 MCP 桥接。不要为同一个 Hermes profile 注册两种接口。另一种做法是
 保留 Native Provider，并用显式运维 CLI 执行用户授权的共享保存。不伪造任何生命周期
 回调。
@@ -202,8 +202,8 @@ Mem0 格式 export 仍是交换操作，不是完整的共享备份：它不保�
   包括本地跳转开销在内的可复现测量见验证报告。
 - MVP 为保障重试正确性会无限期保留 receipt。计划 payload 在提交后清除。尚未发布
   receipt 压缩策略。
-- 未实现分布式多写、embedded 直接读取、远程 Agent API、OAuth、组管理 UI、私有到共享
-  的自动迁移，以及 Native Provider 自动共享提取。
+- 未实现分布式多写、embedded 直接读取、OAuth、组管理 UI，以及私有到共享的自动迁移。
+  HTTPS MCP 与 Native Owner 提取请使用独立的[远程 Owner 指南](remote-owner.md)。
 
 官方 [Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) 提供带 Qdrant 持久化和
 metadata 过滤的语义存储/检索。Qdrant Memory 侧重 Agent 记忆生命周期、持久恢复和显式
@@ -212,8 +212,8 @@ metadata 过滤的语义存储/检索。Qdrant Memory 侧重 Agent 记忆生命�
 ## 本机 HTTP 安全边界
 
 共享 owner 使用未加密的私有本机 HTTP API，仅绑定 `127.0.0.1`。Bearer 凭据约束已配置
-的客户端。以同一 OS 用户运行的恶意代码或本机特权进程不在凭据保密边界内。当前版本不
-支持远程访问，服务不得通过公共代理暴露。
+的客户端。以同一 OS 用户运行的恶意代码或本机特权进程不在凭据保密边界内。
+此私有 API 不得通过公共代理暴露。远程客户端必须使用 Runtime 0.5.0 的独立 HTTPS MCP 端点。
 
 仓库记录了一项 Sonar 规则例外：`python:S5332`（明文 HTTP）仅对
 `qdrant_memory/shared_service.py` 应用上述本机传输设计决定。其他所有安全规则和质量
