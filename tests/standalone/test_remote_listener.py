@@ -33,3 +33,20 @@ def test_listener_rebinds_after_an_accepted_connection_closes():
         assert replacement.getsockname()[1] == port
     finally:
         replacement.close()
+
+
+def test_standalone_resolves_a_relative_home(monkeypatch, tmp_path):
+    """The standalone entry point normalizes --home before dispatching."""
+    from qdrant_memory import standalone
+
+    seen = {}
+
+    def capture(args, home, **kwargs):
+        """Record the resolved home and stop before any store access."""
+        seen["home"] = home
+        return {"ok": True}
+
+    monkeypatch.setattr(standalone.cli, "run", capture)
+    monkeypatch.chdir(tmp_path)
+    assert standalone.main(["--home", ".", "verify"]) == 0
+    assert seen["home"] == tmp_path.resolve()
