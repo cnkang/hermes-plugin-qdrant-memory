@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Let `retry` admit an enrolled protected destination through its explicit
+  `--policy` input. The documented recovery command previously failed closed on
+  every enrolled destination, so terminal Runtime work could not be requeued.
+- Resolve `--home` before read-only state access so a relative profile path
+  behaves like the same absolute path instead of failing with a path URI error.
+
 ## 0.5.0
 
 - Declare MCP and uvicorn in both Hermes plugin manifests so the optional
