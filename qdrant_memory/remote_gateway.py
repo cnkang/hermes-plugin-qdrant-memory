@@ -227,6 +227,24 @@ LISTENER_OPTIONS = {
     "log_level": "critical",
     "timeout_keep_alive": 5,
 }
+
+
+def listener_socket(port):
+    """Bind the loopback MCP listener so a restart can reuse the port.
+
+    Accepted connections leave the address in TIME_WAIT after a normal stop. The
+    option keeps a supervisor or operator restart from failing with EADDRINUSE,
+    and it never lets two live listeners share one port.
+    """
+    import socket
+
+    sock = socket.socket()
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", port))
+    sock.listen(128)
+    return sock
+
+
 # No listener-wide limit_concurrency: uvicorn counts accepted connections before a
 # request exists, so a local peer could otherwise turn idle sockets into a global 503
 # that bypasses the authenticated per-principal gates below.
@@ -235,7 +253,6 @@ LISTENER_OPTIONS = {
 def serve(home, policy_path, *, port, local_port, allowed_hosts, enable_lifecycle=False):
     """Run both listeners in one Owner process and drain before releasing storage."""
     import json
-    import socket
     from contextlib import ExitStack
     from threading import Thread
 
@@ -283,9 +300,7 @@ def serve(home, policy_path, *, port, local_port, allowed_hosts, enable_lifecycl
             if lifecycle.recover():
                 raise RuntimeError("Owner lifecycle recovery must finish before admission")
         app = create_gateway(owner, allowed_hosts=allowed_hosts, lifecycle=lifecycle)
-        with make_server(owner, local_port) as local, socket.socket() as sock:
-            sock.bind(("127.0.0.1", port))
-            sock.listen(128)
+        with make_server(owner, local_port) as local, listener_socket(port) as sock:
             thread = Thread(target=local.serve_forever, name="qdrant-memory-loopback")
             thread.start()
             try:
