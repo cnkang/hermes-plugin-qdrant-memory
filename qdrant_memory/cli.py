@@ -768,7 +768,7 @@ def _destination_policy(args):
     resolved = _operator_path(path, reject_symlinks=True)
     private_entry(resolved)
     policy = load_policy_document(resolved)
-    if "destination" not in policy:
+    if not isinstance(policy.get("destination"), dict):
         raise ValueError("The provided policy has no protected destination binding")
     return policy["destination"]
 

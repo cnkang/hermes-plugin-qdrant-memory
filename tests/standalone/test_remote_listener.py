@@ -2,6 +2,7 @@
 
 import os
 import socket
+from pathlib import Path
 
 import pytest
 
@@ -49,4 +50,4 @@ def test_standalone_resolves_a_relative_home(monkeypatch, tmp_path):
     monkeypatch.setattr(standalone.cli, "run", capture)
     monkeypatch.chdir(tmp_path)
     assert standalone.main(["--home", ".", "verify"]) == 0
-    assert seen["home"] == tmp_path.resolve()
+    assert Path(seen["home"]).resolve() == tmp_path.resolve()
