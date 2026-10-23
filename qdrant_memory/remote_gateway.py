@@ -236,10 +236,15 @@ def listener_socket(port):
     option keeps a supervisor or operator restart from failing with EADDRINUSE,
     and it never lets two live listeners share one port.
     """
+    import os
     import socket
 
     sock = socket.socket()
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if os.name != "nt":
+        # Windows interprets SO_REUSEADDR as permission to share a live port, so
+        # the option stays POSIX-only. Protected service surfaces are unsupported
+        # on Windows and fail closed there.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", port))
     sock.listen(128)
     return sock
