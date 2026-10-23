@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
+
+- Add opt-in HTTPS MCP, provisioned device grants, Native Hermes Owner extraction
+  and Pi lifecycle support through the existing Runtime and Ledger. Keep one
+  active Owner and private defaults. See the versioned release notes.
 
 - Breaking configuration change: non-loopback embedding endpoints now require
   HTTPS even without a credential. Before upgrade, put a trusted TLS proxy in

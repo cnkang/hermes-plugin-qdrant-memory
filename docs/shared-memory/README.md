@@ -1,8 +1,7 @@
 # One Memory, Multiple Agents — opt-in shared owner
 
 Before production deployment, read the [protected destination and doctor guide](deployment-security.md)
-and [threat model](threat-model-v1.md). Destination protection is an unpublished
-opt-in addition. Runtime 0.4.0 supports the original service only. Qdrant write
+and [threat model](threat-model-v1.md). Runtime 0.5.0 includes opt-in destination protection. Qdrant write
 credentials must belong exclusively to the Owner among application clients.
 
 Several independent agents can use one canonical store through a single Runtime
@@ -16,13 +15,13 @@ Do not use commands below against an existing production profile for experiments
 
 ## Install and create a separate owner profile
 
-Use Python 3.11+ and an isolated environment. Runtime 0.4.0 includes this
+Use Python 3.11+ and an isolated environment. Runtime 0.5.0 includes this
 feature. Install the PyPI release, or use a reviewed checkout at an immutable
 commit for development.
 
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env
-/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.4.0'
+/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.0'
 /absolute/path/shared-runtime-env/bin/qdrant-memory setup \
   --profile /absolute/path/shared-owner --embedding-provider ollama \
   --model qwen3-embedding:0.6b --dimensions 1024 \
@@ -139,9 +138,9 @@ DSH bundle and WorkBuddy managed installers still launch their private profiles.
 The repository's companion MCP distribution contains separate preview config
 examples. Host UI/native bundle import acceptance remains a follow-up.
 
-**Hermes compatibility:** the Native Provider remains private and performs its
-existing automatic extraction/prefetch. Automatic shared extraction is planned,
-not implemented. Use the shared MCP bridge only for a Hermes profile without the
+**Hermes compatibility:** the Native Provider stays private by default and performs its
+existing automatic extraction/prefetch. Runtime 0.5.0 supports opt-in Native Owner
+shared extraction. See the [remote Owner guide](remote-owner.md). Use the shared MCP bridge only for a Hermes profile without the
 qdrant-memory Native Provider interface enabled. Do not register both interfaces
 for one Hermes profile. Alternatively, keep Native Provider and use the explicit
 operator CLI for a user-authorized shared save. No lifecycle callbacks are faked.
@@ -231,9 +230,10 @@ pending shared plan.
   reproducible measurements, including local-hop overhead, in the report.
 - Receipts are retained indefinitely in the MVP for retry correctness. Plan
   payloads are scrubbed after commit. No receipt compaction policy is released.
-- No distributed multi-writer, direct embedded readers, remote agent API, OAuth,
-  group administration UI, automatic private-to-shared migration, or Native
-  Provider automatic shared extraction is implemented.
+- No distributed multi-writer, direct embedded readers, OAuth, group
+  administration UI or automatic private-to-shared migration is implemented.
+  For HTTPS MCP and Native Owner extraction, use the separate
+  [remote Owner guide](remote-owner.md).
 
 The [official Qdrant MCP](https://github.com/qdrant/mcp-server-qdrant) offers
 semantic storage/retrieval with Qdrant persistence and metadata filtering.
@@ -246,8 +246,8 @@ and operator-configured.
 The shared owner uses an unencrypted private local HTTP API bound to `127.0.0.1`
 only. Bearer credentials constrain configured clients. Malicious code running as
 the same OS user, or a privileged local process, is outside the credential
-confidentiality boundary. The current version does not support remote access,
-and the service must not be exposed through a public proxy.
+confidentiality boundary. Do not expose this private API through a public proxy.
+Remote clients must use the separate HTTPS MCP endpoint from Runtime 0.5.0.
 
 The repository records one Sonar rule exception: `python:S5332` (cleartext HTTP)
 applies the local transport design decision to `qdrant_memory/shared_service.py`

@@ -3,11 +3,11 @@
 Shared deployment hardening in this checkout is documented in the
 [protected destination guide](docs/shared-memory/deployment-security.md) and
 [versioned threat model](docs/shared-memory/threat-model-v1.md). These additions
-are unpublished. Current release installation commands remain unchanged.
+are included in Runtime 0.5.0. Remote access needs the `[remote]` extra.
 
 ## One Memory, Multiple Agents — opt-in shared owner
 
-Runtime 0.4.0 adds an opt-in authenticated local shared owner and stdio bridge. Multiple agents can share an explicitly authorized space while legacy records remain private. Hermes Native Provider and existing private defaults remain unchanged. See [setup, Hermes/DSH walkthrough and limits](docs/shared-memory/README.md), [architecture](docs/shared-memory/architecture.md), and [validation](docs/shared-memory/report.md). Native Provider automatic shared extraction is planned, not implemented.
+Runtime 0.5.0 adds an opt-in authenticated local shared owner and stdio bridge. Multiple agents can share an explicitly authorized space while legacy records remain private. Hermes Native Provider and existing private defaults remain unchanged. See [setup, Hermes/DSH walkthrough and limits](docs/shared-memory/README.md), [architecture](docs/shared-memory/architecture.md), and [validation](docs/shared-memory/report.md). Runtime 0.5.0 adds opt-in Native Owner extraction, device grants and HTTPS MCP. See the [remote Owner guide](docs/shared-memory/remote-owner.md).
 
 [![CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml)
 [![Platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml)
@@ -16,20 +16,21 @@ Runtime 0.4.0 adds an opt-in authenticated local shared owner and stdio bridge. 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.4.0** adds an opt-in authenticated local shared owner and a stdio
+> **Runtime 0.5.0** adds an opt-in authenticated local shared owner and a stdio
 > bridge for explicit shared memory. It keeps the optional offline CPU embedding,
 > trusted setup and MCP Python SDK 1.x/2.x support from 0.3.0.
 > Explicit writes retain canonical-text deduplication without an LLM.
-> Runtime 0.4.0 is available on [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.4.0/).
+> This guide selects Runtime 0.5.0. Check its availability on
+> [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.0/) before installation.
 > The generic MCP distribution and managed launcher select their own exact Runtime
 > dependency and are released independently.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.
-> See [release notes](docs/releases/0.4.0.md) and [validation](docs/validation.md).
+> See [release notes](docs/releases/0.5.0.md) and [validation](docs/validation.md).
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-New in 0.4.0: [shared memory for multiple agents](docs/shared-memory/README.md)
+New in 0.5.0: [shared memory for multiple agents](docs/shared-memory/README.md)
 adds an opt-in authenticated local owner without changing private defaults.
 
 Native long-term memory plugin for Hermes Agent, implemented as a `MemoryProvider`.
@@ -43,7 +44,7 @@ as a community-maintained plugin.
 ## How it works
 
 For non-Hermes users, install in a private Python 3.11+
-environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.4.0'` (omit `[mcp]`
+environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.0'` (omit `[mcp]`
 for CLI only). `qdrant-memory` is the CLI and `mcp` is its server subcommand.
 Standalone does not require Hermes. See [setup and quick start](docs/standalone.md).
 MCP-focused agents may instead use the [metadata-only distribution](https://github.com/cnkang/qdrant-memory-mcp).
@@ -84,8 +85,7 @@ The plugin primarily provides Hermes Agent's durable memory integration. As an
 additional capability, its shared backend can serve other agents through the
 Runtime's `qdrant-memory --home PATH` JSON CLI and optional local stdio MCP
 interface. Standalone use does not require Hermes. These interfaces support explicit scoped
-memory operations and maintenance/migration. Automatic extraction and prefetch
-remain Hermes lifecycle features. See [standalone setup](docs/standalone.md) for
+memory operations and maintenance/migration. Automatic extraction and prefetch use the Hermes Native Owner or the opt-in Pi lifecycle adapter. See [standalone setup](docs/standalone.md) for
 configuration and boundaries, and the agent-neutral
 [qdrant-memory skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)
 for multi-agent installation and usage guidance.
@@ -122,7 +122,7 @@ Choose the **active profile's** home explicitly. Do not reuse another profile's 
 **Catalog option: install the version reviewed by the official Hermes Plugin Catalog.**
 
 The Catalog selects its own fixed revision, which may be older than Runtime
-0.4.0. To use the current release, including opt-in shared memory, follow the
+0.5.0. To use the current release, including opt-in shared memory, follow the
 recommended version-locked installation below.
 
 ```bash
@@ -140,7 +140,7 @@ The install resolves the catalog's reviewed commit and prints the entry's declar
 tools, requirements and known issues before it clones anything.
 `hermes plugins enable` prepares the declared dependencies through Hermes PM.
 
-**Recommended: install the version-locked Runtime 0.4.0 source through the Hermes CLI.**
+**Recommended: install the version-locked Runtime 0.5.0 source through the Hermes CLI.**
 
 This immutable source revision includes opt-in shared memory. It does not depend
 on a PyPI release or a catalog update.
@@ -150,7 +150,7 @@ export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # Start Ollama if it is not running. Keep its service available.
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref ae11a0676724afb4af160b51d32da81b0828e089   # Runtime 0.4.0 release
+  --ref d6d1d989321558e356098e1cb01f55b6d4f88a2a   # Runtime 0.5.0 release
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
@@ -161,7 +161,7 @@ hermes qdrant-memory init
 
 This older immutable source revision includes optional CPU embedding and guided
 setup, but it predates opt-in shared memory. For the current release use
-Runtime 0.4.0 above. It does not depend on a PyPI release or a catalog update.
+Runtime 0.5.0 above. It does not depend on a PyPI release or a catalog update.
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
@@ -185,7 +185,7 @@ environment. Omit `--ref` to track `main`, the development line.
 **Historical release: clone a published tag manually.**
 
 The v0.1.0 tag below predates the standalone interfaces and the explicit-write
-fix. Use the pinned source above for Runtime 0.4.0.
+fix. Use the pinned source above for Runtime 0.5.0.
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"

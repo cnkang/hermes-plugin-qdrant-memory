@@ -2,16 +2,17 @@
 
 当前 checkout 中新增的共享部署加固措施记录在
 [受保护目的地指南](docs/shared-memory/deployment-security.md)和
-[版本化威胁模型](docs/shared-memory/threat-model-v1.md)中。这些新增内容尚未发布。
-现有发布版的安装命令保持不变。
+[版本化威胁模型](docs/shared-memory/threat-model-v1.md)中。这些新增内容包含在 Runtime 0.5.0 中。
+远程访问需要安装 `[remote]` extra。
 
 ## One Memory, Multiple Agents — 可选的共享 owner
 
-Runtime 0.4.0 新增可显式启用的本地认证共享 owner 与 stdio 桥接。多个 Agent 可以共享
+Runtime 0.5.0 新增可显式启用的本地认证共享 owner 与 stdio 桥接。多个 Agent 可以共享
 一个明确授权的空间，旧记录继续保持私有。Hermes Native Provider 与现有私有默认行为
 保持不变。配置、Hermes/DSH 操作示例与限制见[共享记忆指南](docs/shared-memory/README.zh-CN.md)，
 架构见[架构说明](docs/shared-memory/architecture.md)，验证见[验证报告](docs/shared-memory/report.md)。
-Native Provider 自动共享提取已列入计划，尚未实现。
+Runtime 0.5.0 新增可选启用的 Native Owner 提取、设备授权和 HTTPS MCP。
+见[远程 Owner 指南](docs/shared-memory/remote-owner.md)。
 
 [![CI](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/ci.yml)
 [![Platform compatibility](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml/badge.svg)](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/workflows/platform-compat.yml)
@@ -20,18 +21,19 @@ Native Provider 自动共享提取已列入计划，尚未实现。
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.4.0** 新增可显式启用的本地认证共享 owner，以及用于明确共享记忆的 stdio
+> **Runtime 0.5.0** 新增可显式启用的本地认证共享 owner，以及用于明确共享记忆的 stdio
 > 桥接；同时保留 0.3.0 的可选离线 CPU embedding、受信初始化与 MCP Python SDK 1.x/2.x 支持。
 > 显式写入继续按规范化文本去重，不调用 LLM。
-> Runtime 0.4.0 已在 [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.4.0/) 发布。
+> 本指南选择 Runtime 0.5.0。安装前请在
+> [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.0/) 核实该版本是否已公开。
 > 通用 MCP 发行包和托管启动器各自选择精确的 Runtime 依赖，分别发布。
 > Hermes Plugin Catalog 使用独立审核的固定版本（不可变），PyPI 发布不会自动升级目录中的版本。
 > 每个目的地仍只允许一个写入者。
-> 参见[发布说明](docs/releases/0.4.0.zh-CN.md)和[验证记录](docs/validation.md)。
+> 参见[发布说明](docs/releases/0.5.0.zh-CN.md)和[验证记录](docs/validation.md)。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-0.4.0 新增[多 Agent 共享记忆](docs/shared-memory/README.zh-CN.md)：
+0.5.0 新增[多 Agent 共享记忆](docs/shared-memory/README.zh-CN.md)：
 可选启用本地认证 owner，不改变私有默认行为。
 
 为 Hermes Agent 提供长期记忆的原生插件，以 `MemoryProvider` 实现。
@@ -44,7 +46,7 @@ schema-v1 payload。不使用 Mem0 SDK 或独立 LLM SDK，不发送遥测，不
 ## 工作原理
 
 非 Hermes 用户可在私有的 Python 3.11+ 环境中安装：
-`pip install 'hermes-plugin-qdrant-memory[mcp]==0.4.0'`（仅 CLI 可省略 `[mcp]`）。
+`pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.0'`（仅 CLI 可省略 `[mcp]`）。
 `qdrant-memory` 是 CLI，`mcp` 是其服务子命令。Standalone 不需要 Hermes。
 见[安装与快速开始](docs/standalone.md)。以 MCP 为主的 Agent 也可改用
 [metadata-only 分发包](https://github.com/cnkang/qdrant-memory-mcp)。
@@ -80,7 +82,7 @@ flowchart LR
 插件主要提供 Hermes Agent 的持久记忆集成。作为附加能力，其共享后端可通过 Runtime 的
 `qdrant-memory --home PATH` JSON CLI 和可选的本地 stdio MCP 接口为其他 Agent 服务。
 独立使用不需要 Hermes。这些接口支持显式、限定作用域的记忆操作以及维护/迁移。
-自动提取与预取仍属于 Hermes 生命周期功能。配置与边界见[独立运行指南](docs/standalone.md)，
+自动提取与预取通过 Hermes Native Owner 或显式启用的 Pi 生命周期适配器提供。配置与边界见[独立运行指南](docs/standalone.md)，
 多 Agent 安装与使用说明见通用的
 [qdrant-memory skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)。
 
@@ -109,7 +111,7 @@ Hermes 版本为 v0.21.5（v2026.9.24）。[CI 服务](docs/ci.md)页面记录�
 
 **Catalog 方案：安装官方 Hermes Plugin Catalog 审核过的版本。**
 
-Catalog 独立选择固定提交，该版本可能早于 Runtime 0.4.0。如需使用当前发布版本
+Catalog 独立选择固定提交，该版本可能早于 Runtime 0.5.0。如需使用当前发布版本
 （包括可选启用的共享记忆），请采用下方推荐的固定版本安装方式。
 
 ```bash
@@ -126,7 +128,7 @@ hermes qdrant-memory init
 安装会解析 Catalog 审核过的提交，并在克隆前打印该条目声明的工具、要求与已知问题。
 `hermes plugins enable` 通过 Hermes PM 准备声明的依赖。
 
-**推荐：通过 Hermes CLI 安装固定版本的 Runtime 0.4.0 源码。**
+**推荐：通过 Hermes CLI 安装固定版本的 Runtime 0.5.0 源码。**
 
 此不可变源码提交包含可选启用的共享记忆。它不依赖 PyPI 发布或 Catalog 更新。
 
@@ -135,7 +137,7 @@ export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # 如果 Ollama 尚未运行，先启动服务并保持其可用。
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref ae11a0676724afb4af160b51d32da81b0828e089   # Runtime 0.4.0 release
+  --ref d6d1d989321558e356098e1cb01f55b6d4f88a2a   # Runtime 0.5.0 release
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
@@ -145,7 +147,7 @@ hermes qdrant-memory init
 **上一验证源码：通过 Hermes CLI 安装 Runtime 0.3.0。**
 
 此较早的不可变源码提交包含可选 CPU embedding 与引导初始化，但早于可选启用的共享
-记忆。当前版本请使用上方 Runtime 0.4.0。它不依赖 PyPI 发布或 Catalog 更新。
+记忆。当前版本请使用上方 Runtime 0.5.0。它不依赖 PyPI 发布或 Catalog 更新。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
@@ -167,7 +169,7 @@ hermes qdrant-memory init
 
 **历史发行版本：手动克隆已发布的 tag。**
 
-下方 v0.1.0 tag 早于独立接口和显式写入修复。Runtime 0.4.0 请使用上方固定源码。
+下方 v0.1.0 tag 早于独立接口和显式写入修复。Runtime 0.5.0 请使用上方固定源码。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
