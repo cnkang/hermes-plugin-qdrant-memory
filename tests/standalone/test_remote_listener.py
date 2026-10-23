@@ -4,8 +4,6 @@ import os
 import socket
 from pathlib import Path
 
-import pytest
-
 from qdrant_memory.remote_gateway import listener_socket
 
 
@@ -22,13 +20,14 @@ def _leave_time_wait(listener):
     return port
 
 
-@pytest.mark.skipif(
-    os.name == "nt",
-    reason="Windows port reuse semantics differ; protected service is unsupported there",
-)
-def test_listener_rebinds_after_an_accepted_connection_closes():
-    """A supervisor restart must not fail with address already in use."""
-    port = _leave_time_wait(listener_socket(0))
+def test_listener_reuse_policy_and_posix_rebind():
+    """POSIX rebinds a closing port; Windows deliberately keeps the option off."""
+    first = listener_socket(0)
+    enabled = first.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR) != 0
+    assert enabled is (os.name != "nt")
+    port = _leave_time_wait(first)
+    if os.name == "nt":
+        return
     replacement = listener_socket(port)
     try:
         assert replacement.getsockname()[1] == port
