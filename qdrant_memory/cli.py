@@ -110,6 +110,12 @@ def register_cli(subparser):
     for name in ("status", "init", "stats", "doctor", "verify", "retry"):
         parser = commands.add_parser(name)
         parser.add_argument("--collection")
+        if name == "retry":
+            parser.add_argument(
+                "--policy",
+                type=Path,
+                help="Protected destination policy; required for an enrolled destination",
+            )
         if name == "init":
             parser.add_argument(
                 "--existing",
@@ -746,13 +752,29 @@ def _report_migration_result(result, progress):
     report(progress, stage, result["processed"], result["source_unique_count"])
 
 
+def _destination_policy(args):
+    """Load the operator's protected binding for one explicit maintenance pass.
+
+    Only an explicit policy can admit an enrolled destination. Absence keeps the
+    original fail-closed behavior, so this cannot become an implicit bypass.
+    """
+    path = getattr(args, "policy", None)
+    if path is None:
+        return None
+    from .shared_service import load_policy_document
+    from .standalone import _operator_path
+
+    policy = load_policy_document(_operator_path(path, reject_symlinks=True))
+    return policy.get("destination")
+
+
 def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=None):
     """Run maintenance with validated settings and reverse-order resource cleanup.
 
     Dry runs validate records without opening a target collection or ledger.
     Configuration, service and verification errors propagate to the CLI boundary.
     """
-    home = Path(home or active_home())
+    home = Path(home or active_home()).expanduser().absolute()
     command = args.qdrant_command
     if command == "discard-unadmitted-event" and not getattr(args, "confirm_discard", False):
         raise ValueError("Explicit --confirm-discard is required")
@@ -766,7 +788,11 @@ def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=No
     with ExitStack() as resources:
         if command in {"init", "migrate", "retry", "delete-all", "discard-unadmitted-event"}:
             report(progress, "Acquiring writer lock")
-            lease = WriterLease.for_config(home, cfg)
+            lease = WriterLease.for_config(
+                home,
+                cfg,
+                destination_policy=_destination_policy(args) if command == "retry" else None,
+            )
             resources.callback(lease.close)
         if command == "discard-unadmitted-event":
             if not (home / "qdrant-memory" / "state.db").is_file():

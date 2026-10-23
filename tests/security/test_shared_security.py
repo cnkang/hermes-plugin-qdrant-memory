@@ -1,5 +1,6 @@
 """Protected destinations reject unsafe admission before touching memory."""
 
+import argparse
 import errno
 import json
 import os
@@ -518,3 +519,63 @@ def test_protected_collection_schema_is_checked_before_ledger(profile):
     startup = open_runtime(home, shared_owner=True, destination_policy=binding)
     with pytest.raises(CollectionCompatibilityError), startup:
         pass
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Path URI checks use POSIX spelling")
+def test_relative_home_reaches_the_same_state_paths(profile):
+    """A relative --home value is resolved before read-only state access."""
+    import subprocess
+    import sysconfig
+
+    home, env = profile
+    assert command(profile, "init")["ok"]
+    result = subprocess.run(
+        [
+            str(
+                Path(sysconfig.get_path("scripts"))
+                / ("qdrant-memory.exe" if os.name == "nt" else "qdrant-memory")
+            ),
+            "--home",
+            ".",
+            "list",
+        ],
+        cwd=home,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert json.loads(result.stdout)["collection"] == "qdrant_memory"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Protected mode requires POSIX permissions")
+def test_retry_passes_the_protected_policy_to_the_writer_lease(profile, monkeypatch, capsys):
+    """The recovery command hands the explicit policy to destination admission."""
+    from types import SimpleNamespace
+
+    from qdrant_memory import cli
+    from qdrant_memory.cli import main, register_cli
+
+    home, _ = profile
+    path, binding = protected_policy(home)
+    make_private(home)
+    seen = []
+
+    def capture(home_argument, cfg, destination_policy=None):
+        """Record the admission input, then reproduce the refusal path."""
+        seen.append(destination_policy)
+        raise PermissionError("Destination requires its protected shared owner policy")
+
+    monkeypatch.setattr(cli, "WriterLease", SimpleNamespace(for_config=capture))
+    parser = argparse.ArgumentParser()
+    register_cli(parser)
+    monkeypatch.setattr(cli, "active_home", lambda: home)
+    # The protected policy must stay inside the operator's invocation directory.
+    monkeypatch.chdir(home)
+    assert main(parser.parse_args(["retry"])) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["type"] == "PermissionError"
+    assert seen == [None]
+    assert main(parser.parse_args(["retry", "--policy", str(path)])) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["type"] == "PermissionError"
+    assert seen == [None, binding]
