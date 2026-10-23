@@ -39,7 +39,7 @@ jobs:
         with:
           persist-credentials: false
           repository: NousResearch/hermes-agent
-          ref: 4787e4d56fc8d9265d4c7d3c0fe5accee86b4078
+          ref: 3ba2b0787ed3a73ec3b08085ed0137f235209cf4
           path: .pm-host
       - name: Record tested revisions
         id: revisions
@@ -82,6 +82,7 @@ jobs:
           "$RUNNER_TEMP/wheel-build-env/bin/python" -c 'import os, setuptools.build_meta as b; b.build_wheel(os.environ["RUNNER_TEMP"] + "/plugin-wheel")'
           cd .pm-host
           python -m pm.build_env --out "$GITHUB_WORKSPACE/.test-env" \
+            --lock "$GITHUB_WORKSPACE/.host/uv.lock" \
             --requirements "$RUNNER_TEMP/upstream-host-requirements.txt" \
             --requirement "hermes-plugin-qdrant-memory @ file://$(find "$RUNNER_TEMP/plugin-wheel" -name 'hermes_plugin_qdrant_memory-*.whl' -print -quit)"
       - name: Install plugin distribution and verify its entry point

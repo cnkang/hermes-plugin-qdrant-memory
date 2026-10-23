@@ -2,6 +2,10 @@
 
 ## 0.5.0
 
+- Preserve the host lock's security overrides in compatibility CI. Use a pinned
+  PM that carries Pillow 13 through exported-requirements installs and validates
+  the resulting environment against the tested host lock.
+
 - Add opt-in HTTPS MCP, provisioned device grants, Native Hermes Owner extraction
   and Pi lifecycle support through the existing Runtime and Ledger. Keep one
   active Owner and private defaults. See the versioned release notes.

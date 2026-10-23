@@ -36,6 +36,7 @@ Runtime **0.2.0** published the MCP interface. **0.2.1** fixes explicit writes
 of highly similar texts without an LLM. **0.2.2** supports SDK 1.x and 2.x.
 **0.3.0** adds the optional offline CPU embedding and guided setup commands.
 **0.4.0** adds the opt-in authenticated shared owner and its stdio bridge.
+**0.5.0** adds the separate HTTPS MCP gateway and device authorization.
 Use the following pinned installation.
 The older v0.1.0 release and its
 Hermes catalog installation do not supply this new entrypoint. Install the
@@ -44,7 +45,7 @@ versioned Runtime with the optional `mcp` extra:
 ```bash
 python3 -m venv /private/path/qdrant-env
 /private/path/qdrant-env/bin/python -m pip install \
-  'hermes-plugin-qdrant-memory[mcp]==0.4.0'
+  'hermes-plugin-qdrant-memory[mcp]==0.5.0'
 ```
 
 Use Python 3.11+. On Windows, use the environment's `Scripts` executables.
@@ -94,7 +95,8 @@ its entire lifetime. Independent profiles/hosts do not share a distributed lock.
 For concurrent clients, use the separate [shared owner](shared-memory/README.md)
 introduced in Runtime 0.4.0, with explicit credential-bound grants and one owner
 process. Reusing a private profile is still sequential and is not distributed
-coordination. Native Provider automatic shared extraction remains deferred.
+coordination. Runtime 0.5.0 provides an optional Native Owner lifecycle path.
+See [Native Owner setup](shared-memory/remote-owner.md#native-hermes-owner).
 
 ## Evidence and limits
 

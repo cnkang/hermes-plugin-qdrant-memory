@@ -51,6 +51,14 @@ Pydantic 2.14.1 and pydantic-core 2.50.1 from dependency PR #72 remain included
 (the replacement for the closed #64 proposal).
 Hash enforcement and dependency security scans are not bypassed.
 
+## Host dependency overrides
+
+The host compatibility jobs use a pinned PM with lock override support. They
+pass the tested host's `uv.lock` to each environment that installs exported host
+requirements. This preserves the host's security overrides, including
+`Pillow==13.0.0`. An export alone does not carry these overrides. PM checks
+installed dependencies against that lock and still rejects unrelated conflicts.
+
 ## Transient runner download retries
 
 The validation workflows have a separate, bounded retry controller for confirmed
