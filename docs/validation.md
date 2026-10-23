@@ -106,6 +106,17 @@ Local acceptance used Codex CLI 0.160.0, OpenCode 2.0.24 and Pi 1.1.0 with
 disposable profiles. These results establish the documented interface boundaries,
 not unrestricted live-model compatibility.
 
+## Cross-device OpenCode and Pi acceptance (2026-10-23)
+
+Two physical devices, three agent instances (OpenCode on each device and Pi on the
+second) shared one protected Owner over verified HTTPS. Basic sharing, update,
+delete, compare-and-swap, concurrency, authorization isolation, Pi lifecycle
+capture and recall, restart, crash, outage replay and backup restore were
+exercised with real agent processes. The run found three Runtime defects, all
+fixed here, and two open design limits. See the
+[cross-device acceptance record](validation/cross-device-opencode-pi-2026-10.md)
+for the matrix, evidence and limits.
+
 ## Hermes catalog installation (2026-10-11)
 
 The official Hermes Plugin Catalog pin
