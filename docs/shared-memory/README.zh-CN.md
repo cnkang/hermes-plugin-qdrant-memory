@@ -173,8 +173,9 @@ request ID 和完全相同的参数重试。持久化 receipt 会返回原始结
 owner 会在就绪前重放待处理的 Runtime 操作和未完成的请求计划。遇到终止性失败时，它
 阻止新的写入并要求人工介入。停止 owner，恢复 Qdrant/embedding 依赖，运行现有运维命令
 `qdrant-memory --home OWNER retry`，然后重启。已登记的 destination 还必须提供受保护
-policy：追加 `--policy /path/to/owner-policy.json`。缺少这一显式输入时，命令会拒绝
-已登记的 destination，而不是打开它。不得同时运行第二个 owner 执行维护。
+policy：先切换到 policy 所在目录，`--home` 使用绝对路径，再追加
+`--policy ./owner-policy.json`。policy 路径必须位于当前调用目录之内。缺少这一显式
+输入时，命令会拒绝已登记的 destination，而不是打开它。不得同时运行第二个 owner 执行维护。
 共享计划未完成期间，共享写入和会修改数据的 init/delete/import 命令会 fail-closed；共享搜索仍可用。
 运维 retry 仍可用，之后重启 owner 以核对 receipt。待处理的破坏性意图和原始宿主提取
 事件继续阻止不兼容的启动。请使用独立的 owner home，不要复用 Native Provider 的活动
