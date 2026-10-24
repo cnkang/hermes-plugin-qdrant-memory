@@ -184,3 +184,31 @@ def test_a_failure_after_extraction_persistence_is_never_quarantined(tmp_path, m
     finally:
         rt.ledger.close()
         rt.store.close()
+
+
+def test_recovery_with_a_still_broken_extractor_quarantines_and_returns_zero(tmp_path):
+    """A retry that meets the same deterministic failure stays isolated."""
+    rt = runtime(tmp_path)
+    token, value = shared_writer()
+    owner = SharedOwner(rt, [value])
+    lifecycle = OwnerLifecycle(owner)
+
+    def truncated(_event):
+        raise OwnerExtractionTruncated("Owner extraction output was truncated; retain the event")
+
+    rt.extractor.extract = truncated
+    try:
+        lifecycle.submit(token, event())
+        rt.ledger.retry_failed()
+        assert rt.recover() == 0
+        assert owner.blocked is False
+        assert (
+            rt.ledger.db.execute("SELECT status FROM events").fetchone()["status"] == "QUARANTINED"
+        )
+        added = owner.call(
+            token, "qdrant_memory_add", {"text": "synthetic fact", "request_id": "r2"}
+        )
+        assert added["id"]
+    finally:
+        rt.ledger.close()
+        rt.store.close()

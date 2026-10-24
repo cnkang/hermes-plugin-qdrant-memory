@@ -155,9 +155,13 @@ synthetic load on two local cores, not a production workload.
 
 | Source | Scope | Result |
 | --- | --- | --- |
-| Kiro CLI | diff against `9c1e0d6` | No P0. Crash consistency, exactly-once, gates and authorization hold. One P2 on auth rotation. |
+| Kiro CLI | diff against `9c1e0d6` | No P0. Crash consistency, exactly-once, gates and authorization hold. One P2 on auth rotation and one P1 on the recovery test gap. |
 | OpenCode | same diff | No P0. One P1 on provider status classification. Four P2 on invariants, backlog and tests. |
 | CodeRabbit | not available | NOT VERIFIED |
+
+Both reports reached a conclusion. The review launcher reported a missing
+completion marker because the prompt did not request one. The reports were read
+and triaged in full.
 
 Disposition:
 
@@ -165,8 +169,8 @@ Disposition:
   classifier maps 401, 403, 429 and other statuses. A test covers each code.
 - P2 quarantine invariant: fixed. The ledger refuses a prepared row.
 - P2 backlog cap: fixed. Retained events count against the cap.
-- P2 missing tests: fixed. Re-submission, post-extraction failure and status
-  mapping now have cases.
+- P2 missing tests: fixed. Re-submission, post-extraction failure, a retry that
+  meets the same failure and status mapping now have cases.
 - P2 auth rotation: accepted. The event is retained, and the operator fixes the
   key and retries. The ADR records the trade-off.
 
