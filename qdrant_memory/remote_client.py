@@ -43,6 +43,15 @@ def http_module():
     return httpx
 
 
+class RemoteStatusError(RuntimeError):
+    """A lifecycle response carried a status code and no usable error body."""
+
+    def __init__(self, status):
+        """Keep the status code only, never the remote body."""
+        super().__init__("Owner lifecycle request was rejected")
+        self.status_code = status
+
+
 def _control_error(body):
     """Retain a small machine vocabulary, never remote message/body fields."""
     error = body.get("error") if isinstance(body, dict) else None
@@ -88,7 +97,7 @@ async def _event_request(url, token, event, *, ca_file, path):
                 error = _control_error(body)
                 if error is not None:
                     return error
-            raise RuntimeError("Owner lifecycle admission failed")
+            raise RemoteStatusError(response.status_code)
         return response.json()
 
 
@@ -182,15 +191,14 @@ def remote_error(exc):
     try:
         import ssl
 
-        import httpx
-
+        http = http_module()
         if isinstance(leaf, ssl.SSLCertVerificationError):
             reason = "tls_verification_failed"
         elif isinstance(leaf, ssl.SSLError):
             reason = "tls_failed"
-        elif isinstance(leaf, httpx.TimeoutException) or isinstance(leaf, TimeoutError):
+        elif isinstance(leaf, http.TimeoutException) or isinstance(leaf, TimeoutError):
             reason = "timeout"
-        elif isinstance(leaf, (httpx.ConnectError, ConnectionError)):
+        elif isinstance(leaf, (http.ConnectError, ConnectionError)):
             reason = "unreachable"
         elif status in (401, 403):
             reason = "authentication_rejected"
