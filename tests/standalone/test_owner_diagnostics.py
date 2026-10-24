@@ -20,6 +20,9 @@ def test_remote_error_unwraps_groups_and_names_the_cause():
     assert error["retryable"] is False
     assert "secret" not in error["hint"].lower()
 
+    from qdrant_memory.remote_client import RemoteStatusError
+
+    assert remote_error(RemoteStatusError(401))["reason"] == "authentication_rejected"
     assert remote_error(TimeoutError("secret host"))["reason"] == "timeout"
     assert remote_error(ConnectionError("secret host"))["reason"] == "unreachable"
 
@@ -61,7 +64,7 @@ def test_output_budget_is_configurable_and_bounded():
     with pytest.raises(ValueError):
         validate_llm({"mode": "inherit", "max_output_tokens": 100})
     with pytest.raises(ValueError):
-        validate_llm({"mode": "inherit", "max_output_tokens": 40000})
+        validate_llm({"mode": "inherit", "max_output_tokens": 9000})
 
     llm = LLM()
     cfg = merge(DEFAULTS, {"llm": {"max_output_tokens": 2048}})

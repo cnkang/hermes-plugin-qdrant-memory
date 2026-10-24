@@ -136,8 +136,8 @@ def validate_llm(llm):
     if llm["mode"] == "override" and not all(llm.get(k) for k in ("provider", "model")):
         raise ValueError("LLM override requires provider and model")
     budget = llm.get("max_output_tokens", 800)
-    if not isinstance(budget, int) or not 256 <= budget <= 32768:
-        raise ValueError("LLM output budget must be an integer between 256 and 32768")
+    if not isinstance(budget, int) or not 256 <= budget <= 8192:
+        raise ValueError("LLM output budget must be an integer between 256 and 8192")
 
 
 def validate_embedding(cfg):
