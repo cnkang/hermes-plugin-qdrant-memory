@@ -21,7 +21,7 @@ DEFAULTS = {
         "timeout_seconds": 5,
         "prefer_grpc": False,
     },
-    "llm": {"mode": "inherit", "task": "qdrant_memory_extraction"},
+    "llm": {"mode": "inherit", "task": "qdrant_memory_extraction", "max_output_tokens": 800},
     "embedding": {
         "mode": "plugin",
         "provider": "ollama",
@@ -135,6 +135,9 @@ def validate_llm(llm):
         raise ValueError("Use the plugin's registered auxiliary task")
     if llm["mode"] == "override" and not all(llm.get(k) for k in ("provider", "model")):
         raise ValueError("LLM override requires provider and model")
+    budget = llm.get("max_output_tokens", 800)
+    if not isinstance(budget, int) or not 256 <= budget <= 32768:
+        raise ValueError("LLM output budget must be an integer between 256 and 32768")
 
 
 def validate_embedding(cfg):

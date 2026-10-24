@@ -22,6 +22,10 @@ def _finite_json_float(value):
     return number
 
 
+class OwnerExtractionTruncated(ValueError):
+    """The provider stopped at its token budget before a complete answer."""
+
+
 class OwnerLLM:
     """Implement the existing Extractor facade using a trusted configured endpoint."""
 
@@ -122,7 +126,9 @@ class OwnerLLM:
             raise RuntimeError("Owner extraction provider request failed")
         choice = response.json()["choices"][0]
         if choice.get("finish_reason") == "length":
-            raise ValueError("Owner extraction output was truncated; retain the event")
+            raise OwnerExtractionTruncated(
+                "Owner extraction output was truncated; retain the event"
+            )
         if self.response_format_mode == "tool_call":
             calls = choice["message"].get("tool_calls")
             if (
