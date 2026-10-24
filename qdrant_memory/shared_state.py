@@ -33,7 +33,7 @@ def require_no_pending_shared(home, namespace):
                     SELECT 1 FROM events e
                     WHERE e.collection=owner_events_v1.collection
                     AND e.event_id=owner_events_v1.event_key
-                    AND e.status IN ('COMMITTED','CANCELLED','SUPERSEDED')
+                    AND e.status IN ('COMMITTED','CANCELLED','SUPERSEDED','QUARANTINED')
                 ) LIMIT 1""",
             )
         )

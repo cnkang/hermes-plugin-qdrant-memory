@@ -189,7 +189,7 @@ def _recovery(home, cfg):
                     SELECT 1 FROM events e
                     WHERE e.collection=owner_events_v1.collection
                     AND e.event_id=owner_events_v1.event_key
-                    AND e.status IN ('COMMITTED','CANCELLED','SUPERSEDED')
+                    AND e.status IN ('COMMITTED','CANCELLED','SUPERSEDED','QUARANTINED')
                 )""",
             ),
             ("qdrant_reset_intents", "1=1"),
@@ -204,6 +204,26 @@ def _recovery(home, cfg):
             ):
                 return "FAIL"
     return "PASS"
+
+
+def _quarantined(home, cfg):
+    """Report retained extraction failures that need an operator decision."""
+    path = Path(home) / "qdrant-memory" / "state.db"
+    if not path.exists():
+        return "UNVERIFIED"
+    if Path(str(path) + "-wal").exists():
+        return "UNVERIFIED"
+    with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro&immutable=1", uri=True)) as db:
+        table = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='events'"
+        ).fetchone()
+        if not table:
+            return "PASS"
+        row = db.execute(
+            "SELECT COUNT(*) FROM events WHERE collection=? AND status='QUARANTINED'",
+            (ledger_namespace(cfg),),
+        ).fetchone()
+    return "PASS" if not row[0] else "FAIL"
 
 
 def _database(cfg):
@@ -284,6 +304,11 @@ def doctor(home, policy_path):
             "recovery",
             lambda: _recovery(home, cfg),
             "Pending work requires owner recovery; an active WAL is not a readiness proof.",
+        )
+        check(
+            "quarantine",
+            lambda: _quarantined(home, cfg),
+            "Retained capture events need retry or cancellation; unrelated writes continue.",
         )
         check(
             "local_ownership",
