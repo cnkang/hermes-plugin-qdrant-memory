@@ -32,8 +32,8 @@ kept the exact trusted device/principal/space/capture-rule mapping.
 
 Cancellation is conservative:
 
-- Only a raw `PENDING` or `FAILED` event with no persisted extraction candidates or
-  operation plan can be cancelled. The transaction marks it `CANCELLED` and scrubs
+- Only a raw `PENDING`, `FAILED` or `QUARANTINED` event with no persisted extraction
+  candidates or operation plan can be cancelled. The transaction marks it `CANCELLED` and scrubs
   both the event body and durable admission plan. Its input hash remains for ID reuse checks.
   An atomic status/body comparison rejects a plan changed since inspection.
 - A prepared, committed or uncertain write cannot be cancelled. Reconcile through
@@ -46,8 +46,26 @@ Cancellation is conservative:
 - Replay of the same cancelled input returns `CANCELLED`. Changed input with the same
   event ID is rejected. Runtime recovery and `retry_failed` cannot resurrect cancellation.
 
-Pi records `CANCELLED` as a distinct terminal outbox acknowledgement, never as a
-committed write. Hosts without this extension remain explicit MCP/assisted clients.
+A deterministic extraction failure quarantines only its own event. The Owner
+keeps its raw turn, records the reason code and continues to serve unrelated
+writes. The reasons are `output_truncated`, `output_invalid` and
+`authentication_rejected`. A timeout, an unreachable provider, rate limiting and
+any failure after a prepared plan keep the existing `FAILED` gate.
+
+Operator recovery for a quarantined event:
+
+1. Correct the model budget or the credential.
+2. Stop the Owner.
+3. Run `qdrant-memory --home <profile> retry --policy <policy>`.
+4. Start the Owner. Recovery extracts the retained turn and commits it once.
+
+The retained event survives restart. Its status endpoint returns `QUARANTINED`
+without content or provider text. A retry uses the same event key, so canonical
+text deduplication prevents a second record.
+
+Pi records `CANCELLED` and `QUARANTINED` as distinct terminal outbox
+acknowledgements, never as a committed write. A quarantined acknowledgement
+leaves the record with the Owner and stops client retries. Hosts without this extension remain explicit MCP/assisted clients.
 Additional generic task/pre-compact lifecycle semantics remain separate work.
 
 CLI control failures preserve only redacted machine error types and retryability. Remote message/body text is never reflected, including malformed success envelopes.
