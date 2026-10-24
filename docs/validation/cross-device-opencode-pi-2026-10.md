@@ -490,8 +490,10 @@ echo '{"query":"release checklist"}' | \
 The three defects reproduce directly:
 
 ```sh
-# 1. Enrolled destination: the documented command needs the policy input
-"$ROOT/env/bin/qdrant-memory" --home "$ROOT/owner" retry                 # PermissionError
+# 1. Enrolled destination
+# Pre-fix behavior (published 0.5.0): the command fails with PermissionError
+"$ROOT/env/bin/qdrant-memory" --home "$ROOT/owner" retry
+# Post-fix usage: the explicit policy admits the enrolled destination
 "$ROOT/env/bin/qdrant-memory" --home "$ROOT/owner" retry --policy ./owner-policy.json
 
 # 2. Relative profile path (pre-fix: ValueError from a path URI)
