@@ -307,7 +307,9 @@ Only raw input without candidates, operation keys or Owner authority qualifies.
 Its `CANCELLED` receipt, erased payload and `native_unadmitted_discarded` counter
 commit atomically. Repeated startup does not count the same cancellation again.
 Same-scope input still reauthorizes into private memory, and admitted/prepared
-work retains its recovery protections. Failed events still require the existing
+work retains its recovery protections. Quarantined extraction failures keep the
+raw event and the reason code, and they do not stop unrelated writers. Failed
+events still require the existing
 explicit operator retry. This does not bypass the failure gate.
 
 An operator can also discard a specific unadmitted event before restart. Stop
