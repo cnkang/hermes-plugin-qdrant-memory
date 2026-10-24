@@ -35,7 +35,7 @@ python -m pip install '.[mcp,local]'
 
 For a published package, install the same extras with the release version:
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.0/) for
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.1/) for
 Runtime 0.5.0 availability before running this command.
 
 ```sh

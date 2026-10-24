@@ -6,6 +6,20 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
+## Runtime 0.5.1 checks (2026-10-24)
+
+Release-preparation checks on the 0.5.1 head passed:
+
+- Full local suite with a real Qdrant container: 90 files, 1076 passed, 0 failed
+  and 11 gated skips.
+- The two-device acceptance run with OpenCode and Pi. The
+  [cross-device record](validation/cross-device-opencode-pi-2026-10.md) lists the
+  matrix, three fixed defects and two open limits.
+- Release CI tests the installed wheel and the source archive before publication.
+
+The 0.5.1 patch changes no schema, collection identity or credential format.
+Limits recorded for 0.5.0 still apply.
+
 ## Runtime 0.3.0 checks (2026-10-16)
 
 Release-preparation checks on the preparation head
