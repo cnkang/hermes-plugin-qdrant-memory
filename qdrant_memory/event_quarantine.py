@@ -57,6 +57,8 @@ def extraction_reason(exc):
         return "authentication_rejected"
     if status == 429:
         return "rate_limited"
+    if status == 408:
+        return "timeout"
     if isinstance(status, int) and 400 <= status < 500:
         return "output_invalid"
     if isinstance(status, int):

@@ -191,14 +191,19 @@ def remote_error(exc):
     try:
         import ssl
 
+        import httpx
+
         http = http_module()
+        modules = (http,) if http is httpx else (http, httpx)
         if isinstance(leaf, ssl.SSLCertVerificationError):
             reason = "tls_verification_failed"
         elif isinstance(leaf, ssl.SSLError):
             reason = "tls_failed"
-        elif isinstance(leaf, http.TimeoutException) or isinstance(leaf, TimeoutError):
+        elif isinstance(leaf, tuple(m.TimeoutException for m in modules)) or isinstance(
+            leaf, TimeoutError
+        ):
             reason = "timeout"
-        elif isinstance(leaf, (http.ConnectError, ConnectionError)):
+        elif isinstance(leaf, tuple(m.ConnectError for m in modules) + (ConnectionError,)):
             reason = "unreachable"
         elif status in (401, 403):
             reason = "authentication_rejected"
