@@ -1,9 +1,11 @@
 # Cross-device shared memory acceptance: OpenCode and Pi (2026-10)
 
 Two physical devices, three agent instances, one Owner. This page records what ran,
-what passed, and which defects the run exposed. Every result below comes from a
-real OpenCode or Pi process on the named device. Checks that could not run are
-labelled rather than counted.
+what passed, and which defects the run exposed. The sharing, update, concurrency,
+isolation and lifecycle results come from real OpenCode or Pi processes on the
+named device. The transport and recovery probes use the documented CLI, HTTPS and
+socket interfaces. Section 6 reproduces each defect with direct commands. Checks
+that could not run are labelled rather than counted.
 
 ## Result summary
 
@@ -17,10 +19,10 @@ labelled rather than counted.
 | F | Restart, crash, outage replay, backup | 7 | 6 | 1 |
 | **Total** | | **48** | **47** | **1** |
 
-The single failure (F6b) is a retained-event extraction failure, not a sharing or
-consistency failure: the pending event replayed exactly once and the Owner kept it
-durable, but the configured model produced output that exceeded its token budget,
-so the write did not commit until an operator raised the budget and retried.
+The single failure (F6b) is a retained-event extraction failure. The pending event
+replayed exactly once, and the Owner kept it durable. The configured model
+produced output that exceeded its token budget. The write did not commit until an
+operator raised the budget and retried.
 
 ## 1. Scope and topology
 
@@ -62,16 +64,16 @@ credential each.
   revocable credential used for the revocation check. Only SHA-256 hashes live in
   the policy.
 - Private CA with an IP and DNS subject alternative name. Clients trust that CA
-  explicitly (`--ca-file` / `QDRANT_MEMORY_CA_FILE`); no system trust store was
-  modified and TLS verification was never disabled.
+  explicitly (`--ca-file` / `QDRANT_MEMORY_CA_FILE`). No system trust store was
+  modified, and TLS verification was never disabled.
 - `remote-serve` keeps the Owner on literal loopback. A same-host TLS terminator
-  binds one interface address; the Owner rejects every request whose `Host` is not
+  binds one interface address. The Owner rejects every request whose `Host` is not
   the configured authority.
 - OpenCode ran with private XDG roots and `--standalone`, so the reviewer's
   installed configuration and background service were untouched. Pi ran with
   `PI_CODING_AGENT_DIR` and a separate session directory.
 - Both agents used one model relay bound to the point-to-point interface. The
-  relay carries no credentials and no stored memory; it exists because the Owner's
+  relay carries no credentials and no stored memory. It exists because the Owner's
   embedding and extraction models stay loopback-only.
 
 ## 4. Test groups
@@ -84,8 +86,11 @@ credential each.
 | A2 | OpenCode B reads it in a new session | PASS, same id and creator |
 | A3 | Pi reads it in an independent session | PASS, same id |
 | A4 | OpenCode B creates a second record | PASS, `created_by=opencode-b` |
-| A5 | OpenCode A and Pi read it | PASS |
-| A6 | Pi creates a record | PASS, `created_by=pi-b`, both OpenCode devices read it |
+| A5 | OpenCode A reads B's record | PASS |
+| A5b | Pi reads B's record | PASS |
+| A6 | Pi creates a record | PASS, `created_by=pi-b` |
+| A6b | OpenCode A reads Pi's record | PASS |
+| A6c | OpenCode B reads Pi's record | PASS |
 
 Provenance, scope, visibility and revision were re-read through a separate
 read-only credential, not taken from the tool response.
@@ -119,21 +124,22 @@ No lost update, stale read, duplicate point or wrong attribution appeared.
 | C4 Independent updates on different records in parallel | PASS, both applied |
 | C5 Ledger state after the batch | PASS, no `PENDING`/`FAILED` operations |
 
-The operation volume was bounded (three writers, two updates); this is a
+The operation volume was bounded: three writers and two updates. This is a
 correctness check, not a load test.
 
 ### D. Authorization and isolation
 
 | Case | Result |
 | --- | --- |
-| D1 Read-only credential reads but cannot add/update/delete | PASS, `PermissionError` on all three writes |
+| D1a Read-only credential searches | PASS, records returned |
+| D1b Read-only credential cannot add, update or delete | PASS, `PermissionError` on all three writes |
 | D2 OpenCode A cannot read another device's private space | PASS, invisible to both project and unrelated private grants |
 | D3 OpenCode B cannot mutate a known id from a foreign private space | PASS, `PermissionError` |
 | D4 Identity fields in tool arguments are rejected | PASS, rejected at the client and again at the Owner |
 | D5 Revoked credential fails immediately, restore works | PASS, HTTP 401 while revoked |
 | D6 Accepted write whose response was dropped replays once | PASS, one record |
 | D7 Clients cannot reach Qdrant directly | PASS, embedded backend, no listening 6333/6334, no key in policy |
-| D8 TLS, Host, Origin and bearer rejections | PASS: untrusted CA rejected, wrong `Host` 403, `Origin` 403, bad token 401 |
+| D8 TLS, Host, Origin and bearer rejections | PASS, untrusted CA rejected, wrong `Host` 403, `Origin` 403, bad token 401 |
 
 ### E. Pi automatic capture and recall
 
@@ -147,7 +153,7 @@ correctness check, not a load test.
 | E5 Recall is not written back as a new fact | PASS, record count unchanged |
 
 Automatic capture required an explicit project capture rule on the Pi credential.
-Without that rule the same turn stays private; that check was not bypassed.
+Without that rule the same turn stays private. That check was not bypassed.
 
 ### F. Failure and recovery
 
@@ -157,7 +163,7 @@ Without that rule the same turn stays private; that check was not bypassed.
 | F3 Crash (`SIGKILL`) and restart | PASS, records persist, no duplicate |
 | F3b Writes resume after the crash | PASS |
 | F6a Pending event replays once after an Owner outage | PASS, exactly one durable event |
-| F6b The replayed event commits | FAIL, output truncated at the configured 800-token budget; committed only after the budget was raised and `retry` ran |
+| F6b The replayed event commits | FAIL, output truncated at the configured 800-token budget. It committed only after the budget was raised and `retry` ran. |
 | F9 Backup, restore and restart | PASS, 1.6 MB profile archive, record restored |
 | F10 Latency samples | PASS, see section 5 |
 
@@ -179,8 +185,10 @@ search), five samples:
 The Owner's own counters on this machine reported embedding p50 ≈ 96 ms and
 Qdrant query p50 ≈ 2.6 ms. Most of the observed round trip is client process
 startup and the MCP handshake, not the memory operation. Extraction is the slow
-path: with the local 8B model, `extract_llm_latency_ms` p50 was ≈ 13 s per turn,
-which is why a lifecycle turn returns only after extraction commits.
+path. An early lifecycle phase used `qwen3:8b`, and its `extract_llm_latency_ms`
+p50 was ≈ 13 s per turn. The final configuration uses
+`deepseek-v4.1-flash:cloud`, which answers in a few seconds. A lifecycle turn
+returns only after extraction commits.
 
 ## 6. Findings
 
@@ -189,7 +197,7 @@ which is why a lifecycle turn returns only after extraction commits.
 - **Repro**: enroll a destination, stop the Owner, run
   `qdrant-memory --home OWNER retry` without a policy.
 - **Expected**: the documented recovery command requeues retained work.
-- **Actual**: `PermissionError`; the destination claim requires a protected
+- **Actual**: `PermissionError`. The destination claim requires a protected
   policy that the maintenance command never supplied.
 - **Root cause**: `cli._run` acquired the writer lease with no destination
   binding, while `WriterLease.for_config` refuses an enrolled claim without one.
@@ -215,8 +223,8 @@ which is why a lifecycle turn returns only after extraction commits.
 - **Repro**: serve the HTTPS Owner, make one request, stop it with `SIGTERM`,
   start it again immediately.
 - **Expected**: the restart binds the same port.
-- **Actual**: `OSError` (sanitized); the operator sees no reason. On this host the
-  address stayed unusable for at least 20 s.
+- **Actual**: `OSError` (sanitized), with no reason. On this host the address
+  stayed unusable for at least 20 s.
 - **Root cause**: accepted connections leave the address in `TIME_WAIT`, and the
   listener socket did not set `SO_REUSEADDR`.
 - **Fix**: bind through `remote_gateway.listener_socket`, which sets the option.
@@ -227,14 +235,15 @@ which is why a lifecycle turn returns only after extraction commits.
 
 - **Repro**: run the lifecycle with a reasoning-capable extraction model and the
   default `max_output_tokens: 800`.
-- **Actual**: the relation call ends with `finish_reason=length`; the Runtime
-  raises `ValueError("Owner extraction output was truncated; retain the event")`
+- **Actual**: the relation call ends with `finish_reason=length`. The Runtime
+  raises `ValueError("Owner extraction output was truncated. Retain the event.")`
   and keeps the event.
-- **Impact**: the turn produces no memory and the Owner blocks new writes until an
-  operator intervenes, so the budget is a deployment decision, not a detail.
+- **Impact**: the turn produces no memory. The Owner blocks new writes until an
+  operator intervenes. The budget is therefore a deployment decision, not a detail.
 - **Guidance**: set `max_output_tokens` to at least 2048 for reasoning models, or
   use a model that answers the schema directly. The Owner's LLM client timeout is
-  30 s; a slow local model therefore needs a small budget or must be replaced.
+  30 s. A slow local model therefore needs a small budget, or you must replace
+  the model.
 - **Status**: documentation only. Raising the default would trade one failure mode
   for a timeout on slow local models.
 
@@ -242,15 +251,15 @@ which is why a lifecycle turn returns only after extraction commits.
 
 - **Repro**: any deterministic extraction or relation failure during a lifecycle
   turn (see 6.4), then restart.
-- **Actual**: the event is retained `FAILED`; the Owner refuses to start while a
-  failed event exists; every client write returns `SharedRecoveryRequiredError`.
+- **Actual**: the event is retained `FAILED`. The Owner refuses to start while a
+  failed event exists. Every client write returns `SharedRecoveryRequiredError`.
   `cancel` refuses an event whose extraction was already prepared, and `retry`
   re-runs the same input.
-- **Assessment**: the durability contract is correct (nothing is lost and nothing
-  is silently rewritten), but the availability contract is strict: one malformed
-  model response removes the whole shared service until the operator fixes the
-  model and retries. A per-event quarantine, or an explicit operator discard for
-  prepared-but-unwritten events, would keep other clients serving.
+- **Assessment**: the durability contract is correct. Nothing is lost, and nothing
+  is silently rewritten. The availability contract is strict. One malformed model
+  response removes the whole shared service until the operator fixes the model and
+  retries. A per-event quarantine, or an explicit operator discard for prepared but
+  unwritten events, would keep other clients serving.
 - **Status**: not changed in this round. It alters a documented failure contract
   and needs its own design and review.
 
@@ -273,7 +282,7 @@ They now state the shipped pins (Runtime 0.5.0, distribution 0.2.4, launcher
 ### 6.8 OpenCode compatibility note (not a defect)
 
 OpenCode 2.0.24 accepts `mcp.servers.<name>` but rejects an integer `timeout`
-with a normalisation warning ("skipped malformed recognized value"); only the
+with a normalisation warning ("skipped malformed recognized value"). Only the
 object form is accepted. A project-level `opencode.json` is read in addition to
 the global file. This matters for integration guides, not for the Runtime.
 
@@ -290,10 +299,10 @@ the global file. This matters for integration guides, not for the Runtime.
 | Runtime | `80bbd55` | a policy without a destination object is an explicit error |
 | MCP | `9dbb2a8` | integration guides and version tables aligned with the shipped pins |
 
-Each fix has a regression test that fails on the pre-fix code: the retry test
-captures the lease input, the relative-home test runs the installed entry point
-from a relative path, and the listener test leaves a server-side `TIME_WAIT`
-before rebinding.
+Each fix has a regression test that fails on the pre-fix code. The retry test
+captures the lease input. The relative-home test runs the installed entry point
+from a relative path. The listener test leaves a server-side `TIME_WAIT` before it
+rebinds.
 
 ## 8. Unresolved issues and limits
 
@@ -313,13 +322,13 @@ before rebinding.
 ## 9. Security and data-isolation conclusions
 
 - One Owner, one Ledger, one embedding pipeline. No client wrote to Qdrant and no
-  client held a database credential; the embedded backend exposes no port.
+  client held a database credential. The embedded backend exposes no port.
 - Every credential resolved to exactly one principal, space and permission.
   Read-only credentials were refused at the service boundary, not only in the
   client schema.
 - Private spaces stayed invisible across devices and across logical agents, and a
   known id from a foreign space could not be mutated.
-- Identity could not be asserted through tool arguments; the Owner rejected those
+- Identity could not be asserted through tool arguments. The Owner rejected those
   fields on the server side as well.
 - Revocation applied to the next request, and a restored credential worked again.
 - TLS verification was never disabled: an untrusted CA, a mismatched hostname, a
@@ -330,7 +339,7 @@ before rebinding.
 ## 10. Reviews
 
 Three independent sources reviewed the Runtime change. Reports stayed outside the
-repository; this section keeps the disposition only.
+repository. This section keeps the disposition only.
 
 | Source | Scope | Blocking findings | Disposition |
 | --- | --- | --- | --- |
@@ -353,14 +362,14 @@ Accepted:
   explicitly, and the lease-level test that drives `admit_claim` on an enrolled
   destination is named in the same docstring. A single test that drives the CLI
   through real admission is not reachable with the fixture's isolated registry
-  and an uninitialised store; the two together cover the path.
+  and an uninitialised store. The two tests together cover the path.
 - P3: the relative-home test covered `cli._run` only. A named test now locks the
   standalone entry point resolution as well.
 
 Recorded, not changed:
 
 - P3: only `retry` accepts `--policy`. `init`, `migrate` and `delete-all` keep
-  their previous admission rules on purpose; the recovery path is the scope of
+  their previous admission rules on purpose. The recovery path is the scope of
   this change.
 
 ### 10.3 OpenCode
@@ -391,8 +400,8 @@ Recorded, not changed:
 The same two ACP sources reviewed the fix delta against a six-item claim
 checklist. Both marked all six VERIFIED, found no new P0/P1, and confirmed that
 the fail-closed refusal for an enrolled destination is preserved. Two P3 polish
-items were applied afterwards: the relative-home assertion now compares in the
-same normalization the entry point uses, and a policy with a missing or non-object
+items were applied afterwards. The relative-home assertion now compares in the
+same normalization the entry point uses. A policy with a missing or non-object
 destination binding is reported explicitly. The full suite was re-run on the
 final commit.
 
@@ -411,7 +420,7 @@ change contains documentation only.
 
 1. Raise `max_output_tokens` to at least 2048, or pin a model that answers the
    schema directly, before enabling lifecycle capture in production.
-2. Watch `events` for `FAILED` rows; they stop the Owner at the next start.
+2. Watch `events` for `FAILED` rows. They stop the Owner at the next start.
 3. Run the Owner under a supervisor that restarts it, and keep `--policy`
    available to the operator for `retry`.
 4. Treat the Pi capture rule as a separate grant: private capture is the default
@@ -426,7 +435,7 @@ change contains documentation only.
 - **Can both devices write and read in both directions?** Yes, through the single
   Owner over verified TLS.
 - **Does Pi automatic memory work in a shared space?** Yes, with an explicit
-  capture rule, and the captured records were visible to both OpenCode devices.
+  capture rule. The captured records were visible to both OpenCode devices.
 - **Is authorization isolation reliable?** Yes for the tested boundaries:
   read-only, private spaces, foreign ids, forged identity fields, revocation.
 - **Are outage, restart and failure recovery reliable?** Restart, crash, outage
@@ -436,16 +445,17 @@ change contains documentation only.
   CAS, request-id replay and delete were consistent, and supersession replaced the
   corrected preference.
 - **Is it ready for ordinary users?** Not yet. The core sharing and isolation
-  behaviour is sound, but lifecycle capture needs model guidance and the failure
-  policy in 6.5 before a shared deployment is safe to operate.
+  behaviour is sound. Lifecycle capture still needs model guidance and the failure
+  policy in 6.5. A shared deployment is not safe to operate before those are
+  settled.
 - **What must be fixed first?** The event-failure policy (6.5), an actionable
   error for authentication failures (6.6), and documented model budgets (6.4).
 
 ## Appendix A. Reproduction
 
-The layout below is parameterized: `$ROOT` is the owner-side working directory,
-`$PEER` is the second device's SSH target, `$HOST` is the Owner's pinned HTTP
-authority and `$URL` is `https://$HOST/mcp`.
+The layout below is parameterized. `$ROOT` is the owner-side working directory.
+`$PEER` is the second device's SSH target. `$HOST` is the Owner's pinned HTTP
+authority. `$URL` is `https://$HOST/mcp`.
 
 ```sh
 # Owner profile, isolated from every existing profile
