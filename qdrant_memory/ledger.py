@@ -9,6 +9,7 @@ from itertools import chain, islice
 from pathlib import Path
 from threading import RLock
 
+from .event_quarantine import record_json
 from .models import digest, now, timestamp
 from .retry import safe_error
 
@@ -482,6 +483,24 @@ class Ledger:
                 ),
             )
 
+    def quarantine(self, table, key, exc):
+        """Retain one unprepared event for operator retry and keep its raw input."""
+        if table != "events":
+            raise ValueError("Only lifecycle events can be quarantined")
+        with self.lock, self.db:
+            updated = self.db.execute(
+                "UPDATE events SET attempts=attempts+1,last_error=?,status='QUARANTINED' "
+                "WHERE event_id=? AND collection=? AND status='PENDING'",
+                (record_json(exc), key, self.collection),
+            ).rowcount
+            if updated == 1:
+                self.db.execute(
+                    "INSERT INTO counters VALUES(?,1,?) "
+                    "ON CONFLICT(name,collection) DO UPDATE SET value=value+1",
+                    ("events_quarantined", self.collection),
+                )
+        return updated
+
     def discard_unadmitted_event(self, key):
         """Atomically discard raw Native input; prepared work cannot cancel."""
         with self.lock:
@@ -518,11 +537,14 @@ class Ledger:
             return {"event_id": key, "status": "CANCELLED", "discarded": True}
 
     def retry_failed(self):
-        """Requeue failed events and operations only for this destination."""
+        """Requeue failed work, including retained quarantined events."""
         with self.lock, self.db:
-            for table in ("events", "operations"):
+            for table, condition in (
+                ("events", "status IN ('FAILED','QUARANTINED')"),
+                ("operations", "status='FAILED'"),
+            ):
                 self.db.execute(
-                    f"UPDATE {table} SET status='PENDING' WHERE status='FAILED' AND collection=?",
+                    f"UPDATE {table} SET status='PENDING' WHERE {condition} AND collection=?",
                     (self.collection,),
                 )
 

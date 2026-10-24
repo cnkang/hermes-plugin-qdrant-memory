@@ -6,6 +6,7 @@ Identity, space, capture policy, extraction and persistence remain Owner-side.
 
 import json
 
+from .event_quarantine import EventQuarantined
 from .models import digest, now
 
 
@@ -82,7 +83,7 @@ class OwnerLifecycle:
             if row["status"] == "CANCELLED":
                 return {"event_id": event_id, "status": "CANCELLED"}
             value = json.loads(row["payload_json"])
-            if row["status"] not in {"PENDING", "FAILED"} or any(
+            if row["status"] not in {"PENDING", "FAILED", "QUARANTINED"} or any(
                 key in value for key in ("candidates", "operation_keys")
             ):
                 raise ValueError("Event is prepared or committed; recover writes instead")
@@ -171,6 +172,10 @@ class OwnerLifecycle:
             ledger.enqueue_event(value)
             try:
                 rt.process_event(event_key)
+            except EventQuarantined:
+                # A retained event holds no plan, so unrelated writes continue.
+                row = ledger.row("events", event_key)
+                return {"event_id": event["event_id"], "status": row["status"]}
             except Exception:
                 self.owner.blocked = True
                 raise
