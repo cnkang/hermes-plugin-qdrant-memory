@@ -286,7 +286,13 @@ def main(argv=None):
                     return await send_event(args.url, token, value, ca_file=args.ca_file)
                 return await call_remote(args.url, token, args.tool, value, ca_file=args.ca_file)
 
-            result = anyio.run(request)
+            try:
+                result = anyio.run(request)
+            except Exception as exc:
+                from .remote_client import remote_error
+
+                cli.print_json({"error": remote_error(exc)})
+                return 1
             cli.print_json(result)
             return 1 if "error" in result else 0
         if args.qdrant_command == "remote-mcp":
