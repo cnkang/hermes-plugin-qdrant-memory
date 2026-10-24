@@ -412,9 +412,31 @@ final commit.
 | --- | --- | --- |
 | Runtime | three fixes, their regression tests, the documentation updates and this record | [#89](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/89) |
 | MCP | documentation alignment with the shipped pins | [#42](https://github.com/cnkang/qdrant-memory-mcp/pull/42) |
+| Runtime | release preparation for 0.5.1 | [#91](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/91) |
+| Runtime | installation pin at the tag target | [#92](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/92) |
+| Skills | Skill 0.3.4 selects Runtime 0.5.1 | [cnkang/skills#35](https://github.com/cnkang/skills/pull/35) |
+| MCP | release preparation for distribution 0.2.5 | [#43](https://github.com/cnkang/qdrant-memory-mcp/pull/43) |
 
-Both pull requests are merged. The Runtime pull request keeps the fixes and their
+All pull requests are merged. The Runtime pull request keeps the fixes and their
 evidence together. The distribution change contains documentation only.
+
+The release train that carries these fixes:
+
+| Artifact | Version | Reference |
+| --- | --- | --- |
+| Runtime | 0.5.1 | [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.1/) and [release](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases/tag/v0.5.1). Tag target `40ac832`. |
+| MCP distribution | 0.2.5 | [PyPI](https://pypi.org/project/qdrant-memory-mcp/0.2.5/), the MCP registry and the [release](https://github.com/cnkang/qdrant-memory-mcp/releases/tag/v0.2.5). Tag target `fb31ca3`. |
+| Skill | 0.3.4 | Commit `da19b4b` on `cnkang/skills`. |
+| Launcher | 0.1.0-rc.6 | `@cnkang/qdrant-memory-launcher` on npm. Both dist-tags select it. |
+| DSH bundle | 0.1.4 | [Release](https://github.com/cnkang/qdrant-memory-mcp/releases/tag/dsh-bundle-v0.1.4). |
+
+The first launcher package for Runtime 0.5.1 named a wheel path that PyPI does
+not serve, so every managed preparation failed at the download step. The package
+is immutable, so the correction shipped as `0.1.0-rc.6` and `0.1.0-rc.5` was
+removed from the registry. The compatibility probe also reported newly disclosed
+`undici` and `Zod` advisories in the official harness dependency tree. The probe
+now pins the fixed versions for that resolution, and the distribution test
+asserts both floors.
 
 ## 12. Recommendations
 
