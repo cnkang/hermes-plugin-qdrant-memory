@@ -488,6 +488,15 @@ class Ledger:
         if table != "events":
             raise ValueError("Only lifecycle events can be quarantined")
         with self.lock, self.db:
+            current = self.db.execute(
+                "SELECT payload_json FROM events WHERE event_id=? AND collection=?",
+                (key, self.collection),
+            ).fetchone()
+            if current is None:
+                return 0
+            plan = json.loads(current["payload_json"])
+            if any(field in plan for field in ("candidates", "operation_keys")):
+                raise ValueError("A prepared event cannot be quarantined")
             updated = self.db.execute(
                 "UPDATE events SET attempts=attempts+1,last_error=?,status='QUARANTINED' "
                 "WHERE event_id=? AND collection=? AND status='PENDING'",

@@ -52,6 +52,13 @@ def extraction_reason(exc):
             return "provider_error"
         if isinstance(exc, (httpx.TransportError, ConnectionError)):
             return "provider_unreachable"
+    status = getattr(exc, "status_code", None)
+    if status in (401, 403):
+        return "authentication_rejected"
+    if status == 429:
+        return "rate_limited"
+    if isinstance(status, int):
+        return "provider_error"
     if isinstance(exc, (ValueError, KeyError, TypeError)):
         return "output_invalid"
     return "extraction_failed"

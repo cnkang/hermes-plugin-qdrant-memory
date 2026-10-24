@@ -7,7 +7,7 @@ import pytest
 from qdrant_memory.config import ledger_namespace
 from qdrant_memory.event_quarantine import extraction_reason
 from qdrant_memory.owner_lifecycle import OwnerLifecycle
-from qdrant_memory.owner_llm import OwnerExtractionTruncated
+from qdrant_memory.owner_llm import OwnerExtractionTruncated, OwnerProviderStatus
 from qdrant_memory.shared_security import _quarantined, _recovery
 from qdrant_memory.shared_service import SharedOwner
 from qdrant_memory.shared_state import SharedRecoveryRequiredError, require_no_pending_shared
@@ -44,6 +44,9 @@ def test_reason_codes_are_stable_and_never_copy_provider_text():
     assert extraction_reason(ValueError("secret prompt text")) == "output_invalid"
     assert extraction_reason(TimeoutError("secret host name")) == "timeout"
     assert extraction_reason(ConnectionError("secret host name")) == "provider_unreachable"
+    assert extraction_reason(OwnerProviderStatus(401)) == "authentication_rejected"
+    assert extraction_reason(OwnerProviderStatus(429)) == "rate_limited"
+    assert extraction_reason(OwnerProviderStatus(500)) == "provider_error"
 
 
 def test_quarantine_retains_raw_input_and_a_bounded_error(tmp_path):
@@ -136,3 +139,48 @@ def test_doctor_reports_quarantine_without_failing_recovery(tmp_path):
 
     assert _recovery(tmp_path, cfg) == "PASS"
     assert _quarantined(tmp_path, cfg) == "FAIL"
+
+
+def test_resubmitting_a_quarantined_event_returns_the_same_status(tmp_path):
+    """A repeated host submission must not re-run extraction or duplicate a plan."""
+    rt = runtime(tmp_path)
+    token, value = shared_writer()
+    lifecycle = OwnerLifecycle(SharedOwner(rt, [value]))
+    calls = []
+
+    def truncated(_event):
+        calls.append(1)
+        raise OwnerExtractionTruncated("Owner extraction output was truncated; retain the event")
+
+    rt.extractor.extract = truncated
+    try:
+        assert lifecycle.submit(token, event())["status"] == "QUARANTINED"
+        assert lifecycle.submit(token, event())["status"] == "QUARANTINED"
+        assert len(calls) == 1
+        assert rt.store.count() == 0
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_a_failure_after_extraction_persistence_is_never_quarantined(tmp_path, monkeypatch):
+    """A persisted candidate set marks the event FAILED and keeps the gate."""
+    rt = runtime(tmp_path)
+    token, value = shared_writer()
+    owner = SharedOwner(rt, [value])
+    lifecycle = OwnerLifecycle(owner)
+
+    def broken_commit(_keys):
+        raise RuntimeError("Synthetic commit outage")
+
+    monkeypatch.setattr(rt, "commit", broken_commit)
+    try:
+        with pytest.raises(RuntimeError):
+            lifecycle.submit(token, event())
+        row = rt.ledger.db.execute("SELECT status,payload_json FROM events").fetchone()
+        assert row["status"] == "FAILED"
+        assert "candidates" in json.loads(row["payload_json"])
+        assert owner.blocked is True
+    finally:
+        rt.ledger.close()
+        rt.store.close()
