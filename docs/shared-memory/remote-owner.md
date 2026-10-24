@@ -240,7 +240,8 @@ denial counter records the skipped rule. Other devices' writes remain available.
 When the private credential itself is denied, the raw turn is retained FAILED
 without blocking unrelated clients. Restore authorization, stop the Owner,
 run the existing explicit operator `retry` with the protected policy
-(`--policy ./owner-policy.json`), then restart. Reauthorization of an
+(`--policy ./owner-policy.json`) from the directory that holds it, and pass an
+absolute `--home`. Then restart. Reauthorization of an
 unadmitted turn recovers private data only. It never retroactively publishes
 that turn into a project. An identity mismatch fails closed.
 
