@@ -46,6 +46,7 @@ def test_reason_codes_are_stable_and_never_copy_provider_text():
     assert extraction_reason(ConnectionError("secret host name")) == "provider_unreachable"
     assert extraction_reason(OwnerProviderStatus(401)) == "authentication_rejected"
     assert extraction_reason(OwnerProviderStatus(429)) == "rate_limited"
+    assert extraction_reason(OwnerProviderStatus(408)) == "timeout"
     assert extraction_reason(OwnerProviderStatus(400)) == "output_invalid"
     assert extraction_reason(OwnerProviderStatus(500)) == "provider_error"
 
