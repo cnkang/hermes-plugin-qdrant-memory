@@ -16,7 +16,7 @@ Before PyPI publication, use the reviewed immutable source in a separate
 environment. This revision includes the 0.5.0 runtime and plugin dependencies:
 
 ```sh
-python -m pip install 'hermes-plugin-qdrant-memory[remote] @ git+https://github.com/cnkang/hermes-plugin-qdrant-memory.git@2687a56631d5a7183d3fbe959324e3fc07491139'
+python -m pip install 'hermes-plugin-qdrant-memory[remote] @ git+https://github.com/cnkang/hermes-plugin-qdrant-memory.git@60762c3e39f4cb3419f6e983aeb61833952bf216'
 ```
 
 ## Roles and topology
