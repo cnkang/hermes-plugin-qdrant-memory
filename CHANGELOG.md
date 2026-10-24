@@ -7,6 +7,8 @@
   every enrolled destination, so terminal Runtime work could not be requeued.
 - Resolve `--home` before read-only state access so a relative profile path
   behaves like the same absolute path instead of failing with a path URI error.
+- Pin the documented install reference to the `v0.5.0` tag target, so the
+  README, the demo script and the release contract name the released commit.
 - Let the HTTPS MCP listener reuse its loopback port on POSIX. Accepted
   connections left the address in TIME_WAIT, so an immediate restart failed with
   an address-in-use error. Windows keeps the option off.
