@@ -46,6 +46,7 @@ def test_reason_codes_are_stable_and_never_copy_provider_text():
     assert extraction_reason(ConnectionError("secret host name")) == "provider_unreachable"
     assert extraction_reason(OwnerProviderStatus(401)) == "authentication_rejected"
     assert extraction_reason(OwnerProviderStatus(429)) == "rate_limited"
+    assert extraction_reason(OwnerProviderStatus(400)) == "output_invalid"
     assert extraction_reason(OwnerProviderStatus(500)) == "provider_error"
 
 
@@ -209,6 +210,28 @@ def test_recovery_with_a_still_broken_extractor_quarantines_and_returns_zero(tmp
             token, "qdrant_memory_add", {"text": "synthetic fact", "request_id": "r2"}
         )
         assert added["id"]
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_the_ledger_refuses_to_quarantine_a_prepared_row(tmp_path):
+    """The defensive invariant holds even when a caller bypasses the runtime."""
+    rt = runtime(tmp_path)
+    value = {
+        "kind": "turn",
+        "source": "owner_lifecycle",
+        "scope": rt.store.scope_defaults() if hasattr(rt.store, "scope_defaults") else {},
+        "session_id": "s",
+        "user": "u",
+        "assistant": "a",
+        "candidates": [],
+    }
+    key = rt.ledger.enqueue_event(value)
+    try:
+        with pytest.raises(ValueError):
+            rt.ledger.quarantine("events", key, ValueError("x"))
+        assert rt.ledger.row("events", key)["status"] == "PENDING"
     finally:
         rt.ledger.close()
         rt.store.close()
