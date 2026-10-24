@@ -290,14 +290,15 @@ the global file. This matters for integration guides, not for the Runtime.
 
 | Repository | Commit | Change |
 | --- | --- | --- |
-| Runtime | `66cd649` | `retry --policy` admission and relative `--home` resolution, with two regression tests |
-| Runtime | `63b19af` | both languages document the policy input and its cwd containment |
-| Runtime | `7b0c7e9` | `SO_REUSEADDR` on the Owner listener, with a rebind regression test |
-| Runtime | `983d9d6` | the socket option stays off Windows, where it permits port sharing |
-| Runtime | `01eeb74` | call-site coverage notes and the standalone home boundary test |
-| Runtime | `934ba7e` | the retry policy file passes the private-state check before trust |
-| Runtime | `80bbd55` | a policy without a destination object is an explicit error |
-| MCP | `9dbb2a8` | integration guides and version tables aligned with the shipped pins |
+| Runtime | `af18b33` | `retry --policy` admission and relative `--home` resolution, with two regression tests |
+| Runtime | `633357d` | both languages document the policy input and its cwd containment |
+| Runtime | `f9c40d8` | `SO_REUSEADDR` on the Owner listener, with a rebind regression test |
+| Runtime | `6e1d562` | the socket option stays off Windows, where it permits port sharing |
+| Runtime | `0e5ad37`, `df312c3`, `026be53` | call-site coverage, the policy-file check and the destination-object error |
+| Runtime | `b139f49` | a home resolution failure returns the sanitized JSON error |
+| MCP | `995ac7c`, `9fbb217`, `30a3930` | guides, version tables and CI facts aligned with the shipped packages |
+
+These are the commits on `main` after the rebase merge.
 
 Each fix has a regression test that fails on the pre-fix code. The retry test
 captures the lease input. The relative-home test runs the installed entry point
@@ -412,9 +413,8 @@ final commit.
 | Runtime | three fixes, their regression tests, the documentation updates and this record | [#89](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/89) |
 | MCP | documentation alignment with the shipped pins | [#42](https://github.com/cnkang/qdrant-memory-mcp/pull/42) |
 
-The Runtime pull request keeps the fixes and their evidence together so a
-reviewer can check each claim against the commits in one place. The distribution
-change contains documentation only.
+Both pull requests are merged. The Runtime pull request keeps the fixes and their
+evidence together. The distribution change contains documentation only.
 
 ## 12. Recommendations
 
