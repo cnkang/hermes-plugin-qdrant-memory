@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
 - Let `retry` admit an enrolled protected destination through its explicit
   `--policy` input. The documented recovery command previously failed closed on
