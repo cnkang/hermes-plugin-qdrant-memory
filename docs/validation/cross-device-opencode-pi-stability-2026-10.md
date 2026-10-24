@@ -131,9 +131,25 @@ Owner metrics during the drill:
 | Extraction latency, single sample | 3.7 s |
 | Upsert throughput p50 | 7.4 points/s |
 
-The bounded soak measured sequential write and read latency with periodic Owner
-restarts. The numbers are in the run evidence and describe a synthetic load on
-two local cores. They do not describe a production workload.
+The bounded soak ran for 20 minutes. It issued 42 sequential write and read
+pairs through one device credential and restarted the Owner 10 times.
+
+| Metric | Value |
+| --- | --- |
+| Write and read pairs | 42 |
+| Searchable after write | 38 |
+| Read latency p50 | 1093 ms |
+| Read latency p95 | 1162 ms |
+| Restart readiness, warm | 1.0 to 1.1 s |
+| Restart readiness, first start | 91 s |
+
+Four attempts fell inside the first restart window. Each returned an Owner error
+and produced no record. The harness counted those attempts as writes, and the
+report keeps the raw count. The first start pays embedded storage and model
+initialisation. Later restarts return in about one second.
+
+The latency includes process start for the command-line client. It describes a
+synthetic load on two local cores, not a production workload.
 
 ## 10. Reviews
 
