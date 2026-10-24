@@ -262,8 +262,8 @@ def parser():
 def main(argv=None):
     """Print JSON results; reserve stdout exclusively for MCP protocol in MCP mode."""
     args = parser().parse_args(argv)
-    args.home = Path(args.home).expanduser().absolute()
     try:
+        args.home = Path(args.home).expanduser().absolute()
         if args.qdrant_command in {"remote-call", "remote-event"}:
             import anyio
 
