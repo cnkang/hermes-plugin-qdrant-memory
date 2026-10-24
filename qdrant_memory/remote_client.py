@@ -95,7 +95,11 @@ async def _event_request(url, token, event, *, ca_file, path):
 async def send_event(url, token, event, *, ca_file=None):
     """Acknowledge only a committed write or an explicitly cancelled raw event."""
     result = await _event_request(url, token, event, ca_file=ca_file, path="/events")
-    if not isinstance(result, dict) or result.get("status") not in ("COMMITTED", "CANCELLED"):
+    if not isinstance(result, dict) or result.get("status") not in (
+        "COMMITTED",
+        "CANCELLED",
+        "QUARANTINED",
+    ):
         raise RuntimeError("Owner lifecycle is not committed; retain the event for retry")
     return result
 
@@ -153,6 +157,55 @@ async def call_remote(url, token, name, arguments, *, ca_file=None):
                 if not isinstance(value, dict):
                     raise ValueError("Invalid remote MCP result")
                 return value
+
+
+HINTS = {
+    "tls_verification_failed": "Trust the Owner CA file with --ca-file; never disable verification.",
+    "tls_failed": "Check the Owner certificate chain and the TLS listener.",
+    "authentication_rejected": "Rotate or reissue the device credential; confirm the Owner policy.",
+    "unreachable": "Confirm the Owner address, listener and network path.",
+    "timeout": "Confirm the Owner is responsive, then retry within the durable request contract.",
+    "protocol_error": "Confirm the endpoint ends in /mcp and serves the expected MCP version.",
+    "business_error": "Read the Owner error type; the request reached the Owner.",
+}
+
+
+def remote_error(exc):
+    """Return a stable transport diagnostic without remote text or credentials."""
+    leaf = exc
+    while isinstance(leaf, BaseExceptionGroup) and leaf.exceptions:
+        leaf = leaf.exceptions[0]
+    reason = "remote_error"
+    status = getattr(leaf, "status_code", None) or getattr(
+        getattr(leaf, "response", None), "status_code", None
+    )
+    try:
+        import ssl
+
+        import httpx
+
+        if isinstance(leaf, ssl.SSLCertVerificationError):
+            reason = "tls_verification_failed"
+        elif isinstance(leaf, ssl.SSLError):
+            reason = "tls_failed"
+        elif isinstance(leaf, httpx.TimeoutException) or isinstance(leaf, TimeoutError):
+            reason = "timeout"
+        elif isinstance(leaf, (httpx.ConnectError, ConnectionError)):
+            reason = "unreachable"
+        elif status in (401, 403):
+            reason = "authentication_rejected"
+        elif status is not None:
+            reason = "business_error"
+        elif type(leaf).__name__ in {"McpError", "BrokenResourceError"}:
+            reason = "protocol_error"
+    except ImportError:  # pragma: no cover - httpx ships with the remote extra
+        pass
+    return {
+        "type": type(leaf).__name__,
+        "reason": reason,
+        "retryable": reason in {"timeout", "unreachable"},
+        "hint": HINTS.get(reason, "Inspect the Owner log with the correlation identifier."),
+    }
 
 
 def serve_mcp(url, token_env, *, ca_file=None):

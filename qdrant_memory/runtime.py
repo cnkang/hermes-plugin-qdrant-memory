@@ -6,6 +6,7 @@ from itertools import islice
 from threading import RLock
 
 from .dedupe import decide, decide_explicit
+from .event_quarantine import EventQuarantined, ExtractionStageError, extraction_reason
 from .models import Scope, content_hash, enforce_limits, now, payload, point_id
 from .progress import report
 from .retry import run_with_retry
@@ -162,6 +163,9 @@ class Runtime:
                 return failures
             try:
                 self.process_event(event["event_id"])
+            except EventQuarantined:
+                # Retained for an operator; it holds no plan and blocks nothing.
+                continue
             except Exception:
                 failures += 1
         return failures
@@ -213,6 +217,14 @@ class Runtime:
                 self.ledger.finish("events", key)
             except WorkDeferred:
                 raise
+            except ExtractionStageError as exc:
+                if not exc.deterministic:
+                    # A transient outage keeps the existing fail-closed recovery gate.
+                    self.ledger.failure("events", key, exc.original, terminal=True)
+                    raise exc.original
+                # Retain the raw event and its reason; no plan exists to reconcile.
+                self.ledger.quarantine("events", key, exc)
+                raise EventQuarantined(key, exc.reason) from exc
             except Exception as exc:
                 self.ledger.failure("events", key, exc, terminal=True)
                 raise
@@ -229,9 +241,15 @@ class Runtime:
             return []
         if "candidates" not in event:
             started = time.monotonic()
-            event["candidates"] = run_with_retry(
-                lambda: self.extractor.extract(event), self.cfg["write"]
-            )
+            try:
+                event["candidates"] = run_with_retry(
+                    lambda: self.extractor.extract(event), self.cfg["write"]
+                )
+            except WorkDeferred:
+                raise
+            except Exception as exc:
+                # Nothing is persisted yet, so this event cannot poison a write plan.
+                raise ExtractionStageError(extraction_reason(exc), exc) from exc
             self.ledger.measure("extract_llm_latency_ms", (time.monotonic() - started) * 1000)
             # Persist extraction before dedupe or remote writes.
             self.ledger.prepare_event(event["event_id"], event)

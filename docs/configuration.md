@@ -143,6 +143,14 @@ operator-authorized provider/model selection:
 {"llm": {"mode": "override", "provider": "your-provider", "model": "your-model"}}
 ```
 
+The extraction call has a bounded output budget. The default is 800 tokens, and
+the accepted range is 256 to 32768. Raise it for a reasoning model that spends
+part of the budget before it answers:
+
+```json
+{"llm": {"mode": "inherit", "max_output_tokens": 2048}}
+```
+
 These plugin settings do not bypass Hermes trust grants or contain LLM credentials.
 
 ## Storage, limits and scope

@@ -55,7 +55,7 @@ class Extractor:
             input=[{"type": "text", "text": json.dumps(value, ensure_ascii=False)}],
             json_schema=schema,
             temperature=0.0,
-            max_tokens=800,
+            max_tokens=self.cfg.get("max_output_tokens", 800),
             purpose=purpose,
             **options,
         )

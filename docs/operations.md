@@ -28,12 +28,14 @@ serialization lock. Background prefetch caches belong to a session and scope.
 `prefetch()` returns cached results without embedding or network calls. Cache
 generations prevent old background results from repopulating a switched session.
 
-Events move through PENDING to COMMITTED or FAILED. The plugin persists extraction
+Events move through PENDING to COMMITTED, QUARANTINED or FAILED. A deterministic
+extraction failure with no persisted plan quarantines only that event. Other
+clients keep writing. The plugin persists extraction
 results and prepared operation payloads before remote mutations. It acknowledges
 operation batches only after Qdrant confirms completion. Timeouts, transport
 failures, 429 and 502/503/504 retry with bounded full-jitter backoff. Auth,
-config and schema errors fail immediately. FAILED rows remain visible and require
-an explicit `retry`. Newer committed mutations mark older pending/failed writes
+config and schema errors fail immediately. FAILED and QUARANTINED rows remain
+visible and require an explicit `retry`. Newer committed mutations mark older pending/failed writes
 to the same point SUPERSEDED, preventing a later retry from reverting the new
 state.
 
