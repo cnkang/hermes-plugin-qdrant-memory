@@ -49,4 +49,5 @@ def test_standalone_resolves_a_relative_home(monkeypatch, tmp_path):
     monkeypatch.setattr(standalone.cli, "run", capture)
     monkeypatch.chdir(tmp_path)
     assert standalone.main(["--home", ".", "verify"]) == 0
+    assert Path(seen["home"]).is_absolute()
     assert Path(seen["home"]).resolve() == tmp_path.resolve()
