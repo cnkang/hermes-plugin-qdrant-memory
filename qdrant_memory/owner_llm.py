@@ -22,6 +22,15 @@ def _finite_json_float(value):
     return number
 
 
+class OwnerProviderStatus(RuntimeError):
+    """The extraction endpoint rejected the request with an HTTP status."""
+
+    def __init__(self, status):
+        """Keep only the status code, never the provider body."""
+        super().__init__(f"Owner extraction provider returned HTTP {status}")
+        self.status_code = status
+
+
 class OwnerExtractionTruncated(ValueError):
     """The provider stopped at its token budget before a complete answer."""
 
@@ -123,7 +132,7 @@ class OwnerLLM:
             body["provider"] = {"require_parameters": self.provider_require_parameters}
         response = self.client.post(self.url, json=body)
         if response.status_code != 200:
-            raise RuntimeError("Owner extraction provider request failed")
+            raise OwnerProviderStatus(response.status_code)
         choice = response.json()["choices"][0]
         if choice.get("finish_reason") == "length":
             raise OwnerExtractionTruncated(

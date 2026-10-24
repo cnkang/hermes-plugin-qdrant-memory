@@ -146,7 +146,7 @@ class OwnerLifecycle:
             else:
                 queued = sum(
                     ledger.db.execute(
-                        "SELECT COUNT(*) FROM events WHERE collection=? AND status IN ('PENDING','FAILED')",
+                        "SELECT COUNT(*) FROM events WHERE collection=? AND status IN ('PENDING','FAILED','QUARANTINED')",
                         (ledger.collection,),
                     ).fetchone()
                 )
