@@ -5,6 +5,11 @@ This report records the stability work that follows the
 verified Runtime 0.5.0. This run verifies a development branch that adds
 event-level fault isolation.
 
+> Post-merge status (2026-10-25): both pull requests are merged. CodeRabbit
+> approved the Runtime change before the merge. The follow-up note
+> [stability follow-up](cross-device-opencode-pi-stability-followup-2026-10.md)
+> adds the concurrency and released-baseline evidence.
+
 ## 1. Baseline
 
 | Component | Released baseline | Reviewed branch |
@@ -116,8 +121,7 @@ test fails without that change and passes with it.
   is covered by the 0.5.0 record and by the regression suite.
 - The soak ran for a bounded window only. It does not support a claim about
   unattended production use.
-- CodeRabbit did not review this change. The repository has no CodeRabbit check
-  and the local CLI is not configured for it.
+- CodeRabbit reviewed the change after this report was written and approved it.
 
 ## 9. Performance and stability
 
@@ -157,7 +161,7 @@ synthetic load on two local cores, not a production workload.
 | --- | --- | --- |
 | Kiro CLI | diff against `9c1e0d6` | No P0. Crash consistency, exactly-once, gates and authorization hold. One P2 on auth rotation and one P1 on the recovery test gap. |
 | OpenCode | same diff | No P0. One P1 on provider status classification. Four P2 on invariants, backlog and tests. |
-| CodeRabbit | not available | NOT VERIFIED |
+| CodeRabbit | review after the first draft | Approved (2026-10-25) |
 
 Both reports reached a conclusion. The review launcher reported a missing
 completion marker because the prompt did not request one. The reports were read
@@ -181,7 +185,7 @@ Disposition:
 | Runtime | quarantine, diagnostics, tests, ADR and docs | [#95](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/95) |
 | MCP | Pi adapter acknowledgement | [#45](https://github.com/cnkang/qdrant-memory-mcp/pull/45) |
 
-Neither pull request is merged and no release is published from this work.
+Both pull requests are now merged. No release was published from this work.
 
 ## 12. Release and rollback risk
 
