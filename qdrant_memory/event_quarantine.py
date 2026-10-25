@@ -51,6 +51,8 @@ def extraction_reason(exc):
                 return "rate_limited"
             if status == 408:
                 return "timeout"
+            if status == 402:
+                return "provider_error"
             if 400 <= status < 500:
                 return "output_invalid"
             return "provider_error"
@@ -63,6 +65,8 @@ def extraction_reason(exc):
         return "rate_limited"
     if status == 408:
         return "timeout"
+    if status == 402:
+        return "provider_error"
     if isinstance(status, int) and 400 <= status < 500:
         return "output_invalid"
     if isinstance(status, int):
