@@ -23,6 +23,11 @@ def test_remote_error_unwraps_groups_and_names_the_cause():
     from qdrant_memory.remote_client import RemoteStatusError
 
     assert remote_error(RemoteStatusError(401))["reason"] == "authentication_rejected"
+    import ssl as ssl_module
+
+    wrapped = ConnectionError("outer")
+    wrapped.__cause__ = ssl_module.SSLCertVerificationError("inner")
+    assert remote_error(wrapped)["reason"] == "tls_verification_failed"
     assert remote_error(TimeoutError("secret host"))["reason"] == "timeout"
     assert remote_error(ConnectionError("secret host"))["reason"] == "unreachable"
 

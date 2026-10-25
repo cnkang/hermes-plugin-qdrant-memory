@@ -195,9 +195,13 @@ def remote_error(exc):
 
         http = http_module()
         modules = (http,) if http is httpx else (http, httpx)
-        if isinstance(leaf, ssl.SSLCertVerificationError):
+        chain, node = [], leaf
+        while node is not None and node not in chain and len(chain) < 8:
+            chain.append(node)
+            node = node.__cause__ or node.__context__
+        if any(isinstance(item, ssl.SSLCertVerificationError) for item in chain):
             reason = "tls_verification_failed"
-        elif isinstance(leaf, ssl.SSLError):
+        elif any(isinstance(item, ssl.SSLError) for item in chain):
             reason = "tls_failed"
         elif isinstance(leaf, tuple(m.TimeoutException for m in modules)) or isinstance(
             leaf, TimeoutError

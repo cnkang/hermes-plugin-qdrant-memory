@@ -49,6 +49,10 @@ def extraction_reason(exc):
                 return "authentication_rejected"
             if status == 429:
                 return "rate_limited"
+            if status == 408:
+                return "timeout"
+            if 400 <= status < 500:
+                return "output_invalid"
             return "provider_error"
         if isinstance(exc, (httpx.TransportError, ConnectionError)):
             return "provider_unreachable"
