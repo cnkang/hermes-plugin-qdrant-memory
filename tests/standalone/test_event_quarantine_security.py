@@ -47,6 +47,17 @@ def test_reason_codes_are_stable_and_never_copy_provider_text():
     assert extraction_reason(OwnerProviderStatus(401)) == "authentication_rejected"
     assert extraction_reason(OwnerProviderStatus(429)) == "rate_limited"
     assert extraction_reason(OwnerProviderStatus(408)) == "timeout"
+    import httpx
+
+    request = httpx.Request("POST", "https://owner.test/v1")
+    assert (
+        extraction_reason(
+            httpx.HTTPStatusError(
+                "x", request=request, response=httpx.Response(408, request=request)
+            )
+        )
+        == "timeout"
+    )
     assert extraction_reason(OwnerProviderStatus(400)) == "output_invalid"
     assert extraction_reason(OwnerProviderStatus(500)) == "provider_error"
 
