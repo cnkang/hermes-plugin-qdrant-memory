@@ -59,6 +59,7 @@ def test_reason_codes_are_stable_and_never_copy_provider_text():
         == "timeout"
     )
     assert extraction_reason(OwnerProviderStatus(400)) == "output_invalid"
+    assert extraction_reason(OwnerProviderStatus(402)) == "provider_error"
     assert extraction_reason(OwnerProviderStatus(500)) == "provider_error"
 
 
