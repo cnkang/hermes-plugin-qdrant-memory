@@ -193,8 +193,13 @@ def remote_error(exc):
 
         import httpx
 
-        http = http_module()
-        modules = (http,) if http is httpx else (http, httpx)
+        modules = [httpx]
+        try:
+            alternate = http_module()
+        except ImportError:  # the optional MCP transport is not installed
+            alternate = None
+        if alternate is not None and alternate is not httpx:
+            modules.append(alternate)
         chain, node = [], leaf
         while node is not None and node not in chain and len(chain) < 8:
             chain.append(node)
@@ -207,7 +212,12 @@ def remote_error(exc):
             leaf, TimeoutError
         ):
             reason = "timeout"
-        elif isinstance(leaf, tuple(m.ConnectError for m in modules) + (ConnectionError,)):
+        elif isinstance(
+            leaf,
+            tuple(m.ConnectError for m in modules)
+            + tuple(m.NetworkError for m in modules)
+            + (ConnectionError,),
+        ):
             reason = "unreachable"
         elif status in (401, 403):
             reason = "authentication_rejected"
