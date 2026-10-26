@@ -1,5 +1,13 @@
 # Qdrant Memory for Hermes
 
+**One Memory. Multiple Agents.**
+
+Durable, portable, and permission-aware memory for AI agents.
+
+Share persistent memory across AI harnesses, sessions, and devices through one
+Qdrant-backed Runtime. Integrate using native providers, MCP, CLI, or Agent
+Skills—with explicit access control, conflict-safe updates, and crash recovery.
+
 Shared deployment hardening in this checkout is documented in the
 [protected destination guide](docs/shared-memory/deployment-security.md) and
 [versioned threat model](docs/shared-memory/threat-model-v1.md). These additions
@@ -57,12 +65,21 @@ an authorized upgrade, verify the same profile, collection and embedding pipelin
 
 ```mermaid
 flowchart LR
-    turn["Hermes turn"] --> admit["Provider callback"]
-    admit --> ledger[("SQLite ledger<br/>durable admission")]
-    ledger -.async.-> extract["LLM extraction +<br/>relation checks"]
-    extract --> store[("Qdrant<br/>dense vectors + payloads")]
-    ask["Recall / search"] --> search["Scoped dense search"]
-    search --> store
+    subgraph Private["Private standalone path"]
+        turn["Hermes turn"] --> admit["Provider callback"]
+        admit --> ledger[("SQLite ledger<br/>durable admission")]
+        ledger -.async.-> extract["LLM extraction +<br/>relation checks"]
+        extract --> store[("Qdrant<br/>dense vectors + payloads")]
+        ask["Recall / search"] --> search["Scoped dense search"]
+        search --> store
+    end
+    subgraph Shared["Shared owner path (opt-in)"]
+        agent["Agent A / B"] --> owner["Shared Owner<br/>auth + scope"]
+        owner --> lease["WriterLease"]
+        lease --> store2[("Qdrant<br/>shared space")]
+        owner --> ledger2[("SQLite ledger")]
+    end
+    store -.migration/portability.-> store2
 ```
 
 ## Why this plugin
@@ -110,6 +127,19 @@ background extraction. Then it recalls the preference in a new session and
 cleans up the demo scope. All steps
 run in embedded mode. `scripts/demo.sh` reproduces the same walkthrough with
 the pinned release.
+
+## Choose your setup
+
+| Use case | Recommended entry | Notes |
+|---|---|---|
+| Hermes native automatic memory | Native MemoryProvider | Automatic extraction and recall inside Hermes |
+| Single agent, standalone MCP | Standalone MCP (`qdrant-memory-mcp`) | Explicit tools only, no auto-extraction |
+| Multiple agents sharing memory | Authenticated Shared Owner | Opt-in. One writer per destination |
+| Remote / multi-device access | HTTPS MCP + Owner | TLS, auth and network protection required |
+| WorkBuddy / DSH | Host integration guides | Reuse the same Runtime |
+| Migrate Mem0 data | Migration CLI | Source IDs, resumable manifest, verification |
+
+See [standalone setup](docs/standalone.md), [shared memory](docs/shared-memory/README.md), and [cross-harness architecture](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/cross-harness-architecture.md).
 
 ## Install
 
@@ -467,6 +497,20 @@ and non-primary-agent turns. Treat recalled content as untrusted data. See
 [security](docs/security.md), [operating procedures](docs/operations.md),
 [troubleshooting](docs/troubleshooting.md) and [architecture](docs/architecture.md).
 
+## Capabilities and limitations
+
+| Area | Status | Notes |
+|---|---|---|
+| Private memory (standalone) | Supported | Embedded / server / Cloud Qdrant |
+| Automatic extraction (Hermes) | Supported | Trusted `ctx.llm` facade |
+| Automatic recall (Hermes) | Supported | Scoped dense search |
+| Shared memory (Shared Owner) | Opt-in | One writer per destination. Not the default |
+| Automatic shared extraction | Opt-in | Native Owner only |
+| MCP auto-extraction | Not supported | Explicit tools only |
+| Hybrid search / reranking | Not supported | Dense retrieval only (v0.1) |
+| Multi-writer Server/Cloud | Not supported | One authoritative writer |
+| Web UI | Not supported | CLI and tools only |
+
 ## Compatibility and scope
 
 Version 0.1 implements dense retrieval. Hybrid sparse vectors, RRF/DBSF, reranking
@@ -530,6 +574,33 @@ for a separate synthetic replay and retained-storage measurement.
 
 CI runs tests, SonarCloud quality gates and Snyk dependency/code scans.
 See [CI service setup](docs/ci.md) and [validation evidence](docs/validation.md).
+
+## Documentation
+
+- [Getting started / standalone](docs/standalone.md)
+- [Architecture](docs/architecture.md)
+- [Configuration](docs/configuration.md)
+- [Cross-harness sharing (MCP repo)](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/cross-harness-architecture.md)
+- [Shared memory](docs/shared-memory/README.md)
+- [Security](docs/security.md)
+- [Operations](docs/operations.md)
+- [Migration from Mem0](docs/migration-from-mem0.md)
+- [Backup and portability](docs/portability.md)
+- [Validation and evidence](docs/validation.md)
+- [Development](docs/development.md)
+- [CI](docs/ci.md)
+
+## Validation and evidence
+
+Real evidence, not badges:
+
+- Hermes native lifecycle tests: [validation](docs/validation.md)
+- Cross-harness sharing: OpenCode / Pi dual-device, WorkBuddy / DSH
+- Crash / restart / idempotency: [bounded recovery](docs/recovery-benchmark.md)
+- Authorization and isolation: [security](docs/security.md), [threat model](docs/shared-memory/threat-model-v1.md)
+- Model quality: frozen evaluation datasets (see `scripts/evaluate.py`)
+
+Long-running 24-hour acceptance: pending / not yet verified.
 
 ## License
 
