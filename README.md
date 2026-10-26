@@ -75,12 +75,16 @@ flowchart LR
     end
     subgraph Shared["Shared owner path (opt-in)"]
         agent["Agent A / B"] --> owner["Shared Owner<br/>auth + scope"]
-        owner --> lease["WriterLease"]
+        owner --> lease["WriterLease<br/>(current profile only)"]
         lease --> store2[("Qdrant<br/>shared space")]
         owner --> ledger2[("SQLite ledger")]
     end
     store -.migration/portability.-> store2
 ```
+
+`WriterLease` coordinates only the current profile's writes. It does not prevent
+other profiles or devices from writing to the same destination. "One writer per
+destination" is an operational constraint, not an automatic cross-device lock.
 
 ## Why this plugin
 
@@ -504,8 +508,8 @@ and non-primary-agent turns. Treat recalled content as untrusted data. See
 | Private memory (standalone) | Supported | Embedded / server / Cloud Qdrant |
 | Automatic extraction (Hermes) | Supported | Trusted `ctx.llm` facade |
 | Automatic recall (Hermes) | Supported | Scoped dense search |
-| Shared memory (Shared Owner) | Opt-in | One writer per destination. Not the default |
-| Automatic shared extraction | Opt-in | Native Owner only |
+| Shared memory (Shared Owner) | Opt-in | One writer per destination (operational constraint, not cross-device lock). Not the default |
+| Automatic shared extraction | Opt-in | Native Owner and opt-in Pi lifecycle adapter |
 | MCP auto-extraction | Not supported | Explicit tools only |
 | Hybrid search / reranking | Not supported | Dense retrieval only (v0.1) |
 | Multi-writer Server/Cloud | Not supported | One authoritative writer |

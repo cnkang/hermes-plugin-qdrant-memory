@@ -117,7 +117,7 @@ embedded 模式下运行。`scripts/demo.sh` 以固定版本复现同一流程�
 | WorkBuddy / DSH | 宿主集成指南 | 复用同一 Runtime |
 | 迁移 Mem0 数据 | 迁移 CLI | 源 ID、可恢复 manifest、验证 |
 
-详见[独立部署](docs/standalone.md)、[共享记忆](docs/shared-memory/README.zh-CN.md)。
+详见[独立部署](docs/standalone.md)、[共享记忆](docs/shared-memory/README.zh-CN.md)、[跨 Harness 架构](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/cross-harness-architecture.md)。
 
 ## 安装
 
@@ -420,8 +420,8 @@ resume 保留后续的删除意图。`--verify` 会以非零退出码报告 `mig
 | 私有记忆（独立） | 支持 | Embedded / Server / Cloud Qdrant |
 | 自动提取（Hermes） | 支持 | 受信任的 `ctx.llm` facade |
 | 自动召回（Hermes） | 支持 | 作用域 dense search |
-| 共享记忆（Shared Owner） | 可选 | 每个目的地一个 writer。默认关闭 |
-| 自动共享提取 | 可选 | 仅 Native Owner |
+| 共享记忆（Shared Owner） | 可选 | 每个目的地一个 writer。默认关闭。WriterLease 仅协调当前 profile，不能阻止不同 profile 或设备的并发写入 |
+| 自动共享提取 | 可选 | Native Owner 和可选启用的 Pi 生命周期适配器 |
 | MCP 自动提取 | 不支持 | 仅显式工具 |
 | Hybrid 检索 / 重排序 | 不支持 | 仅 dense 检索（v0.1） |
 | 多 writer Server/Cloud | 不支持 | 单一权威 writer |
@@ -509,7 +509,7 @@ CI 运行测试、SonarCloud 质量门禁以及 Snyk 依赖/代码扫描。
 - 授权与隔离：[安全](docs/security.md)、[威胁模型](docs/shared-memory/threat-model-v1.md)
 - 模型质量：冻结评估数据集（见 `scripts/evaluate.py`）
 
-长期 24 小时验收：pending / 尚未验证。
+长期 24 小时验收：待完成 / 尚未验证。
 
 ## 许可证
 
