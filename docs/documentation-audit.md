@@ -36,8 +36,7 @@ Local filesystem paths are intentionally omitted. The SHAs above identify the au
 
 ## Unresolved / follow-ups
 
-- Chinese READMEs of MCP and Runtime received hero + setup changes only. Deeper
-  section parity to be completed in a follow-up pass.
-- Harness matrix verification levels for Codex remain "configuration example only".
+- Chinese READMEs: hero, setup, capabilities matrix, doc navigation, and evidence sections now match English. Remaining deep section parity (data flow, config, migration, operations) still tracked.
+- Harness matrix verification levels for Codex remain "configuration example only" (no real-host evidence yet).
 - Long-running 24-hour acceptance: pending / not yet verified.
-- Runtime PR #95 and MCP PR #45 merge/release status not rechecked in this pass.
+- Runtime PR #95 and MCP PR #45 are both MERGED (2026-10-25). Their fault-isolation changes are in main but not yet in a released Runtime/MCP version; do not label as released until a tagged release ships.
