@@ -599,7 +599,7 @@ See [CI service setup](docs/ci.md) and [validation evidence](docs/validation.md)
 Real evidence, not badges:
 
 - Hermes native lifecycle tests: [validation](docs/validation.md)
-- Cross-harness sharing: OpenCode / Pi dual-device, WorkBuddy / DSH
+- Cross-harness sharing: [OpenCode / Pi dual-device acceptance](docs/validation/cross-device-opencode-pi-2026-10.md); WorkBuddy / DSH: not fully host-validated ([report](docs/shared-memory/report.md))
 - Crash / restart / idempotency: [bounded recovery](docs/recovery-benchmark.md)
 - Authorization and isolation: [security](docs/security.md), [threat model](docs/shared-memory/threat-model-v1.md)
 - Model quality: frozen evaluation datasets (see `scripts/evaluate.py`)

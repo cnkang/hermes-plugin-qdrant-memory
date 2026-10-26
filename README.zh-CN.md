@@ -504,7 +504,7 @@ CI 运行测试、SonarCloud 质量门禁以及 Snyk 依赖/代码扫描。
 真实证据，而非徽章：
 
 - Hermes 原生生命周期测试：[验证](docs/validation.md)
-- 跨 Harness 共享：OpenCode / Pi 双设备、WorkBuddy / DSH
+- 跨 Harness 共享：[OpenCode / Pi 双设备验收](docs/validation/cross-device-opencode-pi-2026-10.md)；WorkBuddy / DSH：尚未完成完整宿主验证（[报告](docs/shared-memory/report.md)）
 - 崩溃 / 重启 / 幂等性：[有界恢复](docs/recovery-benchmark.md)
 - 授权与隔离：[安全](docs/security.md)、[威胁模型](docs/shared-memory/threat-model-v1.md)
 - 模型质量：冻结评估数据集（见 `scripts/evaluate.py`）
