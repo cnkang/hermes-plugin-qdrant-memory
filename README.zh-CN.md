@@ -1,5 +1,9 @@
 # Hermes Qdrant 记忆插件
 
+**One Memory. Multiple Agents.**
+
+面向 AI Agent 的持久化、可移植、权限感知记忆。
+
 当前 checkout 中新增的共享部署加固措施记录在
 [受保护目的地指南](docs/shared-memory/deployment-security.md)和
 [版本化威胁模型](docs/shared-memory/threat-model-v1.md)中。这些新增内容包含在 Runtime 0.5.1 中。
@@ -101,6 +105,19 @@ flowchart LR
 录屏展示在干净 profile 上的完整流程：安装已验证的固定版本源码、教一条偏好，
 等待后台提取，然后在新会话中召回该偏好，并清理演示作用域。所有步骤都在
 embedded 模式下运行。`scripts/demo.sh` 以固定版本复现同一流程。
+
+## 选择安装入口
+
+| 使用场景 | 推荐入口 | 说明 |
+|---|---|---|
+| Hermes 原生自动记忆 | Native MemoryProvider | 在 Hermes 内自动提取与召回 |
+| 单 Agent 独立 MCP | Standalone MCP (`qdrant-memory-mcp`) | 仅显式工具，无自动提取 |
+| 多 Agent 共享记忆 | 认证 Shared Owner | 可选。每个目的地一个 writer |
+| 远程 / 多设备接入 | HTTPS MCP + Owner | 需 TLS、认证与网络保护 |
+| WorkBuddy / DSH | 宿主集成指南 | 复用同一 Runtime |
+| 迁移 Mem0 数据 | 迁移 CLI | 源 ID、可恢复 manifest、验证 |
+
+详见[独立部署](docs/standalone.md)、[共享记忆](docs/shared-memory/README.zh-CN.md)。
 
 ## 安装
 
@@ -396,6 +413,20 @@ resume 保留后续的删除意图。`--verify` 会以非零退出码报告 `mig
 请将召回内容视为不可信数据。见[安全](docs/security.md)、[运维流程](docs/operations.md)、
 [故障排查](docs/troubleshooting.md)和[架构](docs/architecture.md)。
 
+## 能力与限制
+
+| 领域 | 状态 | 说明 |
+|---|---|---|
+| 私有记忆（独立） | 支持 | Embedded / Server / Cloud Qdrant |
+| 自动提取（Hermes） | 支持 | 受信任的 `ctx.llm` facade |
+| 自动召回（Hermes） | 支持 | 作用域 dense search |
+| 共享记忆（Shared Owner） | 可选 | 每个目的地一个 writer。默认关闭 |
+| 自动共享提取 | 可选 | 仅 Native Owner |
+| MCP 自动提取 | 不支持 | 仅显式工具 |
+| Hybrid 检索 / 重排序 | 不支持 | 仅 dense 检索（v0.1） |
+| 多 writer Server/Cloud | 不支持 | 单一权威 writer |
+| Web UI | 不支持 | 仅 CLI 与工具 |
+
 ## 兼容性与范围
 
 0.1 版实现 dense 检索。Hybrid sparse vector、RRF/DBSF、rerank 和 recency weighting
@@ -452,6 +483,33 @@ PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate.py
 
 CI 运行测试、SonarCloud 质量门禁以及 Snyk 依赖/代码扫描。
 见 [CI 服务配置](docs/ci.md)和[验证证据](docs/validation.md)。
+
+## 文档导航
+
+- [独立部署 / 快速开始](docs/standalone.md)
+- [架构](docs/architecture.md)
+- [配置](docs/configuration.md)
+- [跨 Harness 共享（MCP 仓库）](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/cross-harness-architecture.md)
+- [共享记忆](docs/shared-memory/README.zh-CN.md)
+- [安全](docs/security.md)
+- [运维](docs/operations.md)
+- [从 Mem0 迁移](docs/migration-from-mem0.md)
+- [备份与可移植性](docs/portability.md)
+- [验证与证据](docs/validation.md)
+- [开发](docs/development.md)
+- [CI](docs/ci.md)
+
+## 验证与证据
+
+真实证据，而非徽章：
+
+- Hermes 原生生命周期测试：[验证](docs/validation.md)
+- 跨 Harness 共享：OpenCode / Pi 双设备、WorkBuddy / DSH
+- 崩溃 / 重启 / 幂等性：[有界恢复](docs/recovery-benchmark.md)
+- 授权与隔离：[安全](docs/security.md)、[威胁模型](docs/shared-memory/threat-model-v1.md)
+- 模型质量：冻结评估数据集（见 `scripts/evaluate.py`）
+
+长期 24 小时验收：pending / 尚未验证。
 
 ## 许可证
 
