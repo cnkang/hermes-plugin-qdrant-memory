@@ -34,7 +34,7 @@ Rules for portability:
 - Source record IDs are preserved where the flow supports it.
 - Embeddings are regenerated for the target pipeline unless reuse is explicitly supported.
 - Scope and provenance are carried with each record.
-- A plain JSON export covers stored memories only. Pending events, retry history and crash-recovery state stay in the local ledger.
+- A plain JSON export covers stored memories only. It does not include the SQLite ledger or crash-recovery state. These two are independent unexported state. Pending events and retry history also stay outside the export.
 
 ## Mem0 Migration
 

@@ -4,9 +4,11 @@ Scope: Runtime, MCP distribution, and Agent Skill repositories.
 
 ## Repositories audited
 
-- Runtime: /Volumes/2T/development/hermes-plugin-qdrant-memory (HEAD 16057df, codex/stability-followup)
-- MCP: /Volumes/2T/development/qdrant-memory-mcp (HEAD d4a0218, main)
-- Skill: /Volumes/2T/development/skills (HEAD da19b4b, main), qdrant-memory/
+- Runtime: cnkang/hermes-plugin-qdrant-memory @ 16057df (branch codex/stability-followup)
+- MCP: cnkang/qdrant-memory-mcp @ d4a0218 (branch main)
+- Skill: cnkang/skills @ da19b4b (branch main), qdrant-memory/
+
+Local filesystem paths are intentionally omitted. The SHAs above identify the audited revisions.
 
 ## Key conflicts and issues found
 
@@ -34,7 +36,7 @@ Scope: Runtime, MCP distribution, and Agent Skill repositories.
 
 ## Unresolved / follow-ups
 
-- Chinese READMEs of MCP and Runtime received hero + setup changes only; deeper
+- Chinese READMEs of MCP and Runtime received hero + setup changes only. Deeper
   section parity to be completed in a follow-up pass.
 - Harness matrix verification levels for Codex remain "configuration example only".
 - Long-running 24-hour acceptance: pending / not yet verified.
