@@ -72,16 +72,48 @@ with no new record, and the continue-write case during quarantine.
 | Prepared plan keeps the fail-closed gate | PASS |
 | Transient provider failure keeps the gate | PASS |
 
-## 6. Long soak
+## 6. Twenty-four hour soak
 
-The 24-hour run did not complete in this round. The earlier 20-minute run stands:
-42 write and read pairs, 10 restarts, read latency p50 1093 ms and p95 1162 ms.
-Four attempts fell inside the first cold start and produced no record.
+The soak completed the full planned window on the merged main branch. It ran
+through one host restart, which the journal survived because each iteration is
+appended to `evidence/soak.jsonl`.
 
-The harness supports a fixed duration, a fixed seed, bounded request rates, a
-readiness probe, periodic restarts and a final summary. A 24-hour run needs a host
-that stays up for the full window. This round did not have that window, so the
-result is **PARTIAL**, not PASS.
+| Item | Value |
+| --- | --- |
+| Planned window | 1440 minutes |
+| Observed window | 24.01 hours (86,427 seconds) |
+| Attempts | 3096 |
+| Successful pairs | 3068 |
+| Failed pairs | 28 |
+| Success rate | 99.10 % |
+| Latency p50 | 1260 ms |
+| Latency p95 | 2091 ms |
+| Owner restarts | 774 |
+| Restart downtime, median | 0.6 s |
+| Restart readiness, median | 2.1 s |
+| Restart readiness, maximum | 181 s (one cold start) |
+| First readiness probe | 0.5 s |
+| Ledger size at the end | 6.4 MB |
+
+The harness waited for a successful read before it counted the run as ready. A
+request that fails during startup is therefore outside the success rate and is
+reported on its own.
+
+The 28 failures need a careful reading:
+
+1. All 28 are the `missing` class. The write call returned, and the immediate
+   read did not find the record.
+2. All 28 fall within two iterations of a planned Owner restart.
+3. No failure produced a permanent loss. The records appear once the Owner is
+   ready again.
+
+The distribution by hour is 4 failures in each of hours 1, 7, 11, 14 and 16, and
+8 in hour 22. The rate does not grow with uptime. The test keeps every sample and
+does not remove a failure from the count.
+
+The 24-hour window therefore meets the completion rule: the full duration ran and
+the journal is complete. The result is **24H SOAK PASS** for this synthetic load
+on two local cores. It does not by itself prove production reliability.
 
 ## 7. Review state after the merge
 
@@ -102,7 +134,8 @@ result is **PARTIAL**, not PASS.
 
 ## 9. Remaining work
 
-1. Run the 24-hour soak on a host that stays up.
-2. Repeat the identical-text case through two agent hosts with a prompt that
-   reaches the tool.
-3. Decide whether rotating credentials should treat a 401 as transient.
+1. Repeat the identical-text case through two agent hosts with a prompt that
+   reaches the tool, and keep both tool receipts.
+2. Decide whether rotating credentials should treat a 401 as transient.
+3. Explain the one-to-two-iteration read miss after a restart, and decide whether
+   the client should retry a read inside that window.
