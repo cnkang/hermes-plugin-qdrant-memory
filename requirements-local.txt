@@ -330,9 +330,9 @@ httpx==0.28.1 \
     #   hermes-plugin-qdrant-memory (pyproject.toml)
     #   huggingface-hub
     #   qdrant-client
-huggingface-hub==2.3.0 \
-    --hash=sha256:0b783b37f200f1d25bef2344a997c7d410f4437fbe9d8fd965f958e75cec7aef \
-    --hash=sha256:5da369600233568a126eb5578754935b2add9446b42d9e2fc0927d56840ac1a5
+huggingface-hub==1.33.0 \
+    --hash=sha256:04e434b06e100eddbce9a6e817d72693a7884b10a79bd67ab48080d5c07eb899 \
+    --hash=sha256:367be21a201db9523eddf8aeac7048f2602c1b308691c97640d5e72ed188007e
     # via
     #   fastembed
     #   tokenizers
