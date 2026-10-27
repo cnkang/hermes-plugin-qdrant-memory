@@ -12,6 +12,9 @@ updates:
     labels:
       - dependencies
     ignore:
+      # fastembed 0.9.x requires huggingface-hub <2; wait for upstream support.
+      - dependency-name: huggingface-hub
+        update-types: [version-update:semver-major]
       # qdrant-client 1.x requires portalocker <4; wait for upstream support.
       - dependency-name: portalocker
         update-types: [version-update:semver-major]
