@@ -3,14 +3,14 @@
 ## 0.5.2
 
 - Classify an interrupted remote write as an unknown outcome, not as a final
-  rejection. A restart cut, a reset stream, a timeout and a 5xx answer now
-  report `retryable: true` with the identifier to replay.
+  rejection. A restart cut, a reset stream, a timeout and a selected 5xx answer
+  (502, 503, 504) now report `retryable: true` with the identifier to replay.
 - Replay one interrupted remote request inside the adapter. Each attempt keeps
   the same `request_id` or `event_id`, so the Owner returns its stored receipt
   and the write converges on one record.
 - Keep authentication, redirect, TLS, scope, revision and business rejections
-  non-retryable. A missing Owner admission reports `recovery_required` and
-  leaves the request with the Owner.
+  non-retryable. An admitted request that needs operator recovery reports
+  `recovery_required`, and the Owner keeps the request.
 - Report the `replay` key in the `remote-call` and `remote-event` error
   envelope. See `docs/design/remote-write-retry-adr.md`.
 

@@ -20,10 +20,10 @@ No persistent format, tool schema or status value changed.
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Failure classification, 26 cases | `pytest tests/standalone/test_remote_retry_contract.py` | PASS |
+| Failure classification matrix, 27 cases | `pytest tests/standalone/test_remote_retry_contract.py` | PASS |
 | Lost tool response on a real Gateway | same file | PASS, one record, one operation, one request row |
 | Lost event response on a real Gateway | same file | PASS, one event, one plan row, one memory |
-| Rejected credential is not replayed | same file | PASS, one attempt |
+| Rejected credential on the real Gateway | same file | PASS, one attempt |
 | Retry budget and jitter | same file | PASS, three attempts, two bounded waits |
 | Slow failure is not replayed | same file | PASS, one attempt, no wait |
 | Killed listener during a request | `pytest tests/test_restart_boundary.py` | PASS, retryable with `replay: event_id` |

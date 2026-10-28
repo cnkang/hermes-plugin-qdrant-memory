@@ -61,12 +61,13 @@ def http_module():
 class RemoteStatusError(RuntimeError):
     """A lifecycle response carried a rejection status and no usable result."""
 
-    def __init__(self, status, *, error_type=None, retryable=None):
+    def __init__(self, status, *, error_type=None, retryable=None, retry_after=None):
         """Keep the status code and one machine type, never the remote body."""
         super().__init__("Owner lifecycle request was rejected")
         self.status_code = status
         self.error_type = error_type
         self.retryable = retryable
+        self.retry_after = retry_after
 
 
 def _control_error(body):
@@ -88,9 +89,12 @@ def _control_error(body):
 
 def _machine_failure(error_type, retryable):
     """Return one full envelope for a machine-readable Owner rejection."""
-    reason = (
-        "recovery_required" if error_type == "SharedRecoveryRequiredError" else "business_error"
-    )
+    if error_type == "SharedRecoveryRequiredError":
+        reason = "recovery_required"
+    elif retryable is True:
+        reason = "temporarily_unavailable"
+    else:
+        reason = "business_error"
     return {
         "type": error_type,
         "reason": reason,
@@ -128,6 +132,8 @@ async def _event_request(url, token, body, *, ca_file, path):
         )
         if response.status_code == 200:
             return response.json()
+        delay = response.headers.get("Retry-After", "").strip()
+        retry_after = int(delay) if delay.isdigit() else None
         # A rejection body carries the reason and the Owner's own retry verdict.
         # It never contains memory text, so only the machine fields are retained.
         error = _control_error(_response_body(response))
@@ -136,8 +142,9 @@ async def _event_request(url, token, body, *, ca_file, path):
                 response.status_code,
                 error_type=error["error"]["type"],
                 retryable=error["error"]["retryable"],
+                retry_after=retry_after,
             )
-        raise RemoteStatusError(response.status_code)
+        raise RemoteStatusError(response.status_code, retry_after=retry_after)
 
 
 async def _retry_sleep(delay):
@@ -173,6 +180,7 @@ async def _replay(send, *, sleep=None, clock=None):
                 not failure["retryable"]
                 or attempt + 1 == RETRY_ATTEMPTS
                 or elapsed > RETRY_WINDOW_SECONDS
+                or (getattr(exc, "retry_after", None) or 0) > RETRY_CAP_SECONDS
             ):
                 raise
             cap = min(RETRY_CAP_SECONDS, RETRY_BASE_SECONDS * 2**attempt)
