@@ -38,7 +38,7 @@ retry behavior.
 | `authentication_rejected` | 401 or 403 | no | not applicable |
 | `tls_verification_failed`, `tls_failed` | TLS trust or handshake failure | no | not applicable |
 | `business_error` | other 4xx or 5xx answer | no | not applicable |
-| `protocol_error` | redirect, refused method, invalid envelope | no | not applicable |
+| `protocol_error` | redirect, refused MCP method, invalid MCP envelope | no | not applicable |
 | `remote_error` | no other class matches | no | not applicable |
 
 A retryable failure carries a `replay` field. The field names the identifier
@@ -53,11 +53,19 @@ A lifecycle rejection uses the full envelope, with the Owner type in `type`.
 A tool rejection keeps the Owner object, so `recovery_required` is the
 lifecycle-path reason for the same state.
 
+An HTTP 4xx answer that is not 401, 403, 408 or 429 is `business_error`.
+`protocol_error` covers a redirect and an MCP-level protocol failure. It does
+not cover an HTTP answer from the Owner.
+
 The adapter replays a retryable request two times at most. Each replay uses the
-same body and the same identifier. A full-jitter backoff of 0.2 s to 1 s
-separates the attempts. The adapter does not replay a failure that needed more
-than 5 s to return. A slow failure belongs to the caller's durable outbox,
-because the adapter must stay inside the caller's request deadline.
+same body and the same identifier. A full-jitter wait separates the attempts.
+The first wait is 0 to 0.2 s and the second wait is 0 to 0.4 s. The two waits
+add up to 0.6 s at most.
+
+The adapter does not replay a failure that needed more than 5 s to return. It
+also does not replay inside a `Retry-After` window that is longer than 1 s. A
+slow failure and a long rate-limit window belong to the caller's durable
+outbox, because the adapter must stay inside the caller's request deadline.
 
 The Owner provides the convergence point. A shared mutation is keyed by
 `(owner, space, principal, device, request_id)` in `shared_requests_v1`. A

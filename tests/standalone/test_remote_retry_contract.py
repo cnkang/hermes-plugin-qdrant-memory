@@ -302,31 +302,25 @@ def test_rejection_is_not_replayed(tmp_path, monkeypatch):
 
 
 def test_tool_path_authentication_rejection_is_not_replayed(tmp_path, monkeypatch):
-    """A 401 during the MCP handshake stays final instead of becoming a replay."""
+    """A 401 from the real Gateway stays final instead of becoming a replay."""
     from qdrant_memory.remote_gateway import create_gateway
     from qdrant_memory.shared_service import SharedOwner
 
     rt, device = _shared_owner(tmp_path)
     app = create_gateway(SharedOwner(rt, [device]), allowed_hosts=["memory.test"])
     constructor = HTTP.AsyncClient
-    attempts = []
-
-    def rejected(_request):
-        """Answer every attempt with an authentication rejection."""
-        attempts.append(1)
-        return HTTP.Response(401)
-
+    counter = DropResponse(HTTP.ASGITransport(app=app), drops=0)
     monkeypatch.setattr(
         HTTP,
         "AsyncClient",
-        lambda **kwargs: constructor(transport=HTTP.MockTransport(rejected), **kwargs),
+        lambda **kwargs: constructor(transport=counter, **kwargs),
     )
 
     async def check():
         async with app.router.lifespan_context(app):
             await call_remote(
                 "https://memory.test/mcp",
-                TOKEN,
+                "b" * 40,
                 "qdrant_memory_search",
                 {"query": "cats"},
             )
@@ -337,7 +331,7 @@ def test_tool_path_authentication_rejection_is_not_replayed(tmp_path, monkeypatc
         failure = remote_error(caught.value)
         assert failure["reason"] == "authentication_rejected"
         assert failure["retryable"] is False
-        assert len(attempts) == 1
+        assert counter.attempts == 1
     finally:
         rt.ledger.close()
         rt.store.close()
@@ -433,6 +427,36 @@ def test_slow_failure_is_left_to_the_durable_outbox(monkeypatch):
     assert len(attempts) == 1
     assert sleeps == []
     assert remote_error(httpx.ReadTimeout("synthetic"))["retryable"] is True
+
+
+def test_rate_limit_window_is_left_to_the_outbox(monkeypatch):
+    """A 60-second Retry-After is not replayed after 0.2 seconds."""
+    import qdrant_memory.remote_client as module
+
+    attempts = []
+
+    async def sleep(_delay):
+        """Skip the backoff delay in the test."""
+        raise AssertionError("a long Retry-After must not sleep and retry")
+
+    monkeypatch.setattr(module, "RETRY_SLEEP", sleep)
+    constructor = httpx.AsyncClient
+
+    def limited(_request):
+        """Answer with the saturation window that the gateway sends."""
+        attempts.append(1)
+        return httpx.Response(429, headers={"Retry-After": "60"})
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: constructor(transport=httpx.MockTransport(limited), **kwargs),
+    )
+    with pytest.raises(RemoteStatusError) as caught:
+        asyncio.run(send_event("https://memory.test/mcp", TOKEN, {"event_id": "turn-1"}))
+    assert len(attempts) == 1
+    assert remote_error(caught.value)["reason"] == "temporarily_unavailable"
+    assert remote_error(caught.value)["retryable"] is True
 
 
 def test_control_error_stays_machine_readable_after_retries(monkeypatch):
