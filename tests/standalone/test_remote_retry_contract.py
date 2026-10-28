@@ -543,7 +543,9 @@ def test_exhausted_control_retry_names_the_event_to_replay(monkeypatch):
         httpx,
         "AsyncClient",
         lambda **kwargs: constructor(
-            transport=httpx.MockTransport(lambda _: httpx.Response(503, json=body)),
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(503, headers={"Retry-After": "60"}, json=body)
+            ),
             **kwargs,
         ),
     )
@@ -551,3 +553,4 @@ def test_exhausted_control_retry_names_the_event_to_replay(monkeypatch):
     assert result["error"]["reason"] == "temporarily_unavailable"
     assert result["error"]["retryable"] is True
     assert result["error"]["replay"] == "event_id"
+    assert result["error"]["retry_after"] == 60
