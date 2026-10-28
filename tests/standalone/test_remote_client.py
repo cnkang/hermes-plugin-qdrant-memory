@@ -135,4 +135,7 @@ def test_control_preserves_only_redacted_machine_error(monkeypatch, status):
         ),
     )
     result = asyncio.run(control_event("https://memory.test/mcp", "a" * 40, "one", "cancel"))
-    assert result == {"error": {"type": "KeyError", "retryable": False}}
+    assert result["error"]["type"] == "KeyError"
+    assert result["error"]["reason"] == "business_error"
+    assert result["error"]["retryable"] is False
+    assert result["error"]["hint"]
