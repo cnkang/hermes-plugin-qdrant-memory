@@ -524,4 +524,30 @@ def test_control_error_stays_machine_readable_after_retries(monkeypatch):
     assert result["error"]["reason"] == "business_error"
     assert result["error"]["retryable"] is False
     assert "hint" in result["error"]
+    assert "replay" not in result["error"]
     assert len(attempts) == 2
+
+
+def test_exhausted_control_retry_names_the_event_to_replay(monkeypatch):
+    """A retryable control failure tells the caller which event ID to resend."""
+    import qdrant_memory.remote_client as module
+
+    async def sleep(_delay):
+        """Skip the backoff delay in the test."""
+        return None
+
+    monkeypatch.setattr(module, "RETRY_SLEEP", sleep)
+    body = {"error": {"type": "OwnerEventError", "retryable": True}}
+    constructor = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: constructor(
+            transport=httpx.MockTransport(lambda _: httpx.Response(503, json=body)),
+            **kwargs,
+        ),
+    )
+    result = asyncio.run(control_event("https://memory.test/mcp", TOKEN, "turn-1", "status"))
+    assert result["error"]["reason"] == "temporarily_unavailable"
+    assert result["error"]["retryable"] is True
+    assert result["error"]["replay"] == "event_id"
