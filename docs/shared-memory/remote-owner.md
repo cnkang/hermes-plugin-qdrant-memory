@@ -1,12 +1,12 @@
-# HTTPS MCP Owner (Runtime 0.5.1)
+# HTTPS MCP Owner (Runtime 0.5.2)
 
-Install Runtime 0.5.1 with the `[remote]` extra in a private environment:
+Install Runtime 0.5.2 with the `[remote]` extra in a private environment:
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.1/)
-for Runtime 0.5.1 availability before running the package command.
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.2/)
+for Runtime 0.5.2 availability before running the package command.
 
 ```sh
-python -m pip install 'hermes-plugin-qdrant-memory[remote]==0.5.1'
+python -m pip install 'hermes-plugin-qdrant-memory[remote]==0.5.2'
 ```
 
 The commands include `remote-serve`, `remote-mcp`, `remote-event` and
@@ -269,6 +269,44 @@ and failed extraction is retained for operator retry. Default capture is private
 The `/events` extension is separate from MCP and does not invent a fifth CRUD
 tool. Current event contract is `turn_completed`. Other proposed lifecycle event
 kinds are not supported yet. A 128-event pending/failed backlog gate applies.
+
+## Ambiguous writes and replay
+
+An Owner restart can stop the listener between the request and the response.
+The client then cannot know whether the Owner committed the write. The error
+envelope names this state with `retryable: true` and a `replay` field.
+
+| Field | Meaning |
+| --- | --- |
+| `reason` | the failure class, for example `outcome_unknown` |
+| `retryable` | `true` when a replay with the same identifier is safe |
+| `replay` | `request_id` for a tool call, `event_id` for an event |
+
+Send the same `request_id` or `event_id` again after a retryable failure. The
+Owner returns the stored receipt, so the write converges on one record. Do not
+use a new identifier for a replay. A new identifier can add a second record.
+
+The adapter replays a fast failure two times. It does not replay a failure that
+took more than 5 s, because the caller's outbox owns a slow outage. Keep the
+original identifier when that outbox retries.
+
+A `recovery_required` reason, or an Owner error type
+`SharedRecoveryRequiredError`, is different. The Owner admitted the request and
+keeps it in the ledger. Finish operator recovery, then send the same identifier
+again. Do not discard the request and do not delete ledger rows.
+
+A non-retryable reason is a final answer. Correct the credential, the CA file,
+the endpoint or the request body before a new attempt. A tool call can also
+return the Owner's own object with `type` and `retryable` and no `reason`. Read
+that object the same way.
+
+```sh
+# A failed call prints one redacted envelope.
+qdrant-memory remote-call --url https://memory.example.com/mcp \
+  --tool qdrant_memory_add --token-env QM_DEVICE_TOKEN < request.json
+# {"error":{"type":"RemoteProtocolError","reason":"outcome_unknown",
+#  "retryable":true,"replay":"request_id",...}}
+```
 
 ## Compatibility, backup and rollback
 

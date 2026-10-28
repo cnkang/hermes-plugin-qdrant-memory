@@ -2,13 +2,28 @@
 
 import json
 import os
+import random
 import ssl
+import time
 from importlib.metadata import version
 from urllib.parse import urlsplit
 
 from .mcp_server import create_tool_server
 from .shared_service import shared_schemas
 from .tools import validate_arguments
+
+REQUEST_TIMEOUT_SECONDS = 30
+
+# In-process replay budget. Only a failure that returns inside the fast-failure
+# window is replayed here; a caller's durable outbox owns longer outages.
+RETRY_ATTEMPTS = 3
+RETRY_WINDOW_SECONDS = 5.0
+RETRY_BASE_SECONDS = 0.2
+RETRY_CAP_SECONDS = 1.0
+
+RETRYABLE_REASONS = frozenset(
+    {"timeout", "unreachable", "outcome_unknown", "temporarily_unavailable"}
+)
 
 
 def validate_endpoint(url):
@@ -44,12 +59,14 @@ def http_module():
 
 
 class RemoteStatusError(RuntimeError):
-    """A lifecycle response carried a status code and no usable error body."""
+    """A lifecycle response carried a rejection status and no usable result."""
 
-    def __init__(self, status):
-        """Keep the status code only, never the remote body."""
+    def __init__(self, status, *, error_type=None, retryable=None):
+        """Keep the status code and one machine type, never the remote body."""
         super().__init__("Owner lifecycle request was rejected")
         self.status_code = status
+        self.error_type = error_type
+        self.retryable = retryable
 
 
 def _control_error(body):
@@ -69,41 +86,95 @@ def _control_error(body):
     return {"error": {"type": code, "retryable": error.get("retryable") is True}}
 
 
-async def _event_request(url, token, event, *, ca_file, path):
-    """Use the same verified, non-redirecting transport for event admission/control."""
+def _response_body(response):
+    """Read a bounded JSON body only to recover the machine rejection type."""
+    try:
+        return response.json()
+    except (ValueError, RecursionError):
+        return None
+
+
+async def _event_request(url, token, body, *, ca_file, path):
+    """Post one event body over the verified, non-redirecting transport."""
+    import httpx
+
     validate_endpoint(url)
     if not isinstance(token, str) or not 32 <= len(token) <= 1000 or not token.isascii():
         raise ValueError("A provisioned service credential is required")
-    import httpx
-
     context = ssl.create_default_context(cafile=ca_file)
     async with httpx.AsyncClient(
         verify=context,
         trust_env=False,
         follow_redirects=False,
-        timeout=30,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     ) as client:
         response = await client.post(
             url.removesuffix("/mcp") + path,
             headers={"Authorization": "Bearer " + token},
-            json=event,
+            json=body,
         )
-        if response.status_code != 200:
-            if path == "/events/manage" and 400 <= response.status_code < 500:
-                try:
-                    body = response.json()
-                except (ValueError, RecursionError):
-                    body = None
-                error = _control_error(body)
-                if error is not None:
-                    return error
-            raise RemoteStatusError(response.status_code)
-        return response.json()
+        if response.status_code == 200:
+            return response.json()
+        # A rejection body carries the reason and the Owner's own retry verdict.
+        # It never contains memory text, so only the machine fields are retained.
+        error = _control_error(_response_body(response))
+        if error is not None:
+            raise RemoteStatusError(
+                response.status_code,
+                error_type=error["error"]["type"],
+                retryable=error["error"]["retryable"],
+            )
+        raise RemoteStatusError(response.status_code)
+
+
+async def _retry_sleep(delay):
+    """Sleep between replay attempts without holding a transport open."""
+    import anyio
+
+    await anyio.sleep(delay)
+
+
+RETRY_SLEEP = _retry_sleep
+RETRY_CLOCK = time.monotonic
+
+
+async def _replay(send, *, sleep=None, clock=None):
+    """Replay one idempotent request while the failure is fast and retryable.
+
+    The caller must pass the same request identity on every attempt. The Owner
+    keys tool mutations by ``request_id`` and lifecycle events by ``event_id``,
+    so a replayed request converges on the first receipt instead of adding a
+    second record. A slow failure is not replayed here: the caller's durable
+    outbox owns that delay, and an in-process retry would double the outage.
+    """
+    sleep = sleep or RETRY_SLEEP
+    clock = clock or RETRY_CLOCK
+    for attempt in range(RETRY_ATTEMPTS):
+        started = clock()
+        try:
+            return await send()
+        except Exception as exc:
+            elapsed = clock() - started
+            failure = remote_error(exc)
+            if (
+                not failure["retryable"]
+                or attempt + 1 == RETRY_ATTEMPTS
+                or elapsed > RETRY_WINDOW_SECONDS
+            ):
+                raise
+            cap = min(RETRY_CAP_SECONDS, RETRY_BASE_SECONDS * 2**attempt)
+            await sleep(random.uniform(0, cap))
 
 
 async def send_event(url, token, event, *, ca_file=None):
-    """Acknowledge only a committed write or an explicitly cancelled raw event."""
-    result = await _event_request(url, token, event, ca_file=ca_file, path="/events")
+    """Acknowledge only a committed write or an explicitly cancelled raw event.
+
+    A retry replays the same event ID, so a lost response cannot add a second
+    event or a second memory.
+    """
+    result = await _replay(
+        lambda: _event_request(url, token, event, ca_file=ca_file, path="/events")
+    )
     if not isinstance(result, dict) or result.get("status") not in (
         "COMMITTED",
         "CANCELLED",
@@ -121,9 +192,20 @@ async def control_event(url, token, event_id, action, *, ca_file=None):
         or not 0 < len(event_id) <= 128
     ):
         raise ValueError("Invalid lifecycle control")
-    result = await _event_request(
-        url, token, {"action": action, "event_id": event_id}, ca_file=ca_file, path="/events/manage"
-    )
+    try:
+        result = await _replay(
+            lambda: _event_request(
+                url,
+                token,
+                {"action": action, "event_id": event_id},
+                ca_file=ca_file,
+                path="/events/manage",
+            )
+        )
+    except RemoteStatusError as exc:
+        if exc.error_type is None:
+            raise
+        return {"error": {"type": exc.error_type, "retryable": exc.retryable is True}}
     error = _control_error(result)
     if error is not None:
         return error
@@ -133,7 +215,12 @@ async def control_event(url, token, event_id, action, *, ca_file=None):
 
 
 async def call_remote(url, token, name, arguments, *, ca_file=None):
-    """Use official protocol negotiation and preserve Owner receipt/error semantics."""
+    """Use official protocol negotiation and preserve Owner receipt/error semantics.
+
+    A retry replays the same arguments. Every shared mutation carries a
+    ``request_id``, and the Owner returns the stored receipt for a repeat, so an
+    interrupted response cannot duplicate a memory.
+    """
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
 
@@ -148,91 +235,191 @@ async def call_remote(url, token, name, arguments, *, ca_file=None):
         if 300 <= response.status_code < 400:
             raise PermissionError("Remote MCP redirects are forbidden")
 
-    async with http.AsyncClient(
-        verify=context,
-        trust_env=False,
-        follow_redirects=False,
-        timeout=30,
-        headers={"Authorization": "Bearer " + token},
-        event_hooks={"response": [reject_redirect]},
-    ) as client:
-        async with streamable_http_client(url, http_client=client) as streams:
-            async with ClientSession(streams[0], streams[1]) as session:
-                await session.initialize()
-                result = await session.call_tool(name, arguments)
-                if not result.content or not hasattr(result.content[0], "text"):
-                    raise ValueError("Invalid remote MCP result")
-                value = json.loads(result.content[0].text)
-                if not isinstance(value, dict):
-                    raise ValueError("Invalid remote MCP result")
-                return value
+    async def request():
+        async with http.AsyncClient(
+            verify=context,
+            trust_env=False,
+            follow_redirects=False,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            headers={"Authorization": "Bearer " + token},
+            event_hooks={"response": [reject_redirect]},
+        ) as client:
+            async with streamable_http_client(url, http_client=client) as streams:
+                async with ClientSession(streams[0], streams[1]) as session:
+                    await session.initialize()
+                    result = await session.call_tool(name, arguments)
+                    if not result.content or not hasattr(result.content[0], "text"):
+                        raise ValueError("Invalid remote MCP result")
+                    value = json.loads(result.content[0].text)
+                    if not isinstance(value, dict):
+                        raise ValueError("Invalid remote MCP result")
+                    error = value.get("error")
+                    if isinstance(error, dict) and error.get("retryable") is True:
+                        # The Owner itself reported a transient failure, so this
+                        # request may not have reached its ledger entry yet.
+                        raise RemoteStatusError(
+                            None,
+                            error_type=error.get("type"),
+                            retryable=True,
+                        )
+                    return value
+
+    return await _replay(request)
 
 
 HINTS = {
     "tls_verification_failed": "Trust the Owner CA file with --ca-file; never disable verification.",
     "tls_failed": "Check the Owner certificate chain and the TLS listener.",
     "authentication_rejected": "Rotate or reissue the device credential; confirm the Owner policy.",
-    "unreachable": "Confirm the Owner address, listener and network path.",
-    "timeout": "Confirm the Owner is responsive, then retry within the durable request contract.",
+    "recovery_required": "The Owner keeps this request; finish operator recovery, then replay the same ID.",
+    "unreachable": "Confirm the Owner address, listener and network path; replay the same request ID.",
+    "timeout": "Confirm the Owner is responsive, then replay the same request ID.",
+    "outcome_unknown": "Replay the same request ID; the Owner returns the original receipt.",
+    "temporarily_unavailable": "Retry the same request ID after a short delay.",
     "protocol_error": "Confirm the endpoint ends in /mcp and serves the expected MCP version.",
     "business_error": "Read the Owner error type; the request reached the Owner.",
 }
 
 
-def remote_error(exc):
-    """Return a stable transport diagnostic without remote text or credentials."""
-    leaf = exc
-    while isinstance(leaf, BaseExceptionGroup) and leaf.exceptions:
-        leaf = leaf.exceptions[0]
-    reason = "remote_error"
-    status = getattr(leaf, "status_code", None) or getattr(
-        getattr(leaf, "response", None), "status_code", None
-    )
-    try:
-        import ssl
+def _exception_leaves(exc, limit=16):
+    """Flatten nested exception groups so one transport leaf is not hidden."""
+    leaves, pending = [], [exc]
+    while pending and len(leaves) < limit:
+        node = pending.pop(0)
+        if isinstance(node, BaseExceptionGroup) and node.exceptions:
+            pending.extend(node.exceptions)
+        else:
+            leaves.append(node)
+    return leaves or [exc]
 
+
+def _exception_chain(exc, limit=8):
+    """Follow cause and context links without looping on a self reference."""
+    chain, node = [], exc
+    while node is not None and node not in chain and len(chain) < limit:
+        chain.append(node)
+        node = node.__cause__ or node.__context__
+    return chain
+
+
+def _transport_types(name):
+    """Collect one exception class from each supported HTTP client module."""
+    modules = []
+    try:
         import httpx
 
-        modules = [httpx]
-        try:
-            alternate = http_module()
-        except ImportError:  # the optional MCP transport is not installed
-            alternate = None
-        if alternate is not None and alternate is not httpx:
-            modules.append(alternate)
-        chain, node = [], leaf
-        while node is not None and node not in chain and len(chain) < 8:
-            chain.append(node)
-            node = node.__cause__ or node.__context__
+        modules.append(httpx)
+    except ImportError:  # pragma: no cover - httpx ships with the remote extra
+        return ()
+    try:
+        alternate = http_module()
+    except ImportError:  # the optional MCP transport is not installed
+        alternate = None
+    if alternate is not None and alternate is not httpx:
+        modules.append(alternate)
+    return tuple(getattr(module, name, ()) for module in modules)
+
+
+def remote_error(exc, replay=None):
+    """Return a stable transport diagnostic without remote text or credentials.
+
+    ``reason`` is the only thing a caller should branch on. ``retryable`` means
+    the request can be replayed with its original request ID or event ID, and
+    ``replay`` names that ID field so the caller cannot invent a second one.
+    """
+    leaves = _exception_leaves(exc)
+    chain = [item for leaf in leaves for item in _exception_chain(leaf)]
+    status, error_type = None, None
+    owner_retry = None
+    for item in chain:
+        if status is None:
+            status = getattr(item, "status_code", None)
+            if status is None:
+                status = getattr(getattr(item, "response", None), "status_code", None)
+        if isinstance(item, RemoteStatusError) and item.error_type is not None:
+            error_type = error_type or item.error_type
+            owner_retry = item.retryable if owner_retry is None else owner_retry
+    reason = "remote_error"
+    try:
         if any(isinstance(item, ssl.SSLCertVerificationError) for item in chain):
             reason = "tls_verification_failed"
         elif any(isinstance(item, ssl.SSLError) for item in chain):
             reason = "tls_failed"
-        elif isinstance(leaf, tuple(m.TimeoutException for m in modules)) or isinstance(
-            leaf, TimeoutError
-        ):
-            reason = "timeout"
-        elif isinstance(
-            leaf,
-            tuple(m.ConnectError for m in modules)
-            + tuple(m.NetworkError for m in modules)
-            + (ConnectionError,),
-        ):
-            reason = "unreachable"
+        elif error_type == "SharedRecoveryRequiredError":
+            reason = "recovery_required"
         elif status in (401, 403):
             reason = "authentication_rejected"
+        elif owner_retry is True or (owner_retry is None and status in (408, 429, 502, 503, 504)):
+            reason = "temporarily_unavailable"
         elif status is not None:
             reason = "business_error"
-        elif type(leaf).__name__ in {"McpError", "BrokenResourceError"}:
+        elif error_type is not None:
+            reason = "business_error"
+        elif any(
+            isinstance(leaf, _transport_types("RemoteProtocolError"))
+            or isinstance(leaf, _transport_types("ReadError"))
+            or isinstance(leaf, _transport_types("WriteError"))
+            or isinstance(leaf, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError))
+            for leaf in leaves
+        ):
+            reason = "outcome_unknown"
+        elif any(_stream_closed(leaf) for leaf in leaves):
+            reason = "outcome_unknown"
+        elif any(
+            isinstance(leaf, _transport_types("ConnectError"))
+            or isinstance(leaf, _transport_types("ConnectTimeout"))
+            for leaf in leaves
+        ):
+            reason = "unreachable"
+        elif any(
+            isinstance(leaf, _transport_types("TimeoutException") + (TimeoutError,))
+            for leaf in leaves
+        ):
+            reason = "timeout"
+        elif any(isinstance(leaf, ConnectionError) for leaf in leaves):
+            reason = "unreachable"
+        elif any(isinstance(leaf, PermissionError) for leaf in leaves):
+            reason = "protocol_error"
+        elif any(
+            type(leaf).__name__ in {"McpError", "MCPError", "BrokenResourceError"}
+            for leaf in leaves
+        ):
             reason = "protocol_error"
     except ImportError:  # pragma: no cover - httpx ships with the remote extra
         pass
-    return {
-        "type": type(leaf).__name__,
+    result = {
+        "type": type(leaves[0]).__name__,
         "reason": reason,
-        "retryable": reason in {"timeout", "unreachable"},
+        "retryable": reason in RETRYABLE_REASONS,
         "hint": HINTS.get(reason, "Inspect the Owner log with the correlation identifier."),
     }
+    if result["retryable"] and replay is not None:
+        result["replay"] = replay
+    return result
+
+
+def _stream_closed(exc):
+    """Recognise an interrupted MCP stream without importing anyio at module load."""
+    try:
+        import anyio
+
+        if isinstance(
+            exc,
+            (anyio.ClosedResourceError, anyio.BrokenResourceError, anyio.EndOfStream),
+        ):
+            return True
+    except (ImportError, AttributeError):  # pragma: no cover - anyio ships with MCP
+        pass
+    # SDK 1.x names the class McpError and SDK 2.x names it MCPError.
+    if type(exc).__name__ not in {"McpError", "MCPError"}:
+        return False
+    code = getattr(getattr(exc, "error", None), "code", None)
+    try:
+        from mcp.types import CONNECTION_CLOSED
+
+        return code == CONNECTION_CLOSED
+    except ImportError:  # pragma: no cover - MCP is optional
+        return code == -32000
 
 
 def serve_mcp(url, token_env, *, ca_file=None):

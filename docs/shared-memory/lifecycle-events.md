@@ -1,4 +1,4 @@
-# Owner lifecycle event controls (source preview)
+# Owner lifecycle event controls
 
 The opt-in lifecycle extension supports durable `turn_completed` input and
 device-bound status/cancellation. The four MCP memory tools are unchanged.
@@ -29,6 +29,13 @@ extraction candidates or provider error messages. Another credential identity or
 device receives `NOT_FOUND`, including devices that share logical private recall.
 A rotated credential may control its previous events only when the operator has
 kept the exact trusted device/principal/space/capture-rule mapping.
+
+A transport cut does not prove that the Owner rejected the turn. Resend the same
+event ID after a retryable failure. The Owner returns the stored receipt and adds
+no second event and no second memory. The error envelope names the identifier in
+its `replay` field. See `remote-owner.md` for the reason table. A `QUARANTINED`
+receipt is terminal for the client. Resend that event ID only after operator
+recovery.
 
 Cancellation is conservative:
 

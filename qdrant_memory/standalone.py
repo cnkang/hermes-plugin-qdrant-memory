@@ -291,7 +291,8 @@ def main(argv=None):
             except Exception as exc:
                 from .remote_client import remote_error
 
-                cli.print_json({"error": remote_error(exc)})
+                replay = "event_id" if args.qdrant_command == "remote-event" else "request_id"
+                cli.print_json({"error": remote_error(exc, replay=replay)})
                 return 1
             cli.print_json(result)
             return 1 if "error" in result else 0
