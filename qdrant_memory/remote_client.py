@@ -246,9 +246,17 @@ async def call_remote(url, token, name, arguments, *, ca_file=None):
     http = http_module()
     context = ssl.create_default_context(cafile=ca_file)
 
-    async def reject_redirect(response):
+    async def reject_unsafe_response(response):
+        """Fail on a redirect or a credential rejection before the SDK wraps it.
+
+        The official client keeps the HTTP status on some SDK versions only.
+        A 401 or a 403 is a definite rejection, so the adapter records it here
+        and never lets a stream error hide the status.
+        """
         if 300 <= response.status_code < 400:
             raise PermissionError("Remote MCP redirects are forbidden")
+        if response.status_code in (401, 403):
+            raise RemoteStatusError(response.status_code)
 
     async def request():
         async with http.AsyncClient(
@@ -257,7 +265,7 @@ async def call_remote(url, token, name, arguments, *, ca_file=None):
             follow_redirects=False,
             timeout=REQUEST_TIMEOUT_SECONDS,
             headers={"Authorization": "Bearer " + token},
-            event_hooks={"response": [reject_redirect]},
+            event_hooks={"response": [reject_unsafe_response]},
         ) as client:
             async with streamable_http_client(url, http_client=client) as streams:
                 async with ClientSession(streams[0], streams[1]) as session:
