@@ -88,7 +88,7 @@ def _control_error(body):
     return {"error": {"type": code, "retryable": error.get("retryable") is True}}
 
 
-def _machine_failure(error_type, retryable):
+def _machine_failure(error_type, retryable, retry_after=None):
     """Return one full envelope for a machine-readable Owner rejection."""
     if error_type == "SharedRecoveryRequiredError":
         reason = "recovery_required"
@@ -104,6 +104,8 @@ def _machine_failure(error_type, retryable):
     }
     if result["retryable"]:
         result["replay"] = "event_id"
+        if retry_after is not None:
+            result["retry_after"] = retry_after
     return result
 
 
@@ -232,7 +234,7 @@ async def control_event(url, token, event_id, action, *, ca_file=None):
             raise
         # Keep the same envelope as every other client failure. The Owner type
         # is more useful to an operator than the local exception class.
-        return {"error": _machine_failure(exc.error_type, exc.retryable)}
+        return {"error": _machine_failure(exc.error_type, exc.retryable, exc.retry_after)}
     error = _control_error(result)
     if error is not None:
         return {"error": _machine_failure(error["error"]["type"], error["error"]["retryable"])}
@@ -438,10 +440,11 @@ def remote_error(exc, replay=None):
         "retryable": reason in RETRYABLE_REASONS,
         "hint": HINTS.get(reason, "Inspect the Owner log with the correlation identifier."),
     }
-    if result["retryable"] and replay is not None:
-        result["replay"] = replay
-    if retry_after is not None:
-        result["retry_after"] = retry_after
+    if result["retryable"]:
+        if replay is not None:
+            result["replay"] = replay
+        if retry_after is not None:
+            result["retry_after"] = retry_after
     return result
 
 

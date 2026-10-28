@@ -44,7 +44,8 @@ retry behavior.
 A retryable failure carries a `replay` field. The field names the identifier
 that the caller must send again. The value is `request_id` for a tool call and
 `event_id` for a lifecycle event. A new identifier can create a second record.
-The envelope also carries `retry_after` when the Owner sends that header.
+The envelope also carries `retry_after` for a retryable failure when the Owner
+sends that header.
 
 A tool result that the Owner marks `retryable: true` is transient. The adapter
 replays it with the same request ID. A tool result that the Owner marks
