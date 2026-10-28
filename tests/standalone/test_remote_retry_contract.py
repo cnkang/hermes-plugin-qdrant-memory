@@ -459,6 +459,39 @@ def test_rate_limit_window_is_left_to_the_outbox(monkeypatch):
     assert remote_error(caught.value)["retryable"] is True
 
 
+def test_tool_path_rate_limit_keeps_the_server_window(monkeypatch):
+    """A saturation answer on the tool path is retryable and keeps its delay."""
+    constructor = HTTP.AsyncClient
+    attempts = []
+
+    def limited(_request):
+        """Answer with the saturation window that the gateway sends."""
+        attempts.append(1)
+        return HTTP.Response(429, headers={"Retry-After": "60"})
+
+    monkeypatch.setattr(
+        HTTP,
+        "AsyncClient",
+        lambda **kwargs: constructor(transport=HTTP.MockTransport(limited), **kwargs),
+    )
+
+    async def check():
+        await call_remote(
+            "https://memory.test/mcp",
+            TOKEN,
+            "qdrant_memory_search",
+            {"query": "cats"},
+        )
+
+    with pytest.raises(Exception) as caught:
+        asyncio.run(check())
+    failure = remote_error(caught.value)
+    assert failure["reason"] == "temporarily_unavailable"
+    assert failure["retryable"] is True
+    assert failure["retry_after"] == 60
+    assert len(attempts) == 1
+
+
 def test_control_error_stays_machine_readable_after_retries(monkeypatch):
     """A retryable control rejection is replayed, and a firm one is returned."""
     import qdrant_memory.remote_client as module

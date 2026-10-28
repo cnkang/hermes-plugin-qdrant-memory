@@ -281,6 +281,7 @@ envelope names this state with `retryable: true` and a `replay` field.
 | `reason` | the failure class, for example `outcome_unknown` |
 | `retryable` | `true` when a replay with the same identifier is safe |
 | `replay` | `request_id` for a tool call, `event_id` for an event |
+| `retry_after` | the Owner's own delay in seconds, when it sends one |
 
 Send the same `request_id` or `event_id` again after a retryable failure. The
 Owner returns the stored receipt, so the write converges on one record. Do not

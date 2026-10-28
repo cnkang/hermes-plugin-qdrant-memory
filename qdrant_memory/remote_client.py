@@ -24,6 +24,7 @@ RETRY_CAP_SECONDS = 1.0
 RETRYABLE_REASONS = frozenset(
     {"timeout", "unreachable", "outcome_unknown", "temporarily_unavailable"}
 )
+RETRYABLE_STATUSES = frozenset({408, 429, 502, 503, 504})
 
 
 def validate_endpoint(url):
@@ -180,7 +181,7 @@ async def _replay(send, *, sleep=None, clock=None):
                 not failure["retryable"]
                 or attempt + 1 == RETRY_ATTEMPTS
                 or elapsed > RETRY_WINDOW_SECONDS
-                or (getattr(exc, "retry_after", None) or 0) > RETRY_CAP_SECONDS
+                or (failure.get("retry_after") or 0) > RETRY_CAP_SECONDS
             ):
                 raise
             cap = min(RETRY_CAP_SECONDS, RETRY_BASE_SECONDS * 2**attempt)
@@ -255,16 +256,22 @@ async def call_remote(url, token, name, arguments, *, ca_file=None):
     context = ssl.create_default_context(cafile=ca_file)
 
     async def reject_unsafe_response(response):
-        """Fail on a redirect or a credential rejection before the SDK wraps it.
+        """Keep the HTTP status that the SDK may hide in a later stream error.
 
-        The official client keeps the HTTP status on some SDK versions only.
-        A 401 or a 403 is a definite rejection, so the adapter records it here
-        and never lets a stream error hide the status.
+        A redirect and a credential rejection are final. A saturation answer is
+        transient, so it keeps its own delay for the caller's outbox.
         """
         if 300 <= response.status_code < 400:
             raise PermissionError("Remote MCP redirects are forbidden")
         if response.status_code in (401, 403):
             raise RemoteStatusError(response.status_code)
+        if response.status_code in RETRYABLE_STATUSES:
+            delay = response.headers.get("Retry-After", "").strip()
+            raise RemoteStatusError(
+                response.status_code,
+                retryable=True,
+                retry_after=int(delay) if delay.isdigit() else None,
+            )
 
     async def request():
         async with http.AsyncClient(
@@ -361,8 +368,10 @@ def remote_error(exc, replay=None):
     leaves = _exception_leaves(exc)
     chain = [item for leaf in leaves for item in _exception_chain(leaf)]
     status, error_type = None, None
-    owner_retry = None
+    owner_retry, retry_after = None, None
     for item in chain:
+        if retry_after is None:
+            retry_after = getattr(item, "retry_after", None)
         if status is None:
             status = getattr(item, "status_code", None)
             if status is None:
@@ -380,7 +389,7 @@ def remote_error(exc, replay=None):
             reason = "recovery_required"
         elif status in (401, 403):
             reason = "authentication_rejected"
-        elif owner_retry is True or (owner_retry is None and status in (408, 429, 502, 503, 504)):
+        elif owner_retry is True or (owner_retry is None and status in RETRYABLE_STATUSES):
             reason = "temporarily_unavailable"
         elif status is not None and 300 <= status < 400:
             reason = "protocol_error"
@@ -428,6 +437,8 @@ def remote_error(exc, replay=None):
     }
     if result["retryable"] and replay is not None:
         result["replay"] = replay
+    if retry_after is not None:
+        result["retry_after"] = retry_after
     return result
 
 
