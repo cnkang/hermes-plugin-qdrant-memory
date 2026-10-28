@@ -96,12 +96,15 @@ def _machine_failure(error_type, retryable):
         reason = "temporarily_unavailable"
     else:
         reason = "business_error"
-    return {
+    result = {
         "type": error_type,
         "reason": reason,
-        "retryable": retryable is True,
+        "retryable": reason in RETRYABLE_REASONS,
         "hint": HINTS[reason],
     }
+    if result["retryable"]:
+        result["replay"] = "event_id"
+    return result
 
 
 def _response_body(response):
