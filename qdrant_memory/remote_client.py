@@ -86,6 +86,19 @@ def _control_error(body):
     return {"error": {"type": code, "retryable": error.get("retryable") is True}}
 
 
+def _machine_failure(error_type, retryable):
+    """Return one full envelope for a machine-readable Owner rejection."""
+    reason = (
+        "recovery_required" if error_type == "SharedRecoveryRequiredError" else "business_error"
+    )
+    return {
+        "type": error_type,
+        "reason": reason,
+        "retryable": retryable is True,
+        "hint": HINTS[reason],
+    }
+
+
 def _response_body(response):
     """Read a bounded JSON body only to recover the machine rejection type."""
     try:
@@ -205,10 +218,12 @@ async def control_event(url, token, event_id, action, *, ca_file=None):
     except RemoteStatusError as exc:
         if exc.error_type is None:
             raise
-        return {"error": {"type": exc.error_type, "retryable": exc.retryable is True}}
+        # Keep the same envelope as every other client failure. The Owner type
+        # is more useful to an operator than the local exception class.
+        return {"error": _machine_failure(exc.error_type, exc.retryable)}
     error = _control_error(result)
     if error is not None:
-        return error
+        return {"error": _machine_failure(error["error"]["type"], error["error"]["retryable"])}
     if not isinstance(result, dict) or not isinstance(result.get("status"), str):
         raise ValueError("Invalid lifecycle control response")
     return result
@@ -281,7 +296,7 @@ HINTS = {
 }
 
 
-def _exception_leaves(exc, limit=16):
+def _exception_leaves(exc, limit=64):
     """Flatten nested exception groups so one transport leaf is not hidden."""
     leaves, pending = [], [exc]
     while pending and len(leaves) < limit:
@@ -351,10 +366,14 @@ def remote_error(exc, replay=None):
             reason = "authentication_rejected"
         elif owner_retry is True or (owner_retry is None and status in (408, 429, 502, 503, 504)):
             reason = "temporarily_unavailable"
+        elif status is not None and 300 <= status < 400:
+            reason = "protocol_error"
         elif status is not None:
             reason = "business_error"
         elif error_type is not None:
             reason = "business_error"
+        elif any(isinstance(leaf, PermissionError) for leaf in leaves):
+            reason = "protocol_error"
         elif any(
             isinstance(leaf, _transport_types("RemoteProtocolError"))
             or isinstance(leaf, _transport_types("ReadError"))
@@ -378,8 +397,6 @@ def remote_error(exc, replay=None):
             reason = "timeout"
         elif any(isinstance(leaf, ConnectionError) for leaf in leaves):
             reason = "unreachable"
-        elif any(isinstance(leaf, PermissionError) for leaf in leaves):
-            reason = "protocol_error"
         elif any(
             type(leaf).__name__ in {"McpError", "MCPError", "BrokenResourceError"}
             for leaf in leaves
@@ -413,7 +430,10 @@ def _stream_closed(exc):
     # SDK 1.x names the class McpError and SDK 2.x names it MCPError.
     if type(exc).__name__ not in {"McpError", "MCPError"}:
         return False
-    code = getattr(getattr(exc, "error", None), "code", None)
+    error = getattr(exc, "error", None)
+    code = getattr(error, "code", None)
+    if code is None:
+        code = getattr(exc, "code", None)
     try:
         from mcp.types import CONNECTION_CLOSED
 

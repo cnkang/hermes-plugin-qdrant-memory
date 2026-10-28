@@ -51,6 +51,18 @@ def _mcp_error(code):
         (ssl.SSLCertVerificationError("synthetic"), "tls_verification_failed", False),
         (ssl.SSLError("synthetic"), "tls_failed", False),
         (PermissionError("Remote MCP redirects are forbidden"), "protocol_error", False),
+        (RemoteStatusError(302), "protocol_error", False),
+        (
+            ExceptionGroup(
+                "unhandled",
+                [
+                    PermissionError("Remote MCP redirects are forbidden"),
+                    httpx.ReadError("synthetic"),
+                ],
+            ),
+            "protocol_error",
+            False,
+        ),
         (RemoteStatusError(401), "authentication_rejected", False),
         (RemoteStatusError(403), "authentication_rejected", False),
         (RemoteStatusError(408), "temporarily_unavailable", True),
@@ -78,10 +90,40 @@ def test_transport_failures_classify_for_replay(exc, reason, retryable):
     assert error["retryable"] is retryable
 
 
+def _legacy_stream_error():
+    """Return the SDK 1.x class name with the code under ``error``."""
+
+    class McpError(Exception):
+        """Stand in for one SDK 1.x transport error."""
+
+        def __init__(self):
+            """Keep the connection-closed code in the SDK 1.x location."""
+            super().__init__("synthetic")
+            self.error = type("ErrorData", (), {"code": -32000})()
+
+    return McpError()
+
+
+def _current_stream_error():
+    """Return the SDK 2.x class name with the code on the exception."""
+
+    class MCPError(Exception):
+        """Stand in for one SDK 2.x transport error."""
+
+        def __init__(self):
+            """Keep the connection-closed code on the exception itself."""
+            super().__init__("synthetic")
+            self.code = -32000
+
+    return MCPError()
+
+
 @pytest.mark.parametrize(
     "exc",
     [
         _mcp_error(-32000),
+        _legacy_stream_error(),
+        _current_stream_error(),
         ExceptionGroup("unhandled", [ValueError("synthetic"), httpx.ReadError("synthetic")]),
     ],
 )
@@ -259,6 +301,89 @@ def test_rejection_is_not_replayed(tmp_path, monkeypatch):
         rt.store.close()
 
 
+def test_tool_path_authentication_rejection_is_not_replayed(tmp_path, monkeypatch):
+    """A 401 during the MCP handshake stays final instead of becoming a replay."""
+    from qdrant_memory.remote_gateway import create_gateway
+    from qdrant_memory.shared_service import SharedOwner
+
+    rt, device = _shared_owner(tmp_path)
+    app = create_gateway(SharedOwner(rt, [device]), allowed_hosts=["memory.test"])
+    constructor = HTTP.AsyncClient
+    attempts = []
+
+    def rejected(_request):
+        """Answer every attempt with an authentication rejection."""
+        attempts.append(1)
+        return HTTP.Response(401)
+
+    monkeypatch.setattr(
+        HTTP,
+        "AsyncClient",
+        lambda **kwargs: constructor(transport=HTTP.MockTransport(rejected), **kwargs),
+    )
+
+    async def check():
+        async with app.router.lifespan_context(app):
+            await call_remote(
+                "https://memory.test/mcp",
+                TOKEN,
+                "qdrant_memory_search",
+                {"query": "cats"},
+            )
+
+    try:
+        with pytest.raises(Exception) as caught:
+            asyncio.run(check())
+        failure = remote_error(caught.value)
+        assert failure["reason"] == "authentication_rejected"
+        assert failure["retryable"] is False
+        assert len(attempts) == 1
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_lost_control_response_replays_one_cancellation(tmp_path, monkeypatch):
+    """A lost cancel response converges on the same cancelled event."""
+    from qdrant_memory.owner_lifecycle import OwnerLifecycle
+    from qdrant_memory.remote_gateway import create_gateway
+    from qdrant_memory.shared_service import SharedOwner
+
+    rt, device = _shared_owner(tmp_path)
+    lifecycle = OwnerLifecycle(SharedOwner(rt, [device]))
+    monkeypatch.setattr(rt, "process_event", lambda _: None)
+    app = create_gateway(lifecycle.owner, allowed_hosts=["memory.test"], lifecycle=lifecycle)
+    constructor = httpx.AsyncClient
+    dropper = DropResponse(httpx.ASGITransport(app=app), drops=1, match=b'"cancel"')
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: constructor(transport=dropper, **kwargs),
+    )
+    event = {
+        "event_id": "turn-1",
+        "session_id": "session-1",
+        "kind": "turn_completed",
+        "user": "cats synthetic cancel",
+        "assistant": "ack",
+    }
+
+    async def check():
+        async with app.router.lifespan_context(app):
+            lifecycle.submit(TOKEN, event)
+            return await control_event("https://memory.test/mcp", TOKEN, "turn-1", "cancel")
+
+    try:
+        result = asyncio.run(check())
+        assert dropper.attempts == 2
+        assert result["status"] == "CANCELLED"
+        assert rt.ledger.db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 1
+        assert rt.ledger.db.execute("SELECT status FROM events").fetchone()["status"] == "CANCELLED"
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
 def test_replay_budget_and_jitter_are_bounded(monkeypatch):
     """Three attempts with capped jitter, then the caller owns the retry."""
     import qdrant_memory.remote_client as module
@@ -338,5 +463,8 @@ def test_control_error_stays_machine_readable_after_retries(monkeypatch):
         lambda **kwargs: constructor(transport=httpx.MockTransport(handler), **kwargs),
     )
     result = asyncio.run(control_event("https://memory.test/mcp", TOKEN, "turn-1", "status"))
-    assert result == {"error": {"type": "KeyError", "retryable": False}}
+    assert result["error"]["type"] == "KeyError"
+    assert result["error"]["reason"] == "business_error"
+    assert result["error"]["retryable"] is False
+    assert "hint" in result["error"]
     assert len(attempts) == 2

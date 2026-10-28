@@ -45,8 +45,13 @@ A retryable failure carries a `replay` field. The field names the identifier
 that the caller must send again. The value is `request_id` for a tool call and
 `event_id` for a lifecycle event. A new identifier can create a second record.
 
-A business rejection from a tool call keeps the Owner's own error object with
-`type` and `retryable`. It carries no `reason`, and it is never replayable.
+A tool result that the Owner marks `retryable: true` is transient. The adapter
+replays it with the same request ID. A tool result that the Owner marks
+`retryable: false` is final. The adapter returns that object unchanged.
+
+A lifecycle rejection uses the full envelope, with the Owner type in `type`.
+A tool rejection keeps the Owner object, so `recovery_required` is the
+lifecycle-path reason for the same state.
 
 The adapter replays a retryable request two times at most. Each replay uses the
 same body and the same identifier. A full-jitter backoff of 0.2 s to 1 s
