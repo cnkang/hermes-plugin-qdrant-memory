@@ -8,7 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_VERSION = "0.5.2"
-RELEASE_COMMIT = "40ac832ab2093e1614c88ef219d1f6a0ef4701a9"
+RELEASE_COMMIT = "d917e19d68a1cd52c630e9583e8bd31a14699294"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
 
