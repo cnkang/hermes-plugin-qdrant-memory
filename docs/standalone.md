@@ -5,17 +5,17 @@ plugin. Runtime 0.2.0 published these interfaces. Runtime 0.2.1 fixes explicit
 writes of highly similar texts. Runtime 0.2.2 adds MCP SDK 1.x/2.x
 compatibility. Runtime 0.5.0 adds the opt-in shared owner. The optional offline
 CPU embedding and guided setup commands remain available. The following pinned
-installation uses 0.5.1.
+installation uses 0.5.2.
 The distribution name remains `hermes-plugin-qdrant-memory`. Existing Hermes
 plugin discovery and `hermes qdrant-memory` grammar are compatible.
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.1/)
-for Runtime 0.5.1 availability before package installation.
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.2/)
+for Runtime 0.5.2 availability before package installation.
 
 ```bash
 python3 -m venv .venv
 # POSIX; on Windows use .venv\Scripts\python.exe and the Scripts command directory.
-.venv/bin/python -m pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.1'
+.venv/bin/python -m pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.2'
 .venv/bin/qdrant-memory --help
 ```
 
