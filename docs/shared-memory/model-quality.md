@@ -4,7 +4,7 @@
 
 ## Evaluation boundary
 
-This source preview evaluates the existing Owner Runtime through actual Hermes MemoryManager callbacks, Pi SDK sessions, and official HTTPS MCP clients.
+This evaluation record covers the existing Owner Runtime through actual Hermes MemoryManager callbacks, Pi SDK sessions, and official HTTPS MCP clients.
 The Owner Runtime controls memory extraction and writes. The evaluation uses its existing extraction and write paths.
 MCP means Model Context Protocol. SDK means software development kit.
 

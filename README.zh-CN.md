@@ -6,7 +6,7 @@
 
 当前 checkout 中新增的共享部署加固措施记录在
 [受保护目的地指南](docs/shared-memory/deployment-security.md)和
-[版本化威胁模型](docs/shared-memory/threat-model-v1.md)中。这些新增内容包含在 Runtime 0.5.1 中。
+[版本化威胁模型](docs/shared-memory/threat-model-v1.md)中。这些新增内容包含在 Runtime 0.5.2 中。
 远程访问需要安装 `[remote]` extra。
 
 ## One Memory, Multiple Agents — 可选的共享 owner
@@ -25,16 +25,16 @@ Runtime 0.5.0 新增可选启用的 Native Owner 提取、设备授权和 HTTPS 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.5.1** 保留可显式启用的本地认证共享 owner，以及用于明确共享记忆的 stdio
+> **Runtime 0.5.2** 保留可显式启用的本地认证共享 owner，以及用于明确共享记忆的 stdio
 > 桥接；同时保留 0.3.0 的可选离线 CPU embedding、受信初始化与 MCP Python SDK 1.x/2.x 支持。
 > 显式写入继续按规范化文本去重，不调用 LLM。
-> 本补丁修复受保护 Owner 的恢复路径，不改变 schema 与 collection 标识。
-> 本指南选择 Runtime 0.5.1。安装前请在
-> [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.1/) 核实该版本是否已公开。
+> 本补丁使重启中断的写入可用同一 request 标识重放，不改变 schema 与 collection 标识。
+> 本指南选择 Runtime 0.5.2。安装前请在
+> [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.2/) 核实该版本是否已公开。
 > 通用 MCP 发行包和托管启动器各自选择精确的 Runtime 依赖，分别发布。
 > Hermes Plugin Catalog 使用独立审核的固定版本（不可变），PyPI 发布不会自动升级目录中的版本。
 > 每个目的地仍只允许一个写入者。
-> 参见[发布说明](docs/releases/0.5.1.zh-CN.md)和[验证记录](docs/validation.md)。
+> 参见[发布说明](docs/releases/0.5.2.zh-CN.md)和[验证记录](docs/validation.md)。
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -51,7 +51,7 @@ schema-v1 payload。不使用 Mem0 SDK 或独立 LLM SDK，不发送遥测，不
 ## 工作原理
 
 非 Hermes 用户可在私有的 Python 3.11+ 环境中安装：
-`pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.1'`（仅 CLI 可省略 `[mcp]`）。
+`pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.2'`（仅 CLI 可省略 `[mcp]`）。
 `qdrant-memory` 是 CLI，`mcp` 是其服务子命令。Standalone 不需要 Hermes。
 见[安装与快速开始](docs/standalone.md)。以 MCP 为主的 Agent 也可改用
 [metadata-only 分发包](https://github.com/cnkang/qdrant-memory-mcp)。
@@ -129,7 +129,7 @@ Hermes 版本为 v0.21.5（v2026.9.24）。[CI 服务](docs/ci.md)页面记录�
 
 **Catalog 方案：安装官方 Hermes Plugin Catalog 审核过的版本。**
 
-Catalog 独立选择固定提交，该版本可能早于 Runtime 0.5.1。如需使用当前发布版本
+Catalog 独立选择固定提交，该版本可能早于 Runtime 0.5.2。如需使用当前发布版本
 （包括可选启用的共享记忆），请采用下方推荐的固定版本安装方式。
 
 ```bash
@@ -146,7 +146,7 @@ hermes qdrant-memory init
 安装会解析 Catalog 审核过的提交，并在克隆前打印该条目声明的工具、要求与已知问题。
 `hermes plugins enable` 通过 Hermes PM 准备声明的依赖。
 
-**推荐：通过 Hermes CLI 安装固定版本的 Runtime 0.5.1 源码。**
+**推荐：通过 Hermes CLI 安装固定版本的 Runtime 0.5.2 源码。**
 
 此不可变源码提交包含可选启用的共享记忆。它不依赖 PyPI 发布或 Catalog 更新。
 
@@ -155,7 +155,7 @@ export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # 如果 Ollama 尚未运行，先启动服务并保持其可用。
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref 40ac832ab2093e1614c88ef219d1f6a0ef4701a9   # Runtime 0.5.1 release
+  --ref 40ac832ab2093e1614c88ef219d1f6a0ef4701a9   # Runtime 0.5.2 release
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
@@ -165,7 +165,7 @@ hermes qdrant-memory init
 **上一验证源码：通过 Hermes CLI 安装 Runtime 0.3.0。**
 
 此较早的不可变源码提交包含可选 CPU embedding 与引导初始化，但早于可选启用的共享
-记忆。当前版本请使用上方 Runtime 0.5.1。它不依赖 PyPI 发布或 Catalog 更新。
+记忆。当前版本请使用上方 Runtime 0.5.2。它不依赖 PyPI 发布或 Catalog 更新。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
@@ -187,7 +187,7 @@ hermes qdrant-memory init
 
 **历史发行版本：手动克隆已发布的 tag。**
 
-下方 v0.1.0 tag 早于独立接口和显式写入修复。Runtime 0.5.1 请使用上方固定源码。
+下方 v0.1.0 tag 早于独立接口和显式写入修复。Runtime 0.5.2 请使用上方固定源码。
 
 ```bash
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"

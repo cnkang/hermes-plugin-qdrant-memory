@@ -1,4 +1,4 @@
-# Dedicated Owner service and rollback (source preview)
+# Dedicated Owner service and rollback
 
 The sample `docs/examples/universal-owner/qdrant-memory-owner.service` runs one standalone Owner under a dedicated Linux account.
 The template uses private file permissions at startup.

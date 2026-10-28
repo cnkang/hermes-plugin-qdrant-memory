@@ -4,7 +4,7 @@
 
 ## 评估边界
 
-此源码预览通过真实的 Hermes MemoryManager 回调、Pi SDK 会话及官方 HTTPS MCP 客户端评估现有 Owner Runtime。
+本评估记录通过真实的 Hermes MemoryManager 回调、Pi SDK 会话及官方 HTTPS MCP 客户端评估现有 Owner Runtime。
 Owner Runtime 控制记忆提取和写入。评估使用其现有提取与写入路径。
 MCP 指 Model Context Protocol（模型上下文协议）。SDK 指软件开发工具包。
 
