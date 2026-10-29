@@ -27,7 +27,7 @@ No persistent format, tool schema or status value changed.
 | Retry budget and jitter | same file | PASS, three attempts, two bounded waits |
 | Slow failure is not replayed | same file | PASS, one attempt, no wait |
 | Killed listener during a request | `pytest tests/test_restart_boundary.py` | PASS, retryable with `replay: event_id` |
-| Full local suite with a Qdrant container | canonical runner, `-j 1` | PASS, 1139 passed, 0 failed, 11 gated skips |
+| Full local suite with a Qdrant container | canonical runner, `-j 1` | PASS, 1142 passed, 0 failed, 11 gated skips |
 | MCP SDK 2.3.0 with httpx2 | five remote test files | PASS, 76 passed |
 | Lint | `ruff check .` and `ruff format --check .` | PASS |
 | Documentation links | `check_markdown_links.py` | PASS |
