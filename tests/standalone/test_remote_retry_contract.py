@@ -2,6 +2,7 @@
 
 import asyncio
 import ssl
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -436,16 +437,24 @@ def test_retry_after_one_second_is_honored(monkeypatch):
     assert sleeps[0] >= 1.0
 
 
-def test_retry_after_parser_accepts_only_bounded_ascii_seconds():
-    """HTTP-date, non-ASCII and overlong values fall back to the default wait."""
+def test_retry_after_parser_accepts_seconds_and_future_http_dates(monkeypatch):
+    """Numeric seconds and future HTTP-dates convert; past or invalid values do not."""
     import qdrant_memory.remote_client as module
+
+    now = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(module, "RETRY_WALL_CLOCK", lambda: now.timestamp())
 
     for value in ("0", "1", "60", " 2 "):
         assert module._parse_retry_after(value) == int(value)
+    assert module._parse_retry_after("Thu, 01 Jan 2026 00:01:00 GMT") == 60
+    assert module._parse_retry_after("Thu Jan  1 00:01:00 2026") == 60
     for value in (
         None,
         "",
         "Wed, 21 Oct 2015 07:28:00 GMT",
+        "Thu, 01 Jan 2026 00:00:00 GMT",
+        "not a date",
+        "Wed, " + "x" * 70,
         "\u0663",
         "1" * 10,
         "-1",
