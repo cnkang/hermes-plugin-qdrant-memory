@@ -1,10 +1,13 @@
 """HTTPS MCP-to-MCP adapter for provisioned, independent service credentials."""
 
 import json
+import math
 import os
 import random
 import ssl
 import time
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from importlib.metadata import version
 from urllib.parse import urlsplit
 
@@ -21,6 +24,8 @@ RETRY_WINDOW_SECONDS = 5.0
 RETRY_BASE_SECONDS = 0.2
 RETRY_CAP_SECONDS = 1.0
 RETRY_AFTER_MAX_DIGITS = 9
+RETRY_AFTER_MAX_DATE_CHARS = 64
+RETRY_WALL_CLOCK = time.time
 
 RETRYABLE_REASONS = frozenset(
     {"timeout", "unreachable", "outcome_unknown", "temporarily_unavailable"}
@@ -119,18 +124,29 @@ def _response_body(response):
 
 
 def _parse_retry_after(value):
-    """Convert only a bounded ASCII decimal Retry-After value to seconds."""
+    """Convert a bounded decimal or HTTP-date Retry-After value to seconds."""
     if not isinstance(value, str):
         return None
     value = value.strip()
-    if (
-        not value
-        or len(value) > RETRY_AFTER_MAX_DIGITS
-        or not value.isascii()
-        or not value.isdigit()
-    ):
+    if not value:
         return None
-    return int(value)
+    if value.isdigit():
+        if not value.isascii() or len(value) > RETRY_AFTER_MAX_DIGITS:
+            return None
+        return int(value)
+    if len(value) > RETRY_AFTER_MAX_DATE_CHARS:
+        return None
+    try:
+        when = parsedate_to_datetime(value)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        now = datetime.fromtimestamp(RETRY_WALL_CLOCK(), UTC)
+        remaining = (when - now).total_seconds()
+    except (ValueError, TypeError, OverflowError, OSError):
+        return None
+    if remaining <= 0:
+        return None
+    return math.ceil(remaining)
 
 
 async def _event_request(url, token, body, *, ca_file, path):
