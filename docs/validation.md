@@ -6,15 +6,18 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
-## Runtime 0.5.2 checks (2026-10-28)
+## Runtime 0.5.2 checks (2026-10-29)
 
-Release-preparation checks on the 0.5.2 head passed:
+Release checks on the 0.5.2 head passed:
 
 - Full local suite with a real Qdrant container: 95 files, 1142 passed, 0 failed
   and 11 gated skips.
 - The [restart-boundary record](validation/restart-boundary-retry-2026-10.md)
   lists the fault-injection evidence and the checks that were not run.
 - The remote client suite passed again with MCP SDK 2.3.0 and httpx2.
+- [Publish workflow](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/40818055236)
+  built the wheel and the source archive, tested both installed forms, and
+  published to PyPI with provenance.
 
 The 0.5.2 patch changes no schema, collection identity, credential format or
 tool schema. Limits recorded for 0.5.0 still apply.

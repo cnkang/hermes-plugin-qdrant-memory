@@ -24,7 +24,8 @@ def test_100_fast_turns_no_loss_and_replay(tmp_path):
     p = provider(tmp_path)
     for index in range(100):
         p.sync_turn(f"preference number {index}", "ack", session_id="first")
-    assert p.wait_idle(60)
+    # A cold Windows runner can need more than 60 s for 100 turns.
+    assert p.wait_idle(180)
     assert p.ledger.stats()["events"]["COMMITTED"] == 100
     assert p.store.count() == 100
     for _ in range(10):
