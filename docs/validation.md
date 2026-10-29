@@ -10,7 +10,7 @@ model, or a production deployment.
 
 Release-preparation checks on the 0.5.2 head passed:
 
-- Full local suite with a real Qdrant container: 95 files, 1139 passed, 0 failed
+- Full local suite with a real Qdrant container: 95 files, 1142 passed, 0 failed
   and 11 gated skips.
 - The [restart-boundary record](validation/restart-boundary-retry-2026-10.md)
   lists the fault-injection evidence and the checks that were not run.
