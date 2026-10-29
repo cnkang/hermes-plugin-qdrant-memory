@@ -20,6 +20,7 @@ RETRY_ATTEMPTS = 3
 RETRY_WINDOW_SECONDS = 5.0
 RETRY_BASE_SECONDS = 0.2
 RETRY_CAP_SECONDS = 1.0
+RETRY_AFTER_MAX_DIGITS = 9
 
 RETRYABLE_REASONS = frozenset(
     {"timeout", "unreachable", "outcome_unknown", "temporarily_unavailable"}
@@ -117,6 +118,21 @@ def _response_body(response):
         return None
 
 
+def _parse_retry_after(value):
+    """Convert only a bounded ASCII decimal Retry-After value to seconds."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if (
+        not value
+        or len(value) > RETRY_AFTER_MAX_DIGITS
+        or not value.isascii()
+        or not value.isdigit()
+    ):
+        return None
+    return int(value)
+
+
 async def _event_request(url, token, body, *, ca_file, path):
     """Post one event body over the verified, non-redirecting transport."""
     import httpx
@@ -138,8 +154,7 @@ async def _event_request(url, token, body, *, ca_file, path):
         )
         if response.status_code == 200:
             return response.json()
-        delay = response.headers.get("Retry-After", "").strip()
-        retry_after = int(delay) if delay.isdigit() else None
+        retry_after = _parse_retry_after(response.headers.get("Retry-After"))
         # A rejection body carries the reason and the Owner's own retry verdict.
         # It never contains memory text, so only the machine fields are retained.
         error = _control_error(_response_body(response))
@@ -190,7 +205,11 @@ async def _replay(send, *, sleep=None, clock=None):
             ):
                 raise
             cap = min(RETRY_CAP_SECONDS, RETRY_BASE_SECONDS * 2**attempt)
-            await sleep(random.uniform(0, cap))
+            delay = random.uniform(0, cap)
+            retry_after = failure.get("retry_after")
+            if retry_after is not None:
+                delay = max(delay, retry_after)
+            await sleep(delay)
 
 
 async def send_event(url, token, event, *, ca_file=None):
@@ -271,11 +290,10 @@ async def call_remote(url, token, name, arguments, *, ca_file=None):
         if response.status_code in (401, 403):
             raise RemoteStatusError(response.status_code)
         if response.status_code in RETRYABLE_STATUSES:
-            delay = response.headers.get("Retry-After", "").strip()
             raise RemoteStatusError(
                 response.status_code,
                 retryable=True,
-                retry_after=int(delay) if delay.isdigit() else None,
+                retry_after=_parse_retry_after(response.headers.get("Retry-After")),
             )
 
     async def request():

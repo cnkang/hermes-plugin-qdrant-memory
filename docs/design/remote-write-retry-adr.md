@@ -61,13 +61,15 @@ not cover an HTTP answer from the Owner.
 
 The adapter replays a retryable request two times at most. Each replay uses the
 same body and the same identifier. A full-jitter wait separates the attempts.
-The first wait is 0 to 0.2 s and the second wait is 0 to 0.4 s. The two waits
-add up to 0.6 s at most.
+The first wait is 0 to 0.2 s and the second wait is 0 to 0.4 s. When the failure
+carries a `retry_after` of 1 s or less, the wait is at least that long.
 
 The adapter does not replay a failure that needed more than 5 s to return. It
 also does not replay inside a `Retry-After` window that is longer than 1 s. A
 slow failure and a long rate-limit window belong to the caller's durable
-outbox, because the adapter must stay inside the caller's request deadline.
+outbox, because the adapter must stay inside the caller's request deadline. A
+caller that replays after a longer window must wait the full `retry_after` and
+reuse the original identifier.
 
 The Owner provides the convergence point. A shared mutation is keyed by
 `(owner, space, principal, device, request_id)` in `shared_requests_v1`. A
