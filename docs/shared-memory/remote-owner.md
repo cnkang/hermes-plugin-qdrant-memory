@@ -283,13 +283,16 @@ envelope names this state with `retryable: true` and a `replay` field.
 | `replay` | `request_id` for a tool call, `event_id` for an event |
 | `retry_after` | the Owner's own delay in seconds for a retryable failure |
 
-Send the same `request_id` or `event_id` again after a retryable failure. The
-Owner returns the stored receipt, so the write converges on one record. Do not
-use a new identifier for a replay. A new identifier can add a second record.
+When the envelope carries `retry_after`, wait that many seconds before sending
+the same `request_id` or `event_id` again. The Owner returns the stored receipt,
+so the write converges on one record. Do not use a new identifier for a replay.
+A new identifier can add a second record.
 
-The adapter replays a fast failure two times. It does not replay a failure that
-took more than 5 s, because the caller's outbox owns a slow outage. Keep the
-original identifier when that outbox retries.
+The adapter replays a fast failure two times with the original identifier. It
+waits at least that many seconds when `retry_after` is 1 s or less. It does not
+replay a failure that took more than 5 s, and it does not replay automatically
+when `retry_after` is greater than 1 s. The caller's outbox owns that wait; keep
+the original identifier when it retries.
 
 A `recovery_required` reason, or an Owner error type
 `SharedRecoveryRequiredError`, is different. The Owner admitted the request and

@@ -404,6 +404,56 @@ def test_replay_budget_and_jitter_are_bounded(monkeypatch):
         assert 0 <= delay <= min(module.RETRY_CAP_SECONDS, module.RETRY_BASE_SECONDS * 2**attempt)
 
 
+def test_retry_after_one_second_is_honored(monkeypatch):
+    """A one-second Retry-After raises the jitter wait to the server window."""
+    import qdrant_memory.remote_client as module
+
+    sleeps, attempts = [], []
+
+    async def sleep(delay):
+        """Record the delay without waiting."""
+        sleeps.append(delay)
+
+    monkeypatch.setattr(module, "RETRY_SLEEP", sleep)
+
+    def handler(_request):
+        """Reject once with a one-second window, then commit the event."""
+        attempts.append(1)
+        if len(attempts) == 1:
+            return httpx.Response(503, headers={"Retry-After": "1"})
+        return httpx.Response(200, json={"event_id": "turn-1", "status": "COMMITTED"})
+
+    constructor = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: constructor(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    result = asyncio.run(send_event("https://memory.test/mcp", TOKEN, {"event_id": "turn-1"}))
+    assert result["status"] == "COMMITTED"
+    assert len(attempts) == 2
+    assert len(sleeps) == 1
+    assert sleeps[0] >= 1.0
+
+
+def test_retry_after_parser_accepts_only_bounded_ascii_seconds():
+    """HTTP-date, non-ASCII and overlong values fall back to the default wait."""
+    import qdrant_memory.remote_client as module
+
+    for value in ("0", "1", "60", " 2 "):
+        assert module._parse_retry_after(value) == int(value)
+    for value in (
+        None,
+        "",
+        "Wed, 21 Oct 2015 07:28:00 GMT",
+        "\u0663",
+        "1" * 10,
+        "-1",
+        "1.5",
+    ):
+        assert module._parse_retry_after(value) is None
+
+
 def test_slow_failure_is_left_to_the_durable_outbox(monkeypatch):
     """A 30-second timeout must not stack another 30-second attempt."""
     import qdrant_memory.remote_client as module
@@ -528,9 +578,11 @@ def test_control_error_stays_machine_readable_after_retries(monkeypatch):
     assert len(attempts) == 2
 
 
-def test_exhausted_control_retry_names_the_event_to_replay(monkeypatch):
-    """A retryable control failure tells the caller which event ID to resend."""
+def test_control_retry_after_60_is_left_to_the_outbox(monkeypatch):
+    """A 60-second control window is returned without a local replay."""
     import qdrant_memory.remote_client as module
+
+    attempts = []
 
     async def sleep(_delay):
         """Skip the backoff delay in the test."""
@@ -538,19 +590,52 @@ def test_exhausted_control_retry_names_the_event_to_replay(monkeypatch):
 
     monkeypatch.setattr(module, "RETRY_SLEEP", sleep)
     body = {"error": {"type": "OwnerEventError", "retryable": True}}
+
+    def handler(_request):
+        """Reject every attempt with a long Retry-After window."""
+        attempts.append(1)
+        return httpx.Response(503, headers={"Retry-After": "60"}, json=body)
+
     constructor = httpx.AsyncClient
     monkeypatch.setattr(
         httpx,
         "AsyncClient",
-        lambda **kwargs: constructor(
-            transport=httpx.MockTransport(
-                lambda _: httpx.Response(503, headers={"Retry-After": "60"}, json=body)
-            ),
-            **kwargs,
-        ),
+        lambda **kwargs: constructor(transport=httpx.MockTransport(handler), **kwargs),
     )
     result = asyncio.run(control_event("https://memory.test/mcp", TOKEN, "turn-1", "status"))
+    assert len(attempts) == 1
     assert result["error"]["reason"] == "temporarily_unavailable"
     assert result["error"]["retryable"] is True
     assert result["error"]["replay"] == "event_id"
     assert result["error"]["retry_after"] == 60
+
+
+def test_exhausted_control_retry_names_the_event_to_replay(monkeypatch):
+    """A retry budget that runs out still tells the caller which ID to resend."""
+    import qdrant_memory.remote_client as module
+
+    attempts = []
+
+    async def sleep(_delay):
+        """Skip the backoff delay in the test."""
+        return None
+
+    monkeypatch.setattr(module, "RETRY_SLEEP", sleep)
+    body = {"error": {"type": "OwnerEventError", "retryable": True}}
+
+    def handler(_request):
+        """Keep rejecting so the adapter spends its whole retry budget."""
+        attempts.append(1)
+        return httpx.Response(503, json=body)
+
+    constructor = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: constructor(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    result = asyncio.run(control_event("https://memory.test/mcp", TOKEN, "turn-1", "status"))
+    assert len(attempts) == module.RETRY_ATTEMPTS
+    assert result["error"]["reason"] == "temporarily_unavailable"
+    assert result["error"]["retryable"] is True
+    assert result["error"]["replay"] == "event_id"
