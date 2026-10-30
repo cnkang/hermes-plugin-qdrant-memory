@@ -6,6 +6,16 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
+## Staged soak system (2026-10-30)
+
+The [soak harness and workflow](testing/soak.md) landed with the two GitHub
+environments that hold its configuration. A local quick-profile window passed on
+ARM64 for the `steady`, `restart` and `network` scenarios, and the harness
+contract tests and the full repository suite passed. GitHub-hosted quick mode is
+BLOCKED until the workflow reaches `main`, because both environments allow only
+`main`. The [record](validation/soak-quick-mode-2026-10.md) lists the measured
+windows, the environment audit and the items that were not run.
+
 ## Runtime 0.5.2 checks (2026-10-29)
 
 Release checks on the 0.5.2 head passed:

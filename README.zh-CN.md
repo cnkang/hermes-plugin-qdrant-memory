@@ -448,7 +448,9 @@ facade 必须提供 `dimensions`、`fingerprint`、`embed_documents()` 和 `embe
 
 提交前运行 Ruff lint 和格式检查。按[开发指南](docs/development.md)安装仓库 pre-commit
 hook。该 hook 检查暂存快照。CI 运行 lint、两个 Python 版本、Snyk 和 SonarCloud。
-已测试的主机版本与 lane 见 [CI 服务](docs/ci.md)。
+已测试的主机版本与 lane 见 [CI 服务](docs/ci.md)。分阶段的
+[soak 测试系统](docs/testing/soak.zh-CN.md)在 x64 与 ARM64 Runner 上运行真实的
+Owner、Gateway、Ledger 与 Qdrant 窗口，并且只有在短测矩阵通过后才允许启动五小时矩阵。
 
 用 Hermes PM 构建隔离的依赖环境，再用宿主的 canonical 测试运行器运行本仓库的测试。
 测试会导入真实宿主，并使用临时的 `HERMES_HOME`。

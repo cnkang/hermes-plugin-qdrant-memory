@@ -214,6 +214,19 @@ contracts on Ubuntu 24.04 LTS, macOS and Windows with Python 3.11 and 3.14. This
 checks platform-specific embedded Qdrant storage behavior alongside the main
 behavior-contract jobs.
 
+## Staged soak workflow
+
+**Soak** (`.github/workflows/soak.yml`) runs from manual dispatch and a weekly
+schedule only. It is not a pull request lane, so no contributor change can reach
+a cloud credential. The workflow uses two environments: `soak-local` for the
+local Qdrant matrix and `soak-cloud` for the optional cloud window. Both allow
+`main` only. The local matrix runs six hosted legs (x64 and ARM64, three
+scenarios) for eight minutes each. An independent gate must pass before a
+five-hour matrix may start. The cloud window keeps the required reviewer, so a
+human approves it before it runs. See [soak testing](testing/soak.md) for the
+topology, the invariants, the credential contract and the exact dispatch
+commands.
+
 ## Optional authenticated Cloud smoke
 
 **Optional Qdrant Cloud smoke** runs on pushes to `main` only and supports
