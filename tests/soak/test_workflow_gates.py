@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -228,7 +229,14 @@ def _step_script(job, needle):
 def test_cloud_contract_check_fails_instead_of_skipping(tmp_path):
     """An enabled cloud window with a missing name must fail the job."""
     script = _step_script(workflow()["jobs"]["cloud-smoke"], "Require the soak-cloud contract")
-    command = ["bash", "-euo", "pipefail", "-c", script]
+    bash = shutil.which("bash")
+    if bash is None:
+        # A Windows lane without bash still checks the guard itself.
+        assert "${SOAK_QDRANT_URL:-}" in script
+        assert "SOAK_QDRANT_API_KEY(secret)" in script
+        assert "exit 1" in script
+        return
+    command = [bash, "-euo", "pipefail", "-c", script]
 
     # GitHub injects empty strings for a name that is not configured.
     empty = subprocess.run(
