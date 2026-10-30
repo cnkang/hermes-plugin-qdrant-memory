@@ -73,9 +73,11 @@ def test_restart_counts_and_reuses_the_same_profile(tmp_path):
 
 def test_stop_escalates_when_a_process_ignores_sigterm(tmp_path):
     """A hung Owner must not block the window forever."""
+    marker = tmp_path / "handler-ready"
     stubborn = (
-        "import signal, time\n"
+        "import pathlib, signal, time\n"
         "signal.signal(signal.SIGTERM, lambda *a: None)\n"
+        f"pathlib.Path({str(marker)!r}).touch()\n"
         "while True:\n    time.sleep(0.1)\n"
     )
     supervisor = OwnerSupervisor(
@@ -83,7 +85,7 @@ def test_stop_escalates_when_a_process_ignores_sigterm(tmp_path):
         cwd=tmp_path,
         env=dict(os.environ),
         log_path=tmp_path / "owner.log",
-        ready_probe=lambda: True,
+        ready_probe=lambda: marker.exists(),
         ready_timeout=5.0,
         stop_timeout=0.5,
     )

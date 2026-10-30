@@ -760,7 +760,7 @@ async def probe_cas(client, journal):
     return {"status": status, "updates": updates, "conflicts": conflicts}
 
 
-async def probe_retry_contract(client, journal, *, tokens, endpoint, ca_file):
+async def probe_retry_contract(client, journal, *, tokens, endpoint, ca_file, untrusted_ca=None):
     """Prove the terminal and retryable classifications the ADR defines."""
     from qdrant_memory.remote_client import call_remote, remote_error
 

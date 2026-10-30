@@ -281,6 +281,7 @@ class Runner:
                         tokens=self.env.tokens,
                         endpoint=self.env.owner_endpoint,
                         ca_file=self.env.ca_file,
+                        untrusted_ca=self.env.untrusted_ca,
                     )
             except Exception as exc:  # noqa: BLE001 - probes must not end the run
                 self.journal.record(
@@ -645,9 +646,13 @@ def main(argv=None):
         duration = stopwatch.stop()
         if runner.fatal:
             journal.record("harness", event="run_aborted", reason=runner.fatal)
-        # Recovery flush: every unresolved write is replayed with its identifier.
-        recovered = asyncio.run(runner.workload.flush_pending(runner.client, journal))
-        journal.record("recovery_flush", recovered=recovered)
+        # Recovery drain: only meaningful while an Owner is listening.
+        if runner.fatal:
+            recovered = {"attempted": 0, "recovered": 0, "failed": 0, "skipped": runner.fatal}
+            journal.record("recovery_flush", recovered=recovered)
+        else:
+            recovered = asyncio.run(runner.workload.flush_pending(runner.client, journal))
+            journal.record("recovery_flush", recovered=recovered)
         start_failures = runner.start_failures
         owner_starts = supervisor.starts
         supervisor.stop()

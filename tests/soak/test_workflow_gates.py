@@ -190,6 +190,16 @@ def test_final_report_always_runs_and_requires_the_artifacts():
     assert uploads and uploads[0]["with"]["name"] == "aggregate-final"
 
 
+def test_only_the_artifact_download_may_ignore_a_failure():
+    """A continue-on-error run step would hide a failed leg."""
+    document = workflow()
+    for name, job in document["jobs"].items():
+        assert "defaults" not in job, name
+        for step in steps(job):
+            if step.get("continue-on-error") is True:
+                assert "download-artifact" in (step.get("uses") or ""), name
+
+
 def test_every_action_is_pinned_to_a_commit_sha():
     """Third-party actions are immutable; a tag would be mutable input."""
     for name, job in workflow()["jobs"].items():
@@ -300,7 +310,7 @@ def test_the_cloud_stage_is_a_supported_aggregate_invocation(tmp_path):
                 "status": "PASS",
                 "summary": summary,
                 "invariants": [{"name": name, "status": "PASS"} for name in REQUIRED_INVARIANTS],
-                "cloud_cleanup": {"deleted": True},
+                "cloud_cleanup": {"deleted": True, "collection_retained": True},
             }
         ),
         encoding="utf-8",
