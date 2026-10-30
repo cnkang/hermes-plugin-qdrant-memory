@@ -357,6 +357,39 @@ def test_a_failed_read_is_an_availability_event_not_a_lost_write():
     assert summary["expected_transient_failures"] == 1
 
 
+def test_any_harness_level_failure_invalidates_the_window():
+    """A fault that never applied, or a workload that keeps raising, is not PASS."""
+    for event in ("fault_error", "workload_step_error", "probe_error", "run_aborted"):
+        rows, evidence = _healthy()
+        rows = rows + [{"kind": "harness", "event": event, "error": {"type": "RuntimeError"}}]
+        invariants, _, _ = _verify(rows, evidence)
+        assert _status(invariants, "harness_clean") == "FAIL", event
+        assert (
+            overall_status(invariants, duration_seconds=480.0, target_seconds=480)[0] == "FAIL"
+        ), event
+
+
+def test_a_cancelled_lifecycle_event_does_not_crash_the_verifier():
+    """A non-committed event carries an error mapping, never a null field."""
+    rows, evidence = _healthy()
+    rows = rows + [
+        {
+            "kind": "op",
+            "op": "event",
+            "tool": "event",
+            "identity": "hermes-a",
+            "event_id": "w0-event-90",
+            "result": "error",
+            "status": "CANCELLED",
+            "error": {"type": "LifecycleStatus", "status": "CANCELLED", "retryable": False},
+        }
+    ]
+    invariants, summary, state = _verify(rows, evidence)
+    assert state["unresolved"] == []
+    assert summary["unexpected_failures"] == 1
+    assert _status(invariants, "no_unexplained_loss") == "FAIL"
+
+
 def test_a_failed_probe_fails_the_run():
     """An injected probe that fails is a finding, not a diagnostic footnote."""
     rows, evidence = _healthy()

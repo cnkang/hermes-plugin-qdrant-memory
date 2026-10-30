@@ -247,10 +247,15 @@ class SoakClient:
             await self.sleep(min(delay, max(deadline - self.clock(), 0)))
         duration = round((self.clock() - started) * 1000, 3)
         status = (value or {}).get("status")
+        # A non-committed status is a terminal outcome of its own, never a
+        # missing error field: downstream readers must see a mapping.
+        error = failure or ({} if status == "COMMITTED" else {"type": "LifecycleStatus"})
+        if not error:
+            error = {"type": "LifecycleStatus", "status": status, "retryable": False}
         outcome = Outcome(
             ok=failure is None and status == "COMMITTED",
             value=value or {},
-            error=failure or ({} if status == "COMMITTED" else {"type": "LifecycleStatus"}),
+            error=error,
             attempts=attempts,
             replay_count=replay_count,
             duration_ms=duration,
@@ -269,7 +274,7 @@ class SoakClient:
             duration_ms=duration,
             result="ok" if outcome.ok else "error",
             status=status,
-            error=failure,
+            error=error,
             seq=seq,
         )
         return outcome
@@ -555,11 +560,13 @@ class Workload:
             }
         return outcome
 
-    async def run(self, *, stop_at, workers=4, phase="steady", clock=time.monotonic):
+    async def run(
+        self, *, stop_at, workers=4, phase="steady", clock=time.monotonic, should_stop=None
+    ):
         """Run every worker until the monotonic deadline passes."""
 
         async def loop(worker):
-            while clock() < stop_at:
+            while clock() < stop_at and not (should_stop and should_stop()):
                 try:
                     outcome = await self.step(worker, phase)
                     if getattr(outcome, "error", {}).get("path_outage"):
@@ -593,7 +600,7 @@ class Workload:
             request_id = row.get("request_id") or row.get("event_id")
             if request_id in acknowledged:
                 continue
-            if row.get("error", {}).get("retryable") is not True:
+            if (row.get("error") or {}).get("retryable") is not True:
                 continue
             pending[request_id] = row
         return pending

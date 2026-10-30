@@ -60,8 +60,9 @@ Both architectures run every scenario:
 | `restart` | `SIGTERM`, `SIGKILL`, in-flight requests, receipt replay, recovery and WAL, lease re-acquisition | one restart every 45 s (quick) or 120 s (full), every third one forced |
 | `network` | connection reset, read timeout, latency, short disconnect, lost responses, `Retry-After` | toxiproxy on Owner → Qdrant and client → Owner, plus abandoned responses |
 
-Every leg uses eleven provisioned credentials. Seven are project writers, two
-are read-only and two own private partitions. Each device carries its own token,
+Every leg uses eleven provisioned credentials. Seven are project writers (five
+drive the workload and two own the compare-and-swap probe), two are read-only
+and two own private partitions. Each device carries its own token,
 and the Owner stores only token hashes. Private partitions share a logical agent
 identity in pairs, so isolation is tested where it must hold and sharing is
 tested where it must work.
@@ -83,8 +84,9 @@ exact Qdrant points. A search hit is never used as proof of a write.
 | `writer_lease` | exactly one Owner process per window, with a successful start for every restart |
 | `harness_clean` | the harness itself raised no unhandled exception |
 | `window_complete` | the measured window covered at least 95 percent of the target |
-| `workload_volume` | the window actually produced acknowledged work |
 | `retrieval_quality` | retrieval is measured, separately from loss |
+| `workload_volume` | the window actually produced acknowledged work |
+| `probe_results` | every injected probe reported a verified result |
 
 A run may end in `PASS`, `FAIL`, `INCOMPLETE` or `HARNESS_ERROR`. `skipped`,
 `cancelled`, missing artifacts and missing evidence are never translated into
@@ -167,7 +169,8 @@ records:
 3. count again and require zero.
 4. require that the collection itself still exists.
 
-The workflow repeats steps 1 and 3 independently in a separate step. A cleanup
+A separate workflow step re-reads the collection and proves two things: no
+record of this run remains, and the collection itself is still there. A cleanup
 that cannot prove zero remaining records marks the run `CLEANUP_FAILED`. The
 collection is never deleted.
 

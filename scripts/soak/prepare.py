@@ -69,6 +69,7 @@ class SoakEnvironment:
     namespace: str = ""
     owner_id: str = "soak-owner"
     llm_key: str = ""
+    cloud: bool = False
     tokens: dict = field(default_factory=dict)
     grants: list = field(default_factory=list)
     ports: dict = field(default_factory=dict)
@@ -540,10 +541,15 @@ def write_profile(env, *, qdrant_endpoint, provider_base_url, api_key, lifecycle
     return cfg
 
 
-def initialize_collection(env, *, cwd, existing=False):
+def initialize_collection(env, *, cwd, existing=False, cloud=False):
     """Create the collection and its ledger through the product CLI."""
     environment = dict(os.environ)
-    environment["SSL_CERT_FILE"] = str(env.ca_file)
+    # Only the loopback listeners use the private CA; a cloud endpoint must be
+    # validated against the system trust store.
+    if cloud:
+        environment.pop("SSL_CERT_FILE", None)
+    else:
+        environment["SSL_CERT_FILE"] = str(env.ca_file)
     command = [sys.executable, "-m", "qdrant_memory.standalone", "--home", str(env.home), "init"]
     if existing:
         # An existing shared test collection is reused only after validation.
@@ -589,6 +595,23 @@ def build_environment(
     for path in (env.home, env.logs, env.run_dir):
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(path, 0o700)
+    try:
+        return _build_local_services(
+            env,
+            provider_base_url=provider_base_url,
+            scene=scene,
+            seed=seed,
+            lifecycle=lifecycle,
+        )
+    except BaseException:
+        # A half-built environment must not leave containers or a proxy behind.
+        with contextlib.suppress(Exception):
+            teardown(env)
+        raise
+
+
+def _build_local_services(env, *, provider_base_url, scene, seed, lifecycle):
+    """Start the local services for an already-created work directory."""
     env.ca_file = issue_certificates(env.certs)["ca"]
 
     qdrant_port = free_port()
@@ -734,10 +757,28 @@ def build_cloud_environment(
         collection=collection,
         lifecycle=lifecycle,
         owner_id=owner_id,
+        cloud=True,
     )
     for path in (env.home, env.logs, env.run_dir):
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(path, 0o700)
+    try:
+        return _build_cloud_services(
+            env,
+            provider_base_url=provider_base_url,
+            lifecycle=lifecycle,
+            llm=llm,
+            cloud_url=cloud_url,
+            cloud_api_key=cloud_api_key,
+        )
+    except BaseException:
+        with contextlib.suppress(Exception):
+            teardown(env)
+        raise
+
+
+def _build_cloud_services(env, *, provider_base_url, lifecycle, llm, cloud_url, cloud_api_key):
+    """Start the Owner proxy and write the cloud profile."""
     env.ca_file = issue_certificates(env.certs)["ca"]
     mcp_port = free_port()
     owner_plain_port = free_port()
