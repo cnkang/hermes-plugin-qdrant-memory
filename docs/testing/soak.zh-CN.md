@@ -153,19 +153,28 @@ Workflow 强制执行的规则：
 自动创建。
 
 ```bash
-gh api -X PUT repos/<owner>/<repo>/environments/soak-local
+gh api -X PUT repos/<owner>/<repo>/environments/soak-local \
+  -F 'deployment_branch_policy[protected_branches]=false' \
+  -F 'deployment_branch_policy[custom_branch_policies]=true'
 gh api -X PUT repos/<owner>/<repo>/environments/soak-cloud \
-  -F 'reviewers[][type]=User' -F 'reviewers[][id]=<user-id>'
+  -F 'reviewers[][type]=User' -F 'reviewers[][id]=<user-id>' \
+  -F 'deployment_branch_policy[protected_branches]=false' \
+  -F 'deployment_branch_policy[custom_branch_policies]=true'
 gh api -X POST repos/<owner>/<repo>/environments/soak-local/deployment-branch-policies \
   -f name=main
 gh api -X POST repos/<owner>/<repo>/environments/soak-cloud/deployment-branch-policies \
   -f name=main
 gh variable set SOAK_QDRANT_URL --env soak-cloud --body 'https://<cluster>'
 gh variable set SOAK_QDRANT_COLLECTION --env soak-cloud --body '<collection>'
+gh variable set SOAK_LLM_BASE_URL --env soak-cloud --body 'https://<llm-endpoint>'
+gh variable set SOAK_LLM_MODEL --env soak-cloud --body '<model>'
 gh secret set SOAK_QDRANT_API_KEY --env soak-cloud
+gh secret set SOAK_LLM_API_KEY --env soak-cloud
 ```
 
-`gh secret set` 会交互式读取值，且不会回显。可选的 `SOAK_LLM_*` 同理。核对用
+`SOAK_LLM_BASE_URL` 和 `SOAK_LLM_MODEL` 属于非敏感配置，应通过 `gh variable set` 设置。
+`SOAK_LLM_API_KEY` 等需要保密的 LLM 凭据仍应通过 `gh secret set` 设置；
+命令会交互式读取值且不会回显。核对用：
 `gh api repos/<owner>/<repo>/environments/<name>` 及其 `variables`、`secrets`
 子资源，它们只返回名称与元数据。
 

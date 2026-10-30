@@ -165,20 +165,30 @@ A maintainer creates both environments once, from the repository settings page
 or with the API. The names are fixed, and the workflow does not create them.
 
 ```bash
-gh api -X PUT repos/<owner>/<repo>/environments/soak-local
+gh api -X PUT repos/<owner>/<repo>/environments/soak-local \
+  -F 'deployment_branch_policy[protected_branches]=false' \
+  -F 'deployment_branch_policy[custom_branch_policies]=true'
 gh api -X PUT repos/<owner>/<repo>/environments/soak-cloud \
-  -F 'reviewers[][type]=User' -F 'reviewers[][id]=<user-id>'
+  -F 'reviewers[][type]=User' -F 'reviewers[][id]=<user-id>' \
+  -F 'deployment_branch_policy[protected_branches]=false' \
+  -F 'deployment_branch_policy[custom_branch_policies]=true'
 gh api -X POST repos/<owner>/<repo>/environments/soak-local/deployment-branch-policies \
   -f name=main
 gh api -X POST repos/<owner>/<repo>/environments/soak-cloud/deployment-branch-policies \
   -f name=main
 gh variable set SOAK_QDRANT_URL --env soak-cloud --body 'https://<cluster>'
 gh variable set SOAK_QDRANT_COLLECTION --env soak-cloud --body '<collection>'
+gh variable set SOAK_LLM_BASE_URL --env soak-cloud --body 'https://<llm-endpoint>'
+gh variable set SOAK_LLM_MODEL --env soak-cloud --body '<model>'
 gh secret set SOAK_QDRANT_API_KEY --env soak-cloud
+gh secret set SOAK_LLM_API_KEY --env soak-cloud
 ```
 
-`gh secret set` prompts for the value and never prints it. The same applies to
-the optional `SOAK_LLM_*` names. Verify with `gh api
+`SOAK_LLM_BASE_URL` and `SOAK_LLM_MODEL` are non-sensitive configuration, so set
+them with `gh variable set`. Keep API keys and other sensitive LLM credentials
+as secrets with `gh secret set`, which prompts for the value and never
+prints it.
+Verify with `gh api
 repos/<owner>/<repo>/environments/<name>` and the `variables` and `secrets`
 sub-resources, which return names and metadata only.
 
