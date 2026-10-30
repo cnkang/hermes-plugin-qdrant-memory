@@ -284,9 +284,10 @@ jobs:
           SOAK_QDRANT_COLLECTION: ${{ vars.SOAK_QDRANT_COLLECTION }}
           SOAK_QDRANT_API_KEY: ${{ secrets.SOAK_QDRANT_API_KEY }}
         run: |
+          # The audit reads its endpoint and key from the environment only, so
+          # no credential value appears in the process arguments.
           python -m scripts.soak.cloud --report "$RUNNER_TEMP/soak/report" \
-            --url "$SOAK_QDRANT_URL" --api-key "$SOAK_QDRANT_API_KEY" \
-            --collection "$SOAK_QDRANT_COLLECTION" >> "$GITHUB_STEP_SUMMARY"
+            >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -444,9 +445,20 @@ jobs:
 
           python -m scripts.soak.aggregate \
             --stage smoke --mode quick --reports artifacts/smoke \
-            --commit "$COMMIT_SHA" --cloud "$cloud" \
+            --commit "$COMMIT_SHA" \
             --output "$RUNNER_TEMP/smoke-aggregate.json" \
             --summary "$RUNNER_TEMP/smoke-summary.md" || verdict=1
+
+          if [ "$cloud" = "required" ]; then
+            # The cloud report is its own artifact tree, so it is aggregated
+            # separately instead of being looked for among the smoke legs.
+            python -m scripts.soak.aggregate \
+              --stage cloud --mode quick --reports artifacts/cloud --cloud required \
+              --platform cloud --scenario steady \
+              --commit "$COMMIT_SHA" \
+              --output "$RUNNER_TEMP/cloud-aggregate.json" \
+              --summary "$RUNNER_TEMP/cloud-summary.md" || verdict=1
+          fi
 
           if [ "$MODE" = "full" ]; then
             python -m scripts.soak.aggregate \
@@ -468,6 +480,10 @@ jobs:
             echo "- Extended soak: \`${{ needs.soak.result }}\`"
             echo ""
             cat "$RUNNER_TEMP/smoke-summary.md" 2>/dev/null || echo "The smoke matrix produced no aggregate."
+            if [ "$cloud" = "required" ]; then
+              echo ""
+              cat "$RUNNER_TEMP/cloud-summary.md" 2>/dev/null || echo "The cloud window produced no aggregate."
+            fi
             if [ "$MODE" = "full" ]; then
               echo ""
               cat "$RUNNER_TEMP/soak-summary.md" 2>/dev/null || echo "The extended soak produced no aggregate."
@@ -481,6 +497,8 @@ jobs:
           path: |
             ${{ runner.temp }}/smoke-aggregate.json
             ${{ runner.temp }}/smoke-summary.md
+            ${{ runner.temp }}/cloud-aggregate.json
+            ${{ runner.temp }}/cloud-summary.md
             ${{ runner.temp }}/soak-aggregate.json
             ${{ runner.temp }}/soak-summary.md
           if-no-files-found: warn

@@ -257,6 +257,27 @@ def test_cloud_contract_check_fails_instead_of_skipping(tmp_path):
     assert "present" in complete.stdout
 
 
+def test_the_cloud_report_is_aggregated_from_its_own_artifact_tree():
+    """The smoke aggregate must not look for the cloud leg among smoke artifacts."""
+    script = runs(workflow()["jobs"]["final-report"])
+    smoke_call = script.split("--stage smoke", 1)[1].split("--output", 1)[0]
+    assert "--cloud" not in smoke_call, "the smoke aggregate owns only the smoke legs"
+    assert "--stage cloud" in script
+    assert "--reports artifacts/cloud" in script
+    assert "--platform cloud --scenario steady" in script
+
+
+def test_no_credential_reaches_a_command_line():
+    """Every cloud step reads its credentials from the step environment."""
+    for job in ("cloud-smoke",):
+        script = runs(workflow()["jobs"][job])
+        assert '--api-key "$SOAK_QDRANT_API_KEY"' not in script
+        assert '--cloud-api-key "$SOAK_QDRANT_API_KEY"' not in script
+        assert "--cloud-llm-key" not in script
+    prepare = (ROOT / "scripts" / "soak" / "run.py").read_text(encoding="utf-8")
+    assert 'None if args.backend == "cloud" else env.ca_file' in prepare
+
+
 def test_cloud_cleanup_never_deletes_the_fixed_collection():
     """The fixed test collection survives every run; only run records are removed."""
     source = (ROOT / "scripts" / "soak" / "prepare.py").read_text(encoding="utf-8")
