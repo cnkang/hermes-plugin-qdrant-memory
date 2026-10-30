@@ -87,6 +87,7 @@ exact Qdrant points. A search hit is never used as proof of a write.
 | `retrieval_quality` | retrieval is measured, separately from loss |
 | `workload_volume` | the window actually produced acknowledged work |
 | `probe_results` | every injected probe reported a verified result |
+| `scenario_coverage` | the scenario actually injected the faults it claims to test |
 
 A run may end in `PASS`, `FAIL`, `INCOMPLETE` or `HARNESS_ERROR`. `skipped`,
 `cancelled`, missing artifacts and missing evidence are never translated into

@@ -247,7 +247,7 @@ def acknowledged_state(rows):
             events[row.get("event_id")] = row
     unresolved = []
     for row in failures:
-        if row.get("error", {}).get("retryable") is not True:
+        if (row.get("error") or {}).get("retryable") is not True:
             continue
         if row.get("op") == "event":
             if row.get("event_id") not in events:

@@ -241,12 +241,14 @@ def main(argv=None):
     """Write the aggregate report and exit non-zero unless it is PASS."""
     parser = argparse.ArgumentParser(prog="soak-aggregate")
     parser.add_argument("--reports", type=Path, required=True)
-    parser.add_argument("--stage", choices=("smoke", "soak", "final"), required=True)
+    parser.add_argument("--stage", choices=("smoke", "soak", "cloud", "final"), required=True)
     parser.add_argument("--mode", choices=sorted(PROFILE_SECONDS), default="quick")
     parser.add_argument(
         "--cloud", choices=("required", "skipped", "not-requested"), default="not-requested"
     )
-    parser.add_argument("--commit", default="")
+    parser.add_argument(
+        "--commit", required=True, help="Tested commit SHA; a mismatch is INCOMPLETE"
+    )
     parser.add_argument("--minimum-seconds", type=int, default=0)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--summary", type=Path)

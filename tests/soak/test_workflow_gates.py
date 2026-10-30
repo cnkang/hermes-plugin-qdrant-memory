@@ -1,12 +1,16 @@
 """Static gates for the soak workflow: triggers, environments and control flow."""
 
+import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 from ruamel.yaml import YAML
+
+from scripts.soak.common import REQUIRED_INVARIANTS
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "soak.yml"
@@ -255,6 +259,75 @@ def test_cloud_contract_check_fails_instead_of_skipping(tmp_path):
     )
     assert complete.returncode == 0
     assert "present" in complete.stdout
+
+
+def test_the_cloud_stage_is_a_supported_aggregate_invocation(tmp_path):
+    """The final job must be able to run the cloud aggregate it schedules."""
+    import subprocess
+
+    report = tmp_path / "cloud" / "cloud-steady"
+    report.mkdir(parents=True)
+    summary = {
+        key: 0
+        for key in (
+            "total_requests",
+            "successful_requests",
+            "unexpected_failures",
+            "permanent_write_losses",
+            "duplicate_records",
+            "owner_restarts",
+        )
+    }
+    summary["latency_p50_p95_p99"] = {}
+    summary["ledger_status"] = {}
+    (report / "report.json").write_text(
+        json.dumps(
+            {
+                "identity": {
+                    "commit_sha": "a" * 40,
+                    "platform_label": "cloud",
+                    "scenario": "steady",
+                    "target_seconds": 180,
+                },
+                "status": "PASS",
+                "summary": summary,
+                "invariants": [{"name": name, "status": "PASS"} for name in REQUIRED_INVARIANTS],
+                "cloud_cleanup": {"deleted": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    for name in ("events.jsonl", "junit.xml", "metrics.json"):
+        (report / name).write_text("{}\n", encoding="utf-8")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.soak.aggregate",
+            "--stage",
+            "cloud",
+            "--mode",
+            "quick",
+            "--reports",
+            str(tmp_path / "cloud"),
+            "--cloud",
+            "required",
+            "--platform",
+            "cloud",
+            "--scenario",
+            "steady",
+            "--commit",
+            "a" * 40,
+            "--output",
+            str(tmp_path / "aggregate.json"),
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr[-800:]
+    verdict = json.loads((tmp_path / "aggregate.json").read_text())["verdict"]
+    assert verdict == "PASS"
 
 
 def test_the_cloud_report_is_aggregated_from_its_own_artifact_tree():

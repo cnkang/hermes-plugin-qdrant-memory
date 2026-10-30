@@ -80,6 +80,7 @@ TLS
 | `retrieval_quality` | 检索质量单独度量，不与写入丢失混为一谈 |
 | `workload_volume` | 窗口真的产生了已确认的工作量 |
 | `probe_results` | 每个注入探针都给出了经过验证的结果 |
+| `scenario_coverage` | 场景确实注入了它所声称测试的故障 |
 
 结果只能是 `PASS`、`FAIL`、`INCOMPLETE` 或 `HARNESS_ERROR`。`skipped`、
 `cancelled`、缺失 Artifact、缺失证据都不会被翻译成 `PASS`。
