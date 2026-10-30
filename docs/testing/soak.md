@@ -159,6 +159,29 @@ Rules that the workflow enforces:
 - The secret values are read only inside the cloud job, in step-level `env`.
   No other job references `vars.SOAK_*` or `secrets.SOAK_*`.
 
+### Provisioning the environments
+
+A maintainer creates both environments once, from the repository settings page
+or with the API. The names are fixed, and the workflow does not create them.
+
+```bash
+gh api -X PUT repos/<owner>/<repo>/environments/soak-local
+gh api -X PUT repos/<owner>/<repo>/environments/soak-cloud \
+  -F 'reviewers[][type]=User' -F 'reviewers[][id]=<user-id>'
+gh api -X POST repos/<owner>/<repo>/environments/soak-local/deployment-branch-policies \
+  -f name=main
+gh api -X POST repos/<owner>/<repo>/environments/soak-cloud/deployment-branch-policies \
+  -f name=main
+gh variable set SOAK_QDRANT_URL --env soak-cloud --body 'https://<cluster>'
+gh variable set SOAK_QDRANT_COLLECTION --env soak-cloud --body '<collection>'
+gh secret set SOAK_QDRANT_API_KEY --env soak-cloud
+```
+
+`gh secret set` prompts for the value and never prints it. The same applies to
+the optional `SOAK_LLM_*` names. Verify with `gh api
+repos/<owner>/<repo>/environments/<name>` and the `variables` and `secrets`
+sub-resources, which return names and metadata only.
+
 ### Fixed collection and cleanup
 
 The cloud window writes into the fixed test collection from

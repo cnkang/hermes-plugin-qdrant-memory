@@ -147,6 +147,28 @@ Workflow 强制执行的规则：
 - Secret 值只在 Cloud Job 的步骤级 `env` 中读取；其他 Job 不引用任何
   `vars.SOAK_*` 或 `secrets.SOAK_*`。
 
+### 创建 Environment
+
+维护者在仓库设置页或通过 API 一次性创建两个 Environment。名称固定，Workflow 不会
+自动创建。
+
+```bash
+gh api -X PUT repos/<owner>/<repo>/environments/soak-local
+gh api -X PUT repos/<owner>/<repo>/environments/soak-cloud \
+  -F 'reviewers[][type]=User' -F 'reviewers[][id]=<user-id>'
+gh api -X POST repos/<owner>/<repo>/environments/soak-local/deployment-branch-policies \
+  -f name=main
+gh api -X POST repos/<owner>/<repo>/environments/soak-cloud/deployment-branch-policies \
+  -f name=main
+gh variable set SOAK_QDRANT_URL --env soak-cloud --body 'https://<cluster>'
+gh variable set SOAK_QDRANT_COLLECTION --env soak-cloud --body '<collection>'
+gh secret set SOAK_QDRANT_API_KEY --env soak-cloud
+```
+
+`gh secret set` 会交互式读取值，且不会回显。可选的 `SOAK_LLM_*` 同理。核对用
+`gh api repos/<owner>/<repo>/environments/<name>` 及其 `variables`、`secrets`
+子资源，它们只返回名称与元数据。
+
 ### 固定 Collection 与清理
 
 Cloud 窗口写入 `SOAK_QDRANT_COLLECTION` 指定的固定测试 Collection。每次 Run 用
