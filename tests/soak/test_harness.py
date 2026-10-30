@@ -41,6 +41,28 @@ def test_journal_appends_durably_and_ignores_a_torn_line(tmp_path):
     assert Journal(path).rows() == rows
 
 
+def test_journal_serializes_writes_from_several_threads(tmp_path):
+    """The supervisor journals from a worker thread while the loop writes."""
+    import threading
+
+    path = tmp_path / "events.jsonl"
+    journal = Journal(path)
+
+    def write(index):
+        for attempt in range(20):
+            journal.record("op", worker=index, attempt=attempt)
+
+    threads = [threading.Thread(target=write, args=(index,)) for index in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    journal.close()
+    rows = read_jsonl(path)
+    assert len(rows) == 120
+    assert all(set(row) >= {"kind", "worker", "attempt"} for row in rows)
+
+
 def test_journal_scrubs_registered_and_token_shaped_values(tmp_path):
     """Credentials must never reach an artifact, even by accident."""
     token = SECRETS.register("soak-token-value-0123456789abcdef")

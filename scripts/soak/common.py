@@ -12,6 +12,7 @@ import os
 import re
 import secrets
 import statistics
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -238,6 +239,8 @@ class Journal:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.durable = durable
+        # One writer at a time: the supervisor journals from a worker thread.
+        self._lock = threading.Lock()
         descriptor = os.open(self.path, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o600)
         self._stream = os.fdopen(descriptor, "a", encoding="utf-8")
         self.count = 0
@@ -246,11 +249,13 @@ class Journal:
         """Append one scrubbed record and return it."""
         record = {"ts": utc_now(), "mono": round(time.monotonic(), 6), "kind": kind, **fields}
         record = scrub_tree(record)
-        self._stream.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n")
-        self._stream.flush()
-        if self.durable:
-            os.fsync(self._stream.fileno())
-        self.count += 1
+        line = json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n"
+        with self._lock:
+            self._stream.write(line)
+            self._stream.flush()
+            if self.durable:
+                os.fsync(self._stream.fileno())
+            self.count += 1
         return record
 
     def close(self):

@@ -108,10 +108,13 @@ def owner_environment(env):
     environment = {
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
         "HOME": os.environ.get("HOME", "/tmp"),
-        "SSL_CERT_FILE": str(env.ca_file),
         "PYTHONUNBUFFERED": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
+    # The private CA signs the loopback listeners only. A cloud Qdrant endpoint
+    # is validated against the system trust store instead.
+    if not env.cloud:
+        environment["SSL_CERT_FILE"] = str(env.ca_file)
     for key in ("TMPDIR", "LANG", "LC_ALL"):
         if key in os.environ:
             environment[key] = os.environ[key]
@@ -248,16 +251,16 @@ class Runner:
     async def metrics_task(self, clock=time.monotonic):
         """Sample process and storage resources for the whole window."""
         while clock() < (self.stop_at or clock()):
-            sample = self.supervisor.sample()
+            sample = await asyncio.to_thread(self.supervisor.sample)
             record = {
                 "rss_bytes": sample.rss_bytes,
                 "file_descriptors": sample.file_descriptors,
                 "cpu_seconds": sample.cpu_seconds,
                 "alive": sample.alive,
-                **ledger_metrics(self.env.home),
+                **(await asyncio.to_thread(ledger_metrics, self.env.home)),
             }
             if int(clock()) % 60 < SAMPLE_INTERVAL:
-                record["qdrant_points"] = qdrant_points(self.env)
+                record["qdrant_points"] = await asyncio.to_thread(qdrant_points, self.env)
             self.journal.record("metric", **record)
             await asyncio.sleep(SAMPLE_INTERVAL)
 
@@ -442,7 +445,11 @@ class Runner:
             tasks.append(asyncio.create_task(self.network_task()))
             tasks.append(asyncio.create_task(self.lost_response_task()))
         try:
-            await self.workload.run(stop_at=self.stop_at, workers=self.args.workers)
+            await self.workload.run(
+                stop_at=self.stop_at,
+                workers=self.args.workers,
+                should_stop=lambda: bool(self.fatal),
+            )
         finally:
             for task in tasks:
                 task.cancel()
@@ -599,6 +606,7 @@ def main(argv=None):
             env,
             cwd=env.home,
             existing=args.backend == "cloud" and collection_exists(env),
+            cloud=args.backend == "cloud",
         )
         journal.record("collection_ready", collection=env.collection)
         supervisor = OwnerSupervisor(
@@ -703,7 +711,7 @@ def main(argv=None):
             status, reason = "INCOMPLETE", "Missing invariants: " + ", ".join(missing)
         if cleaned_local.get("error") or cleaned_local.get("leftover_containers"):
             status, reason = "FAIL", "CLEANUP_FAILED: this run's test services were not removed"
-        if args.backend == "cloud" and not cloud_cleanup.get("deleted"):
+        if args.backend == "cloud" and env is not None and not cloud_cleanup.get("deleted"):
             status, reason = "FAIL", "CLEANUP_FAILED: this run's cloud records were not removed"
         result["status"] = status
         report = {

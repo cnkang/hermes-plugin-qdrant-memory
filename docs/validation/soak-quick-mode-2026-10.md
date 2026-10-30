@@ -49,7 +49,7 @@ missing names when a cloud window is requested without them.
 | Check | Command | Result |
 | --- | --- | --- |
 | Workflow lint | `actionlint` 1.7.12 | PASS, no findings |
-| Harness and workflow contract tests | `pytest tests/soak -q` | PASS, 63 passed |
+| Harness and workflow contract tests | `pytest tests/soak -q` | PASS, 69 passed |
 | Full repository suite with a Qdrant container | canonical host runner, `-j 1` | PASS, 99 files, 1203 passed, 0 failed, 11 gated skips |
 | Lint and format | `ruff check` and `ruff format --check` | PASS |
 | Documentation links | link checker over tracked markdown | PASS, no missing local links |
@@ -71,12 +71,12 @@ listeners, and MCP SDK 1.30.0 carried the client.
 | `restart` | PASS | 488.7 | 1821 | 1229 | 151 | 0 | 0 | 10 |
 | `network` | PASS | 490.6 | 1910 | 1228 | 151 | 0 | 0 | 0 |
 
-Every leg passed all twelve hard invariants. The restart leg forced a `SIGKILL`
-on every third restart, so seven graceful and three forced restarts each ended in
-a fresh receipt and a clean ledger. The network leg applied 24 fault windows
-across both sides of the Owner, plus one deliberate lost response that the same
-request identifier recovered, and one handshake outage that never reached the
-Owner.
+Every leg passed all thirteen hard invariants. The restart leg forced a `SIGKILL`
+on every third restart. Seven graceful and three forced restarts each ended in a
+fresh receipt and a clean ledger. The network leg applied 24 fault windows across
+both sides of the Owner. It also dropped one response on purpose and recovered it
+under the same request identifier, and recorded one handshake outage that never
+reached the Owner.
 
 | Measure | `steady` | `restart` | `network` |
 | --- | --- | --- | --- |

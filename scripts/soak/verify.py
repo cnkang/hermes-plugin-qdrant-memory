@@ -259,9 +259,9 @@ def acknowledged_state(rows):
     windows = fault_windows(rows)
     unexpected, path_outages = [], []
     for row in failures:
-        if row.get("error", {}).get("retryable") is True:
+        if (row.get("error") or {}).get("retryable") is True:
             continue
-        reason = row.get("error", {}).get("reason")
+        reason = (row.get("error") or {}).get("reason")
         # Only a failure that cannot have reached the Owner is excused here.
         # ``outcome_unknown`` may have committed, so it needs a proven replay.
         if reason in PATH_FAULT_REASONS and inside_client_fault(row.get("ts"), windows):
@@ -468,8 +468,15 @@ def verify(
         start_failures=start_failures,
     )
 
+    harness_failures = {
+        "harness_error",
+        "fault_error",
+        "workload_step_error",
+        "probe_error",
+        "run_aborted",
+    }
     harness_errors = [
-        row for row in rows if row.get("kind") == "harness" and row.get("event") == "harness_error"
+        row for row in rows if row.get("kind") == "harness" and row.get("event") in harness_failures
     ]
     add(
         "harness_clean",
@@ -536,8 +543,8 @@ def verify(
         "recovery_required": sum(
             1
             for row in state["failures"]
-            if row.get("error", {}).get("reason") == "recovery_required"
-            or row.get("error", {}).get("type") == "SharedRecoveryRequiredError"
+            if (row.get("error") or {}).get("reason") == "recovery_required"
+            or (row.get("error") or {}).get("type") == "SharedRecoveryRequiredError"
         ),
         "acknowledged_writes": len(state["writes"]),
         "acknowledged_events": len(state["events"]),

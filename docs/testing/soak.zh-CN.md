@@ -77,8 +77,9 @@ TLS
 | `writer_lease` | 一个窗口内只有一个 Owner 进程，每次重启都成功就绪 |
 | `harness_clean` | Harness 自身没有未捕获异常 |
 | `window_complete` | 实测窗口不少于目标的 95% |
-| `workload_volume` | 窗口真的产生了已确认的工作量 |
 | `retrieval_quality` | 检索质量单独度量，不与写入丢失混为一谈 |
+| `workload_volume` | 窗口真的产生了已确认的工作量 |
+| `probe_results` | 每个注入探针都给出了经过验证的结果 |
 
 结果只能是 `PASS`、`FAIL`、`INCOMPLETE` 或 `HARNESS_ERROR`。`skipped`、
 `cancelled`、缺失 Artifact、缺失证据都不会被翻译成 `PASS`。
@@ -155,8 +156,9 @@ Cloud 窗口写入 `SOAK_QDRANT_COLLECTION` 指定的固定测试 Collection。�
 3. 再次统计并要求为零；
 4. 要求 Collection 本身仍然存在。
 
-Workflow 另用独立步骤重复第 1、3 步。若清理无法证明剩余为零，该 Run 标记为
-`CLEANUP_FAILED`；Collection 永不删除。
+Workflow 另用独立步骤重新读取 Collection，证明两件事：本次 Run 的记录已不存在，
+且 Collection 本身仍在。若清理无法证明剩余为零，该 Run 标记为 `CLEANUP_FAILED`；
+Collection 永不删除。
 
 embedding 指纹包含 provider base URL，因此 Cloud Job 固定本地 provider 端口
 （`18431`）。没有稳定端口时，固定 Collection 每次 Run 都会表现为另一条流水线。
