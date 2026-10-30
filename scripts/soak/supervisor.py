@@ -221,8 +221,15 @@ class OwnerSupervisor:
         return process
 
     def signal(self, name):
-        """Send one signal to the Owner without waiting for it."""
+        """Send one signal to the Owner without waiting for it.
+
+        Windows has no ``SIGKILL``. There, both a graceful and a forced stop end
+        in ``TerminateProcess``, which is the platform's forced termination.
+        """
         process = self._live_process()
+        if name == "SIGKILL" and not hasattr(signal, "SIGKILL"):
+            process.kill()
+            return process.pid
         os.kill(process.pid, getattr(signal, name))
         return process.pid
 
@@ -249,8 +256,8 @@ class OwnerSupervisor:
         if process.poll() is None:
             escalated = True
             try:
-                os.kill(process.pid, signal.SIGKILL)
-            except OSError:
+                self.signal("SIGKILL")
+            except (OSError, SupervisorError):
                 pass
             try:
                 process.wait(timeout=10)
