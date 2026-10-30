@@ -473,6 +473,7 @@ def verify(
         "fault_error",
         "workload_step_error",
         "probe_error",
+        "background_error",
         "run_aborted",
     }
     harness_errors = [
@@ -483,6 +484,32 @@ def verify(
         "PASS" if not harness_errors else "FAIL",
         "The harness itself reported no unhandled exception.",
         harness_errors=len(harness_errors),
+    )
+
+    scenario = getattr(identity, "scenario", "") if identity is not None else ""
+    closed_faults = len(fault_windows(rows))
+    required_faults = {
+        "restart": max(1, int(target_seconds // 300)),
+        "network": max(2, int(target_seconds // 300)),
+    }.get(scenario, 0)
+    if scenario == "restart":
+        covered = owner_restarts >= required_faults
+        detail = f"{owner_restarts} restart(s), {required_faults} required"
+    elif scenario == "network":
+        covered = closed_faults >= required_faults
+        detail = f"{closed_faults} fault window(s), {required_faults} required"
+    else:
+        covered = True
+        detail = "the steady scenario injects no faults"
+    add(
+        "scenario_coverage",
+        "PASS" if covered else "FAIL",
+        "The scenario actually injected what it claims to test.",
+        scenario=scenario,
+        restarts=owner_restarts,
+        fault_windows=closed_faults,
+        required=required_faults,
+        detail_text=detail,
     )
 
     add(

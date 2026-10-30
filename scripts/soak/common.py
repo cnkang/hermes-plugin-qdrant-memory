@@ -44,6 +44,7 @@ REQUIRED_INVARIANTS = (
     "retrieval_quality",
     "workload_volume",
     "probe_results",
+    "scenario_coverage",
 )
 
 _EXIT_CODES = {"PASS": 0, "FAIL": 1, "INCOMPLETE": 2, "HARNESS_ERROR": 3}

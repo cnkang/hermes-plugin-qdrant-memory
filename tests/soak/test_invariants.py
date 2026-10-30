@@ -357,6 +357,66 @@ def test_a_failed_read_is_an_availability_event_not_a_lost_write():
     assert summary["expected_transient_failures"] == 1
 
 
+def test_a_restart_leg_without_a_restart_fails_coverage():
+    """A scenario that never injected its fault is not a pass."""
+    from types import SimpleNamespace
+
+    rows, evidence = _healthy()
+    identity = SimpleNamespace(scenario="restart")
+    invariants, _, _ = _verify(rows, evidence, identity=identity, owner_restarts=0, owner_starts=1)
+    assert _status(invariants, "scenario_coverage") == "FAIL"
+    invariants, _, _ = _verify(rows, evidence, identity=identity, owner_restarts=4, owner_starts=5)
+    assert _status(invariants, "scenario_coverage") == "PASS"
+
+
+def test_a_network_leg_without_a_fault_window_fails_coverage():
+    """The network scenario must prove it applied faults."""
+    from types import SimpleNamespace
+
+    rows, evidence = _healthy()
+    identity = SimpleNamespace(scenario="network")
+    invariants, _, _ = _verify(rows, evidence, identity=identity)
+    assert _status(invariants, "scenario_coverage") == "FAIL"
+    rows = rows + [
+        {
+            "kind": "fault",
+            "phase": "begin",
+            "fault": "qdrant_latency",
+            "ts": "2026-10-30T10:00:00.000Z",
+        },
+        {
+            "kind": "fault",
+            "phase": "end",
+            "fault": "qdrant_latency",
+            "ts": "2026-10-30T10:00:05.000Z",
+        },
+        {
+            "kind": "fault",
+            "phase": "begin",
+            "fault": "client_reset_peer",
+            "ts": "2026-10-30T10:01:00.000Z",
+        },
+        {
+            "kind": "fault",
+            "phase": "end",
+            "fault": "client_reset_peer",
+            "ts": "2026-10-30T10:01:05.000Z",
+        },
+    ]
+    invariants, _, _ = _verify(rows, evidence, identity=identity)
+    assert _status(invariants, "scenario_coverage") == "PASS"
+
+
+def test_a_background_task_failure_invalidates_the_window():
+    """An exception inside a scenario driver must not disappear."""
+    rows, evidence = _healthy()
+    rows = rows + [
+        {"kind": "harness", "event": "background_error", "error": {"type": "RuntimeError"}}
+    ]
+    invariants, _, _ = _verify(rows, evidence)
+    assert _status(invariants, "harness_clean") == "FAIL"
+
+
 def test_any_harness_level_failure_invalidates_the_window():
     """A fault that never applied, or a workload that keeps raising, is not PASS."""
     for event in ("fault_error", "workload_step_error", "probe_error", "run_aborted"):
