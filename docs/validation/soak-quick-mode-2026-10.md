@@ -50,7 +50,7 @@ missing names when a cloud window is requested without them.
 | --- | --- | --- |
 | Workflow lint | `actionlint` 1.7.12 | PASS, no findings |
 | Harness and workflow contract tests | `pytest tests/soak -q` | PASS, 74 passed |
-| Full repository suite with a Qdrant container | canonical host runner, `-j 1` | PASS, 99 files, 1215 passed, 0 failed, 11 gated skips |
+| Full repository suite with a Qdrant container | canonical host runner, `-j 1` | PASS, 99 files, 1216 passed, 0 failed, 11 gated skips |
 | Lint and format | `ruff check` and `ruff format --check` | PASS |
 | Documentation links | link checker over tracked markdown | PASS, no missing local links |
 
