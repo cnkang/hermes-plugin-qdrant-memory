@@ -14,24 +14,10 @@ from pathlib import Path
 
 from qdrant_memory.models import content_hash, digest
 
-from .common import Invariant, percentile, read_jsonl, trend
+from .common import REQUIRED_INVARIANTS, Invariant, percentile, read_jsonl, trend
 
 RETRIEVAL_FLOOR = 0.5
-REQUIRED_INVARIANTS = (
-    "write_durability",
-    "request_id_idempotency",
-    "event_id_idempotency",
-    "authorization",
-    "scope_isolation",
-    "writer_lease",
-    "ledger_integrity",
-    "no_unexplained_loss",
-    "window_complete",
-    "harness_clean",
-    "retrieval_quality",
-    "workload_volume",
-    "probe_results",
-)
+PATH_FAULT_REASONS = frozenset({"tls_failed", "unreachable"})
 
 
 @dataclass
@@ -62,7 +48,8 @@ class QdrantEvidence:
         from qdrant_client import QdrantClient
 
         previous = os.environ.get("SSL_CERT_FILE")
-        os.environ["SSL_CERT_FILE"] = str(self.ca_file)
+        if self.ca_file is not None:
+            os.environ["SSL_CERT_FILE"] = str(self.ca_file)
         try:
             client = QdrantClient(url=self.endpoint, api_key=self.api_key, timeout=30)
             try:
@@ -83,7 +70,9 @@ class QdrantEvidence:
             finally:
                 client.close()
         finally:
-            if previous is None:
+            if self.ca_file is None:
+                pass
+            elif previous is None:
                 os.environ.pop("SSL_CERT_FILE", None)
             else:
                 os.environ["SSL_CERT_FILE"] = previous
@@ -273,9 +262,9 @@ def acknowledged_state(rows):
         if row.get("error", {}).get("retryable") is True:
             continue
         reason = row.get("error", {}).get("reason")
-        if reason in {"tls_failed", "unreachable", "outcome_unknown"} and inside_client_fault(
-            row.get("ts"), windows
-        ):
+        # Only a failure that cannot have reached the Owner is excused here.
+        # ``outcome_unknown`` may have committed, so it needs a proven replay.
+        if reason in PATH_FAULT_REASONS and inside_client_fault(row.get("ts"), windows):
             path_outages.append(row)
         else:
             unexpected.append(row)
@@ -540,7 +529,7 @@ def verify(
         "retried_operations": sum(1 for row in operations if (row.get("replays") or 0) > 0),
         "unexpected_failures": len(state["unexpected"]),
         "expected_path_outages": len(state["path_outages"]),
-        "permanent_write_losses": len(missing) + len(resurrected),
+        "permanent_write_losses": len(missing) + len(resurrected) + len(mismatched),
         "duplicate_records": len(duplicates),
         "cross_scope_leaks": leaks,
         "owner_restarts": owner_restarts,

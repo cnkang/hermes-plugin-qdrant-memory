@@ -9,6 +9,7 @@ import pytest
 
 from scripts.soak.aggregate import aggregate, expected_legs, render_markdown, validate_report
 from scripts.soak.common import (
+    REQUIRED_INVARIANTS,
     SECRETS,
     Invariant,
     Journal,
@@ -81,7 +82,7 @@ def test_a_credential_never_reaches_the_recorded_command_line():
     assert "another-secret" not in public
     assert public[public.index("--cloud-api-key") + 1] == "<redacted>"
     assert "--cloud-llm-key=<redacted>" in public
-    assert "https://llm.example" in public
+    assert public[-1] == "https://llm.example"
 
 
 def test_run_identity_and_collection_name_are_safe():
@@ -107,18 +108,23 @@ def test_percentiles_and_trend_are_measured_not_guessed():
 
 def test_overall_status_never_upgrades_missing_evidence():
     """PASS needs every invariant, a covered window and no harness error."""
-    passed = [Invariant(name=f"check_{index}", status="PASS") for index in range(9)]
+    passed = [Invariant(name=name, status="PASS") for name in REQUIRED_INVARIANTS]
     status, _ = overall_status(passed, duration_seconds=480, target_seconds=480, harness_error=None)
     assert status == "PASS"
-    failing = [*passed[:8], Invariant(name="check_last", status="FAIL")]
+    failing = [*passed[:-1], Invariant(name=REQUIRED_INVARIANTS[-1], status="FAIL")]
     assert overall_status(failing, duration_seconds=480, target_seconds=480)[0] == "FAIL"
     assert overall_status(passed, duration_seconds=200, target_seconds=480)[0] == "INCOMPLETE"
     assert (
         overall_status(passed, duration_seconds=480, target_seconds=480, harness_error="boom")[0]
         == "HARNESS_ERROR"
     )
-    duplicate = [Invariant(name="same", status="PASS") for _ in range(9)]
-    assert overall_status(duplicate, duration_seconds=480, target_seconds=480)[0] == "INCOMPLETE"
+    duplicated = [
+        Invariant(name=REQUIRED_INVARIANTS[0], status="PASS")
+        for _ in range(len(REQUIRED_INVARIANTS))
+    ]
+    assert overall_status(duplicated, duration_seconds=480, target_seconds=480)[0] == "INCOMPLETE"
+    short_set = passed[:-1]
+    assert overall_status(short_set, duration_seconds=480, target_seconds=480)[0] == "INCOMPLETE"
 
 
 def test_exit_codes_distinguish_every_status():
@@ -198,7 +204,7 @@ def _report(tmp_path, *, status="PASS", commit="a" * 40, duration=480, target=48
         },
         "status": status,
         "summary": summary,
-        "invariants": [{"name": "write_durability", "status": "PASS"}],
+        "invariants": [{"name": name, "status": "PASS"} for name in REQUIRED_INVARIANTS],
         "cloud_cleanup": {"deleted": deleted},
     }
     (directory / "report.json").write_text(json.dumps(payload), encoding="utf-8")

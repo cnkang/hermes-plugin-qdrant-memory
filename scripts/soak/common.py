@@ -28,6 +28,23 @@ FULL_ACCEPTANCE_SECONDS = 18000
 
 RESULTS = ("PASS", "FAIL", "INCOMPLETE", "HARNESS_ERROR")
 
+# Every window must produce all of these. A partial set is not a pass.
+REQUIRED_INVARIANTS = (
+    "write_durability",
+    "request_id_idempotency",
+    "event_id_idempotency",
+    "authorization",
+    "scope_isolation",
+    "ledger_integrity",
+    "no_unexplained_loss",
+    "writer_lease",
+    "harness_clean",
+    "window_complete",
+    "retrieval_quality",
+    "workload_volume",
+    "probe_results",
+)
+
 _EXIT_CODES = {"PASS": 0, "FAIL": 1, "INCOMPLETE": 2, "HARNESS_ERROR": 3}
 
 # Token-shaped values never belong in an artifact. The harness also never puts a
@@ -319,7 +336,14 @@ _WHY = {
 }
 
 
-def overall_status(invariants, *, duration_seconds, target_seconds, harness_error=None):
+def overall_status(
+    invariants,
+    *,
+    duration_seconds,
+    target_seconds,
+    harness_error=None,
+    required=REQUIRED_INVARIANTS,
+):
     """Derive PASS/FAIL/INCOMPLETE without ever upgrading a missing result."""
     if harness_error:
         return "HARNESS_ERROR", _WHY["HARNESS_ERROR"]
@@ -331,8 +355,9 @@ def overall_status(invariants, *, duration_seconds, target_seconds, harness_erro
             f"The window covered {duration_seconds:.0f}s of a required {target_seconds}s.",
         )
     names = [item.name for item in invariants]
-    if len(names) != len(set(names)) or len(names) < 8:
-        return "INCOMPLETE", "The invariant set is incomplete."
+    missing = [name for name in required if name not in names]
+    if len(names) != len(set(names)) or missing:
+        return "INCOMPLETE", "The invariant set is incomplete: " + ", ".join(missing)
     if any(item.status == "FAIL" for item in invariants):
         return "FAIL", _WHY["FAIL"]
     if any(item.status in {"INCOMPLETE", "UNVERIFIED"} for item in invariants):
@@ -372,7 +397,10 @@ def write_junit(path, identity, duration_seconds, cases):
     lines.extend(["</testsuite>", "</testsuites>"])
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
     return path
 
 

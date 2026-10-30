@@ -8,7 +8,7 @@ exit alone.
 import argparse
 from pathlib import Path
 
-from .common import PROFILE_SECONDS, read_json, write_json
+from .common import PROFILE_SECONDS, REQUIRED_INVARIANTS, read_json, write_json
 
 REQUIRED_ARTIFACTS = ("report.json", "events.jsonl", "junit.xml", "metrics.json")
 REQUIRED_SUMMARY_KEYS = (
@@ -69,7 +69,7 @@ def validate_report(path, *, expected_commit=None, minimum_seconds=None):
     if any(key not in summary for key in REQUIRED_SUMMARY_KEYS):
         reasons.append("report summary is incomplete")
     identity = report.get("identity") or {}
-    if expected_commit and identity.get("commit_sha") not in (expected_commit, None):
+    if expected_commit and identity.get("commit_sha") != expected_commit:
         reasons.append(f"report commit {identity.get('commit_sha')} is not {expected_commit}")
     if minimum_seconds:
         covered = float(report.get("duration_seconds") or 0)
@@ -79,8 +79,12 @@ def validate_report(path, *, expected_commit=None, minimum_seconds=None):
                 f"window {covered:.0f}s of target {target}s cannot support a {minimum_seconds}s acceptance"
             )
     invariants = report.get("invariants") if isinstance(report.get("invariants"), list) else []
+    names = {item.get("name") for item in invariants}
+    missing_invariants = [name for name in REQUIRED_INVARIANTS if name not in names]
     if not invariants:
         reasons.append("no invariant results were reported")
+    elif missing_invariants:
+        reasons.append("missing invariants: " + ", ".join(missing_invariants))
     failed = [item.get("name") for item in invariants if item.get("status") != "PASS"]
     if failed:
         reasons.append("failing invariants: " + ", ".join(str(name) for name in failed))

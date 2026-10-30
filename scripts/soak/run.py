@@ -18,6 +18,7 @@ from pathlib import Path
 from . import prepare
 from .common import (
     PROFILE_SECONDS,
+    REQUIRED_INVARIANTS,
     SCENARIOS,
     SECRETS,
     Journal,
@@ -643,7 +644,12 @@ def main(argv=None):
         if env is not None:
             try:
                 evidence.points = QdrantEvidence(
-                    env.qdrant_admin_endpoint, env.api_key, env.collection, env.ca_file
+                    env.qdrant_admin_endpoint,
+                    env.api_key,
+                    env.collection,
+                    # A cloud collection uses the system trust store, not the
+                    # per-run CA that only signs the loopback listeners.
+                    None if args.backend == "cloud" else env.ca_file,
                 ).read()
             except Exception as exc:  # noqa: BLE001 - missing state is INCOMPLETE, not PASS
                 evidence.collected = False
@@ -689,6 +695,7 @@ def main(argv=None):
             invariants,
             duration_seconds=duration,
             target_seconds=args.target_seconds,
+            required=REQUIRED_INVARIANTS,
             harness_error=harness_error
             or ("" if evidence.collected else "QDrant state unavailable"),
         )
