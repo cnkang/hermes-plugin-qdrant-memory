@@ -146,7 +146,6 @@ jobs:
         run: |
           python -m scripts.soak.run \
             --scenario "$SOAK_SCENARIO" --profile quick --target-seconds 480 \
-            --owner-id "soak-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --workdir "$RUNNER_TEMP/soak/work" --report-dir "$RUNNER_TEMP/soak/report" \
             --platform-label "${{ matrix.runner }}" --seed "${GITHUB_RUN_ID}"
       - name: Summarize the window
@@ -271,7 +270,6 @@ jobs:
             --backend cloud --scenario steady --profile quick \
             --target-seconds "$CLOUD_SECONDS" --workers 2 \
             --provider-port 18431 \
-            --owner-id "soak-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --workdir "$RUNNER_TEMP/soak/work" --report-dir "$RUNNER_TEMP/soak/report" \
             --platform-label cloud --seed "${GITHUB_RUN_ID}"
       - name: Summarize the cloud window
@@ -368,7 +366,6 @@ jobs:
         run: |
           python -m scripts.soak.run \
             --scenario "$SOAK_SCENARIO" --profile full --target-seconds 18000 \
-            --owner-id "soak-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --workdir "$RUNNER_TEMP/soak/work" --report-dir "$RUNNER_TEMP/soak/report" \
             --platform-label "${{ matrix.runner }}" --seed "${GITHUB_RUN_ID}"
       - name: Summarize the window

@@ -97,7 +97,8 @@ TLS
 | `owner.log` | 脱敏后的 Owner 日志（截断到最近 8 MiB） |
 | `ledger/` | `state.db` 与其 sidecar 的只读副本 |
 
-Artifact 不含 token、API Key 或超出只读副本的 Ledger 数据。脱敏器会移除已登记
+journal 中的记忆文本由 Harness 为本次 Run 生成，不含用户内容或生产记忆。Artifact
+不含 token、API Key 或超出只读副本的 Ledger 数据。脱敏器会移除已登记
 凭证与显式的 `Bearer`/`api_key=` 形式；提交哈希与内容哈希保持可读，因为无法
 核对的证据不是证据。
 
@@ -148,8 +149,7 @@ Workflow 强制执行的规则：
 ### 固定 Collection 与清理
 
 Cloud 窗口写入 `SOAK_QDRANT_COLLECTION` 指定的固定测试 Collection。每次 Run 用
-本次专属的 `owner_id`（`soak-<run id>-<attempt>`）标记自己的记录，清理只删这些
-记录：
+由自身运行身份派生的专属 `owner_id` 标记自己的记录，清理只删这些记录：
 
 1. 统计本次 Run 作用域内的记录数；
 2. 按 filter 删除；

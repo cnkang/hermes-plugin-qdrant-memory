@@ -453,7 +453,16 @@ class Runner:
         finally:
             for task in tasks:
                 task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, BaseException) and not isinstance(
+                    result, asyncio.CancelledError
+                ):
+                    self.journal.record(
+                        "harness",
+                        event="background_error",
+                        error={"type": type(result).__name__, "detail": str(result)[:300]},
+                    )
         if self.args.scenario == "network" and not self.fatal:
             await probe_rate_limit(self.client, self.journal)
         return {"fatal": self.fatal}
@@ -507,12 +516,19 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def owner_identity(args, run_id):
-    """Return the run-scoped scope identity that bounds every written record."""
-    if args.owner_id:
-        return args.owner_id
+def owner_identity(args, run_id, *, cloud=False):
+    """Return the run-scoped scope identity that bounds every written record.
+
+    A cloud run deletes records by this identity, so it must be this run's own.
+    An override that differs from the derived value is refused before any delete.
+    """
     suffix = run_id.rsplit("-", 1)[-1].lower()
-    return "soak-" + "".join(character for character in suffix if character.isalnum())
+    derived = "soak-" + "".join(character for character in suffix if character.isalnum())
+    if not args.owner_id:
+        return derived
+    if cloud and args.owner_id != derived:
+        raise ValueError("A cloud run may only clean up its own run-scoped identity")
+    return args.owner_id
 
 
 def cloud_llm(args):
@@ -574,7 +590,7 @@ def main(argv=None):
     result = {"status": "INCOMPLETE"}
     try:
         stub = ProviderStub(port=args.provider_port).start()
-        owner_id = owner_identity(args, identity.run_id)
+        owner_id = owner_identity(args, identity.run_id, cloud=args.backend == "cloud")
         llm = cloud_llm(args)
         if args.backend == "cloud":
             env = prepare.build_cloud_environment(
