@@ -212,7 +212,9 @@ def qdrant_points(env):
     except Exception:  # noqa: BLE001 - a metric sample may legitimately fail
         return None
     finally:
-        if previous is not None:
+        if previous is None:
+            os.environ.pop("SSL_CERT_FILE", None)
+        else:
             os.environ["SSL_CERT_FILE"] = previous
 
 
