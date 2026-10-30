@@ -539,6 +539,9 @@ Run Ruff lint and format checks before you commit. Install the repository
 pre-commit hook as described in [development setup](docs/development.md). The hook
 checks the staged snapshot. CI runs lint, both Python versions, Snyk and
 SonarCloud. See [CI services](docs/ci.md) for the tested host versions and lanes.
+The staged [soak system](docs/testing/soak.md) runs real Owner, Gateway, Ledger
+and Qdrant windows on x64 and ARM64 runners, and admits a five-hour matrix only
+after the short matrix passes.
 
 Build isolated dependency environments with Hermes PM. Then run the host's
 canonical test runner against this repository's tests. The tests import the real
