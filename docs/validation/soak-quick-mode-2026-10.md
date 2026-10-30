@@ -71,7 +71,9 @@ listeners, and MCP SDK 1.30.0 carried the client.
 | `restart` | PASS | 488.7 | 1821 | 1229 | 151 | 0 | 0 | 10 |
 | `network` | PASS | 490.6 | 1910 | 1228 | 151 | 0 | 0 | 0 |
 
-Every leg passed all fourteen hard invariants. The restart leg forced a `SIGKILL`
+Every leg passed all fourteen hard invariants. One of them, `scenario_coverage`,
+requires a restart leg to have restarted and a network leg to have closed fault
+windows. The restart leg forced a `SIGKILL`
 on every third restart. Seven graceful and three forced restarts each ended in a
 fresh receipt and a clean ledger. The network leg applied 24 fault windows across
 both sides of the Owner. It also dropped one response on purpose and recovered it
