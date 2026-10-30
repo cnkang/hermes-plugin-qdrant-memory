@@ -147,7 +147,7 @@ jobs:
           python -m scripts.soak.run \
             --scenario "$SOAK_SCENARIO" --profile quick --target-seconds 480 \
             --workdir "$RUNNER_TEMP/soak/work" --report-dir "$RUNNER_TEMP/soak/report" \
-            --platform-label "${{ matrix.runner }}" --seed "${GITHUB_RUN_ID}"
+            --platform-label "${{ matrix.runner }}" --seed "${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
       - name: Summarize the window
         if: always()
         run: python -m scripts.soak.summary --report "$RUNNER_TEMP/soak/report" >> "$GITHUB_STEP_SUMMARY"
@@ -271,7 +271,7 @@ jobs:
             --target-seconds "$CLOUD_SECONDS" --workers 2 \
             --provider-port 18431 \
             --workdir "$RUNNER_TEMP/soak/work" --report-dir "$RUNNER_TEMP/soak/report" \
-            --platform-label cloud --seed "${GITHUB_RUN_ID}"
+            --platform-label cloud --seed "${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
       - name: Summarize the cloud window
         if: always()
         run: python -m scripts.soak.summary --report "$RUNNER_TEMP/soak/report" >> "$GITHUB_STEP_SUMMARY"
@@ -367,7 +367,7 @@ jobs:
           python -m scripts.soak.run \
             --scenario "$SOAK_SCENARIO" --profile full --target-seconds 18000 \
             --workdir "$RUNNER_TEMP/soak/work" --report-dir "$RUNNER_TEMP/soak/report" \
-            --platform-label "${{ matrix.runner }}" --seed "${GITHUB_RUN_ID}"
+            --platform-label "${{ matrix.runner }}" --seed "${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}"
       - name: Summarize the window
         if: always()
         run: python -m scripts.soak.summary --report "$RUNNER_TEMP/soak/report" >> "$GITHUB_STEP_SUMMARY"

@@ -44,7 +44,7 @@ from .load import (
     probe_retry_contract,
 )
 from .stub import ProviderStub
-from .supervisor import OwnerStartError, OwnerSupervisor
+from .supervisor import OwnerSupervisor
 from .verify import (
     Evidence,
     QdrantEvidence,
@@ -199,7 +199,10 @@ def qdrant_points(env):
     from qdrant_client import QdrantClient
 
     previous = os.environ.get("SSL_CERT_FILE")
-    os.environ["SSL_CERT_FILE"] = str(env.ca_file)
+    if env.cloud:
+        os.environ.pop("SSL_CERT_FILE", None)
+    else:
+        os.environ["SSL_CERT_FILE"] = str(env.ca_file)
     try:
         client = QdrantClient(url=env.qdrant_admin_endpoint, api_key=env.api_key, timeout=10)
         try:
@@ -209,9 +212,7 @@ def qdrant_points(env):
     except Exception:  # noqa: BLE001 - a metric sample may legitimately fail
         return None
     finally:
-        if previous is None:
-            os.environ.pop("SSL_CERT_FILE", None)
-        else:
+        if previous is not None:
             os.environ["SSL_CERT_FILE"] = previous
 
 
@@ -296,10 +297,12 @@ class Runner:
             self.record_fault("begin", "owner_sigkill" if force else "owner_sigterm")
             try:
                 result = await asyncio.to_thread(self.supervisor.restart, force=force)
-            except OwnerStartError as exc:
+            except Exception as exc:  # noqa: BLE001 - any restart failure ends the window
                 self.start_failures += 1
                 self.fatal = "owner_restart_failed"
-                self.record_fault("end", "owner_restart_failed", detail=str(exc)[:400])
+                self.record_fault(
+                    "end", "owner_restart_failed", detail=f"{type(exc).__name__}: {str(exc)[:300]}"
+                )
                 return
             self.record_fault(
                 "end",

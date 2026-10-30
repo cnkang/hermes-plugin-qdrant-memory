@@ -249,8 +249,8 @@ class SoakClient:
         status = (value or {}).get("status")
         # A non-committed status is a terminal outcome of its own, never a
         # missing error field: downstream readers must see a mapping.
-        error = failure or ({} if status == "COMMITTED" else {"type": "LifecycleStatus"})
-        if not error:
+        error = failure
+        if status != "COMMITTED" and failure is None:
             error = {"type": "LifecycleStatus", "status": status, "retryable": False}
         outcome = Outcome(
             ok=failure is None and status == "COMMITTED",
@@ -569,7 +569,7 @@ class Workload:
             while clock() < stop_at and not (should_stop and should_stop()):
                 try:
                     outcome = await self.step(worker, phase)
-                    if getattr(outcome, "error", {}).get("path_outage"):
+                    if (getattr(outcome, "error", None) or {}).get("path_outage"):
                         # The path is cut; back off instead of creating new work.
                         await asyncio.sleep(0.5)
                 except Exception as exc:  # noqa: BLE001 - harness must keep evidence
