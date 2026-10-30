@@ -41,7 +41,7 @@ the environment allows only `main` and the preflight refuses the request.
 | `soak-cloud` | `main` | `cnkang` | `SOAK_LLM_BASE_URL`, `SOAK_LLM_MODEL`, `SOAK_QDRANT_COLLECTION`, `SOAK_QDRANT_URL` | `SOAK_LLM_API_KEY`, `SOAK_QDRANT_API_KEY` |
 
 Secret values were never read. Only names and metadata are recorded here. The
-workflow reads the two required names in one step, and fails with the exact
+workflow checks three required names in one step, and fails with the exact
 missing names when a cloud window is requested without them.
 
 ## 4. Static verification
@@ -49,7 +49,7 @@ missing names when a cloud window is requested without them.
 | Check | Command | Result |
 | --- | --- | --- |
 | Workflow lint | `actionlint` 1.7.12 | PASS, no findings |
-| Harness and workflow contract tests | `pytest tests/soak -q` | PASS, 73 passed |
+| Harness and workflow contract tests | `pytest tests/soak -q` | PASS, 74 passed |
 | Full repository suite with a Qdrant container | canonical host runner, `-j 1` | PASS, 99 files, 1215 passed, 0 failed, 11 gated skips |
 | Lint and format | `ruff check` and `ruff format --check` | PASS |
 | Documentation links | link checker over tracked markdown | PASS, no missing local links |

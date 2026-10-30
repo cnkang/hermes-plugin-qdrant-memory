@@ -138,8 +138,10 @@ def aggregate(
                 path, expected_commit=expected_commit, minimum_seconds=minimum_seconds
             )
             cleanup = (report or {}).get("cloud_cleanup") or {}
-            if status == "pass" and not cleanup.get("deleted"):
-                status, reasons = "failed", ["the cloud collection was not deleted"]
+            if status == "pass" and cleanup.get("collection_retained") is not True:
+                status, reasons = "failed", ["the fixed cloud collection is missing"]
+            elif status == "pass" and not cleanup.get("deleted"):
+                status, reasons = "failed", ["this run's cloud records were not removed"]
             cloud_result = {
                 "requested": True,
                 "status": status,
@@ -255,6 +257,8 @@ def main(argv=None):
     parser.add_argument("--platform", action="append", default=[])
     parser.add_argument("--scenario", action="append", default=[])
     args = parser.parse_args(argv)
+    if not args.commit.strip():
+        parser.error("--commit must name the tested commit")
     expected = (
         [f"{platform}-{scenario}" for platform in args.platform for scenario in args.scenario]
         if args.platform and args.scenario
@@ -266,7 +270,7 @@ def main(argv=None):
         mode=args.mode,
         expected=expected,
         cloud=args.cloud,
-        expected_commit=args.commit or None,
+        expected_commit=args.commit,
         minimum_seconds=args.minimum_seconds or None,
     )
     write_json(args.output, result)

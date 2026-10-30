@@ -70,6 +70,8 @@ class SoakEnvironment:
     owner_id: str = "soak-owner"
     llm_key: str = ""
     cloud: bool = False
+    llm_mode: str = "deterministic"
+    untrusted_ca: Path | None = None
     tokens: dict = field(default_factory=dict)
     grants: list = field(default_factory=list)
     ports: dict = field(default_factory=dict)
@@ -99,6 +101,7 @@ class SoakEnvironment:
             "qdrant_endpoint": self.qdrant_endpoint,
             "qdrant_admin_endpoint": self.qdrant_admin_endpoint,
             "lifecycle": self.lifecycle,
+            "llm_mode": self.llm_mode,
             "owner_id": self.owner_id,
             "containers": list(self.containers),
             "nginx_pid": self.proxy.pid if self.proxy is not None else None,
@@ -222,10 +225,33 @@ def issue_certificates(certs):
             "-out",
             str(certificate),
         )
+    untrusted = certs / "untrusted-ca.pem"
+    if not untrusted.exists():
+        _openssl(
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "2",
+            "-subj",
+            "/CN=soak-untrusted-ca",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign,cRLSign",
+            "-addext",
+            "subjectKeyIdentifier=hash",
+            "-keyout",
+            str(certs / "untrusted-ca.key"),
+            "-out",
+            str(untrusted),
+        )
     for path in certs.iterdir():
         if path.suffix in {".key", ".pem", ".csr", ".srl", ".ext"}:
             os.chmod(path, 0o600)
-    return {"ca": ca_file}
+    return {"ca": ca_file, "untrusted_ca": untrusted}
 
 
 def nginx_config(env, *, mcp_port, qdrant_port, upstream_mcp, upstream_qdrant):
@@ -612,7 +638,9 @@ def build_environment(
 
 def _build_local_services(env, *, provider_base_url, scene, seed, lifecycle):
     """Start the local services for an already-created work directory."""
-    env.ca_file = issue_certificates(env.certs)["ca"]
+    certificates = issue_certificates(env.certs)
+    env.ca_file = certificates["ca"]
+    env.untrusted_ca = certificates["untrusted_ca"]
 
     qdrant_port = free_port()
     qdrant_api_key = os.urandom(24).hex()
@@ -737,6 +765,8 @@ def build_cloud_environment(
     import re
 
     require_tools("openssl", "nginx")
+    if scene == "network":
+        raise EnvironmentError("The cloud backend has no local Toxiproxy topology")
     if not isinstance(cloud_url, str) or not cloud_url.startswith("https://"):
         raise EnvironmentError("SOAK_QDRANT_URL must be an https:// endpoint")
     if not cloud_api_key:
@@ -779,7 +809,9 @@ def build_cloud_environment(
 
 def _build_cloud_services(env, *, provider_base_url, lifecycle, llm, cloud_url, cloud_api_key):
     """Start the Owner proxy and write the cloud profile."""
-    env.ca_file = issue_certificates(env.certs)["ca"]
+    certificates = issue_certificates(env.certs)
+    env.ca_file = certificates["ca"]
+    env.untrusted_ca = certificates["untrusted_ca"]
     mcp_port = free_port()
     owner_plain_port = free_port()
     owner_local_port = free_port()
@@ -891,6 +923,7 @@ def _write_cloud_profile(env, *, cloud_url, provider_base_url, api_key, lifecycl
     write_json(env.policy_path, {"clients": grants, "destination": binding}, scrub=False)
     env.lifecycle = lifecycle
     env.llm_key = (llm or {}).get("key", "")
+    env.llm_mode = "real" if llm else "deterministic"
     return cfg
 
 
