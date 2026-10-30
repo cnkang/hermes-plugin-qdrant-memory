@@ -1,0 +1,487 @@
+name: Soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'quick runs the short smoke matrix; full adds the extended soak matrix'
+        type: choice
+        default: quick
+        options: [quick, full]
+      include_cloud:
+        description: 'Run the optional Qdrant Cloud window from the soak-cloud environment'
+        type: boolean
+        default: false
+      cloud_seconds:
+        description: 'Cloud window length in seconds (60-3600)'
+        type: string
+        default: '180'
+  schedule:
+    # A weekly extended run on main. A schedule never requests cloud access.
+    - cron: '0 3 * * 0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soak-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      mode: ${{ steps.profile.outputs.mode }}
+      include_cloud: ${{ steps.profile.outputs.include_cloud }}
+      cloud_seconds: ${{ steps.profile.outputs.cloud_seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.11'
+      - name: Install the harness test dependencies
+        run: python -m pip install '.[remote]' 'pytest>=8,<10' 'ruamel.yaml>=0.18.16,<0.20'
+      - name: Lint the workflows with a pinned actionlint
+        run: |
+          set -euo pipefail
+          version=1.7.12
+          archive="actionlint_${version}_linux_amd64.tar.gz"
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${version}/${archive}" \
+            -o "$RUNNER_TEMP/${archive}"
+          (
+            cd "$RUNNER_TEMP"
+            echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  '"${archive}" \
+              | sha256sum -c -
+            tar -xzf "${archive}" actionlint
+          )
+          "$RUNNER_TEMP/actionlint" -color
+      - name: Run the harness contract tests
+        run: python -m pytest tests/soak -q
+      - name: Resolve the run profile
+        id: profile
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_MODE: ${{ inputs.mode }}
+          REQUESTED_CLOUD: ${{ inputs.include_cloud }}
+          REQUESTED_SECONDS: ${{ inputs.cloud_seconds }}
+          REF: ${{ github.ref }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+
+          scheduled = os.environ["EVENT_NAME"] == "schedule"
+          mode = "full" if scheduled else (os.environ.get("REQUESTED_MODE") or "quick")
+          cloud = False if scheduled else os.environ.get("REQUESTED_CLOUD") == "true"
+          try:
+              seconds = int(os.environ.get("REQUESTED_SECONDS") or "180")
+          except ValueError:
+              print("::error::cloud_seconds must be an integer between 60 and 3600")
+              sys.exit(1)
+          if mode not in ("quick", "full"):
+              print(f"::error::Unsupported mode {mode!r}")
+              sys.exit(1)
+          if not 60 <= seconds <= 3600:
+              print("::error::cloud_seconds must be between 60 and 3600")
+              sys.exit(1)
+          if cloud and os.environ["REF"] != "refs/heads/main":
+              print("::error::The soak-cloud environment allows only main; request cloud on main.")
+              sys.exit(1)
+          if cloud and os.environ["REPOSITORY"] != "cnkang/hermes-plugin-qdrant-memory":
+              print("::error::The soak-cloud environment belongs to the upstream repository only.")
+              sys.exit(1)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"mode={mode}\n")
+              output.write(f"include_cloud={'true' if cloud else 'false'}\n")
+              output.write(f"cloud_seconds={seconds}\n")
+          print(f"mode={mode} include_cloud={cloud} cloud_seconds={seconds}")
+          PY
+      - name: Record the resolved profile
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          {
+            echo "## Soak preflight"
+            echo ""
+            echo "- Mode: \`${{ steps.profile.outputs.mode }}\`"
+            echo "- Cloud window requested: \`${{ steps.profile.outputs.include_cloud }}\`"
+            echo "- Cloud window length: \`${{ steps.profile.outputs.cloud_seconds }}\` seconds"
+            echo "- Commit: \`$COMMIT_SHA\`"
+            echo "- Workflow: actionlint 1.7.12 and the harness contract tests passed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  smoke:
+    name: Smoke (${{ matrix.runner }}, ${{ matrix.scenario }})
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    environment:
+      name: soak-local
+      deployment: false
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        scenario: [steady, restart, network]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.11'
+      - name: Install the TLS proxy
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends nginx openssl
+      - name: Install the harness dependencies
+        run: python -m pip install '.[remote]' 'pytest>=8,<10'
+      - name: Run the short soak window
+        env:
+          SOAK_SCENARIO: ${{ matrix.scenario }}
+        run: |
+          python -m scripts.soak.run \
+            --scenario "$SOAK_SCENARIO" --profile quick --target-seconds 480 \
+            --owner-id "soak-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --workdir "$RUNNER_TEMP/soak/work" --report-dir "$RUNNER_TEMP/soak/report" \
+            --platform-label "${{ matrix.runner }}" --seed "${GITHUB_RUN_ID}"
+      - name: Summarize the window
+        if: always()
+        run: python -m scripts.soak.summary --report "$RUNNER_TEMP/soak/report" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: smoke-${{ matrix.runner }}-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/soak/report
+          if-no-files-found: error
+          retention-days: 14
+
+  local-smoke-gate:
+    name: Local smoke gate
+    needs: [preflight, smoke]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      ready: ${{ steps.decide.outputs.ready }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          pattern: smoke-*
+          path: artifacts/smoke
+      - name: Require every smoke leg
+        id: decide
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+        run: |
+          if [ "$PREFLIGHT_RESULT" != "success" ] || [ "$SMOKE_RESULT" != "success" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::error::preflight=$PREFLIGHT_RESULT smoke=$SMOKE_RESULT; a skipped or cancelled leg is not a pass."
+            exit 1
+          fi
+          set +e
+          python -m scripts.soak.aggregate \
+            --stage smoke --mode quick --reports artifacts/smoke \
+            --commit "$COMMIT_SHA" \
+            --output "$RUNNER_TEMP/smoke-aggregate.json" \
+            --summary "$RUNNER_TEMP/smoke-summary.md"
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/smoke-summary.md" >> "$GITHUB_STEP_SUMMARY" || true
+          if [ "$status" -ne 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::error::The short smoke matrix did not pass; the extended soak must not start."
+            exit 1
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: aggregate-smoke
+          path: ${{ runner.temp }}/smoke-aggregate.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  cloud-smoke:
+    name: Cloud window (soak-cloud)
+    needs: [preflight, local-smoke-gate]
+    if: >-
+      always() &&
+      needs.preflight.outputs.include_cloud == 'true' &&
+      needs.local-smoke-gate.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    # The environment keeps its required reviewer: a deployment is created so a
+    # human approves the cloud window. It is never given to a local-only job.
+    environment: soak-cloud
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.11'
+      - name: Install the TLS proxy
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends nginx openssl
+      - name: Install the harness dependencies
+        run: python -m pip install '.[remote]' 'pytest>=8,<10'
+      - name: Require the soak-cloud contract
+        env:
+          SOAK_QDRANT_URL: ${{ vars.SOAK_QDRANT_URL }}
+          SOAK_QDRANT_COLLECTION: ${{ vars.SOAK_QDRANT_COLLECTION }}
+          SOAK_QDRANT_API_KEY: ${{ secrets.SOAK_QDRANT_API_KEY }}
+        run: |
+          missing=""
+          [ -n "${SOAK_QDRANT_URL:-}" ] || missing="$missing SOAK_QDRANT_URL(variable)"
+          [ -n "${SOAK_QDRANT_COLLECTION:-}" ] || missing="$missing SOAK_QDRANT_COLLECTION(variable)"
+          [ -n "${SOAK_QDRANT_API_KEY:-}" ] || missing="$missing SOAK_QDRANT_API_KEY(secret)"
+          if [ -n "$missing" ]; then
+            echo "::error::soak-cloud is incomplete: missing$missing. Configure them in Settings > Environments > soak-cloud."
+            exit 1
+          fi
+          echo "soak-cloud variables and secrets are present."
+      - name: Run the cloud window
+        env:
+          CLOUD_SECONDS: ${{ needs.preflight.outputs.cloud_seconds }}
+          SOAK_QDRANT_URL: ${{ vars.SOAK_QDRANT_URL }}
+          SOAK_QDRANT_COLLECTION: ${{ vars.SOAK_QDRANT_COLLECTION }}
+          SOAK_QDRANT_API_KEY: ${{ secrets.SOAK_QDRANT_API_KEY }}
+          SOAK_LLM_BASE_URL: ${{ vars.SOAK_LLM_BASE_URL }}
+          SOAK_LLM_MODEL: ${{ vars.SOAK_LLM_MODEL }}
+          SOAK_LLM_API_KEY: ${{ secrets.SOAK_LLM_API_KEY }}
+        run: |
+          # The endpoint, collection and credentials arrive through the step
+          # environment, so no credential value appears in the process arguments.
+          python -m scripts.soak.run \
+            --backend cloud --scenario steady --profile quick \
+            --target-seconds "$CLOUD_SECONDS" --workers 2 \
+            --provider-port 18431 \
+            --owner-id "soak-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --workdir "$RUNNER_TEMP/soak/work" --report-dir "$RUNNER_TEMP/soak/report" \
+            --platform-label cloud --seed "${GITHUB_RUN_ID}"
+      - name: Summarize the cloud window
+        if: always()
+        run: python -m scripts.soak.summary --report "$RUNNER_TEMP/soak/report" >> "$GITHUB_STEP_SUMMARY"
+      - name: Audit the cloud cleanup independently
+        if: always()
+        env:
+          SOAK_QDRANT_URL: ${{ vars.SOAK_QDRANT_URL }}
+          SOAK_QDRANT_COLLECTION: ${{ vars.SOAK_QDRANT_COLLECTION }}
+          SOAK_QDRANT_API_KEY: ${{ secrets.SOAK_QDRANT_API_KEY }}
+        run: |
+          python -m scripts.soak.cloud --report "$RUNNER_TEMP/soak/report" \
+            --url "$SOAK_QDRANT_URL" --api-key "$SOAK_QDRANT_API_KEY" \
+            --collection "$SOAK_QDRANT_COLLECTION" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: cloud-steady
+          path: ${{ runner.temp }}/soak/report
+          if-no-files-found: error
+          retention-days: 14
+
+  admission-gate:
+    name: Extended soak admission
+    needs: [preflight, local-smoke-gate, cloud-smoke]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      ready: ${{ steps.decide.outputs.ready }}
+    steps:
+      - name: Decide whether the extended soak may start
+        id: decide
+        env:
+          MODE: ${{ needs.preflight.outputs.mode }}
+          CLOUD_REQUESTED: ${{ needs.preflight.outputs.include_cloud }}
+          SMOKE_RESULT: ${{ needs.local-smoke-gate.result }}
+          CLOUD_RESULT: ${{ needs.cloud-smoke.result }}
+        run: |
+          ready=false
+          if [ "$MODE" != "full" ]; then
+            echo "quick mode: the extended soak is not requested."
+          elif [ "$SMOKE_RESULT" != "success" ]; then
+            echo "::error::The smoke gate did not pass; no extended soak may start."
+            exit 1
+          elif [ "$CLOUD_REQUESTED" = "true" ] && [ "$CLOUD_RESULT" != "success" ]; then
+            echo "::error::The cloud window did not pass; no extended soak may start."
+            exit 1
+          else
+            ready=true
+          fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Extended soak admission"
+            echo ""
+            echo "- Mode: \`$MODE\`"
+            echo "- Smoke gate: \`$SMOKE_RESULT\`"
+            echo "- Cloud window: requested=\`$CLOUD_REQUESTED\` result=\`$CLOUD_RESULT\`"
+            echo "- Extended soak scheduled: \`$ready\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  soak:
+    name: Soak (${{ matrix.runner }}, ${{ matrix.scenario }})
+    needs: [preflight, admission-gate]
+    if: needs.admission-gate.outputs.ready == 'true'
+    runs-on: ${{ matrix.runner }}
+    environment:
+      name: soak-local
+      deployment: false
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        scenario: [steady, restart, network]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.11'
+      - name: Install the TLS proxy
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends nginx openssl
+      - name: Install the harness dependencies
+        run: python -m pip install '.[remote]' 'pytest>=8,<10'
+      - name: Run the extended soak window
+        env:
+          SOAK_SCENARIO: ${{ matrix.scenario }}
+        run: |
+          python -m scripts.soak.run \
+            --scenario "$SOAK_SCENARIO" --profile full --target-seconds 18000 \
+            --owner-id "soak-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --workdir "$RUNNER_TEMP/soak/work" --report-dir "$RUNNER_TEMP/soak/report" \
+            --platform-label "${{ matrix.runner }}" --seed "${GITHUB_RUN_ID}"
+      - name: Summarize the window
+        if: always()
+        run: python -m scripts.soak.summary --report "$RUNNER_TEMP/soak/report" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: soak-${{ matrix.runner }}-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/soak/report
+          if-no-files-found: error
+          retention-days: 14
+
+  final-report:
+    name: Final report
+    needs: [preflight, smoke, local-smoke-gate, cloud-smoke, admission-gate, soak]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          pattern: smoke-*
+          path: artifacts/smoke
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          pattern: soak-*
+          path: artifacts/soak
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          pattern: cloud-steady
+          path: artifacts/cloud
+      - name: Aggregate every stage
+        id: aggregate
+        env:
+          MODE: ${{ needs.preflight.outputs.mode }}
+          CLOUD_REQUESTED: ${{ needs.preflight.outputs.include_cloud }}
+          COMMIT_SHA: ${{ github.sha }}
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+          SMOKE_GATE_RESULT: ${{ needs.local-smoke-gate.result }}
+          CLOUD_RESULT: ${{ needs.cloud-smoke.result }}
+          SOAK_RESULT: ${{ needs.soak.result }}
+        run: |
+          set +e
+          verdict=0
+          if [ "$SMOKE_RESULT" != "success" ] || [ "$SMOKE_GATE_RESULT" != "success" ]; then
+            echo "::error::smoke=$SMOKE_RESULT gate=$SMOKE_GATE_RESULT; the stage did not complete."
+            verdict=1
+          fi
+          if [ "$CLOUD_REQUESTED" = "true" ] && [ "$CLOUD_RESULT" != "success" ]; then
+            echo "::error::cloud=$CLOUD_RESULT although a cloud window was requested."
+            verdict=1
+          fi
+          if [ "$MODE" = "full" ] && [ "$SOAK_RESULT" != "success" ]; then
+            echo "::error::soak=$SOAK_RESULT although the extended soak was admitted."
+            verdict=1
+          fi
+          cloud="not-requested"
+          if [ "$CLOUD_REQUESTED" = "true" ]; then cloud="required"; fi
+          minimum=0
+          if [ "$MODE" = "full" ]; then minimum=18000; fi
+
+          python -m scripts.soak.aggregate \
+            --stage smoke --mode quick --reports artifacts/smoke \
+            --commit "$COMMIT_SHA" --cloud "$cloud" \
+            --output "$RUNNER_TEMP/smoke-aggregate.json" \
+            --summary "$RUNNER_TEMP/smoke-summary.md" || verdict=1
+
+          if [ "$MODE" = "full" ]; then
+            python -m scripts.soak.aggregate \
+              --stage soak --mode full --reports artifacts/soak \
+              --commit "$COMMIT_SHA" --minimum-seconds "$minimum" \
+              --output "$RUNNER_TEMP/soak-aggregate.json" \
+              --summary "$RUNNER_TEMP/soak-summary.md" || verdict=1
+          fi
+          set -e
+
+          {
+            echo "## Final soak report"
+            echo ""
+            echo "- Commit: \`$COMMIT_SHA\`"
+            echo "- Mode: \`$MODE\`"
+            echo "- Cloud window requested: \`$CLOUD_REQUESTED\`"
+            echo "- Smoke matrix: \`${{ needs.smoke.result }}\`"
+            echo "- Cloud window: \`${{ needs.cloud-smoke.result }}\`"
+            echo "- Extended soak: \`${{ needs.soak.result }}\`"
+            echo ""
+            cat "$RUNNER_TEMP/smoke-summary.md" 2>/dev/null || echo "The smoke matrix produced no aggregate."
+            if [ "$MODE" = "full" ]; then
+              echo ""
+              cat "$RUNNER_TEMP/soak-summary.md" 2>/dev/null || echo "The extended soak produced no aggregate."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$verdict"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: aggregate-final
+          path: |
+            ${{ runner.temp }}/smoke-aggregate.json
+            ${{ runner.temp }}/smoke-summary.md
+            ${{ runner.temp }}/soak-aggregate.json
+            ${{ runner.temp }}/soak-summary.md
+          if-no-files-found: warn
+          retention-days: 14
