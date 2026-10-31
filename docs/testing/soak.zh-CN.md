@@ -149,8 +149,11 @@ Workflow 强制执行的规则：
 
 ### 创建 Environment
 
-维护者在仓库设置页或通过 API 一次性创建两个 Environment。名称固定，Workflow 不会
-自动创建。
+维护者必须在运行 soak 前，通过仓库设置页或 API 创建并配置两个 Environment。
+Workflow 不会配置保护规则或 Environment Secret。若 Job 引用不存在的
+Environment，GitHub Actions 会自动创建，但新 Environment 没有保护规则或 Secret。
+下方命令会为两个 Environment 设置 `main` 分支策略。请求 Cloud 窗口前，
+还须确认 `soak-cloud` 已设置 `main` 分支策略并配置 Required reviewer。
 
 ```bash
 gh api -X PUT repos/<owner>/<repo>/environments/soak-local \

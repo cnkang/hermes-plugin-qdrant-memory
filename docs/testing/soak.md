@@ -161,8 +161,13 @@ Rules that the workflow enforces:
 
 ### Provisioning the environments
 
-A maintainer creates both environments once, from the repository settings page
-or with the API. The names are fixed, and the workflow does not create them.
+A maintainer must create and configure both environments in repository settings
+or via the API before running the soak. The workflow does not configure
+protection rules or environment secrets. If a job references a missing
+environment, GitHub Actions creates it automatically without protection rules
+or secrets. The commands below configure the `main` branch policy for both.
+Before requesting a cloud window, ensure `soak-cloud` has the `main` branch
+policy and a required reviewer.
 
 ```bash
 gh api -X PUT repos/<owner>/<repo>/environments/soak-local \
