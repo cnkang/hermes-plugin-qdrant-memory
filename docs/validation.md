@@ -16,7 +16,7 @@ BLOCKED until the workflow reaches `main`, because both environments allow only
 `main`. The [record](validation/soak-quick-mode-2026-10.md) lists the measured
 windows, the environment audit and the items that were not run.
 
-## Runtime 0.5.3 candidate checks (2026-11-01)
+## Runtime 0.5.3 pre-release candidate checks (2026-11-01)
 
 Local validation for the provider initialization lifecycle fix:
 
@@ -36,10 +36,23 @@ Local validation for the provider initialization lifecycle fix:
 The skipped tests require prepared local model caches, authenticated Cloud or
 live shared-security deployments, a device-server URL in the full-suite lane, an
 optional relation model, or a separate Pi adapter checkout. They are not claimed
-as verified here. GitHub's minimum/latest Hermes matrix, Linux/macOS/Windows
-contracts, CodeQL, dependency/security jobs, packaging and published-artifact
-installation remain release gates for this candidate. No production collection
-or user memory was accessed.
+as verified here. At this pre-release checkpoint, GitHub's minimum/latest Hermes
+matrix, Linux/macOS/Windows contracts, CodeQL, dependency/security jobs,
+packaging and published-artifact installation were still pending. The following
+section records the later release and public-package verification. No production
+collection or user memory was accessed.
+
+## Runtime 0.5.3 published package verification (2026-11-01)
+
+The release gates completed successfully for [PR #105](https://github.com/cnkang/hermes-plugin-qdrant-memory/pull/105), and the immutable `v0.5.3` tag is published as [Runtime 0.5.3](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases/tag/v0.5.3). The [publish workflow](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/41294701784) built and tested the wheel and sdist, published through PyPI Trusted Publishing with attestations, and verified the public artifacts.
+
+Post-publication checks used a fresh Python 3.15 virtual environment and installed `hermes-plugin-qdrant-memory[mcp]==0.5.3` from public PyPI. The downloaded wheel and sdist SHA256 values matched PyPI's file metadata, `pip check` passed, and both CLI help commands worked. Tests exercised the installed package rather than importing the checkout:
+
+- The WriterBusy lifecycle regression passed, including failed initialization, safe callbacks and tool errors, explicit retry, and a subsequent memory write/read.
+- The real cross-process WriterLease contention and recovery regression passed using the installed package in the child process.
+- The official MCP stdio SDK test passed with MCP SDK 2.3.0; `tools/list` returned the four existing tools and an isolated write/read request succeeded.
+
+These checks did not access a production collection or user memory. The post-publication run verifies the public Python package and isolated local behavior; it does not claim live Cloud, shared-security deployment, Pi adapter, or all operating-system coverage beyond the linked CI matrices.
 
 ## Runtime 0.5.2 checks (2026-10-29)
 
