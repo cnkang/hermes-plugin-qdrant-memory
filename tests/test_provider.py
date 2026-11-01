@@ -92,6 +92,36 @@ def test_raw_event_survives_failure_and_restart(tmp_path):
     restarted.shutdown()
 
 
+def test_persisted_event_replays_after_qdrant_write_failure_without_duplicate(
+    tmp_path, monkeypatch
+):
+    """A durable event remains replayable when Qdrant fails after ledger admission."""
+    p = provider(tmp_path)
+
+    def fail_upsert(_records):
+        raise TimeoutError("synthetic Qdrant write outage")
+
+    monkeypatch.setattr(p.store, "upsert", fail_upsert)
+    p.sync_turn("cats preferred", "ack", session_id="first")
+    assert p.wait_idle()
+    assert p.ledger.stats()["events"]["FAILED"] == 1
+    assert p.store.count() == 0
+    p.ledger.retry_failed()
+    p.shutdown()
+
+    recovered = provider(tmp_path)
+    try:
+        assert recovered.wait_idle()
+        assert recovered.ledger.stats()["events"]["COMMITTED"] == 1
+        assert recovered.store.count() == 1
+        recovered.runtime.recover()
+        assert recovered.store.count() == 1
+        hits = recovered.store.search("cats", recovered.default_scope)
+        assert [hit.payload["text"] for hit in hits] == ["cats preferred"]
+    finally:
+        recovered.shutdown()
+
+
 def test_nonprimary_skips_automatic_writes(tmp_path):
     """Verify nonprimary skips automatic writes."""
     p = QdrantMemoryProvider(

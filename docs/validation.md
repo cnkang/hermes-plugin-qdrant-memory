@@ -16,6 +16,31 @@ BLOCKED until the workflow reaches `main`, because both environments allow only
 `main`. The [record](validation/soak-quick-mode-2026-10.md) lists the measured
 windows, the environment audit and the items that were not run.
 
+## Runtime 0.5.3 candidate checks (2026-11-01)
+
+Local validation for the provider initialization lifecycle fix:
+
+- Python 3.11.15: 1,227 passed, 14 environment-gated skips, 0 failed. The
+  isolated test environment used the current Hermes main checkout and
+  `python-dotenv==1.2.4` from its declared dependencies.
+- Python 3.14.0: 1,227 passed, 14 environment-gated skips, 0 failed.
+- The full runs emitted one and two warnings respectively from Qdrant's embedded
+  local mode about server-only payload indexes/search parameters; no test failed.
+- A disposable `qdrant/qdrant` Server pinned to
+  `sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863`
+  passed the HTTP/gRPC remote contract and real WriterLease contention/recovery
+  lane (3 passed, 1 not selected), and the device-server security tests
+  (2 passed). It used isolated loopback ports and no persistent volume.
+- Ruff lint, Ruff format check and `git diff --check` passed.
+
+The skipped tests require prepared local model caches, authenticated Cloud or
+live shared-security deployments, a device-server URL in the full-suite lane, an
+optional relation model, or a separate Pi adapter checkout. They are not claimed
+as verified here. GitHub's minimum/latest Hermes matrix, Linux/macOS/Windows
+contracts, CodeQL, dependency/security jobs, packaging and published-artifact
+installation remain release gates for this candidate. No production collection
+or user memory was accessed.
+
 ## Runtime 0.5.2 checks (2026-10-29)
 
 Release checks on the 0.5.2 head passed:

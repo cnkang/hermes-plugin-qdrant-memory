@@ -14,6 +14,8 @@ except ImportError:
     # Current Hermes moved the exception; the minimum supported host exports it here.
     from agent.conversation_compression_checkpoint import CompressionCheckpointUnavailable
 
+from qdrant_memory.provider import ProviderUnavailableError
+
 from .helpers import capture_committed_event_payloads
 from .test_provider import provider
 
@@ -53,6 +55,34 @@ def test_checkpoint_commits_normalized_evidence_and_propagates_failure(tmp_path,
         with pytest.raises(CompressionCheckpointUnavailable):
             _pre_compress_memory_context(agent, messages, True)
     finally:
+        p.shutdown()
+
+
+def test_optional_checkpoint_can_skip_a_concurrent_provider_shutdown(tmp_path, monkeypatch):
+    """Only required checkpoints fail when the provider stops during admission."""
+    p = provider(tmp_path)
+    messages = [{"role": "user", "content": "cats preferred"}]
+
+    def become_unavailable(value):
+        """Model shutdown winning after the hook's initial readiness check."""
+        with p._condition:
+            p._state = "STOPPING"
+            p._accepting = False
+            error = p._unavailable_error_locked()
+        raise error
+
+    monkeypatch.setattr(p, "_event", become_unavailable)
+    try:
+        assert p.on_pre_compress(messages, require_checkpoint=False) == ""
+        with p._condition:
+            p._state = "READY"
+            p._accepting = True
+        with pytest.raises(ProviderUnavailableError):
+            p.on_pre_compress(messages, require_checkpoint=True)
+    finally:
+        with p._condition:
+            p._state = "READY"
+            p._accepting = True
         p.shutdown()
 
 

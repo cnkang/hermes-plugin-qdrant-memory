@@ -5,16 +5,19 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from qdrant_memory.config import load_config
 from qdrant_memory.migration import migrate, read_qdrant_records, verify_collection, verify_manifest
 from qdrant_memory.models import Scope
+from qdrant_memory.ownership import WriterBusyError
+from qdrant_memory.provider import QdrantMemoryProvider
 from qdrant_memory.qdrant_store import INDEXES, build_client
 from qdrant_memory.tools import dispatch
 
-from .helpers import config, runtime
+from .helpers import LLM, Embedder, config, runtime
 
 
 def wait_for_server(cfg):
@@ -47,6 +50,96 @@ def test_remote_server_contract_and_restart(tmp_path, prefer_grpc, request):
         "server",
         request.config.getoption("--qdrant-test-container"),
     )
+
+
+def test_provider_writer_busy_lifecycle_with_real_server(tmp_path, monkeypatch, request):
+    """Recover one Provider after a real Qdrant Server writer releases its lease."""
+    url = request.config.getoption("--qdrant-test-url")
+    if not url:
+        pytest.skip("--qdrant-test-url is required for the live server lane")
+    settings = {
+        "mode": "server",
+        "url": url,
+        "prefer_grpc": False,
+        "collection": "test_" + uuid.uuid4().hex,
+    }
+    overrides = config(qdrant=settings)
+    home = str(tmp_path)
+
+    def remove_disposable_collection():
+        """Remove this isolated Server collection even when an assertion fails."""
+        cleanup_cfg = load_config(home, overrides)
+        cleanup_client = build_client(cleanup_cfg)
+        try:
+            if cleanup_client.collection_exists(settings["collection"]):
+                cleanup_client.delete_collection(settings["collection"])
+        finally:
+            cleanup_client.close()
+
+    request.addfinalizer(remove_disposable_collection)
+    owner = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()),
+        embedder=Embedder(),
+        overrides=overrides,
+    )
+    contender = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()),
+        embedder=Embedder(),
+        overrides=overrides,
+    )
+
+    owner.initialize("owner-session", hermes_home=home)
+    try:
+        assert owner.wait_idle()
+        first = json.loads(owner.handle_tool_call("qdrant_memory_add", {"text": "cats from owner"}))
+        assert first["action"] == "ADD"
+
+        with monkeypatch.context() as blocked_service:
+            blocked_service.setattr(
+                "qdrant_memory.provider.build_client",
+                lambda *_args, **_kwargs: pytest.fail(
+                    "Writer contention must fail before Qdrant Server access"
+                ),
+            )
+            with pytest.raises(WriterBusyError):
+                contender.initialize("contender-session", hermes_home=home)
+
+        assert contender.lifecycle_state == "FAILED"
+        assert contender.on_turn_start(1, "", session_id="contender-session") is None
+        with pytest.raises(RuntimeError, match="unavailable"):
+            contender.sync_turn("cats missed", "ack", session_id="contender-session")
+        assert contender.prefetch("cats", session_id="contender-session") == ""
+        with pytest.raises(RuntimeError, match="unavailable"):
+            contender.on_session_end([{"role": "user", "content": "cats"}])
+        with pytest.raises(RuntimeError, match="unavailable"):
+            contender.on_pre_compress([], require_checkpoint=True)
+        error = json.loads(
+            contender.handle_tool_call("qdrant_memory_add", {"text": "cats rejected"})
+        )["error"]
+        assert error["code"] == "writer_busy"
+        assert error["retryable"] is True
+        contender.shutdown()
+        contender.shutdown()
+    finally:
+        owner.shutdown()
+
+    contender.initialize("contender-session", hermes_home=home)
+    try:
+        assert contender.wait_idle()
+        existing = json.loads(contender.handle_tool_call("qdrant_memory_search", {"query": "cats"}))
+        assert [item["text"] for item in existing["memories"]] == ["cats from owner"]
+        second = json.loads(
+            contender.handle_tool_call("qdrant_memory_add", {"text": "dogs from contender"})
+        )
+        assert second["action"] == "ADD"
+        recovered = json.loads(
+            contender.handle_tool_call("qdrant_memory_search", {"query": "dogs"})
+        )
+        assert any(item["text"] == "dogs from contender" for item in recovered["memories"])
+        assert len({item["id"] for item in recovered["memories"]}) == len(recovered["memories"])
+        assert contender.store.count() == 2
+    finally:
+        contender.shutdown()
 
 
 def test_cloud_contract_when_credentials_are_available(tmp_path, request):

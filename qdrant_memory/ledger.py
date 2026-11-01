@@ -31,50 +31,57 @@ class Ledger:
         path.chmod(0o600)
         self.lock = RLock()
         self.db = sqlite3.connect(path, check_same_thread=False, timeout=30)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA synchronous=FULL")
-        self.db.executescript("""
-            CREATE TABLE IF NOT EXISTS events (
-                event_id TEXT PRIMARY KEY, session_id TEXT, payload_json TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0,
-                last_error TEXT, created_at TEXT, committed_at TEXT, collection TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS operations (
-                idempotency_key TEXT PRIMARY KEY, point_id TEXT NOT NULL, action TEXT NOT NULL,
-                payload_json TEXT NOT NULL, source_id TEXT, source_version TEXT, content_hash TEXT,
-                status TEXT NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0,
-                last_error TEXT, created_at TEXT, committed_at TEXT, collection TEXT NOT NULL);
-            CREATE INDEX IF NOT EXISTS events_by_collection_status
-                ON events(collection,status);
-            CREATE INDEX IF NOT EXISTS operations_by_collection_status
-                ON operations(collection,status);
-            CREATE INDEX IF NOT EXISTS operations_by_point_status
-                ON operations(collection,point_id,status);
-            CREATE INDEX IF NOT EXISTS operations_delete_by_point
-                ON operations(collection,source_id,action,point_id);
-            CREATE INDEX IF NOT EXISTS operations_delete_by_hash
-                ON operations(collection,source_id,action,content_hash);
-            CREATE INDEX IF NOT EXISTS operations_unscrubbed_by_collection
-                ON operations(collection)
-                WHERE status IN ('COMMITTED','SUPERSEDED') AND payload_json!='{}';
-            CREATE INDEX IF NOT EXISTS operations_unscrubbed_by_point
-                ON operations(collection,point_id)
-                WHERE status IN ('COMMITTED','SUPERSEDED') AND payload_json!='{}';
-            CREATE TABLE IF NOT EXISTS manifests (
-                migration_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, collection TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS metrics (name TEXT, value REAL, collection TEXT);
-            CREATE TABLE IF NOT EXISTS counters (
-                name TEXT, value INTEGER, collection TEXT, PRIMARY KEY(name,collection));
-            CREATE TABLE IF NOT EXISTS unattributed_sessions (
-                session_id TEXT, collection TEXT, PRIMARY KEY(session_id,collection));
-            CREATE TABLE IF NOT EXISTS session_provenance (
-                session_id TEXT, collection TEXT, authors_json TEXT NOT NULL,
-                explicit_author INTEGER NOT NULL, history_known INTEGER NOT NULL,
-                PRIMARY KEY(session_id,collection));
-        """)
-        self._resumable_operation_keys = self._load_resumable_operation_keys()
-        with self.lock, self.db:
-            self._scrub_terminal_payloads()
+        try:
+            self.db.row_factory = sqlite3.Row
+            self.db.execute("PRAGMA journal_mode=WAL")
+            self.db.execute("PRAGMA synchronous=FULL")
+            self.db.executescript("""
+                CREATE TABLE IF NOT EXISTS events (
+                    event_id TEXT PRIMARY KEY, session_id TEXT, payload_json TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT, created_at TEXT, committed_at TEXT, collection TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS operations (
+                    idempotency_key TEXT PRIMARY KEY, point_id TEXT NOT NULL, action TEXT NOT NULL,
+                    payload_json TEXT NOT NULL, source_id TEXT, source_version TEXT, content_hash TEXT,
+                    status TEXT NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT, created_at TEXT, committed_at TEXT, collection TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS events_by_collection_status
+                    ON events(collection,status);
+                CREATE INDEX IF NOT EXISTS operations_by_collection_status
+                    ON operations(collection,status);
+                CREATE INDEX IF NOT EXISTS operations_by_point_status
+                    ON operations(collection,point_id,status);
+                CREATE INDEX IF NOT EXISTS operations_delete_by_point
+                    ON operations(collection,source_id,action,point_id);
+                CREATE INDEX IF NOT EXISTS operations_delete_by_hash
+                    ON operations(collection,source_id,action,content_hash);
+                CREATE INDEX IF NOT EXISTS operations_unscrubbed_by_collection
+                    ON operations(collection)
+                    WHERE status IN ('COMMITTED','SUPERSEDED') AND payload_json!='{}';
+                CREATE INDEX IF NOT EXISTS operations_unscrubbed_by_point
+                    ON operations(collection,point_id)
+                    WHERE status IN ('COMMITTED','SUPERSEDED') AND payload_json!='{}';
+                CREATE TABLE IF NOT EXISTS manifests (
+                    migration_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, collection TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS metrics (name TEXT, value REAL, collection TEXT);
+                CREATE TABLE IF NOT EXISTS counters (
+                    name TEXT, value INTEGER, collection TEXT, PRIMARY KEY(name,collection));
+                CREATE TABLE IF NOT EXISTS unattributed_sessions (
+                    session_id TEXT, collection TEXT, PRIMARY KEY(session_id,collection));
+                CREATE TABLE IF NOT EXISTS session_provenance (
+                    session_id TEXT, collection TEXT, authors_json TEXT NOT NULL,
+                    explicit_author INTEGER NOT NULL, history_known INTEGER NOT NULL,
+                    PRIMARY KEY(session_id,collection));
+            """)
+            self._resumable_operation_keys = self._load_resumable_operation_keys()
+            with self.lock, self.db:
+                self._scrub_terminal_payloads()
+        except BaseException as exc:
+            try:
+                self.db.close()
+            except Exception as cleanup_exc:
+                exc.add_note(f"SQLite ledger cleanup failed ({type(cleanup_exc).__name__})")
+            raise
 
     def clear_destination(self):
         """Forget every destination-scoped replay record so cleared memories cannot replay.

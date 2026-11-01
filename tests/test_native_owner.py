@@ -276,12 +276,26 @@ def test_protected_native_gateway_lifecycle_and_shutdown(tmp_path, monkeypatch):
     p = QdrantMemoryProvider(
         plugin_context=SimpleNamespace(llm=LLM()), embedder=Embedder(), overrides=cfg
     )
+    from qdrant_memory.native_owner import NativeOwner
+    from qdrant_memory.provider import ProviderUnavailableError
+
+    native_start = NativeOwner.start
+    startup_denials = []
+
+    def start_while_provider_is_initializing(owner):
+        native_start(owner)
+        with pytest.raises(ProviderUnavailableError):
+            owner.owner.call(owner.token(), "qdrant_memory_search", {"query": "not ready"})
+        startup_denials.append("denied")
+
+    monkeypatch.setattr(NativeOwner, "start", start_while_provider_is_initializing)
     remote_thread = None
     # Match the documented dedicated service's private startup umask. Qdrant
     # creates its own files; admission must not chmod already exposed state.
     previous_umask = os.umask(0o077)
     try:
         p.initialize("native-session", hermes_home=str(tmp_path))
+        assert startup_denials == ["denied"]
         host = p._native_owner
         remote_thread = host.remote_thread
         assert host.owner.runtime is p.runtime

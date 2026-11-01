@@ -12,7 +12,8 @@ without pasting credentials into logs or issues.
 | Dimension, distance or fingerprint mismatch | Restore the previous pipeline configuration, or create a separate compatible target collection and migrate explicitly. Do not change the live collection schema or delete its identity point. |
 | Nonempty collection has no trusted fingerprint | It is not a plugin-managed target. Use a new collection. Import legacy memories through migration rather than reusing an unknown schema. |
 | Embedded store already accessed | Another client owns the local persistence lock. Stop the agent and other maintenance commands. Never remove lock files while their process is alive. |
-| `WriterBusyError` / `writer_busy` during `init`, `migrate` or `retry` | A local session or gateway owns the destination's writer lease in any deployment mode. Run `hermes gateway status` and `hermes gateway list`, stop the relevant service with `hermes gateway stop`, exit CLI sessions with `/exit`, or stop a foreground gateway with Ctrl-C. Wait for workers to exit and rerun the command. See the [migration stop/resume/restart procedure](migration-from-mem0.md#json-export-plan-stop-writers-migrate-and-restart). |
+| `WriterBusyError` / `writer_busy` during `init`, `migrate` or `retry` | Another process holds this profile's destination writer lease. Check `hermes gateway status` and `hermes gateway list`, exit CLI sessions with `/exit`, or stop the foreground/background gateway cleanly. Wait for its workers to exit, then retry. Never delete a lock file. See the [migration stop/resume/restart procedure](migration-from-mem0.md#json-export-plan-stop-writers-migrate-and-restart). |
+| Provider initialization failed or a tool reports `writer_busy` | The failed provider does not acknowledge automatic writes or required checkpoints; it cannot reach missing Ledger/Runtime resources. Prefetch may be empty and explicit tools return a structured unavailable error. Identify and stop the competing writer, then restart the affected Hermes process or Gateway if the Host does not reconstruct providers. This Runtime does not poll a busy lease in the background. A same-instance retry is safe only after initialization cleanup completes and the Host explicitly calls `initialize` again. |
 | Dry-run succeeds but real migration is refused | Dry-run only plans the source. It does not acquire writer ownership or probe target services. Stop target writers before real migration, including for Server/Cloud. Do not clear the collection or delete lock/ledger files. |
 | Cloud authentication/setup failure | Check HTTPS, endpoint and Database API key permissions in the active secret scope. A Cloud management key is not a Database API key. Authentication errors are not retried as transient transport failures. |
 | Recall is temporarily empty | The cache may not be populated yet or has been invalidated by a session/author change. Use the explicit search tool to check scoped stored memories. A cache miss performs no synchronous service call. |
@@ -29,6 +30,29 @@ without pasting credentials into logs or issues.
 | Oversize memory rejected | Inspect text, metadata and total UTF-8 byte limits. Truncate is explicit and applies only to text. Metadata and total payload limits still fail. |
 
 ## Recovery procedure
+
+For WriterLease conflicts, first check whether another Hermes CLI session, Desktop
+App, Gateway, or maintenance command is still writing to the destination. On the
+same machine, inspect the relevant profile and Gateway process status; also check
+other machines that target the same Server or Cloud collection. Stop writers
+through their normal shutdown path and wait for their workers to exit. A lock file
+can remain on disk after its operating-system lock is released, so the file's
+presence alone does not establish that a process is alive. Never delete it to
+force ownership.
+
+The failed Provider enters a diagnostic unavailable state. It safely refuses
+durable turn writes and required compression checkpoints instead of reporting
+success, while prefetch may return empty and tools report a sanitized error. Once
+the conflict is gone, restart the affected Hermes process/Gateway unless its Host
+has a supported provider-reconstruction path. The Runtime permits explicit
+same-instance initialization after cleanup, but it does not run an automatic
+background retry loop. Verify the active profile with `status`, `doctor`, `stats`
+and `verify` after recovery. Preserve the Ledger and Qdrant collection.
+
+WriterLease protects local processes for a profile/destination. It is not a
+distributed fencing token: stop independent writers on every host that targets
+the same destination. Do not infer safe multi-writer behavior from a Qdrant
+Server or Cloud endpoint.
 
 ```bash
 hermes qdrant-memory status

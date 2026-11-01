@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.3
+
+- Add an explicit, synchronized provider lifecycle. A failed initialization
+  cleans up that attempt before the provider can be retried; lifecycle hooks and
+  tools no longer touch missing resources or report an unwritten event as
+  persisted.
+- Keep a writer lease until native listeners, workers, and owned resources have
+  shut down successfully. Stop event admission before worker-exit cleanup, and
+  preserve checkpoint fail-closed behavior when a required checkpoint cannot
+  be stored.
+- Return redacted, structured unavailable errors from tools and empty results
+  from safe prefetch paths. After cleanup completes, a host may explicitly
+  reinitialize the same provider instance. The Runtime does not poll a busy
+  writer lease in the background; on hosts that do not reconstruct a failed
+  provider, restart Hermes after the competing writer exits.
+- No collection schema, point identity, Ledger schema, scope, configuration,
+  public tool schema, or minimum Hermes version changed. Existing memory data
+  needs no migration.
+
 ## 0.5.2
 
 - Classify an interrupted remote write as an unknown outcome, not as a final

@@ -41,8 +41,10 @@ Every pull request must pass the same gates CI enforces:
 - Ruff lint and formatting.
 - The canonical Hermes test runner on Python 3.11 and 3.14 (CI runs the minimum
   supported release and the latest Hermes `main`. Locally one host is enough).
-- SonarCloud, Snyk dependency/code scans and the required security-scan gate run
-  in CI on the pull request.
+- Pull requests require SonarCloud, Snyk Code and the required security-scan
+  gate. The credential-free dependency-lock policy also runs on each PR; the
+  Snyk dependency scan runs only on trusted `main` so its organization token
+  never reaches contributor-controlled code. See [docs/ci.md](docs/ci.md).
 
 The repository pre-commit hook checks exactly what will be committed. Install
 it so a staged snapshot cannot hide a lint error.
