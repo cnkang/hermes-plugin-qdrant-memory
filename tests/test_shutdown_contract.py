@@ -1,12 +1,13 @@
 """Keep timed-out workers from draining queued writes or losing ownership."""
 
 from threading import Event, Thread
+from types import SimpleNamespace
 
 import pytest
 
 from qdrant_memory.provider import QdrantMemoryProvider
 
-from .helpers import Embedder, config
+from .helpers import LLM, Embedder, config
 from .test_provider import provider
 
 
@@ -83,6 +84,120 @@ def test_shutdown_keeps_foreground_tool_resources_alive(tmp_path, monkeypatch):
         p._worker.join(10)
     assert results == ['{"memories": []}']
     assert "error" in p.handle_tool_call("qdrant_memory_search", {"query": "cats"})
+
+
+def test_shutdown_during_initialize_cancels_before_ready_and_releases_lease(tmp_path, monkeypatch):
+    """Concurrent shutdown cancels setup and waits for its lease cleanup."""
+    entered, release = Event(), Event()
+    provider = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()),
+        overrides=config(),
+    )
+    initialize_errors = []
+    shutdown_errors = []
+
+    def blocked_embedder(*_args, **_kwargs):
+        entered.set()
+        assert release.wait(10)
+        return Embedder()
+
+    def initialize():
+        try:
+            provider.initialize("session", hermes_home=str(tmp_path))
+        except Exception as exc:
+            initialize_errors.append(exc)
+
+    def shutdown():
+        try:
+            provider.shutdown()
+        except Exception as exc:
+            shutdown_errors.append(exc)
+
+    monkeypatch.setattr("qdrant_memory.provider.build_embedder", blocked_embedder)
+    initializer = Thread(target=initialize)
+    initializer.start()
+    assert entered.wait(5)
+    stopper = Thread(target=shutdown)
+    stopper.start()
+    with provider._condition:
+        assert provider._condition.wait_for(lambda: provider._shutdown_requested, timeout=5)
+    release.set()
+    initializer.join(15)
+    stopper.join(15)
+
+    assert not initializer.is_alive() and not stopper.is_alive()
+    assert not shutdown_errors
+    assert len(initialize_errors) == 1
+    assert str(initialize_errors[0]) == "Provider initialization was stopped"
+    assert provider.lifecycle_state == "STOPPED"
+    assert provider.prefetch("cats") == ""
+
+    from qdrant_memory.config import load_config
+    from qdrant_memory.ownership import WriterLease
+
+    lease = WriterLease.for_config(tmp_path, load_config(str(tmp_path), config()))
+    lease.close()
+
+
+def test_shutdown_waits_for_early_initialization_failure_cleanup(tmp_path, monkeypatch):
+    """A concurrent shutdown must wait when configuration fails before cfg exists."""
+    load_entered, release_load = Event(), Event()
+    cleanup_entered, release_cleanup = Event(), Event()
+    shutdown_finished = Event()
+    provider = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()),
+        overrides=config(),
+    )
+    initialize_errors = []
+    shutdown_errors = []
+    original_dispose = provider._dispose_resources
+
+    def fail_configuration(*_args, **_kwargs):
+        load_entered.set()
+        assert release_load.wait(10)
+        raise ValueError("invalid test configuration")
+
+    def blocked_dispose(**kwargs):
+        cleanup_entered.set()
+        assert release_cleanup.wait(10)
+        return original_dispose(**kwargs)
+
+    def initialize():
+        try:
+            provider.initialize("session", hermes_home=str(tmp_path))
+        except Exception as exc:
+            initialize_errors.append(exc)
+
+    def shutdown():
+        try:
+            provider.shutdown()
+        except Exception as exc:
+            shutdown_errors.append(exc)
+        finally:
+            shutdown_finished.set()
+
+    monkeypatch.setattr("qdrant_memory.provider.load_config", fail_configuration)
+    monkeypatch.setattr(provider, "_dispose_resources", blocked_dispose)
+    initializer = Thread(target=initialize)
+    initializer.start()
+    assert load_entered.wait(5)
+    stopper = Thread(target=shutdown)
+    stopper.start()
+    with provider._condition:
+        assert provider._condition.wait_for(lambda: provider._shutdown_requested, timeout=5)
+
+    release_load.set()
+    assert cleanup_entered.wait(5)
+    assert not shutdown_finished.wait(0.2)
+    release_cleanup.set()
+    initializer.join(15)
+    stopper.join(15)
+
+    assert not initializer.is_alive() and not stopper.is_alive()
+    assert len(initialize_errors) == 1
+    assert str(initialize_errors[0]) == "Provider initialization was stopped"
+    assert shutdown_errors == []
+    assert provider.lifecycle_state == "STOPPED"
 
 
 def test_writer_lease_covers_remote_mode_and_url_aliases(tmp_path):

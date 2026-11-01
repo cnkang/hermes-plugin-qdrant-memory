@@ -18,7 +18,7 @@ from .embedding import build_embedder
 from .extraction import Extractor
 from .ledger import Ledger
 from .models import Scope
-from .ownership import WriterLease
+from .ownership import WriterBusyError, WriterLease
 from .qdrant_store import QdrantStore, build_client
 from .reset import (
     ScopeDeleteLegacyIntentError,
@@ -34,6 +34,16 @@ from .runtime import Runtime
 from .tools import dispatch, schemas
 
 logger = logging.getLogger(__name__)
+
+
+class ProviderUnavailableError(RuntimeError):
+    """A lifecycle operation could not run because initialization did not complete."""
+
+    def __init__(self, code, *, retryable=False):
+        """Keep the machine-readable cause and retryability without sensitive text."""
+        self.code = code
+        self.retryable = retryable
+        super().__init__(f"Qdrant Memory provider is unavailable ({code})")
 
 
 class QdrantMemoryProvider(MemoryProvider):
@@ -60,6 +70,134 @@ class QdrantMemoryProvider(MemoryProvider):
         self._stop_at = None
         self._shared_recall = None
         self._native_owner = None
+        self._resources = None
+        self._state = "NEW"
+        self._shutdown_requested = False
+        self._cleanup_started = False
+        self._cleanup_in_progress = False
+        self._cleanup_complete = True
+        self._failure_code = None
+        self._failure_type = None
+        self._owned_client = None
+        self._owned_embedder = None
+
+    @property
+    def lifecycle_state(self):
+        """Return the explicit, synchronized lifecycle state for diagnostics."""
+        with self._condition:
+            return self._state
+
+    @property
+    def initialization_error(self):
+        """Return only redacted failure identifiers, never exception text or secrets."""
+        with self._condition:
+            if self._state != "FAILED" or self._failure_code is None:
+                return None
+            return {"code": self._failure_code, "type": self._failure_type}
+
+    def _unavailable_error_locked(self):
+        if self._state == "FAILED":
+            code = self._failure_code or "initialization_failed"
+        elif self._state == "INITIALIZING":
+            code = "initializing"
+        elif self._state in {"STOPPING", "STOPPED"}:
+            code = "provider_stopped"
+        else:
+            code = "not_initialized"
+        return ProviderUnavailableError(code, retryable=code == "writer_busy")
+
+    def _require_ready_locked(self):
+        if self._state != "READY" or not self._accepting:
+            raise self._unavailable_error_locked()
+
+    def _clear_failed_attempt_locked(self):
+        """Drop every attempt-scoped cache and service reference after cleanup."""
+        self._cache.clear()
+        self._scopes.clear()
+        self._turns.clear()
+        self._generations.clear()
+        self._authors.clear()
+        self._provenance.clear()
+        self._blocked_sessions.clear()
+        self._unattributed_sessions.clear()
+        self._jobs.clear()
+        self._busy = False
+        self._cache_hits = self._cache_calls = 0
+        self._latencies.clear()
+        self._stop_at = None
+        for name in (
+            "home",
+            "cfg",
+            "session_id",
+            "default_scope",
+            "_primary",
+            "ledger",
+            "store",
+            "runtime",
+        ):
+            self.__dict__.pop(name, None)
+        self.client = None
+        if self._owned_embedder is not None and self.embedder is self._owned_embedder:
+            self.embedder = None
+        self._owned_client = None
+        self._owned_embedder = None
+        self._shared_recall = None
+        self._native_owner = None
+        self._resources = None
+        self._worker = None
+
+    def _dispose_resources(self, *, final_state, failure_code=None, failure_type=None):
+        """Close one initialization attempt exactly once, preserving cleanup failures."""
+        with self._condition:
+            if self._cleanup_started:
+                return self._cleanup_complete
+            self._cleanup_started = True
+            self._cleanup_in_progress = True
+            native_owner = self._native_owner
+            resources = self._resources
+            runtime = getattr(self, "runtime", None)
+
+        cleanup_type = None
+        if native_owner is not None:
+            try:
+                native_owner.close()
+            except Exception as exc:
+                cleanup_type = type(exc).__name__
+                logger.warning(
+                    "qdrant-memory native owner cleanup failed %s", json.dumps(safe_error(exc))
+                )
+        if resources is not None:
+            try:
+                if runtime is None:
+                    resources.close()
+                else:
+                    with runtime.lock:
+                        resources.close()
+            except Exception as exc:
+                cleanup_type = type(exc).__name__
+                logger.warning(
+                    "qdrant-memory resource cleanup failed %s", json.dumps(safe_error(exc))
+                )
+
+        with self._condition:
+            self._cleanup_in_progress = False
+            self._cleanup_complete = cleanup_type is None
+            self._resources = None
+            self._shared_recall = None
+            self._native_owner = None
+            if cleanup_type is not None:
+                self._state = "FAILED"
+                self._failure_code = "cleanup_failed"
+                self._failure_type = cleanup_type
+            elif final_state == "FAILED":
+                self._state = "FAILED"
+                self._failure_code = failure_code or "initialization_failed"
+                self._failure_type = failure_type
+                self._clear_failed_attempt_locked()
+            else:
+                self._state = final_state
+            self._condition.notify_all()
+            return self._cleanup_complete
 
     @property
     def name(self):
@@ -83,33 +221,71 @@ class QdrantMemoryProvider(MemoryProvider):
     def initialize(self, session_id, **kwargs):
         """Bind a profile, validate its collection and start context-preserving recovery.
 
-        Store, ledger and runtime setup share a cleanup boundary. Failed setup releases
-        created resources; successful setup transfers final closure to the worker.
+        A provider becomes ready only after every resource and its worker are live.
+        Failed attempts close their resources before a later attempt may begin.
         """
-        self.home = kwargs.get("hermes_home") or str(active_home())
-        self.cfg = load_config(self.home, self.overrides)
-        shared_read = self.cfg.get("shared_read") or {}
-        if shared_read.get("enabled", False):
-            from .config import secret
-            from .shared_recall import SharedRecall
-
-            self._shared_recall = SharedRecall(shared_read, secret_reader=secret)
-        self.session_id = session_id
-        from .native_owner import load_native_settings
-
-        owner_settings = load_native_settings(self.home, self.cfg.get("native_owner"))
-        self._primary = kwargs.get("agent_context", "primary") == "primary"
-        self.default_scope = Scope(**self.cfg["scope"])
-        self._scopes[session_id] = Scope(
-            str(kwargs.get("user_id") or self.default_scope.user_id), self.default_scope.agent_id
-        )
-        self._resources = ExitStack()
+        with self._condition:
+            if self._state == "READY":
+                if self.session_id == session_id:
+                    return
+                raise RuntimeError("Provider is already initialized")
+            if self._state == "INITIALIZING":
+                raise RuntimeError("Provider initialization is already in progress")
+            if self._state in {"STOPPING", "STOPPED"}:
+                raise RuntimeError("Provider is stopped")
+            if not self._cleanup_complete:
+                raise RuntimeError("Provider cleanup is incomplete")
+            self._state = "INITIALIZING"
+            self._accepting = False
+            self._shutdown_requested = False
+            self._cleanup_started = False
+            self._cleanup_in_progress = False
+            self._cleanup_complete = False
+            self._failure_code = None
+            self._failure_type = None
+            self._jobs.clear()
+            self._cache.clear()
+            self._scopes.clear()
+            self._turns.clear()
+            self._generations.clear()
+            self._authors.clear()
+            self._provenance.clear()
+            self._blocked_sessions.clear()
+            self._unattributed_sessions.clear()
+            self._busy = False
+            self._cache_hits = self._cache_calls = 0
+            self._latencies.clear()
+            self._stop_at = None
+            self._worker = None
+            self._shared_recall = None
+            self._native_owner = None
+            self._owned_client = None
+            self._owned_embedder = None
+            self._resources = ExitStack()
+            resources = self._resources
         try:
             if self.client is not None:
-                # Injected clients are owned by the provider once initialization begins.
-                # Register them before ledger setup so every failure path releases the
-                # embedded Qdrant file lock.
-                self._resources.callback(self.client.close)
+                resources.callback(self.client.close)
+                self._owned_client = self.client
+            self.home = kwargs.get("hermes_home") or str(active_home())
+            self.cfg = load_config(self.home, self.overrides)
+            shared_read = self.cfg.get("shared_read") or {}
+            if shared_read.get("enabled", False):
+                from .config import secret
+                from .shared_recall import SharedRecall
+
+                self._shared_recall = SharedRecall(shared_read, secret_reader=secret)
+                resources.callback(self._shared_recall.close)
+            self.session_id = session_id
+            from .native_owner import load_native_settings
+
+            owner_settings = load_native_settings(self.home, self.cfg.get("native_owner"))
+            self._primary = kwargs.get("agent_context", "primary") == "primary"
+            self.default_scope = Scope(**self.cfg["scope"])
+            self._scopes[session_id] = Scope(
+                str(kwargs.get("user_id") or self.default_scope.user_id),
+                self.default_scope.agent_id,
+            )
             lease = WriterLease.for_config(
                 self.home,
                 self.cfg,
@@ -119,12 +295,17 @@ class QdrantMemoryProvider(MemoryProvider):
                     else {}
                 ),
             )
-            self._resources.callback(lease.close)
-            self.embedder = self.embedder or build_embedder(self.context, self.cfg)
+            resources.callback(lease.close)
+            self.embedder = (
+                self.embedder
+                if self.embedder is not None
+                else build_embedder(self.context, self.cfg)
+            )
             if hasattr(self.embedder, "close"):
-                self._resources.callback(self.embedder.close)
+                resources.callback(self.embedder.close)
+                self._owned_embedder = self.embedder
             self.ledger = Ledger(self.home, ledger_namespace(self.cfg))
-            self._resources.callback(self.ledger.close)
+            resources.callback(self.ledger.close)
             pending_reset = has_pending_reset(self.ledger)
             pending_deletes = pending_scope_deletes(self.ledger)
             if pending_deletes:
@@ -140,7 +321,8 @@ class QdrantMemoryProvider(MemoryProvider):
                 raise ScopeDeleteRecoveryRequiredError()
             if self.client is None:
                 self.client = build_client(self.cfg)
-                self._resources.callback(self.client.close)
+                resources.callback(self.client.close)
+                self._owned_client = self.client
             store = QdrantStore(self.client, self.cfg, self.embedder)
             self.store = store
             original_client = store.client
@@ -149,7 +331,7 @@ class QdrantMemoryProvider(MemoryProvider):
                 if store.client is not original_client:
                     store.client.close()
 
-            self._resources.callback(close_replaced_client)
+            resources.callback(close_replaced_client)
             if pending_reset:
                 # Finish an explicitly authorized reset before recovery can replay rows.
                 try:
@@ -189,15 +371,58 @@ class QdrantMemoryProvider(MemoryProvider):
                     self._scopes[session_id].user_id, self.default_scope.agent_id
                 )
                 self._native_owner.start()
-        except Exception:
-            if self._native_owner is not None:
-                self._native_owner.close()
-            self._resources.close()
+            with self._condition:
+                if self._shutdown_requested:
+                    raise RuntimeError("Provider initialization was stopped")
+                worker = spawn_context_thread(self._work, name="qdrant-memory-writer")
+                self._worker = worker
+            worker.start()
+            with self._condition:
+                if self._shutdown_requested:
+                    self._state = "STOPPING"
+                    self._accepting = False
+                    self._stop_at = time.monotonic()
+                else:
+                    # Admit events and the recovery job in the same transition. A host
+                    # callback can never observe READY without a live worker.
+                    self._jobs.append((copy_context(), "recover", None))
+                    self._accepting = True
+                    self._state = "READY"
+                self._condition.notify_all()
+                stopped_during_init = self._state == "STOPPING"
+            if stopped_during_init:
+                raise RuntimeError("Provider initialization was stopped")
+        except BaseException as exc:
+            with self._condition:
+                stopped = self._shutdown_requested
+                self._accepting = False
+                self._stop_at = time.monotonic()
+                if stopped:
+                    self._state = "STOPPING"
+                else:
+                    self._state = "FAILED"
+                    self._failure_code = (
+                        "writer_busy"
+                        if isinstance(exc, WriterBusyError)
+                        else "initialization_failed"
+                    )
+                    self._failure_type = type(exc).__name__
+                worker = self._worker
+                self._condition.notify_all()
+            worker_started = worker is not None and worker.ident is not None
+            if worker_started:
+                worker.join()
+            if not (stopped and worker_started):
+                self._dispose_resources(
+                    final_state="STOPPED" if stopped else "FAILED",
+                    failure_code="writer_busy"
+                    if isinstance(exc, WriterBusyError)
+                    else "initialization_failed",
+                    failure_type=type(exc).__name__,
+                )
+            if stopped:
+                raise RuntimeError("Provider initialization was stopped") from None
             raise
-        self._accepting = True
-        self._worker = spawn_context_thread(self._work, name="qdrant-memory-writer")
-        self._worker.start()
-        self._queue("recover", None)
 
     def _queue(self, kind, value):
         """Queue a job with the caller's context while work admission remains open."""
@@ -211,6 +436,11 @@ class QdrantMemoryProvider(MemoryProvider):
     def _work(self):
         """Drain context-bound jobs serially and close owned resources on exit."""
         try:
+            with self._condition:
+                while self._state == "INITIALIZING":
+                    self._condition.wait()
+                if self._state != "READY":
+                    return
             while True:
                 with self._condition:
                     while not self._jobs and self._accepting:
@@ -243,10 +473,18 @@ class QdrantMemoryProvider(MemoryProvider):
                         self._busy = False
                         self._condition.notify_all()
         finally:
-            if self._native_owner is not None:
-                self._native_owner.close()
-            with self.runtime.lock:
-                self._resources.close()
+            with self._condition:
+                state = self._state
+            if state == "STOPPING":
+                self._dispose_resources(final_state="STOPPED")
+            elif state == "READY":
+                # A writer that exits unexpectedly must not leave a live provider
+                # advertising that it can persist events.
+                self._dispose_resources(
+                    final_state="FAILED",
+                    failure_code="worker_stopped",
+                    failure_type="RuntimeError",
+                )
 
     def _stop_requested(self):
         """Check the drain deadline between durable work phases."""
@@ -282,6 +520,7 @@ class QdrantMemoryProvider(MemoryProvider):
     def _scope(self, session_id, author=None):
         """Authorize the current principal or a captured completed human turn."""
         with self._condition:
+            self._require_ready_locked()
             scope = self._scopes.get(session_id, self.default_scope)
             if author is not None:
                 if author.get("id") and not author.get("is_bot"):
@@ -293,8 +532,12 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def on_turn_start(self, turn_number, message, **kwargs):
         """Update author scope and invalidate recall without performing service I/O."""
-        session = kwargs.get("session_id") or self.session_id
         with self._condition:
+            # This hook only updates in-memory attribution/cache state. It can be
+            # ignored while unavailable; subsequent durable hooks fail explicitly.
+            if self._state != "READY" or not self._accepting:
+                return
+            session = kwargs.get("session_id") or self.session_id
             self._turns[session] = turn_number
             author = kwargs.get("author_id")
             unattributed = kwargs.get("author_is_bot") or (
@@ -328,6 +571,8 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def _remember_author(self, session, user_id, explicit=False):
         """Persist attribution before admission; a failed write revokes active recall."""
+        with self._condition:
+            self._require_ready_locked()
         try:
             value = self.ledger.record_session_author(
                 session,
@@ -347,6 +592,7 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def _transcript_scope(self, session_id=None):
         """Authorize aggregate extraction only from a proven single-principal history."""
+        self._require_ready_locked()
         session = self.session_id if session_id is None else session_id
         value = self._provenance.get(session)
         if (
@@ -363,8 +609,7 @@ class QdrantMemoryProvider(MemoryProvider):
     def _event(self, value):
         """Persist a small immutable event transaction before enqueueing expensive work."""
         with self._condition:
-            if not self._accepting:
-                raise RuntimeError("Provider is shut down")
+            self._require_ready_locked()
             if value["kind"] in {"session_end", "checkpoint"}:
                 scope = self._transcript_scope(value["session_id"])
                 if value["kind"] == "session_end" and scope is None:
@@ -393,6 +638,7 @@ class QdrantMemoryProvider(MemoryProvider):
     def _enqueue_event(self, value):
         """Queue an already-authorized durable event on the one existing worker."""
         with self._condition:
+            self._require_ready_locked()
             key = self.ledger.enqueue_event(value)
             # The event ID itself is stored only after hashing the immutable turn.
             row = self.ledger.row("events", key)
@@ -411,6 +657,8 @@ class QdrantMemoryProvider(MemoryProvider):
         Only the small ledger transaction is synchronous; no LLM or Qdrant call runs
         on the turn hook. Bot and non-primary turns do not automatically write memories.
         """
+        with self._condition:
+            self._require_ready_locked()
         if not self._primary or (turn_author and turn_author.get("is_bot")):
             return
         session = session_id or self.session_id
@@ -433,8 +681,10 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def queue_prefetch(self, query, *, session_id=""):
         """Invalidate old recall and queue a search tied to the session generation."""
-        session = session_id or self.session_id
         with self._condition:
+            if self._state != "READY" or not self._accepting:
+                return
+            session = session_id or self.session_id
             if session in self._blocked_sessions:
                 return
             generation = self._generations.get(session, 0) + 1
@@ -444,21 +694,33 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def prefetch(self, query, *, session_id=""):
         """Return private cached recall and optionally fresh, authorized shared data."""
-        if self._shared_recall is None:
-            return self._private_prefetch(query, session_id=session_id)
-        session = session_id or self.session_id
+        with self._condition:
+            if self._state != "READY" or not self._accepting:
+                return ""
+            shared_recall = self._shared_recall
+            session = session_id or self.session_id
+            if shared_recall is None:
+                scope = None
+                generation = None
+                revision = None
+                native = None
+            else:
+                if session in self._blocked_sessions:
+                    return ""
+                scope = self._scope(session)
+                generation = self._generations.get(session, 0)
+                revision = self.runtime.mutation_revision
+                native = self._native_owner
+        if shared_recall is None:
+            return self._private_prefetch(query, session_id=session)
         with self._condition:
             if session in self._blocked_sessions:
                 return ""
-            scope = self._scope(session)
-            generation = self._generations.get(session, 0)
-            revision = self.runtime.mutation_revision
-            native = self._native_owner
         private = self._private_prefetch(query, session_id=session)
         rows = self._read_shared(
             query,
             session,
-            budget=self._shared_recall.settings.get("delivery_timeout_seconds", 0.05),
+            budget=shared_recall.settings.get("delivery_timeout_seconds", 0.05),
         )
         # Shared lookup can outlive a policy change. Reauthorize immediately
         # before delivery, without holding the lifecycle/worker condition.
@@ -479,22 +741,30 @@ class QdrantMemoryProvider(MemoryProvider):
                 return ""
         if rows:
             private = private[:2000]
-            return private + self._shared_recall.render(rows, max_chars=4000 - len(private))
+            return private + shared_recall.render(rows, max_chars=4000 - len(private))
         return private
 
     def _read_shared(self, query, session, *, budget=None):
         """Do not let profile credentials cross a trusted human/session boundary."""
         with self._condition:
             if (
-                self._shared_recall is None
+                self._state != "READY"
                 or not self._accepting
+                or self._shared_recall is None
                 or session in self._blocked_sessions
                 or self._scope(session).user_id != self.default_scope.user_id
             ):
                 return []
+            shared_recall = self._shared_recall
             scope = self._scope(session)
             generation = self._generations.get(session, 0)
-        rows = self._shared_recall.search(query, budget=budget)
+        try:
+            rows = shared_recall.search(query, budget=budget)
+        except RuntimeError:
+            with self._condition:
+                if self._state != "READY" or not self._accepting:
+                    return []
+            raise
         with self._condition:
             if (
                 not self._accepting
@@ -507,8 +777,10 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def _private_prefetch(self, query, *, session_id=""):
         """Authorize Native recall outside the condition, then recheck its state."""
-        session = session_id or self.session_id
         with self._condition:
+            if self._state != "READY" or not self._accepting:
+                return ""
+            session = session_id or self.session_id
             if session in self._blocked_sessions:
                 return ""
             self._cache_calls += 1
@@ -516,10 +788,22 @@ class QdrantMemoryProvider(MemoryProvider):
             scope = self._scopes.get(session, self.default_scope)
             generation = self._generations.get(session, 0)
             revision = self.runtime.mutation_revision if native is not None else None
-        if native is not None and not native.can_read(scope):
-            return ""
+        if native is not None:
+            try:
+                if not native.can_read(scope):
+                    return ""
+            except Exception:
+                with self._condition:
+                    if self._state != "READY" or not self._accepting:
+                        return ""
+                raise
         with self._condition:
-            if session in self._blocked_sessions or self._native_owner is not native:
+            if (
+                self._state != "READY"
+                or not self._accepting
+                or session in self._blocked_sessions
+                or self._native_owner is not native
+            ):
                 return ""
             if native is not None and (
                 not self._accepting
@@ -553,6 +837,8 @@ class QdrantMemoryProvider(MemoryProvider):
         Continuations retain parent denial and quarantine unless explicitly reset.
         """
         with self._condition:
+            if self._state != "READY" or not self._accepting:
+                return
             parent = kwargs.get("parent_session_id")
             reset = kwargs.get("reset")
             continuation = parent and parent != new_session_id and not reset
@@ -612,7 +898,10 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def on_session_end(self, messages):
         """Persist supplementary messages only for a proven single-author transcript."""
-        if self._primary and messages:
+        with self._condition:
+            self._require_ready_locked()
+            primary = self._primary
+        if primary and messages:
             self._event(
                 {
                     "kind": "session_end",
@@ -631,6 +920,8 @@ class QdrantMemoryProvider(MemoryProvider):
         Mixed or unknown history uses a neutral scope marker so archived evidence
         is never attributed to the latest participant without provenance.
         """
+        with self._condition:
+            self._require_ready_locked()
         self._event(
             {
                 "kind": "checkpoint",
@@ -649,7 +940,10 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def on_memory_write(self, action, target, content, metadata=None):
         """Persist builtin notifications for exact previous-content mirroring."""
-        if not self._primary:
+        with self._condition:
+            self._require_ready_locked()
+            primary = self._primary
+        if not primary:
             return
         if action not in {"add", "replace", "remove"} or target not in {"memory", "user"}:
             raise ValueError("Unsupported builtin memory notification")
@@ -688,12 +982,25 @@ class QdrantMemoryProvider(MemoryProvider):
 
     def handle_tool_call(self, tool_name, args, **kwargs):
         """Dispatch a scoped tool and serialize its result or sanitized failure."""
-        session = kwargs.get("session_id") or self.session_id
+        with self._condition:
+            if self._state != "READY" or not self._accepting:
+                error = self._unavailable_error_locked()
+                return json.dumps(
+                    {
+                        "error": {
+                            "code": error.code,
+                            "message": str(error),
+                            "retryable": error.retryable,
+                        }
+                    },
+                    ensure_ascii=False,
+                )
+            runtime = self.runtime
+            session = kwargs.get("session_id") or self.session_id
         try:
-            with self.runtime.lock:
+            with runtime.lock:
                 with self._condition:
-                    if not self._accepting:
-                        raise RuntimeError("Provider is shut down")
+                    self._require_ready_locked()
                 if self._native_owner is not None:
                     # The Owner grant is the only authority in Native mode. Another
                     # identity is denied instead of falling back to the private local
@@ -713,6 +1020,17 @@ class QdrantMemoryProvider(MemoryProvider):
             ):
                 result["shared"] = self._read_shared(args["query"], session)
             return json.dumps(result, ensure_ascii=False)
+        except ProviderUnavailableError as exc:
+            return json.dumps(
+                {
+                    "error": {
+                        "code": exc.code,
+                        "message": str(exc),
+                        "retryable": exc.retryable,
+                    }
+                },
+                ensure_ascii=False,
+            )
         except Exception as exc:
             return json.dumps({"error": safe_error(exc)})
 
@@ -728,6 +1046,8 @@ class QdrantMemoryProvider(MemoryProvider):
         """Wait for queued and active work, returning False on timeout."""
         deadline = time.monotonic() + timeout
         with self._condition:
+            if self._state != "READY" or not self._accepting:
+                return False
             while self._jobs or self._busy:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -736,18 +1056,68 @@ class QdrantMemoryProvider(MemoryProvider):
             return True
 
     def shutdown(self):
-        """Bound queued drain and retain ownership until an active request finishes."""
-        if self._shared_recall is not None:
-            self._shared_recall.close()
+        """Stop admission, bound draining and retain resources until work exits."""
+        cleanup_on_caller = False
         with self._condition:
-            self._accepting = False
-            timeout = self.cfg["write"]["shutdown_timeout_seconds"]
-            self._stop_at = time.monotonic() + timeout
-            self._jobs = deque(job for job in self._jobs if job[1] != "prefetch")
+            if self._state == "NEW":
+                self._state = "STOPPED"
+                self._condition.notify_all()
+                return
+            if self._state == "STOPPED":
+                return
+            if self._state in {"INITIALIZING", "STOPPING"}:
+                if self._state == "INITIALIZING":
+                    self._shutdown_requested = True
+                    self._condition.notify_all()
+                deadline = time.monotonic() + 30.0
+                while self._state in {"INITIALIZING", "STOPPING"}:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError(
+                            "Provider did not finish shutdown before deadline; resources remain owned"
+                        )
+                    self._condition.wait(remaining)
+                if self._state == "STOPPED":
+                    return
+            if self._state == "FAILED":
+                deadline = time.monotonic() + 30.0
+                while not self._cleanup_complete and (
+                    not self._cleanup_started or self._cleanup_in_progress
+                ):
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError(
+                            "Initialization cleanup did not finish before shutdown deadline"
+                        )
+                    self._condition.wait(remaining)
+                if not self._cleanup_complete:
+                    raise RuntimeError(
+                        "Provider cleanup failed; writer ownership may remain active"
+                    )
+                return
+            if self._state == "STOPPED":
+                return
+            if self._state == "READY":
+                self._state = "STOPPING"
+                self._accepting = False
+                timeout = self.cfg["write"]["shutdown_timeout_seconds"]
+                self._stop_at = time.monotonic() + timeout
+                self._jobs = deque(job for job in self._jobs if job[1] != "prefetch")
+                cleanup_on_caller = self._worker is None
+            else:
+                raise RuntimeError(f"Cannot shut down provider in state {self._state}")
+            worker = self._worker
             self._condition.notify_all()
-        if self._worker:
-            self._worker.join(timeout=timeout)
-            if self._worker.is_alive():
+
+        if cleanup_on_caller:
+            self._dispose_resources(final_state="STOPPED")
+        elif worker is not None:
+            worker.join(timeout=timeout)
+            if worker.is_alive():
                 with self._condition:
                     self._jobs.clear()
+                    self._condition.notify_all()
                 raise TimeoutError("Shutdown deadline exceeded; worker retains writer ownership")
+        with self._condition:
+            if self._state == "FAILED" and not self._cleanup_complete:
+                raise RuntimeError("Provider cleanup failed; writer ownership may remain active")
