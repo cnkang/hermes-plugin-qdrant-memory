@@ -66,7 +66,7 @@ def load_native_settings(home, value):
 class NativeOwner:
     """Share one host-owned Runtime; never acquire a second store, lease or Ledger."""
 
-    def __init__(self, runtime, settings, user_id):
+    def __init__(self, runtime, settings, user_id, *, ready_check=None):
         """Recover requests and resolve the explicitly selected Native private grant."""
         from contextvars import copy_context
 
@@ -84,6 +84,7 @@ class NativeOwner:
             grant_loader=lambda: load_policy(settings["policy"]),
             admission_check=admission if binding is not None else None,
             execution_context=copy_context(),
+            ready_check=ready_check,
         )
         grant = self.owner.authenticate(secret(settings["private_token_env"]))
         if (

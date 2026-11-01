@@ -161,13 +161,21 @@ class SharedOwner:
     """Authorize every operation and coordinate durable plans under the Runtime lock."""
 
     def __init__(
-        self, runtime, grants, *, admission_check=None, grant_loader=None, execution_context=None
+        self,
+        runtime,
+        grants,
+        *,
+        admission_check=None,
+        grant_loader=None,
+        execution_context=None,
+        ready_check=None,
     ):
         """Recover prepared requests before accepting any new client work."""
         self.runtime, self.grants = runtime, grants
         self.admission_check = admission_check
         self.grant_loader = grant_loader
         self.execution_context = execution_context
+        self.ready_check = ready_check
         self.blocked = False
         ledger = runtime.ledger
         with ledger.lock, ledger.db:
@@ -275,6 +283,8 @@ class SharedOwner:
         try:
             with self.runtime.lock:
                 grant = self.authenticate(token)
+                if self.ready_check is not None:
+                    self.ready_check()
                 result = self._call(grant, name, args)
             outcome = "allow"
             return result

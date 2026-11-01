@@ -6,6 +6,7 @@ import pytest
 from qdrant_client import QdrantClient
 
 from qdrant_memory import create_provider
+from qdrant_memory import provider as provider_module
 from qdrant_memory.ledger import Ledger
 from qdrant_memory.migration import map_record, migrate
 from qdrant_memory.models import Scope
@@ -81,11 +82,18 @@ def test_collector_registers_task_on_created_runtime_context(monkeypatch):
 def test_initialization_releases_resources_after_setup_failure(
     tmp_path, monkeypatch, failure_stage
 ):
-    """Verify initialization releases resources after setup failure."""
+    """Failed attempts close owned resources and retain injected clients for retry."""
     closed = []
     embedder = Embedder()
     embedder.close = lambda: closed.append("embedder")
     client = QdrantClient(path=str(tmp_path / "store"))
+    close_client = client.close
+
+    def tracked_client_close():
+        closed.append("client")
+        close_client()
+
+    client.close = tracked_client_close
     p = QdrantMemoryProvider(
         SimpleNamespace(llm=LLM()), embedder=embedder, client=client, overrides=config()
     )
@@ -103,21 +111,29 @@ def test_initialization_releases_resources_after_setup_failure(
         ledger.close = close
         return ledger
 
-    monkeypatch.setattr("qdrant_memory.provider.Ledger", tracked_ledger)
+    original_failure = getattr(provider_module, failure_stage)
 
     def fail(*args, **kwargs):
         """Inject a deterministic failure at the exercised boundary."""
         raise RuntimeError("setup failed")
 
-    monkeypatch.setattr("qdrant_memory.provider." + failure_stage, fail)
+    if failure_stage == "Runtime":
+        monkeypatch.setattr(provider_module, "Ledger", tracked_ledger)
+    monkeypatch.setattr(provider_module, failure_stage, fail)
     with pytest.raises(RuntimeError, match="setup failed"):
         p.initialize("session", hermes_home=str(tmp_path))
-    assert "embedder" in closed
-    if failure_stage == "Runtime":
-        assert "ledger" in closed
-    # Local persistence can be reopened only if the original client was closed.
-    reopened = QdrantClient(path=str(tmp_path / "store"))
-    reopened.close()
+    assert p.lifecycle_state == "FAILED"
+    assert closed == (["ledger"] if failure_stage == "Runtime" else [])
+
+    monkeypatch.setattr(provider_module, failure_stage, original_failure)
+    if failure_stage == "Ledger":
+        monkeypatch.setattr(provider_module, "Ledger", tracked_ledger)
+    p.initialize("session", hermes_home=str(tmp_path))
+    assert p.embedder is embedder
+    assert p.client is client
+    p.shutdown()
+    assert closed.count("embedder") == 1
+    assert closed.count("client") == 1
 
 
 def test_retrieval_evaluation_handles_no_results():

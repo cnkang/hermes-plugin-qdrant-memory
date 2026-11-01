@@ -197,7 +197,7 @@ def test_configuration_failure_leaves_a_closed_diagnosable_provider(tmp_path, mo
 
 
 def test_collection_failure_releases_lease_and_injected_client(tmp_path, monkeypatch):
-    """A post-lease setup exception closes the client and releases writer ownership."""
+    """A failed attempt releases its lease but preserves the caller-injected client."""
     client = QdrantClient(":memory:")
     closed = Event()
     close = client.close
@@ -222,10 +222,15 @@ def test_collection_failure_releases_lease_and_injected_client(tmp_path, monkeyp
         provider.initialize("session", hermes_home=str(tmp_path))
 
     assert provider.lifecycle_state == "FAILED"
-    assert closed.is_set()
+    assert not closed.is_set()
+    assert provider.client is client
     assert not hasattr(provider, "runtime")
     lease = WriterLease.for_config(tmp_path, load_config(str(tmp_path), config()))
     lease.close()
+    provider.shutdown()
+    assert not closed.is_set()
+    client.close()
+    assert closed.is_set()
 
 
 def test_worker_start_failure_releases_every_resource(tmp_path, monkeypatch):

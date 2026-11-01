@@ -10,7 +10,7 @@ from qdrant_client import QdrantClient
 import qdrant_memory.ledger as ledger_module
 import qdrant_memory.provider as provider_module
 from qdrant_memory.config import load_config
-from qdrant_memory.ownership import WriterLease
+from qdrant_memory.ownership import WriterBusyError, WriterLease
 from qdrant_memory.provider import ProviderUnavailableError, QdrantMemoryProvider
 from qdrant_memory.qdrant_store import CollectionCompatibilityError
 from tests.helpers import LLM, Embedder, config
@@ -68,7 +68,7 @@ OWNER_SETTINGS = {
     ],
 )
 def test_initialization_faults_leave_a_closed_diagnosable_provider(tmp_path, monkeypatch, stage):
-    """Every injected setup failure closes owned resources and permits safe retry."""
+    """Setup failures close attempt-owned resources and keep injected inputs retryable."""
     import qdrant_memory.native_owner as native_owner_module
 
     embedder = CloseTrackingEmbedder()
@@ -216,14 +216,16 @@ def test_initialization_faults_leave_a_closed_diagnosable_provider(tmp_path, mon
         provider.on_session_end([{"role": "user", "content": "private"}])
     with pytest.raises(ProviderUnavailableError):
         provider.on_pre_compress([], require_checkpoint=True)
+    assert provider.on_pre_compress([], require_checkpoint=False) == ""
     tool_error = json.loads(provider.handle_tool_call("qdrant_memory_add", {"text": "x"}))["error"]
     assert tool_error["code"] == "initialization_failed"
+    assert tool_error["type"] == "ProviderUnavailableError"
     assert f"fault-injection:{stage}" not in json.dumps(tool_error)
 
     if client is not None:
-        assert client_close_calls == ["closed"]
+        assert client_close_calls == []
     if stage != "embedder_factory":
-        assert embedder.close_calls == 1
+        assert embedder.close_calls == 0
     if stage == "ledger_partial_setup":
         assert len(connections) == 1
         assert connections[0].close_calls == 1
@@ -232,8 +234,130 @@ def test_initialization_faults_leave_a_closed_diagnosable_provider(tmp_path, mon
 
     provider.shutdown()
     provider.shutdown()
+    assert provider.lifecycle_state == "FAILED"
+    if client is not None:
+        assert client_close_calls == []
+        client.close()
+        assert client_close_calls == ["closed"]
+    if stage != "embedder_factory":
+        assert embedder.close_calls == 0
+        embedder.close()
+        assert embedder.close_calls == 1
     lease = WriterLease.for_config(tmp_path, load_config(str(tmp_path), config()))
     lease.close()
+
+
+def test_failed_initialization_can_retry_with_injected_resources(tmp_path, monkeypatch):
+    """A failed attempt keeps caller-injected client and embedder usable for retry."""
+    embedder = CloseTrackingEmbedder()
+    client = QdrantClient(":memory:")
+    client_close_calls = []
+    close = client.close
+
+    def tracked_close():
+        client_close_calls.append("closed")
+        close()
+
+    monkeypatch.setattr(client, "close", tracked_close)
+    provider = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()),
+        embedder=embedder,
+        client=client,
+        overrides=config(),
+    )
+    initialize = provider_module.QdrantStore.initialize
+    attempts = 0
+
+    def fail_once(store):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("transient collection inspection failure")
+        return initialize(store)
+
+    monkeypatch.setattr(provider_module.QdrantStore, "initialize", fail_once)
+    with pytest.raises(RuntimeError, match="transient collection inspection failure"):
+        provider.initialize("retry-session", hermes_home=str(tmp_path))
+
+    assert provider.lifecycle_state == "FAILED"
+    assert provider.client is client
+    assert provider.embedder is embedder
+    assert client_close_calls == []
+    assert embedder.close_calls == 0
+
+    provider.initialize("retry-session", hermes_home=str(tmp_path))
+    provider.sync_turn("retry remains durable", "ack", session_id="retry-session")
+    assert provider.wait_idle()
+    provider.runtime.recover()
+    provider.runtime.recover()
+    assert provider.ledger.stats()["events"] == {"COMMITTED": 1}
+    assert provider.store.count() == 1
+    result = json.loads(
+        provider.handle_tool_call("qdrant_memory_search", {"query": "retry remains durable"})
+    )
+    assert [memory["text"] for memory in result["memories"]] == ["retry remains durable"]
+
+    provider.shutdown()
+    assert client_close_calls == ["closed"]
+    assert embedder.close_calls == 1
+
+
+def test_native_owner_close_failure_keeps_writer_lease_until_cleanup_retry(tmp_path, monkeypatch):
+    """A live Native Owner keeps its writer lease until a retry closes it."""
+    import qdrant_memory.native_owner as native_owner_module
+
+    monkeypatch.setattr(
+        native_owner_module,
+        "load_native_settings",
+        lambda *_args, **_kwargs: OWNER_SETTINGS,
+    )
+    owners = []
+
+    class CloseFailsOnce:
+        def __init__(self, *_args, **_kwargs):
+            self.owner = SimpleNamespace(blocked=False)
+            self.scope = SimpleNamespace(user_id="hermes-user", agent_id=None)
+            self.close_calls = 0
+            owners.append(self)
+
+        def reauthorize_pending(self):
+            pass
+
+        def start(self):
+            pass
+
+        def close(self):
+            self.close_calls += 1
+            if self.close_calls == 1:
+                raise OSError("listener still active")
+
+    monkeypatch.setattr(native_owner_module, "NativeOwner", CloseFailsOnce)
+    provider = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()), embedder=Embedder(), overrides=config()
+    )
+    provider.initialize("owner-session", hermes_home=str(tmp_path))
+
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        provider.shutdown()
+    assert provider.lifecycle_state == "FAILED"
+    assert provider._cleanup_complete is False
+    assert provider._native_owner is owners[0]
+    assert provider._resources is not None
+    assert owners[0].close_calls == 1
+
+    contender = QdrantMemoryProvider(embedder=Embedder(), overrides=config())
+    try:
+        with pytest.raises(WriterBusyError):
+            contender.initialize("contender", hermes_home=str(tmp_path))
+    finally:
+        contender.shutdown()
+
+    provider.shutdown()
+    assert provider.lifecycle_state == "FAILED"
+    assert owners[0].close_calls == 2
+
+    replacement_lease = WriterLease.for_config(tmp_path, load_config(str(tmp_path), config()))
+    replacement_lease.close()
 
 
 def test_vector_dimension_mismatch_during_provider_init_releases_ownership(tmp_path):
@@ -260,7 +384,8 @@ def test_vector_dimension_mismatch_during_provider_init_releases_ownership(tmp_p
 
     assert second.lifecycle_state == "FAILED"
     assert not hasattr(second, "runtime")
-    assert second.client is None
+    assert second.client is second_client
     second.shutdown()
+    second_client.close()
     lease = WriterLease.for_config(tmp_path, load_config(str(tmp_path), config()))
     lease.close()
