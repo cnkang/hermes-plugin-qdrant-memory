@@ -166,7 +166,7 @@ def test_junit_marks_every_non_pass_case(tmp_path):
         profile="quick",
         seed=1,
         commit_sha="a" * 40,
-        runtime_version="0.5.3",
+        runtime_version="0.5.4",
         mcp_version="2.0.0",
         platform="Linux",
         architecture="x86_64",

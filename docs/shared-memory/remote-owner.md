@@ -1,12 +1,12 @@
-# HTTPS MCP Owner (Runtime 0.5.3)
+# HTTPS MCP Owner (Runtime 0.5.4)
 
-Install Runtime 0.5.3 with the `[remote]` extra in a private environment:
+Install Runtime 0.5.4 with the `[remote]` extra in a private environment:
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.3/)
-for Runtime 0.5.3 availability before running the package command.
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.4/)
+for Runtime 0.5.4 availability before running the package command.
 
 ```sh
-python -m pip install 'hermes-plugin-qdrant-memory[remote]==0.5.3'
+python -m pip install 'hermes-plugin-qdrant-memory[remote]==0.5.4'
 ```
 
 The commands include `remote-serve`, `remote-mcp`, `remote-event` and
