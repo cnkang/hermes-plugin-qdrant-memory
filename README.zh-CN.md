@@ -25,11 +25,12 @@ Runtime 0.5.0 新增可选启用的 Native Owner 提取、设备授权和 HTTPS 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.5.4** 保留可显式启用的本地认证共享 owner，以及用于明确共享记忆的 stdio
-> 桥接；同时保留 0.3.0 的可选离线 CPU embedding、受信初始化与 MCP Python SDK 1.x/2.x 支持。
-> 显式写入继续按规范化文本去重，不调用 LLM。
-> 本补丁修复启动失败后的半初始化 Provider、保护必需的 checkpoint，并在清理完成前保留
-> WriterLease。本版本不改变 schema 与 collection 标识。本指南选择 Runtime 0.5.4。
+> **Runtime 0.5.4** 是可维护性版本。它保留可显式启用的本地认证共享 owner 与用于明确共享
+> 记忆的 stdio 桥接，并保留 0.3.0 的可选离线 CPU embedding、受信初始化与
+> MCP Python SDK 1.x/2.x 支持。显式写入继续按规范化文本去重，不调用 LLM。
+> 它保持 0.5.3 的保证：重启中断的写入可用同一请求标识重放；启动失败后的半初始化
+> Provider 会被清理；必需的 checkpoint 受保护；清理完成前始终保留 WriterLease。
+> 本版本不改变 schema 与 collection 标识。本指南选择 Runtime 0.5.4。
 > 安装前请在[PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.4/)
 > 核实该版本是否已公开。
 > 通用 MCP 发行包和托管启动器各自选择精确的 Runtime 依赖，分别发布。

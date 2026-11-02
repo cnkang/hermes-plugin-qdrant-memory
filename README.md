@@ -24,14 +24,14 @@ Runtime 0.5.0 adds an opt-in authenticated local shared owner and stdio bridge. 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.5.4** keeps the opt-in authenticated local shared owner and the stdio
-> bridge for explicit shared memory. It keeps the optional offline CPU embedding,
-> trusted setup and MCP Python SDK 1.x/2.x support from 0.3.0.
+> **Runtime 0.5.4** is a maintainability release. It keeps the opt-in authenticated
+> local shared owner and the stdio bridge for explicit shared memory, the optional
+> offline CPU embedding, trusted setup and MCP Python SDK 1.x/2.x support from 0.3.0.
 > Explicit writes retain canonical-text deduplication without an LLM.
-> This patch makes a restart-interrupted write replayable with the same request
-> identifier. This patch fixes partially initialized providers after startup failures,
-> protects required checkpoints, and preserves WriterLease ownership through cleanup.
-> It changes no schema or collection identity. This guide selects Runtime 0.5.4.
+> It preserves the 0.5.3 guarantees: a restart-interrupted write replays with the same
+> request identifier, a partially initialized provider is cleaned up after a startup
+> failure, required checkpoints stay protected, and WriterLease ownership survives
+> cleanup. It changes no schema or collection identity. This guide selects Runtime 0.5.4.
 > Check its availability on
 > [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.4/) before installation.
 > The generic MCP distribution and managed launcher select their own exact Runtime
