@@ -494,7 +494,7 @@ class SharedOwner:
             "source_version": "",
         }, {"id": identifier, "action": "ADD", "version": version}
 
-    def _delete_plan(self, grant, scope, identifier, old):
+    def _delete_plan(self, scope, identifier, old):
         """Plan the delete fence for one already version-checked record."""
         source_id = self.runtime.ledger.delete_fence_source(scope)
         source_version = now()
@@ -515,7 +515,7 @@ class SharedOwner:
         if old.payload["version"] != args["expected_version"]:
             raise SharedConflictError("Stale memory version")
         if name.endswith("delete"):
-            return self._delete_plan(grant, scope, identifier, old)
+            return self._delete_plan(scope, identifier, old)
         if not normalize(args["text"]):
             raise ValueError("Memory text must be nonempty")
         version = str(uuid.uuid4())  # Opaque revision avoids delete/recreate ABA conflicts.
