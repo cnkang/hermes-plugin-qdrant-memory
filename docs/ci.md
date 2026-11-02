@@ -8,47 +8,32 @@ checks the same frozen snapshot used by the security job, including Dependabot
 PRs. Resolving `.[local]` alone does not validate that snapshot. All CPU lanes
 also run `pip check` after installing their test dependencies.
 
-FastEmbed 0.9.0 declares Pillow below 13, while Pillow 12.3.0 has security
-advisories fixed in 13.0.0. Until upstream
-[fastembed#830](https://github.com/qdrant/fastembed/pull/830) is released, CI builds
-`0.9.0+qm.pillow13` with `scripts/build_fastembed_compat.py`. The builder downloads
-the official 0.9.0 wheel over HTTPS. It checks the fixed SHA-256 of the wheel.
-Then it changes only distribution metadata: the local version, the Pillow upper
-bound to `<14`, the provenance and the wheel RECORD. Inference files, license and
-the Hub `<2` constraint stay unchanged. The wheel is deterministic across Python/OS
-versions, and its output hash is pinned in the CPU snapshot. `==0.9.0` accepts
-this explicitly identified local build under PEP 440. No official package is
-republished.
+FastEmbed 0.9.1 includes upstream support for Pillow 13, which contains fixes for
+advisories in Pillow 12.3.0. The optional CPU snapshot pins the official 0.9.1
+wheel hashes. CI installs that package directly, requires Pillow 13.0.0, and
+runs `pip check`; no local metadata patch or compatibility wheel is needed.
+The provider accepts exactly FastEmbed 0.9.1, and its pipeline identity includes
+that pinned backend version.
 
-All three CPU CI lanes build it. They install with `--find-links .ci-wheels` and
-require Pillow 13.0.0 and the exact compatibility version. They run `pip check`
-and the existing contracts: the real offline CPU model, CRUD, restart, retrieval
-and MCP.
-The Snyk dependency job installs and scans the same hash-checked snapshot on
-`main`. Hub stays at
-1.33.0: upgrading it to 2 is a separate compatibility change. The runtime only
-accepts the exact official or temporary version, never arbitrary local builds.
-Its inference fingerprint stays at the official 0.9.0 identity because the
-verified Python/model bytes are unchanged. Real inference acceptance is still
-required before merge.
+All three CPU CI lanes run the provider contracts and real offline CPU model
+acceptance, including CRUD, restart, retrieval and MCP. The Linux Python 3.11
+security job installs and scans the same hash-checked snapshot on `main`. Hub
+stays at 1.33.0: upgrading it to 2 is a separate compatibility change.
 
 For an equivalent disposable local check:
 
 ```sh
-python scripts/build_fastembed_compat.py --output-dir .ci-wheels --check-lock requirements-local.txt
-python -m pip install --require-hashes --only-binary=:all: --find-links .ci-wheels -r requirements-local.txt
-python -m pip install --only-binary=:all: --find-links .ci-wheels '.[mcp,local]' 'Pillow==13.0.0'
+python -m pip install --require-hashes --only-binary=:all: -r requirements-local.txt
+python -m pip install --only-binary=:all: '.[mcp,local]' 'Pillow==13.0.0' 'pytest>=8,<10'
 python -m pip check
 ```
 
-This is a temporary compatibility build, not a claim that every Pillow advisory
-is resolved. Security scans remain authoritative for their configured gate. Findings are not automatically ignored. Remove the builder, compatibility-version
-allowance, CI find-links and temporary lock hash together once an official
-FastEmbed release supports Pillow 13 and passes the same checks. Rebuild the full
-hash snapshot and review inference identity before upgrading FastEmbed.
+Security scans remain authoritative for their configured gate. Findings are not
+automatically ignored. The offline model acceptance continues to verify the
+prepared artifacts and real inference path.
 
-Pydantic 2.14.1 and pydantic-core 2.50.1 from dependency PR #72 remain included
-(the replacement for the closed #64 proposal).
+Dependency PR #111 advances the PR #72 pins to Pydantic 2.14.2 and
+pydantic-core 2.50.2 in the main and quality snapshots.
 Hash enforcement and dependency security scans are not bypassed.
 
 ## Host dependency overrides
