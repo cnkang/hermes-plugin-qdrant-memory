@@ -9,6 +9,7 @@ from .models import digest, now
 
 RESET_INTENTS_TABLE = "qdrant_reset_intents"
 SCOPE_DELETES_TABLE = "qdrant_scope_deletes"
+TABLE_EXISTS_QUERY = "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?"
 
 
 class ResetRecoveryRequiredError(ValueError):
@@ -26,7 +27,7 @@ def has_pending_reset(ledger):
     """Return whether this ledger destination has a durable reset intent."""
     with ledger.lock:
         exists = ledger.db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            TABLE_EXISTS_QUERY,
             (RESET_INTENTS_TABLE,),
         ).fetchone()
         if not exists:
@@ -47,7 +48,7 @@ def has_pending_reset_file(home, collection):
         return False
     with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as db:
         exists = db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            TABLE_EXISTS_QUERY,
             (RESET_INTENTS_TABLE,),
         ).fetchone()
         if not exists:
@@ -214,7 +215,7 @@ def _scope_deletes_table_exists(db):
     """Return whether a database already records scoped-deletion intents."""
     return (
         db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            TABLE_EXISTS_QUERY,
             (SCOPE_DELETES_TABLE,),
         ).fetchone()
         is not None
