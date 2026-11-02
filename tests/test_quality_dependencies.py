@@ -17,7 +17,7 @@ def test_quality_lock_covers_runtime_remote_and_installer_requirements():
     for block in re.split(r"(?m)(?=^[A-Za-z0-9])", text):
         if not block.strip() or block.lstrip().startswith("#"):
             continue
-        match = re.match(r"([A-Za-z0-9_.-]+)==([^\s;\\]+)", block)
+        match = re.match(r"([A-Za-z0-9_.-]+)(?:\[[A-Za-z0-9_,.-]+\])?==([^\s;\\]+)", block)
         assert match is not None, block
         assert re.search(r"--hash=sha256:[0-9a-f]{64}\b", block), match[1]
         locked[canonicalize_name(match[1])] = match[2]

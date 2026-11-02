@@ -126,7 +126,14 @@ def test_closed_cpu_provider_cannot_run_another_inference(backend):
 
 
 @pytest.mark.parametrize(
-    "installed", [None, "unsupported-version", "0.9.0+other", "0.9.0+qm.pillow13.1"]
+    "installed",
+    [
+        None,
+        "unsupported-version",
+        "0.9.0+other",
+        "0.9.0+qm.pillow13",
+        "0.9.0+qm.pillow13.1",
+    ],
 )
 def test_optional_dependency_failure_is_actionable_without_provider_fallback(
     monkeypatch, installed
@@ -143,7 +150,7 @@ def test_optional_dependency_failure_is_actionable_without_provider_fallback(
         module.require_local_dependencies()
 
 
-@pytest.mark.parametrize("installed", [FASTEMBED_VERSION, "0.9.0+qm.pillow13"])
+@pytest.mark.parametrize("installed", [FASTEMBED_VERSION])
 def test_optional_dependency_loading_uses_the_pinned_backend(monkeypatch, installed):
     """Load only the supported optional backend and tokenizer classes."""
     embedding_class = object()
