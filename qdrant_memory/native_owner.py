@@ -9,15 +9,8 @@ from .shared_service import SharedOwner, load_policy, load_policy_document, make
 LOG = logging.getLogger(__name__)
 
 
-def load_native_settings(home, value):
-    """Validate an explicit local Owner role before opening any private resources."""
-    if value is None:
-        return None
-    if not isinstance(value, dict) or not isinstance(value.get("enabled", False), bool):
-        raise ValueError("Invalid native_owner configuration")
-    if not value.get("enabled", False):
-        return None
-    if set(value) - {
+_NATIVE_SETTING_KEYS = frozenset(
+    {
         "enabled",
         "policy",
         "port",
@@ -26,8 +19,12 @@ def load_native_settings(home, value):
         "remote_port",
         "allowed_hosts",
         "enable_lifecycle",
-    }:
-        raise ValueError("Unsupported native_owner setting")
+    }
+)
+
+
+def _checked_policy_path(home, value):
+    """Resolve an Owner policy document and confine it to its private home."""
     policy = Path(value.get("policy", ""))
     if not policy.is_absolute():
         policy = Path(home) / policy
@@ -36,9 +33,18 @@ def load_native_settings(home, value):
     policy = checked_absolute_path(policy.absolute())
     if not policy.is_relative_to(Path(home).resolve()):
         raise ValueError("Native Owner policy must be inside its private home")
-    port = value.get("port", 8765)
+    return policy
+
+
+def _loopback_port(port, message):
+    """Reject boolean, non-integer or out-of-range loopback port values."""
     if isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 65535:
-        raise ValueError("Invalid Native Owner loopback port")
+        raise ValueError(message)
+    return port
+
+
+def _check_credential_env_names(value):
+    """Require explicit credential environment names for every admitted token."""
     names = [value.get("private_token_env"), *value.get("shared_capture_token_envs", [])]
     import re
 
@@ -46,20 +52,46 @@ def load_native_settings(home, value):
         isinstance(name, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{2,63}", name) for name in names
     ):
         raise ValueError("Native Owner requires credential environment names")
-    document = load_policy_document(policy)
+
+
+def _check_lifecycle_settings(value):
+    """Require an explicit lifecycle flag and the protected gateway it depends on."""
     if not isinstance(value.get("enable_lifecycle", False), bool):
         raise ValueError("Native lifecycle flag must be boolean")
     if value.get("enable_lifecycle", False) and "remote_port" not in value:
         raise ValueError("Native lifecycle events require the protected MCP gateway")
-    if "remote_port" in value:
-        remote_port = value["remote_port"]
-        if (
-            isinstance(remote_port, bool)
-            or not isinstance(remote_port, int)
-            or not 0 <= remote_port <= 65535
-            or document.get("destination") is None
-        ):
-            raise ValueError("Native remote MCP requires a protected policy and a loopback port")
+
+
+def _check_remote_port(value, document):
+    """Require a protected destination before exposing a remote MCP loopback port."""
+    if "remote_port" not in value:
+        return
+    remote_port = value["remote_port"]
+    if (
+        isinstance(remote_port, bool)
+        or not isinstance(remote_port, int)
+        or not 0 <= remote_port <= 65535
+        or document.get("destination") is None
+    ):
+        raise ValueError("Native remote MCP requires a protected policy and a loopback port")
+
+
+def load_native_settings(home, value):
+    """Validate an explicit local Owner role before opening any private resources."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or not isinstance(value.get("enabled", False), bool):
+        raise ValueError("Invalid native_owner configuration")
+    if not value.get("enabled", False):
+        return None
+    if set(value) - _NATIVE_SETTING_KEYS:
+        raise ValueError("Unsupported native_owner setting")
+    policy = _checked_policy_path(home, value)
+    port = _loopback_port(value.get("port", 8765), "Invalid Native Owner loopback port")
+    _check_credential_env_names(value)
+    document = load_policy_document(policy)
+    _check_lifecycle_settings(value)
+    _check_remote_port(value, document)
     return {**value, "home": Path(home), "policy": policy, "document": document, "port": port}
 
 
@@ -194,58 +226,75 @@ class NativeOwner:
             # Includes neutral mixed-history checkpoints: no local write fallback
             # may bypass the sole Native grant. The Provider records unadmitted failure.
             raise PermissionError("Native Owner memory is limited to its owner scope")
-        names = [self.settings["private_token_env"]]
-        if include_shared and value["kind"] == "turn":
-            names += self.settings.get("shared_capture_token_envs", [])
         result = []
-        for index, name in enumerate(names):
+        for index, name in enumerate(self._capture_names(value, include_shared)):
             try:
-                grant = self.owner.authenticate(secret(name))
-                if not index and self.owner.scope(grant) != self.scope:
-                    raise PermissionError(
-                        "Native private identity changed; explicit reconfiguration required"
-                    )
-                if (
-                    grant["owner_id"] != self.scope.user_id
-                    or grant["permission"] != "write"
-                    or "logical_agent_id" not in grant
-                    or (
-                        index
-                        and (
-                            grant["visibility"] not in {"project", "shared"}
-                            or not grant.get("capture_rule_id")
-                        )
-                    )
-                ):
-                    raise PermissionError("Native automatic capture rule is unavailable")
+                grant = self._capture_grant(name, index)
             except PermissionError:
                 if not index:
                     raise
-                self.denied_captures += 1
-                self.owner.runtime.ledger.increment("native_shared_capture_denied")
-                LOG.info("native_shared_capture decision=deny rule_index=%d", index)
+                self._deny_capture(index)
                 continue
-            authority = {
-                key: grant[key]
-                for key in (
-                    "principal",
-                    "owner_id",
-                    "space_id",
-                    "visibility",
-                    "logical_agent_id",
-                    "device_id",
-                )
-            }
-            authority["capture_rule_id"] = grant.get("capture_rule_id", "private-default")
             result.append(
                 {
                     **value,
                     "source": "owner_lifecycle",
                     "scope": self.owner.scope(grant).as_dict(),
-                    "owner_authority": authority,
+                    "owner_authority": self._capture_authority(grant),
                 }
             )
         return result
+
+    def _capture_names(self, value, include_shared):
+        """List the credential names permitted to bind this turn."""
+        names = [self.settings["private_token_env"]]
+        if include_shared and value["kind"] == "turn":
+            names += self.settings.get("shared_capture_token_envs", [])
+        return names
+
+    def _capture_grant(self, name, index):
+        """Authenticate one capture rule and enforce its admission boundary."""
+        grant = self.owner.authenticate(secret(name))
+        if not index and self.owner.scope(grant) != self.scope:
+            raise PermissionError(
+                "Native private identity changed; explicit reconfiguration required"
+            )
+        if (
+            grant["owner_id"] != self.scope.user_id
+            or grant["permission"] != "write"
+            or "logical_agent_id" not in grant
+            or (
+                index
+                and (
+                    grant["visibility"] not in {"project", "shared"}
+                    or not grant.get("capture_rule_id")
+                )
+            )
+        ):
+            raise PermissionError("Native automatic capture rule is unavailable")
+        return grant
+
+    def _capture_authority(self, grant):
+        """Retain only the grant fields that scope later Owner records."""
+        authority = {
+            key: grant[key]
+            for key in (
+                "principal",
+                "owner_id",
+                "space_id",
+                "visibility",
+                "logical_agent_id",
+                "device_id",
+            )
+        }
+        authority["capture_rule_id"] = grant.get("capture_rule_id", "private-default")
+        return authority
+
+    def _deny_capture(self, index):
+        """Count and log one shared capture rule that cannot admit this turn."""
+        self.denied_captures += 1
+        self.owner.runtime.ledger.increment("native_shared_capture_denied")
+        LOG.info("native_shared_capture decision=deny rule_index=%d", index)
 
     def reauthorize_pending(self):
         """Recover same-scope input, cancelling foreign unadmitted input after retry."""

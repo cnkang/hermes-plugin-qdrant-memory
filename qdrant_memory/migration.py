@@ -209,6 +209,29 @@ def migrate(
     planned = durable_plan(
         runtime, records, source_type, source_identifier, source_sha256, progress
     )
+    manifest = _resume_or_create_manifest(
+        runtime, planned, source_type, source_identifier, source_sha256, resume, progress
+    )
+    try:
+        _prepare_pending_operations(runtime, manifest, retry_failed, progress)
+    finally:
+        report(progress, "Saving manifest counts")
+        update_manifest_counts(runtime, manifest, len(planned))
+    if verify:
+        _raise_if_unverified(runtime, manifest, progress)
+    return manifest
+
+
+def _backfill_content_hashes(manifest, planned):
+    """Supply schema-v1 manifests with content hashes from the source snapshot."""
+    for identifier, record in manifest["records"].items():
+        record.setdefault("content_hash", planned[identifier]["content_hash"])
+
+
+def _resume_or_create_manifest(
+    runtime, planned, source_type, source_identifier, source_sha256, resume, progress
+):
+    """Reuse a compatible manifest only while its source snapshot is unchanged."""
     report(progress, "Checking resume manifest")
     manifest = (
         resume_manifest(runtime, planned, source_type, source_identifier, source_sha256)
@@ -218,43 +241,46 @@ def migrate(
     if manifest is not None:
         # Schema-v1 manifests did not retain content hashes. The matching source
         # snapshot supplies them without storing the private source text.
-        for identifier, record in manifest["records"].items():
-            record.setdefault("content_hash", planned[identifier]["content_hash"])
+        _backfill_content_hashes(manifest, planned)
     if manifest is not None and stale_skips(runtime, manifest, progress):
         manifest = None
     if manifest is None:
         manifest = create_manifest(
             runtime, planned, source_type, source_identifier, source_sha256, progress
         )
-    try:
-        report(progress, "Preparing pending operations")
-        for record in manifest["records"].values():
-            key = record["operation_key"]
-            row = runtime.ledger.row("operations", key) if key else None
-            if key and row is None:
-                raise ValueError("Missing migration operation")
-            # Only retry this migration's operations, never unrelated provider writes.
-            if retry_failed and row and row["status"] == "FAILED":
-                runtime.ledger.reset_operation(key)
-        runtime.commit(
-            [r["operation_key"] for r in manifest["records"].values() if r["operation_key"]],
-            progress=progress,
-        )
-    finally:
-        report(progress, "Saving manifest counts")
-        update_manifest_counts(runtime, manifest, len(planned))
-    if verify and manifest["failed"]:
+    return manifest
+
+
+def _prepare_pending_operations(runtime, manifest, retry_failed, progress):
+    """Check every planned operation exists and optionally reset failed attempts."""
+    report(progress, "Preparing pending operations")
+    for record in manifest["records"].values():
+        key = record["operation_key"]
+        row = runtime.ledger.row("operations", key) if key else None
+        if key and row is None:
+            raise ValueError("Missing migration operation")
+        # Only retry this migration's operations, never unrelated provider writes.
+        if retry_failed and row and row["status"] == "FAILED":
+            runtime.ledger.reset_operation(key)
+    runtime.commit(
+        [r["operation_key"] for r in manifest["records"].values() if r["operation_key"]],
+        progress=progress,
+    )
+
+
+def _raise_if_unverified(runtime, manifest, progress):
+    """Report incomplete work before any superseded conflict during verification."""
+    if manifest["failed"]:
         raise MigrationIncompleteError(
             "Migration incomplete; rerun with --resume --retry-failed before reviewing "
             "superseded conflicts"
         )
-    if verify and manifest["superseded"]:
+    if manifest["superseded"]:
         raise MigrationSupersededError(
             "Migration contains superseded records; inspect manifest before starting a new migration"
         )
-    if verify and not verify_manifest(runtime.store, manifest, progress)["ok"]:
+    if not verify_manifest(runtime.store, manifest, progress)["ok"]:
         raise ValueError("Migration verification failed")
-    return manifest
 
 
 def stale_skips(runtime, manifest, progress=None):
@@ -410,6 +436,46 @@ def create_manifest(runtime, planned, source_type, source_identifier, source_sha
     return manifest
 
 
+def _record_operation_row(runtime, record):
+    """Read the durable operation row a manifest record points at, if any."""
+    key = record["operation_key"]
+    return runtime.ledger.row("operations", key) if key else None
+
+
+def _record_status(record, row):
+    """Derive a manifest status from a present, missing or absent operation key."""
+    if row:
+        return row["status"]
+    return "MISSING" if record["operation_key"] else "COMMITTED"
+
+
+def _count_acknowledged(counts, record):
+    """Count one acknowledged write or planned SKIP by its manifest action."""
+    counts[{"ADD": "added", "UPDATE": "updated", "SKIP": "skipped"}[record["action"]]] += 1
+    if record["action"] != "SKIP":
+        counts["applied"] += 1
+
+
+def _supersede_record(runtime, manifest, identifier, record, row, status):
+    """Downgrade unacknowledged work a later delete intent already supersedes."""
+    if status == "MISSING" or not _record_superseded(runtime, manifest, identifier, record):
+        return status
+    if row and status in {"PENDING", "FAILED"}:
+        runtime.ledger.finish("operations", record["operation_key"], "SUPERSEDED")
+    return "SUPERSEDED"
+
+
+def _count_settled(counts, status):
+    """Count one settled manifest record against the persisted totals."""
+    if status == "COMMITTED":
+        counts["processed"] += 1
+    elif status == "SUPERSEDED":
+        counts["processed"] += 1
+        counts["superseded"] += 1
+    elif status in {"FAILED", "MISSING"}:
+        counts["failed"] += 1
+
+
 def update_manifest_counts(runtime, manifest, expected):
     """Persist status counts and clear completion for incomplete work."""
     counts = {
@@ -422,32 +488,15 @@ def update_manifest_counts(runtime, manifest, expected):
         "failed": 0,
     }
     for identifier, record in manifest["records"].items():
-        key = record["operation_key"]
-        row = runtime.ledger.row("operations", key) if key else None
-        if row:
-            status = row["status"]
-        elif key:
-            status = "MISSING"
-        else:
-            status = "COMMITTED"
+        row = _record_operation_row(runtime, record)
+        status = _record_status(record, row)
         # These counts describe actual acknowledged writes or planned SKIPs,
         # even if a later user intent cancels the record's current target state.
         if status == "COMMITTED":
-            counts[{"ADD": "added", "UPDATE": "updated", "SKIP": "skipped"}[record["action"]]] += 1
-            if record["action"] != "SKIP":
-                counts["applied"] += 1
-        if status != "MISSING" and _record_superseded(runtime, manifest, identifier, record):
-            if row and status in {"PENDING", "FAILED"}:
-                runtime.ledger.finish("operations", key, "SUPERSEDED")
-            status = "SUPERSEDED"
+            _count_acknowledged(counts, record)
+        status = _supersede_record(runtime, manifest, identifier, record, row, status)
         record["status"] = status
-        if status == "COMMITTED":
-            counts["processed"] += 1
-        elif status == "SUPERSEDED":
-            counts["processed"] += 1
-            counts["superseded"] += 1
-        elif status in {"FAILED", "MISSING"}:
-            counts["failed"] += 1
+        _count_settled(counts, status)
     manifest.update(counts)
     manifest["completed_at"] = now() if counts["processed"] == expected else None
     runtime.ledger.save_manifest(manifest)
