@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.5
+
+- Upgrade the optional local CPU embedding backend to the upstream FastEmbed
+  0.9.1 release and remove the temporary metadata-only compatibility wheel
+  builder used for Pillow 13.
+- Keep the model revision, vector dimensions, collection schema, and embedding
+  behavior unchanged.
+
 ## 0.5.4
 
 - Internal maintainability release. Long provider, CLI, ledger, migration,
