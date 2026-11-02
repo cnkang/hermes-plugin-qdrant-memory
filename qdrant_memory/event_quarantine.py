@@ -41,24 +41,14 @@ def extraction_reason(exc):
     except ImportError:  # pragma: no cover - httpx ships with the remote extra
         httpx = None
     if httpx is not None:
-        if isinstance(exc, httpx.TimeoutException) or isinstance(exc, TimeoutError):
-            return "timeout"
-        if isinstance(exc, httpx.HTTPStatusError):
-            status = exc.response.status_code
-            if status in (401, 403):
-                return "authentication_rejected"
-            if status == 429:
-                return "rate_limited"
-            if status == 408:
-                return "timeout"
-            if status == 402:
-                return "provider_error"
-            if 400 <= status < 500:
-                return "output_invalid"
-            return "provider_error"
-        if isinstance(exc, (httpx.TransportError, ConnectionError)):
-            return "provider_unreachable"
-    status = getattr(exc, "status_code", None)
+        reason = _httpx_reason(exc, httpx)
+        if reason is not None:
+            return reason
+    return _status_attribute_reason(exc)
+
+
+def _known_status_reason(status):
+    """Return the stable code for a recognised HTTP status, if any."""
     if status in (401, 403):
         return "authentication_rejected"
     if status == 429:
@@ -67,13 +57,41 @@ def extraction_reason(exc):
         return "timeout"
     if status == 402:
         return "provider_error"
-    if isinstance(status, int) and 400 <= status < 500:
-        return "output_invalid"
-    if isinstance(status, int):
-        return "provider_error"
-    if isinstance(exc, (ValueError, KeyError, TypeError)):
-        return "output_invalid"
-    return "extraction_failed"
+    return None
+
+
+def _httpx_reason(exc, httpx):
+    """Map an httpx-specific failure, or ``None`` for an unrelated exception.
+
+    Timeouts are matched before the transport base class so a connect timeout
+    is not reported as an unreachable provider.
+    """
+    if isinstance(exc, httpx.TimeoutException) or isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return _known_status_reason(status) or _status_class_reason(status)
+    if isinstance(exc, (httpx.TransportError, ConnectionError)):
+        return "provider_unreachable"
+    return None
+
+
+def _status_class_reason(status):
+    """Classify an HTTP status that carries no dedicated reason code."""
+    return "output_invalid" if 400 <= status < 500 else "provider_error"
+
+
+def _status_attribute_reason(exc):
+    """Classify a failure that exposes ``status_code`` or is a plain error."""
+    status = getattr(exc, "status_code", None)
+    reason = _known_status_reason(status)
+    if reason is not None:
+        return reason
+    if not isinstance(status, int):
+        if isinstance(exc, (ValueError, KeyError, TypeError)):
+            return "output_invalid"
+        return "extraction_failed"
+    return _status_class_reason(status)
 
 
 def failure_record(exc):

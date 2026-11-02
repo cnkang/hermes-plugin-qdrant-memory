@@ -264,111 +264,10 @@ def main(argv=None):
     args = parser().parse_args(argv)
     try:
         args.home = Path(args.home).expanduser().absolute()
-        if args.qdrant_command in {"remote-call", "remote-event"}:
-            import anyio
-
-            from .remote_client import call_remote, control_event, send_event
-
-            raw = sys.stdin.buffer.read(131073)
-            if len(raw) > 131072:
-                raise ValueError("Owner request exceeds input limit")
-            value = json.loads(raw)
-            token = os.environ.get(args.token_env, "").strip()
-
-            async def request():
-                if args.qdrant_command == "remote-event":
-                    if args.action != "submit":
-                        if not isinstance(value, dict) or set(value) != {"event_id"}:
-                            raise ValueError("Lifecycle control requires only event_id")
-                        return await control_event(
-                            args.url, token, value["event_id"], args.action, ca_file=args.ca_file
-                        )
-                    return await send_event(args.url, token, value, ca_file=args.ca_file)
-                return await call_remote(args.url, token, args.tool, value, ca_file=args.ca_file)
-
-            try:
-                result = anyio.run(request)
-            except Exception as exc:
-                from .remote_client import remote_error
-
-                replay = "event_id" if args.qdrant_command == "remote-event" else "request_id"
-                cli.print_json({"error": remote_error(exc, replay=replay)})
-                return 1
-            cli.print_json(result)
-            return 1 if "error" in result else 0
-        if args.qdrant_command == "remote-mcp":
-            from .remote_client import serve_mcp
-
-            serve_mcp(args.url, args.token_env, ca_file=args.ca_file)
-            return 0
-        if args.qdrant_command == "remote-serve":
-            from .remote_gateway import serve
-
-            serve(
-                args.home,
-                _operator_path(args.policy, reject_symlinks=True),
-                port=args.port,
-                local_port=args.local_port,
-                allowed_hosts=args.allowed_host,
-                enable_lifecycle=args.enable_lifecycle,
-            )
-            return 0
-        if args.qdrant_command == "shared-device":
-            from .policy_admin import revoke_device, rotate_device
-            from .shared_service import load_policy_document
-
-            policy_path = _operator_path(args.policy, reject_symlinks=True)
-            if args.action == "validate":
-                load_policy_document(policy_path)
-                result = {"ok": True, "status": "PASS"}
-            else:
-                if not args.owner_id or not args.device_id:
-                    raise ValueError("Explicit owner and device are required")
-                if args.action == "rotate":
-                    if args.output is None:
-                        raise ValueError("A new private token output file is required")
-                    result = rotate_device(
-                        policy_path,
-                        args.owner_id,
-                        args.device_id,
-                        _operator_path(args.output, reject_symlinks=True),
-                    )
-                else:
-                    result = revoke_device(policy_path, args.owner_id, args.device_id)
-            cli.print_json(result)
-            return 0
-        if args.qdrant_command in {"shared-doctor", "shared-serve", "shared-mcp", "shared-call"}:
-            return _shared_command(args)
-        if args.qdrant_command == "mcp":
-            from .mcp_server import serve
-
-            serve(args.home)
-            return 0
-        if args.qdrant_command == "prepare-model":
-            from .local_model import DIMENSIONS, MODEL_NAME, prepare_model
-
-            prepared = prepare_model(args.cache_dir)
-            result = {
-                "ok": True,
-                "ready": True,
-                "model": MODEL_NAME,
-                "dimensions": DIMENSIONS,
-                "model_directory": str(prepared),
-            }
-        elif args.qdrant_command == "setup":
-            from .managed_setup import setup_profile
-
-            result = setup_profile(args)
-        elif args.qdrant_command in {"search", "add", "update", "delete"}:
-            with open_runtime(args.home) as runtime:
-                result = call_tool(
-                    runtime, "qdrant_memory_" + args.qdrant_command, _tool_arguments(args)
-                )
-        else:
-            validate_operator_paths(args)
-            result = cli.run(
-                args, args.home, config_loader=load_standalone_config, secret_reader=os.environ.get
-            )
+        exit_code = _immediate_command(args)
+        if exit_code is not None:
+            return exit_code
+        result = _result_command(args)
         if not cli.print_json(result):
             return 1
         return 0 if result.get("ok", True) else 1
@@ -380,6 +279,142 @@ def main(argv=None):
         if args.qdrant_command not in {"mcp", "shared-mcp", "remote-mcp"}:
             cli.print_json({"error": error})
         return 1
+
+
+def _immediate_command(args):
+    """Run a route that owns its exit code, or return ``None`` for JSON routes."""
+    command = args.qdrant_command
+    if command in {"remote-call", "remote-event"}:
+        return _remote_request_command(args)
+    if command == "remote-mcp":
+        from .remote_client import serve_mcp
+
+        serve_mcp(args.url, args.token_env, ca_file=args.ca_file)
+        return 0
+    if command == "remote-serve":
+        return _remote_serve_command(args)
+    if command == "shared-device":
+        return _shared_device_command(args)
+    if command in {"shared-doctor", "shared-serve", "shared-mcp", "shared-call"}:
+        return _shared_command(args)
+    if command == "mcp":
+        from .mcp_server import serve
+
+        serve(args.home)
+        return 0
+    return None
+
+
+def _result_command(args):
+    """Return the single JSON result of a maintenance or fixed-scope tool route."""
+    command = args.qdrant_command
+    if command == "prepare-model":
+        return _prepared_model_result(args)
+    if command == "setup":
+        from .managed_setup import setup_profile
+
+        return setup_profile(args)
+    if command in {"search", "add", "update", "delete"}:
+        with open_runtime(args.home) as runtime:
+            return call_tool(runtime, "qdrant_memory_" + command, _tool_arguments(args))
+    validate_operator_paths(args)
+    return cli.run(
+        args, args.home, config_loader=load_standalone_config, secret_reader=os.environ.get
+    )
+
+
+def _prepared_model_result(args):
+    """Download and verify the optional CPU model, reporting its identity."""
+    from .local_model import DIMENSIONS, MODEL_NAME, prepare_model
+
+    prepared = prepare_model(args.cache_dir)
+    return {
+        "ok": True,
+        "ready": True,
+        "model": MODEL_NAME,
+        "dimensions": DIMENSIONS,
+        "model_directory": str(prepared),
+    }
+
+
+def _remote_request_command(args):
+    """Send one stdin-supplied Owner request and report the JSON response."""
+    import anyio
+
+    from . import remote_client
+
+    raw = sys.stdin.buffer.read(131073)
+    if len(raw) > 131072:
+        raise ValueError("Owner request exceeds input limit")
+    value = json.loads(raw)
+    token = os.environ.get(args.token_env, "").strip()
+    try:
+        result = anyio.run(_remote_request, args, value, token, remote_client)
+    except Exception as exc:
+        from .remote_client import remote_error
+
+        replay = "event_id" if args.qdrant_command == "remote-event" else "request_id"
+        cli.print_json({"error": remote_error(exc, replay=replay)})
+        return 1
+    cli.print_json(result)
+    return 1 if "error" in result else 0
+
+
+async def _remote_request(args, value, token, remote_client):
+    """Dispatch one remote call or lifecycle event to the configured Owner."""
+    if args.qdrant_command != "remote-event":
+        return await remote_client.call_remote(
+            args.url, token, args.tool, value, ca_file=args.ca_file
+        )
+    if args.action == "submit":
+        return await remote_client.send_event(args.url, token, value, ca_file=args.ca_file)
+    if not isinstance(value, dict) or set(value) != {"event_id"}:
+        raise ValueError("Lifecycle control requires only event_id")
+    return await remote_client.control_event(
+        args.url, token, value["event_id"], args.action, ca_file=args.ca_file
+    )
+
+
+def _remote_serve_command(args):
+    """Own the opt-in HTTPS-proxied Streamable HTTP Owner endpoint."""
+    from .remote_gateway import serve
+
+    serve(
+        args.home,
+        _operator_path(args.policy, reject_symlinks=True),
+        port=args.port,
+        local_port=args.local_port,
+        allowed_hosts=args.allowed_host,
+        enable_lifecycle=args.enable_lifecycle,
+    )
+    return 0
+
+
+def _shared_device_command(args):
+    """Validate, revoke or rotate one independent device grant."""
+    from .policy_admin import revoke_device, rotate_device
+    from .shared_service import load_policy_document
+
+    policy_path = _operator_path(args.policy, reject_symlinks=True)
+    if args.action == "validate":
+        load_policy_document(policy_path)
+        result = {"ok": True, "status": "PASS"}
+    else:
+        if not args.owner_id or not args.device_id:
+            raise ValueError("Explicit owner and device are required")
+        if args.action == "rotate":
+            if args.output is None:
+                raise ValueError("A new private token output file is required")
+            result = rotate_device(
+                policy_path,
+                args.owner_id,
+                args.device_id,
+                _operator_path(args.output, reject_symlinks=True),
+            )
+        else:
+            result = revoke_device(policy_path, args.owner_id, args.device_id)
+    cli.print_json(result)
+    return 0
 
 
 def _shared_command(args):

@@ -79,6 +79,17 @@ def save_config(values, hermes_home):
     existing = read_json_or_empty(path) if path.exists() else {}
     cfg = merge(DEFAULTS, existing)
     environment = environment_qdrant_settings()
+    _apply_qdrant_values(cfg, values, environment)
+    _apply_embedding_values(cfg, values)
+    _strip_embedded_secrets(cfg)
+    validate(cfg)
+    atomic_json_write(path, cfg, mode=0o600, fsync_dir=True)
+    path.chmod(0o600)
+    _report_environment_references(environment)
+
+
+def _apply_qdrant_values(cfg, values, environment):
+    """Apply submitted endpoint fields and keep environment references."""
     for key in ("mode", "url"):
         if key in values:
             cfg["qdrant"][key] = values[key] or None
@@ -94,18 +105,26 @@ def save_config(values, hermes_home):
             )
     if "api_key" in environment:
         cfg["qdrant"]["api_key_env"] = "QDRANT_API_KEY"
+
+
+def _apply_embedding_values(cfg, values):
+    """Apply the submitted embedding fields, coercing the dimension count."""
     for key in ("provider", "model", "base_url", "dimensions"):
         if "embedding_" + key in values:
             value = values["embedding_" + key]
             cfg["embedding"][key] = int(value) if key == "dimensions" else value
-    # Secrets belong to Hermes's .env wizard, including keys in legacy config.
+
+
+def _strip_embedded_secrets(cfg):
+    """Remove secrets that belong to Hermes's .env wizard, including legacy keys."""
     cfg["qdrant"].pop("api_key", None)
     cfg["embedding"].pop("api_key", None)
     if "inherit_fallback" in cfg["embedding"]:
         cfg["embedding"]["inherit_fallback"].pop("api_key", None)
-    validate(cfg)
-    atomic_json_write(path, cfg, mode=0o600, fsync_dir=True)
-    path.chmod(0o600)
+
+
+def _report_environment_references(environment):
+    """Tell the operator which credentials were reused without printing values."""
     for key in environment:
         name = "QDRANT_URL" if key == "url" else "QDRANT_API_KEY"
         print(f"  Using existing {name} from the active profile environment (value hidden).")

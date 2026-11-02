@@ -378,6 +378,56 @@ def scoped_delete_all(runtime, args):
     ``--resolve-legacy`` disambiguates it.
     """
     store, ledger = runtime.store, runtime.ledger
+    all_agents, agent, user, resolve_legacy = _scope_delete_arguments(args)
+    pending = pending_scope_deletes(ledger)
+    resumed = False
+    intent_time = None
+    if pending:
+        user, all_agents, agent, intent_value, intent_time = _resume_scope_delete(
+            ledger, pending, args, user, agent, all_agents, resolve_legacy
+        )
+        resumed = True
+    elif resolve_legacy:
+        raise ScopeSelectionError("--resolve-legacy requires a pending legacy intent")
+    else:
+        intent_value = _new_scope_delete_intent(user, agent, all_agents)
+    _require_schema_identity(store)
+    result = {
+        "collection": store.collection,
+        "scope": intent_value,
+        "resumed": resumed,
+    }
+    target_agents = _agents_with_work(store, ledger, user) if all_agents else None
+    if args.dry_run:
+        return _dry_run_scopes(store, user, agent, target_agents, result)
+    if not args.confirm:
+        raise DeleteConfirmationRequiredError()
+    if target_agents is None:
+        target_agents = [agent]
+    if intent_time is None:
+        intent_time = begin_scope_delete(ledger, intent_value)
+    scopes = [Scope(user, agent_key) for agent_key in target_agents]
+    fenced = _fence_scope_points(store, ledger, scopes, intent_time)
+    # Prepared writes whose points are not stored yet must be fenced too;
+    # otherwise a later recovery could replay them and resurrect memories.
+    _fence_prepared_writes(ledger, scopes, fenced, intent_time)
+    fenced_total = sum(len(entries) for entries in fenced.values())
+    superseded_total = _supersede_scope_events(ledger, scopes)
+    deleted_total = _delete_target_scopes(store, scopes)
+    finish_scope_delete(ledger, scope_delete_key(intent_value))
+    result.update(
+        deleted=deleted_total,
+        fenced_operations=fenced_total,
+        superseded_events=superseded_total,
+        ok=True,
+    )
+    if not all_agents:
+        result.update(_remaining_agent_scopes(store, user, agent))
+    return result
+
+
+def _scope_delete_arguments(args):
+    """Read and cross-check the scope flags of one scoped deletion request."""
     all_agents = bool(getattr(args, "all_agents", False))
     agent = getattr(args, "agent", None)
     user = getattr(args, "user", None)
@@ -392,92 +442,123 @@ def scoped_delete_all(runtime, args):
         raise ScopeSelectionError("--resolve-legacy cannot be combined with --dry-run")
     if agent is not None and not user:
         raise ScopeSelectionError("--agent requires --user; scopes are user-anchored")
-    pending = pending_scope_deletes(ledger)
-    resumed = False
-    intent_time = None
-    if pending:
-        if len(pending) > 1:
-            raise ScopeDeleteRefusedError()
-        recorded = decode_scope_delete_record(pending[0])
-        if is_legacy_scope_delete(recorded):
-            # Pre-versioned intents cannot distinguish a single-agent deletion
-            # of the literal agent '*' from an all-agents deletion. Never
-            # guess; the operator disambiguates explicitly.
-            if resolve_legacy is None:
-                user_value = recorded.get("user_id") if isinstance(recorded, dict) else None
-                raise ScopeDeleteLegacyIntentError(
-                    user_value if isinstance(user_value, str) else ""
-                )
-            if not user:
-                raise ScopeSelectionError("--resolve-legacy requires --user")
-            if not isinstance(recorded, dict) or recorded.get("user_id") != user:
-                raise ScopeDeleteRefusedError()
-            if not args.confirm:
-                raise DeleteConfirmationRequiredError()
-            if resolve_legacy == "all_agents":
-                if recorded.get("agent_id", "*") != "*":
-                    # A pre-versioned record with a concrete agent is not
-                    # ambiguous: never widen it to an all-agents deletion.
-                    raise ScopeDeleteRefusedError()
-                all_agents, agent = True, None
-            else:
-                if "agent_id" not in recorded:
-                    # A pre-versioned record without an agent cannot be
-                    # resolved as a single-agent deletion without guessing.
-                    raise ScopeDeleteRefusedError()
-                all_agents = False
-                agent = recorded.get("agent_id")
-            intent_value = scope_delete_intent(user, agent, all_agents)
-            intent_time = resolve_legacy_scope_delete(ledger, pending[0]["scope"], intent_value)
-        else:
-            recorded_all, recorded_user, recorded_agent = parse_scope_delete_intent(recorded)
-            if (user is not None or all_agents) and (
-                (user is not None and recorded_user != user)
-                or recorded_all != all_agents
-                or (user is not None and not recorded_all and recorded_agent != agent)
-            ):
-                raise ScopeDeleteRefusedError()
-            user, all_agents, agent = recorded_user, recorded_all, recorded_agent
-            intent_value = scope_delete_intent(user, agent, all_agents)
-        resumed = True
-    elif resolve_legacy:
-        raise ScopeSelectionError("--resolve-legacy requires a pending legacy intent")
-    elif user is None:
+    return all_agents, agent, user, resolve_legacy
+
+
+def _new_scope_delete_intent(user, agent, all_agents):
+    """Resolve the intent of a new deletion, refusing an unanchored scope."""
+    if user is None:
         if all_agents:
             raise ScopeSelectionError("--all-agents requires --user; scopes are user-anchored")
         raise ScopeDeleteRefusedError()
-    else:
-        intent_value = scope_delete_intent(user, agent, all_agents)
+    return scope_delete_intent(user, agent, all_agents)
+
+
+def _resume_scope_delete(ledger, pending, args, user, agent, all_agents, resolve_legacy):
+    """Resolve the recorded intent of a pending scoped deletion for resumption.
+
+    Returns the effective user, all-agents flag, agent, intent and, for a
+    disambiguated legacy intent, the version it was resolved at.
+    """
+    if len(pending) > 1:
+        raise ScopeDeleteRefusedError()
+    recorded = decode_scope_delete_record(pending[0])
+    if is_legacy_scope_delete(recorded):
+        return _resume_legacy_intent(ledger, pending[0], args, user, resolve_legacy)
+    user, all_agents, agent = _recorded_scope(recorded, user, agent, all_agents)
+    return user, all_agents, agent, scope_delete_intent(user, agent, all_agents), None
+
+
+def _resume_legacy_intent(ledger, pending_row, args, user, resolve_legacy):
+    """Disambiguate one pre-versioned intent from explicit operator flags.
+
+    Pre-versioned intents cannot distinguish a single-agent deletion of the
+    literal agent '*' from an all-agents deletion. Never guess; the operator
+    disambiguates explicitly.
+    """
+    recorded = decode_scope_delete_record(pending_row)
+    if resolve_legacy is None:
+        user_value = recorded.get("user_id") if isinstance(recorded, dict) else None
+        raise ScopeDeleteLegacyIntentError(user_value if isinstance(user_value, str) else "")
+    _require_legacy_owner(recorded, args, user)
+    all_agents, agent = _legacy_resolution(recorded, resolve_legacy)
+    intent_value = scope_delete_intent(user, agent, all_agents)
+    intent_time = resolve_legacy_scope_delete(ledger, pending_row["scope"], intent_value)
+    return user, all_agents, agent, intent_value, intent_time
+
+
+def _require_legacy_owner(recorded, args, user):
+    """Require the operator to own and confirm the recorded legacy intent."""
+    if not user:
+        raise ScopeSelectionError("--resolve-legacy requires --user")
+    if not isinstance(recorded, dict) or recorded.get("user_id") != user:
+        raise ScopeDeleteRefusedError()
+    if not args.confirm:
+        raise DeleteConfirmationRequiredError()
+
+
+def _legacy_resolution(recorded, resolve_legacy):
+    """Return the ``(all_agents, agent)`` pair the operator resolved to."""
+    if resolve_legacy == "all_agents":
+        if recorded.get("agent_id", "*") != "*":
+            # A pre-versioned record with a concrete agent is not
+            # ambiguous: never widen it to an all-agents deletion.
+            raise ScopeDeleteRefusedError()
+        return True, None
+    if "agent_id" not in recorded:
+        # A pre-versioned record without an agent cannot be
+        # resolved as a single-agent deletion without guessing.
+        raise ScopeDeleteRefusedError()
+    return False, recorded.get("agent_id")
+
+
+def _recorded_scope(recorded, user, agent, all_agents):
+    """Adopt the recorded scope unless explicit flags contradict it."""
+    recorded_values = parse_scope_delete_intent(recorded)
+    if _scope_mismatch(recorded_values, user, agent, all_agents):
+        raise ScopeDeleteRefusedError()
+    recorded_all, recorded_user, recorded_agent = recorded_values
+    return recorded_user, recorded_all, recorded_agent
+
+
+def _scope_mismatch(recorded_values, user, agent, all_agents):
+    """Report whether explicit scope flags contradict a recorded intent."""
+    recorded_all, recorded_user, recorded_agent = recorded_values
+    if user is None and not all_agents:
+        return False
+    if user is not None and recorded_user != user:
+        return True
+    if recorded_all != all_agents:
+        return True
+    return user is not None and not recorded_all and recorded_agent != agent
+
+
+def _require_schema_identity(store):
+    """Require the trusted qdrant-memory schema identity before deleting."""
     identity = store.client.retrieve(store.collection, ids=[IDENTITY_ID], with_payload=True)
     if not identity or not identity[0].payload.get("_qdrant_memory_schema"):
         raise CollectionCompatibilityError(
             "Collection has no trusted qdrant-memory schema identity; refusing scoped deletion"
         )
-    result = {
-        "collection": store.collection,
-        "scope": intent_value,
-        "resumed": resumed,
-    }
-    target_agents = _agents_with_work(store, ledger, user) if all_agents else None
-    if args.dry_run:
-        agents = target_agents if target_agents is not None else [agent]
-        counts = [
-            {"agent_id": agent_key, "count": store.count(Scope(user, agent_key))}
-            for agent_key in agents
-        ]
-        result.update(
-            dry_run=True,
-            would_delete=sum(item["count"] for item in counts),
-            scopes=counts,
-        )
-        return result
-    if not args.confirm:
-        raise DeleteConfirmationRequiredError()
-    if target_agents is None:
-        target_agents = [agent]
-    if intent_time is None:
-        intent_time = begin_scope_delete(ledger, intent_value)
-    scopes = [Scope(user, agent_key) for agent_key in target_agents]
+
+
+def _dry_run_scopes(store, user, agent, target_agents, result):
+    """Report the per-scope counts a dry run would delete, without deleting."""
+    agents = target_agents if target_agents is not None else [agent]
+    counts = [
+        {"agent_id": agent_key, "count": store.count(Scope(user, agent_key))}
+        for agent_key in agents
+    ]
+    result.update(
+        dry_run=True,
+        would_delete=sum(item["count"] for item in counts),
+        scopes=counts,
+    )
+    return result
+
+
+def _fence_scope_points(store, ledger, scopes, intent_time):
+    """Fence every stored point of the target scopes and return their ids."""
     fenced = {index: set() for index in range(len(scopes))}
     for index, scope in enumerate(scopes):
         for point in store.scroll(scope):
@@ -491,31 +572,26 @@ def scoped_delete_all(runtime, args):
             )
             ledger.finish("operations", operation_key, "COMMITTED")
             fenced[index].add(str(point.id))
-    # Prepared writes whose points are not stored yet must be fenced too;
-    # otherwise a later recovery could replay them and resurrect memories.
-    _fence_prepared_writes(ledger, scopes, fenced, intent_time)
-    fenced_total = sum(len(entries) for entries in fenced.values())
-    superseded_total = _supersede_scope_events(ledger, scopes)
-    deleted_total = 0
+    return fenced
+
+
+def _delete_target_scopes(store, scopes):
+    """Delete every target scope and require each one to be empty afterwards."""
+    deleted = 0
     for scope in scopes:
         before = store.count(scope)
         store.delete_scope(scope)
         if store.count(scope):
             raise ScopeDeleteIncompleteError()
-        deleted_total += before
-    finish_scope_delete(ledger, scope_delete_key(intent_value))
-    result.update(
-        deleted=deleted_total,
-        fenced_operations=fenced_total,
-        superseded_events=superseded_total,
-        ok=True,
-    )
-    if not all_agents:
-        others = store.scopes_for_user(user)
-        others.pop(agent, None)
-        if others:
-            result["other_agent_scopes"] = others
-    return result
+        deleted += before
+    return deleted
+
+
+def _remaining_agent_scopes(store, user, agent):
+    """Report the user's other agent scopes after a single-scope deletion."""
+    others = store.scopes_for_user(user)
+    others.pop(agent, None)
+    return {"other_agent_scopes": others} if others else {}
 
 
 def _agents_with_work(store, ledger, user):
@@ -525,20 +601,31 @@ def _agents_with_work(store, ledger, user):
     payload's ``scope`` key, operations carry it at the payload top level.
     """
     agents = set(store.scopes_for_user(user))
+    agents.update(_pending_work_agents(ledger, user))
+    return sorted(agents, key=repr)
+
+
+def _pending_work_agents(ledger, user):
+    """Collect the agent values of pending and failed work for one user."""
+    agents = set()
     for status in ("PENDING", "FAILED"):
         for table in ("operations", "events"):
             for row in ledger.iter_rows(table, status):
-                try:
-                    value = json.loads(row["payload_json"] or "{}")
-                except ValueError:
-                    continue
-                scope_value = value.get("scope") if table == "events" else value
-                if not isinstance(scope_value, dict):
-                    continue
-                if scope_value.get("user_id") != user:
+                scope_value = _row_scope(row, table)
+                if scope_value is None or scope_value.get("user_id") != user:
                     continue
                 agents.add(scope_value.get("agent_id"))
-    return sorted(agents, key=repr)
+    return agents
+
+
+def _row_scope(row, table):
+    """Return the admitted scope carried by one ledger row, if it carries one."""
+    try:
+        value = json.loads(row["payload_json"] or "{}")
+    except ValueError:
+        return None
+    scope_value = value.get("scope") if table == "events" else value
+    return scope_value if isinstance(scope_value, dict) else None
 
 
 def _fence_prepared_writes(ledger, scopes, fenced, intent_time):
@@ -849,96 +936,110 @@ def main(args):
         return 0 if result.get("ok", True) else 1
     except Exception as exc:
         error = safe_error(exc)
-        if isinstance(exc, MigrationSupersededError):
-            error.update(
-                code="migration_superseded",
-                message="Later user intent superseded migration records. Inspect the manifest. "
-                "Resuming this migration will not restore deleted memories. Only start a new "
-                "migration without --resume if you explicitly intend to import them again.",
-            )
-        elif isinstance(exc, MigrationIncompleteError):
-            error.update(
-                code="migration_incomplete",
-                message="Migration incomplete; rerun with --resume --retry-failed. Recover "
-                "failed work before reviewing any superseded conflict.",
-            )
-        elif isinstance(exc, WriterBusyError):
-            error.update(
-                code="writer_busy",
-                message="Another Hermes session or gateway owns the writer lock for this "
-                "profile and collection. Stop that runtime before init, migrate or retry, "
-                "then rerun the command. For an existing remote collection, doctor, stats "
-                "and verify can check readiness while the writer is running.",
-            )
-        elif isinstance(exc, CollectionNotInitializedError):
-            error.update(
-                code="collection_not_initialized",
-                message="Collection does not exist. Run hermes qdrant-memory init first.",
-            )
-        elif isinstance(exc, ResetRecoveryRequiredError):
-            error.update(
-                code="reset_recovery_required",
-                message="Rerun hermes qdrant-memory init before using this destination.",
-            )
-        elif isinstance(exc, DeleteConfirmationRequiredError):
-            error.update(
-                code="delete_confirmation_required",
-                message="Refusing to delete without explicit confirmation. Rerun "
-                "delete-all with --confirm to delete the selected scope, or with "
-                "--dry-run to preview its count.",
-            )
-        elif isinstance(exc, ScopeSelectionError):
-            error.update(code="scope_selection_error", message=str(exc))
-        elif isinstance(exc, ScopeDeleteRecoveryRequiredError):
-            error.update(
-                code="scope_delete_recovery_required",
-                message="An interrupted scoped deletion is pending. Rerun hermes "
-                "qdrant-memory delete-all with --confirm to resume it before using "
-                "this destination.",
-            )
-        elif isinstance(exc, ScopeDeleteLegacyIntentError):
-            error.update(code="scope_delete_legacy_intent", message=str(exc))
-        elif isinstance(exc, ScopeDeleteRefusedError):
-            error.update(
-                code="scope_delete_refused",
-                message="Scoped deletion refused. A pending scoped deletion must be "
-                "resumed with its recorded scope (one at a time), and --user is "
-                "required for a new scoped deletion.",
-            )
-        elif isinstance(exc, ScopeDeleteIncompleteError):
-            error.update(
-                code="scope_delete_incomplete",
-                message="Scoped deletion incomplete: the scope still contains points. "
-                "The durable intent remains; rerun delete-all --confirm to resume it.",
-            )
-        elif isinstance(exc, ExportTargetExistsError):
-            error.update(
-                code="export_target_exists",
-                message="Export target already exists; pass --force to overwrite it.",
-            )
-        elif isinstance(exc, ExportPublicationUnsupportedError):
-            error.update(
-                code="export_publication_unsupported",
-                message="The export target cannot be written with the atomic no-clobber "
-                "guarantee (hard links unavailable or the target is not writable). "
-                "Pass --force to write without that guarantee, or choose another target.",
-            )
-        elif isinstance(exc, InitializationChoiceRequiredError):
-            error.update(
-                code="existing_collection_choice_required",
-                message="Choose use or clear. For noninteractive init, pass --existing use "
-                "or --existing clear (deletes all collection data).",
-            )
-        elif isinstance(exc, CollectionCompatibilityError):
-            error.update(
-                code="collection_incompatible",
-                message="Collection is incompatible: a named dense vector with matching "
-                "dimensions, distance and a trusted embedding fingerprint is required. "
-                "Choose a different collection, or explicitly clear and rebuild with "
-                "hermes qdrant-memory init --existing clear (deletes all collection data).",
-            )
+        error.update(_error_detail(exc))
         print_json({"error": error})
         return 1
+
+
+_EXCEPTION_TEXT = object()
+
+_ERROR_DETAILS = (
+    (
+        MigrationSupersededError,
+        "migration_superseded",
+        "Later user intent superseded migration records. Inspect the manifest. "
+        "Resuming this migration will not restore deleted memories. Only start a new "
+        "migration without --resume if you explicitly intend to import them again.",
+    ),
+    (
+        MigrationIncompleteError,
+        "migration_incomplete",
+        "Migration incomplete; rerun with --resume --retry-failed. Recover "
+        "failed work before reviewing any superseded conflict.",
+    ),
+    (
+        WriterBusyError,
+        "writer_busy",
+        "Another Hermes session or gateway owns the writer lock for this "
+        "profile and collection. Stop that runtime before init, migrate or retry, "
+        "then rerun the command. For an existing remote collection, doctor, stats "
+        "and verify can check readiness while the writer is running.",
+    ),
+    (
+        CollectionNotInitializedError,
+        "collection_not_initialized",
+        "Collection does not exist. Run hermes qdrant-memory init first.",
+    ),
+    (
+        ResetRecoveryRequiredError,
+        "reset_recovery_required",
+        "Rerun hermes qdrant-memory init before using this destination.",
+    ),
+    (
+        DeleteConfirmationRequiredError,
+        "delete_confirmation_required",
+        "Refusing to delete without explicit confirmation. Rerun "
+        "delete-all with --confirm to delete the selected scope, or with "
+        "--dry-run to preview its count.",
+    ),
+    (ScopeSelectionError, "scope_selection_error", _EXCEPTION_TEXT),
+    (
+        ScopeDeleteRecoveryRequiredError,
+        "scope_delete_recovery_required",
+        "An interrupted scoped deletion is pending. Rerun hermes "
+        "qdrant-memory delete-all with --confirm to resume it before using "
+        "this destination.",
+    ),
+    (ScopeDeleteLegacyIntentError, "scope_delete_legacy_intent", _EXCEPTION_TEXT),
+    (
+        ScopeDeleteRefusedError,
+        "scope_delete_refused",
+        "Scoped deletion refused. A pending scoped deletion must be "
+        "resumed with its recorded scope (one at a time), and --user is "
+        "required for a new scoped deletion.",
+    ),
+    (
+        ScopeDeleteIncompleteError,
+        "scope_delete_incomplete",
+        "Scoped deletion incomplete: the scope still contains points. "
+        "The durable intent remains; rerun delete-all --confirm to resume it.",
+    ),
+    (
+        ExportTargetExistsError,
+        "export_target_exists",
+        "Export target already exists; pass --force to overwrite it.",
+    ),
+    (
+        ExportPublicationUnsupportedError,
+        "export_publication_unsupported",
+        "The export target cannot be written with the atomic no-clobber "
+        "guarantee (hard links unavailable or the target is not writable). "
+        "Pass --force to write without that guarantee, or choose another target.",
+    ),
+    (
+        InitializationChoiceRequiredError,
+        "existing_collection_choice_required",
+        "Choose use or clear. For noninteractive init, pass --existing use "
+        "or --existing clear (deletes all collection data).",
+    ),
+    (
+        CollectionCompatibilityError,
+        "collection_incompatible",
+        "Collection is incompatible: a named dense vector with matching "
+        "dimensions, distance and a trusted embedding fingerprint is required. "
+        "Choose a different collection, or explicitly clear and rebuild with "
+        "hermes qdrant-memory init --existing clear (deletes all collection data).",
+    ),
+)
+
+
+def _error_detail(exc):
+    """Return the stable error code and operator message for a known failure."""
+    for error_type, code, message in _ERROR_DETAILS:
+        if isinstance(exc, error_type):
+            text = str(exc) if message is _EXCEPTION_TEXT else message
+            return {"code": code, "message": text}
+    return {}
 
 
 globals()["qdrant-memory_command"] = main
