@@ -6,6 +6,28 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
+## Runtime 0.5.4 pre-release candidate checks (2026-11-02)
+
+Local validation for the maintainability release:
+
+- Python 3.14.7: 1,227 passed, 14 environment-gated skips, 0 failed. The isolated
+  test environment used the current Hermes `main` checkout.
+- Ruff lint and Ruff format check passed across the repository.
+- SonarCloud reports zero open issues for the pull request that carries this
+  release, including the maintainability rules that the refactor targets.
+- The public Python API is unchanged. An AST comparison against the previous
+  release found no removed or re-signed module-level function or method.
+- The test inventory holds 693 test functions before and after, and the
+  assertion count grows from 2,630 to 2,694 because composite assertions were
+  split.
+
+The same environment-gated skips as 0.5.3 remain. They require prepared local
+model caches, authenticated Cloud or live shared-security deployments, a
+device-server URL in the full-suite lane, an optional relation model, or a
+separate Pi adapter checkout. GitHub's minimum/latest Hermes matrix,
+Linux/macOS/Windows contracts, CodeQL and the dependency/security jobs run on
+the release commit and are recorded in the release pull request.
+
 ## Staged soak system (2026-10-30)
 
 The [soak harness and workflow](testing/soak.md) landed with the two GitHub

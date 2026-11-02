@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.4
+
+- Internal maintainability release. Long provider, CLI, ledger, migration,
+  gateway and shared-service functions now delegate to named helpers. Callers
+  see the same behavior, error types and messages.
+- Record an initialization failure and then re-raise the original exception
+  explicitly. Teardown handlers catch `Exception`, so `SystemExit` and
+  `KeyboardInterrupt` propagate as Python expects.
+- Name the duplicated operator messages and configuration hints. This removes
+  the copy-paste drift risk in provider, reset and setup errors.
+- Tests give every assertion its own failure signal and keep a single
+  invocation inside `pytest.raises` blocks. A failing setup call can no longer
+  be reported as the expected contract violation.
+- No collection schema, point identity, Ledger schema, scope, configuration
+  schema, public tool schema, or minimum Hermes version changed. Existing
+  memory data needs no migration.
+
 ## 0.5.3
 
 - Add an explicit, synchronized provider lifecycle. A failed initialization

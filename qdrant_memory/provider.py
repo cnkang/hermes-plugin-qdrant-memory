@@ -321,6 +321,7 @@ class QdrantMemoryProvider(MemoryProvider):
             self._admit_work()
         except BaseException as exc:
             self._fail_initialization(exc)
+            raise
 
     def _begin_initialization(self, session_id):
         """Enter INITIALIZING and reset attempt state, or return None when already ready."""
