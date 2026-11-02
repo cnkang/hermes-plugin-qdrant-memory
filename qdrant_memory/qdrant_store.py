@@ -110,47 +110,66 @@ class QdrantStore:
         if reset:
             if not create:
                 raise ValueError("Reset requires collection creation")
-            embedded = self.cfg["qdrant"]["mode"] == "embedded"
-            collection_exists = self.client.collection_exists(self.collection)
-            if collection_exists and embedded:
-                _close_embedded_collection_storage(self.client, self.collection)
-            if collection_exists or embedded:
-                # An interrupted local delete can remove the catalog entry while
-                # leaving its SQLite directory behind on Windows. Qdrant's local
-                # delete also removes that orphaned directory when it is absent.
-                self.client.delete_collection(self.collection)
-            if embedded:
-                # Reopen the local engine so its filesystem-backed collection
-                # catalog reflects the completed delete on every platform.
-                self.client.close()
-                self.client = build_client(self.cfg)
-            if embedded and self.client.collection_exists(self.collection):
-                raise CollectionCompatibilityError(
-                    "Qdrant did not confirm collection deletion during reset"
-                )
-        if not self.client.collection_exists(self.collection):
-            if not create:
-                raise CollectionNotInitializedError(
-                    "Collection does not exist; run hermes qdrant-memory init"
-                )
-            self.client.create_collection(
-                self.collection,
-                vectors_config={
-                    "dense": m.VectorParams(size=self.embedder.dimensions, distance=distance)
-                },
+            self._reset_collection()
+        self._ensure_collection(create, distance)
+        self._validate_schema(distance)
+        self._validate_identity(vectors[0], create)
+        if create and self.cfg["qdrant"]["mode"] != "embedded":
+            self._create_indexes()
+
+    def _reset_collection(self):
+        """Delete and reopen the target collection so a reset starts empty."""
+        embedded = self.cfg["qdrant"]["mode"] == "embedded"
+        collection_exists = self.client.collection_exists(self.collection)
+        if collection_exists and embedded:
+            _close_embedded_collection_storage(self.client, self.collection)
+        if collection_exists or embedded:
+            # An interrupted local delete can remove the catalog entry while
+            # leaving its SQLite directory behind on Windows. Qdrant's local
+            # delete also removes that orphaned directory when it is absent.
+            self.client.delete_collection(self.collection)
+        if embedded:
+            # Reopen the local engine so its filesystem-backed collection
+            # catalog reflects the completed delete on every platform.
+            self.client.close()
+            self.client = build_client(self.cfg)
+        if embedded and self.client.collection_exists(self.collection):
+            raise CollectionCompatibilityError(
+                "Qdrant did not confirm collection deletion during reset"
             )
+
+    def _ensure_collection(self, create, distance):
+        """Create the named dense collection when the target does not exist."""
+        from qdrant_client import models as m
+
+        if self.client.collection_exists(self.collection):
+            return
+        if not create:
+            raise CollectionNotInitializedError(
+                "Collection does not exist; run hermes qdrant-memory init"
+            )
+        self.client.create_collection(
+            self.collection,
+            vectors_config={
+                "dense": m.VectorParams(size=self.embedder.dimensions, distance=distance)
+            },
+        )
+
+    def _validate_schema(self, distance):
+        """Refuse a collection whose named dense vector cannot hold embeddings."""
         info = self.client.get_collection(self.collection)
         schema = info.config.params.vectors
         if not isinstance(schema, dict) or "dense" not in schema:
             raise CollectionCompatibilityError("Collection must have a named dense vector")
         if schema["dense"].size != self.embedder.dimensions or schema["dense"].distance != distance:
             raise CollectionCompatibilityError("Collection dimension or distance mismatch")
-        self._validate_identity(vectors[0], create)
-        if create and self.cfg["qdrant"]["mode"] != "embedded":
-            for key, kind in INDEXES.items():
-                self.client.create_payload_index(
-                    self.collection, field_name=key, field_schema=kind, wait=True
-                )
+
+    def _create_indexes(self):
+        """Create every payload index that scoped recall filters depend on."""
+        for key, kind in INDEXES.items():
+            self.client.create_payload_index(
+                self.collection, field_name=key, field_schema=kind, wait=True
+            )
 
     def _validate_identity(self, vector, create):
         """Refuse unknown or incompatible pipeline identity before permitting writes."""

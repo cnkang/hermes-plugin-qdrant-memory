@@ -9,7 +9,8 @@ from packaging.markers import Marker
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/check_dependency_inputs.py"
 SPEC = importlib.util.spec_from_file_location("check_dependency_inputs", SCRIPT)
-assert SPEC is not None and SPEC.loader is not None
+assert SPEC is not None
+assert SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
@@ -49,42 +50,48 @@ def test_accepts_exact_pins_and_hashes(tmp_path):
 )
 def test_rejects_ranges_sources_and_options(tmp_path, requirement):
     """Every non-exact requirement form fails with a policy violation."""
+    prepared = write(tmp_path, base=requirement)
     with pytest.raises(MODULE.Failure):
-        MODULE.check(write(tmp_path, base=requirement))
+        MODULE.check(prepared)
 
 
 def test_rejects_unhashed_local_entry(tmp_path):
     """A snapshot entry without a hash cannot be verified."""
+    prepared = write(tmp_path, local="requests==2.32.3\n")
     with pytest.raises(MODULE.Failure):
-        MODULE.check(write(tmp_path, local="requests==2.32.3\n"))
+        MODULE.check(prepared)
 
 
 def test_rejects_short_hash(tmp_path):
     """A truncated hash is not a sha256 value."""
     local = "requests==2.32.3 --hash=sha256:abc\n"
+    prepared = write(tmp_path, local=local)
     with pytest.raises(MODULE.Failure):
-        MODULE.check(write(tmp_path, local=local))
+        MODULE.check(prepared)
 
 
 def test_rejects_version_mismatch(tmp_path):
     """The hashed snapshot must repeat the base version."""
     local = LOCAL.replace("requests==2.32.3", "requests==2.32.4")
+    prepared = write(tmp_path, local=local)
     with pytest.raises(MODULE.Failure):
-        MODULE.check(write(tmp_path, local=local))
+        MODULE.check(prepared)
 
 
 def test_rejects_missing_unmarked_pin(tmp_path):
     """An unmarked base pin must appear in the hashed snapshot."""
     entry = f"requests==2.32.3 \\\n    --hash=sha256:{Hash}\n"
+    prepared = write(tmp_path, local=LOCAL.replace(entry, ""))
     with pytest.raises(MODULE.Failure):
-        MODULE.check(write(tmp_path, local=LOCAL.replace(entry, "")))
+        MODULE.check(prepared)
 
 
 def test_rejects_marked_pin_missing_from_snapshot(tmp_path):
     """A marker must not exempt a Linux-relevant pin from the hashed snapshot."""
     base = BASE + "typing-extensions==4.16.0 ; python_version >= '3'\n"
+    prepared = write(tmp_path, base=base)
     with pytest.raises(MODULE.Failure):
-        MODULE.check(write(tmp_path, base=base))
+        MODULE.check(prepared)
 
 
 def test_accepts_windows_only_pin_without_snapshot_entry(tmp_path):
@@ -97,15 +104,17 @@ def test_accepts_windows_only_pin_without_snapshot_entry(tmp_path):
 def test_rejects_negated_windows_marker(tmp_path):
     """A negated Windows marker selects Linux and must keep a snapshot entry."""
     base = BASE + "requests-toolbelt==1.0.0 ; sys_platform != 'win32'\n"
+    prepared = write(tmp_path, base=base)
     with pytest.raises(MODULE.Failure, match="missing the hashed entry for requests-toolbelt"):
-        MODULE.check(write(tmp_path, base=base))
+        MODULE.check(prepared)
 
 
 def test_rejects_disjunctive_windows_marker(tmp_path):
     """A marker that also selects Linux is not Windows-only."""
     base = BASE + "winreg==1.0 ; sys_platform == 'win32' or sys_platform == 'linux'\n"
+    prepared = write(tmp_path, base=base)
     with pytest.raises(MODULE.Failure, match="missing the hashed entry for winreg"):
-        MODULE.check(write(tmp_path, base=base))
+        MODULE.check(prepared)
 
 
 @pytest.mark.parametrize(
@@ -119,8 +128,9 @@ def test_quoted_windows_text_does_not_exempt_linux_dependency(tmp_path, marker):
     """Windows text inside a literal must not bypass the Linux snapshot policy."""
     assert Marker(marker).evaluate({"os_name": "posix", "sys_platform": "linux"})
     base = BASE + f"linux-required==1.0 ; {marker}\n"
+    prepared = write(tmp_path, base=base)
     with pytest.raises(MODULE.Failure, match="missing the hashed entry for linux-required"):
-        MODULE.check(write(tmp_path, base=base))
+        MODULE.check(prepared)
 
 
 @pytest.mark.parametrize(
@@ -186,8 +196,9 @@ def test_accepts_inline_comment(tmp_path):
 def test_rejects_duplicate_unmarked_pin(tmp_path):
     """Two unpinned entries for one name make the resolved version ambiguous."""
     base = "requests==2.32.3\nrequests==2.32.4\n"
+    prepared = write(tmp_path, base=base)
     with pytest.raises(MODULE.Failure):
-        MODULE.check(write(tmp_path, base=base))
+        MODULE.check(prepared)
 
 
 def test_repository_inputs_satisfy_policy():

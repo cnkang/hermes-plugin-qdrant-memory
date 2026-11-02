@@ -115,8 +115,11 @@ def test_fresh_shared_delivery_and_no_private_persistence(tmp_path, monkeypatch)
         p.queue_prefetch("cats")
         assert p.wait_idle()
         recalled = p.prefetch("cats")
-        assert "private cats" in recalled and "SQLite WAL" in recalled
-        assert "alpha" in recalled and "v1" in recalled and "device-a" in recalled
+        assert "private cats" in recalled
+        assert "SQLite WAL" in recalled
+        assert "alpha" in recalled
+        assert "v1" in recalled
+        assert "device-a" in recalled
         rows.clear()
         assert "SQLite WAL" not in p.prefetch("cats")
         assert p.store.count() == 1
@@ -164,8 +167,9 @@ def test_fresh_shared_delivery_and_no_private_persistence(tmp_path, monkeypatch)
 )
 def test_invalid_shared_settings_rejected(change):
     """Reject settings before opening a private store or sending credentials."""
+    prepared = config(shared_read=settings(**change))
     with pytest.raises(ValueError):
-        validate(config(shared_read=settings(**change)))
+        validate(prepared)
 
 
 def test_partial_failure_and_sanitized_diagnostics(monkeypatch):
@@ -192,7 +196,8 @@ def test_tool_opt_in_preserves_private_result(tmp_path, monkeypatch):
         )
         monkeypatch.setattr(p._shared_recall, "search", lambda _, **kwargs: [{"text": "WAL"}])
         result = json.loads(p.handle_tool_call("qdrant_memory_search", {"query": "Alpha"}))
-        assert result["memories"] == [] and result["shared"] == [{"text": "WAL"}]
+        assert result["memories"] == []
+        assert result["shared"] == [{"text": "WAL"}]
     finally:
         p.shutdown()
 
@@ -299,7 +304,8 @@ def test_large_shared_text_preserves_provenance_and_complete_json(tmp_path, monk
         result = p.prefetch("Alpha")
         assert len(result) <= 4000
         rows = json.loads(result.split("\n")[-1])
-        assert rows[0]["space_id"] == "alpha" and rows[0]["version"] == "v1"
+        assert rows[0]["space_id"] == "alpha"
+        assert rows[0]["version"] == "v1"
         assert rows[0]["created_by"] == "device-a"
     finally:
         p.shutdown()

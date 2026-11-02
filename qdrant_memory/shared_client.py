@@ -32,8 +32,9 @@ def call(url, token, name, arguments, *, timeout=120):
     endpoint = httpx.URL("http://127.0.0.1/v1/tool", port=port)
     if not isinstance(token, str) or len(token) < 32:
         raise ValueError("A high-entropy shared credential is required")
-    with httpx.Client(trust_env=False, follow_redirects=False, timeout=timeout) as client:
-        with client.stream(
+    with (
+        httpx.Client(trust_env=False, follow_redirects=False, timeout=timeout) as client,
+        client.stream(
             "POST",
             endpoint,
             headers={
@@ -42,31 +43,32 @@ def call(url, token, name, arguments, *, timeout=120):
                 "Accept-Encoding": "identity",
             },
             json={"name": name, "arguments": arguments},
-        ) as response:
-            raw = _collect_bounded(response)
-            try:
-                result = json.loads(raw)
-            except (ValueError, RecursionError):
-                raise ValueError("Shared service response is not valid JSON") from None
-            if not isinstance(result, dict):
-                raise ValueError("Shared service response is not a JSON object")
-            if response.status_code != 200:
-                envelope = result.get("error")
-                envelope = envelope if isinstance(envelope, dict) else {}
-                code = envelope.get("type", "SharedClientError")
-                code = (
-                    code
-                    if isinstance(code, str) and re.fullmatch(r"[A-Za-z]+Error", code)
-                    else "SharedClientError"
-                )
-                # Preserve machine-readable conflicts without reflecting remote error messages.
-                return {
-                    "error": {
-                        "type": code,
-                        "retryable": envelope.get("retryable") is True,
-                    }
+        ) as response,
+    ):
+        raw = _collect_bounded(response)
+        try:
+            result = json.loads(raw)
+        except (ValueError, RecursionError):
+            raise ValueError("Shared service response is not valid JSON") from None
+        if not isinstance(result, dict):
+            raise ValueError("Shared service response is not a JSON object")
+        if response.status_code != 200:
+            envelope = result.get("error")
+            envelope = envelope if isinstance(envelope, dict) else {}
+            code = envelope.get("type", "SharedClientError")
+            code = (
+                code
+                if isinstance(code, str) and re.fullmatch(r"[A-Za-z]+Error", code)
+                else "SharedClientError"
+            )
+            # Preserve machine-readable conflicts without reflecting remote error messages.
+            return {
+                "error": {
+                    "type": code,
+                    "retryable": envelope.get("retryable") is True,
                 }
-            return result
+            }
+        return result
 
 
 def serve_mcp(url, token_env):

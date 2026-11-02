@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from typing import TypeGuard
 
 from .shared_protocol import MARKER, VISIBILITIES, validate_loopback_url
 
@@ -65,6 +66,37 @@ class SharedHit:
             f"score={self.score!r}, space_id={self.space_id!r}, "
             f"visibility={self.visibility!r}, version={self.version!r})"
         )
+
+
+def _row_matches_space(row, credential):
+    """Report whether one returned record carries this exact grant boundary."""
+    return (
+        row.get("shared_protocol") == MARKER
+        and row.get("space_id") == credential.space_id
+        and row.get("visibility") == credential.visibility
+    )
+
+
+def _text_acceptable(text: object) -> TypeGuard[str]:
+    """Report whether a returned memory text is a bounded, encodable string."""
+    if not isinstance(text, str) or not text.strip():
+        return False
+    try:
+        return len(text.encode("utf-8")) <= MAX_TEXT_BYTES
+    except UnicodeEncodeError:
+        # An unbalanced surrogate cannot come from a real record.
+        return False
+
+
+def _finite_score(score):
+    """Return a finite float score, else ``None`` for a malformed or boolean value."""
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        return None
+    try:
+        value = float(score)
+    except (OverflowError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
 
 
 def _default_call():
@@ -182,35 +214,16 @@ class SharedReader:
     @staticmethod
     def _validated(row: object, credential: SharedCredential) -> SharedHit | None:
         """Drop anything the Owner did not mark for this exact space and visibility."""
-        if not isinstance(row, dict):
-            return None
-        if row.get("shared_protocol") != MARKER:
-            return None
-        if row.get("space_id") != credential.space_id:
-            return None
-        if row.get("visibility") != credential.visibility:
+        if not isinstance(row, dict) or not _row_matches_space(row, credential):
             return None
         text = row.get("text")
+        if not _text_acceptable(text):
+            return None
         memory_id = row.get("id")
-        score = row.get("score")
-        if not isinstance(text, str) or not text.strip():
-            return None
-        try:
-            byte_size = len(text.encode("utf-8"))
-        except UnicodeEncodeError:
-            # An unbalanced surrogate cannot come from a real record.
-            return None
-        if byte_size > MAX_TEXT_BYTES:
-            return None
         if not isinstance(memory_id, str) or not memory_id:
             return None
-        if isinstance(score, bool) or not isinstance(score, (int, float)):
-            return None
-        try:
-            value = float(score)
-        except (OverflowError, ValueError):
-            return None
-        if not math.isfinite(value):
+        value = _finite_score(row.get("score"))
+        if value is None:
             return None
         created_by = row.get("created_by")
         updated_by = row.get("updated_by")

@@ -104,12 +104,14 @@ def test_integrity_or_provider_failure_blocks_quality_gate(extra):
 
 def test_empty_or_duplicate_gold_is_an_error():
     """Invalid evaluation labels fail before scoring."""
+    prepared = evidence()
     with pytest.raises(ValueError):
-        score_run({"cases": [], "queries": []}, evidence())
+        score_run({"cases": [], "queries": []}, prepared)
     gold = dataset()
     gold["cases"].append(gold["cases"][0])
+    prepared = evidence()
     with pytest.raises(ValueError):
-        score_run(gold, evidence())
+        score_run(gold, prepared)
 
 
 def test_word_substrings_do_not_count_as_gold_facts():

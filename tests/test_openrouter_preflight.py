@@ -304,8 +304,9 @@ def test_missing_key_is_a_configuration_error(monkeypatch):
     """Manual cloud requests cannot produce a passing availability-only result."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     module = runpy.run_path(str(ROOT / "scripts/quality_openrouter.py"))
+    prepared = copy.deepcopy(profile())
     with pytest.raises(RuntimeError) as error:
-        module["OpenRouterSession"](copy.deepcopy(profile()))
+        module["OpenRouterSession"](prepared)
     assert error.value.classification == "configuration_error"
 
 

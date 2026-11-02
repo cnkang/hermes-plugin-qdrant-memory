@@ -172,10 +172,12 @@ def test_rejects_unauthorized_space_before_any_call():
 
 def test_private_spaces_require_explicit_opt_in():
     """Require an explicit boolean opt-in before a private space is readable."""
+    credentials = [credential(visibility="private")]
     with pytest.raises(ValueError, match="Private spaces"):
-        SharedReader([credential(visibility="private")])
+        SharedReader(credentials)
+    credentials = [credential(visibility="private")]
     with pytest.raises(ValueError, match="boolean"):
-        SharedReader([credential(visibility="private")], allow_private="false")  # type: ignore[arg-type]
+        SharedReader(credentials, allow_private="false")  # type: ignore[arg-type]
 
     reader = SharedReader(
         [credential(visibility="private")], allow_private=True, call=lambda *a: {"memories": []}
@@ -185,12 +187,15 @@ def test_private_spaces_require_explicit_opt_in():
 
 def test_rejects_duplicate_space_and_bad_limit():
     """Refuse duplicate space bindings, boolean limits and out-of-range limits."""
+    credentials = [credential(), credential()]
     with pytest.raises(ValueError, match="exactly one credential"):
-        SharedReader([credential(), credential()])
+        SharedReader(credentials)
+    credentials = [credential()]
     with pytest.raises(ValueError, match="limit"):
-        SharedReader([credential()], limit=0)
+        SharedReader(credentials, limit=0)
+    credentials = [credential()]
     with pytest.raises(ValueError, match="limit"):
-        SharedReader([credential()], limit=True)
+        SharedReader(credentials, limit=True)
 
     reader = SharedReader([credential()], call=lambda *a: {"memories": []})
     with pytest.raises(ValueError, match="limit"):
@@ -301,8 +306,9 @@ def test_spaces_accepts_any_sequence_of_strings():
     reader = SharedReader([credential()], call=fake)
     assert reader.search("fact", spaces=("project-alpha",)) == []
     assert reader.search("fact", spaces=["project-alpha"]) == []
+    prepared = iter(["project-alpha"])
     with pytest.raises(ValueError, match="sequence of names"):
-        reader.search("fact", spaces=iter(["project-alpha"]))
+        reader.search("fact", spaces=prepared)
 
 
 def test_client_rejects_an_oversized_response_body():
@@ -317,12 +323,12 @@ def test_client_rejects_an_oversized_response_body():
             yield from self._chunks
 
     assert _collect_bounded(Stub([b"{}"])) == b"{}"
+    prepared = Stub([b"x" * (MAX_RESPONSE_BYTES + 1)])
     with pytest.raises(ValueError, match="too large"):
-        _collect_bounded(Stub([b"x" * (MAX_RESPONSE_BYTES + 1)]))
+        _collect_bounded(prepared)
+    response = Stub([b"x" * (MAX_RESPONSE_BYTES // 2 + 1), b"y" * (MAX_RESPONSE_BYTES // 2)])
     with pytest.raises(ValueError, match="too large"):
-        _collect_bounded(
-            Stub([b"x" * (MAX_RESPONSE_BYTES // 2 + 1), b"y" * (MAX_RESPONSE_BYTES // 2)])
-        )
+        _collect_bounded(response)
 
 
 def test_client_parses_bytes_and_guards_the_error_envelope(monkeypatch):

@@ -25,15 +25,22 @@ def decide(text, scope, store, extractor, cfg, filters=None, replacement_context
     replacement = isinstance(replacement_context, str) and bool(replacement_context.strip())
     if not hits or (not replacement and hits[0].score < cfg["similarity_review_threshold"]):
         return "ADD", None, {}
-    conflict = None
     # Only explicit replacement intent broadens the existing bounded review set.
     # Every candidate remains in the same authorized scope and must pass relation review.
-    for top in hits if replacement else hits[:1]:
-        relation = extractor.relation(
-            top.payload["text"],
-            text,
-            **({"user_statement": replacement_context} if replacement else {}),
-        )
+    candidates = hits if replacement else hits[:1]
+    review_kwargs = {"user_statement": replacement_context} if replacement else {}
+    return _review_candidates(candidates, text, extractor, review_kwargs)
+
+
+def _review_candidates(candidates, text, extractor, review_kwargs):
+    """Review candidates in order and return the first decisive mutation.
+
+    A first contradiction is carried as a linked conflict when no candidate
+    supersedes or duplicates the new text.
+    """
+    conflict = None
+    for top in candidates:
+        relation = extractor.relation(top.payload["text"], text, **review_kwargs)
         if relation == "SAME":
             return "SKIP", str(top.id), {}
         if relation == "SUPERSEDES":

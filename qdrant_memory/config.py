@@ -99,15 +99,27 @@ def validate_url(value, cloud=False, api_key=None, *, require_tls=False):
     if cloud and parsed.scheme != "https":
         raise ValueError("Cloud requires HTTPS")
     if (api_key or require_tls) and parsed.scheme == "http":
-        hostname = parsed.hostname.rstrip(".").lower()
-        try:
-            loopback = ipaddress.ip_address(hostname).is_loopback
-        except ValueError:
-            loopback = False
-        if hostname != "localhost" and not loopback:
-            if require_tls:
-                raise ValueError("Private-content endpoints require HTTPS")
-            raise ValueError("API-key endpoints require HTTPS")
+        _require_secure_endpoint(parsed.hostname, require_tls=require_tls)
+
+
+def _loopback_host(hostname):
+    """Report whether a hostname is ``localhost`` or a loopback IP literal."""
+    normalized = hostname.rstrip(".").lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _require_secure_endpoint(hostname, *, require_tls):
+    """Reject plaintext API-key and private-content endpoints off loopback."""
+    if _loopback_host(hostname):
+        return
+    if require_tls:
+        raise ValueError("Private-content endpoints require HTTPS")
+    raise ValueError("API-key endpoints require HTTPS")
 
 
 def validate(cfg):

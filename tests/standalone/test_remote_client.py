@@ -109,8 +109,9 @@ def test_event_client_retains_uncommitted_event(response, monkeypatch):
         )
 
     monkeypatch.setattr(httpx, "AsyncClient", client)
+    prepared = send_event("https://memory.test/mcp", "a" * 40, {"event_id": "synthetic"})
     with pytest.raises(RuntimeError, match="not committed"):
-        asyncio.run(send_event("https://memory.test/mcp", "a" * 40, {"event_id": "synthetic"}))
+        asyncio.run(prepared)
 
 
 @pytest.mark.parametrize("status", [200, 400])

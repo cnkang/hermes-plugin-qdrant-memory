@@ -190,8 +190,9 @@ def test_cli_mixed_superseded_and_failed_completion(tmp_path, monkeypatch, capsy
         raise ValueError("synthetic failure")
 
     monkeypatch.setattr(QdrantStore, "upsert", fail_write)
+    prepared = parser.parse_args(arguments)
     with pytest.raises(ValueError, match="synthetic failure"):
-        cli.run(parser.parse_args(arguments), home=tmp_path)
+        cli.run(prepared, home=tmp_path)
     monkeypatch.setattr(QdrantStore, "upsert", original)
     rt = runtime(
         tmp_path,

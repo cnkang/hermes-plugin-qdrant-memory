@@ -82,8 +82,8 @@ class OwnerLLM:
         """Release the Owner's HTTP pool after all admitted lifecycle work drains."""
         self.client.close()
 
-    def complete_structured(self, *, instructions, input, json_schema, **kwargs):
-        """Return structured output to the existing Extractor validation pipeline."""
+    def _request_body(self, instructions, input, json_schema):
+        """Build one schema-grounded structured completion request."""
         import json
 
         # Ground field meanings and numeric bounds in the model's context too.
@@ -130,7 +130,63 @@ class OwnerLLM:
             body["reasoning_effort"] = self.reasoning_effort
         if self.provider_require_parameters is not None:
             body["provider"] = {"require_parameters": self.provider_require_parameters}
-        response = self.client.post(self.url, json=body)
+        return body
+
+    @staticmethod
+    def _tool_arguments(choice):
+        """Accept exactly one named structured response and return its arguments."""
+        calls = choice["message"].get("tool_calls")
+        if (
+            not isinstance(calls, list)
+            or len(calls) != 1
+            or not isinstance(calls[0], dict)
+            or calls[0].get("type") != "function"
+            or not isinstance(calls[0].get("function"), dict)
+            or calls[0]["function"].get("name") != "qdrant_memory"
+            or not isinstance(calls[0]["function"].get("arguments"), str)
+        ):
+            raise ValueError("Owner output must contain one structured function response")
+        return calls[0]["function"]["arguments"]
+
+    @staticmethod
+    def _validated_payload(value, json_schema):
+        """Parse and schema-validate model output without retaining it in errors."""
+        import json
+
+        from jsonschema import Draft202012Validator
+        from jsonschema.exceptions import ValidationError
+        from referencing import Registry
+
+        failure = None
+        parsed = None
+        try:
+            parsed = json.loads(
+                value, parse_constant=_reject_non_json_number, parse_float=_finite_json_float
+            )
+        except ValueError:
+            failure = "Owner output is not valid JSON"
+        if failure:
+            # Raise after leaving the handler so JSONDecodeError.doc cannot
+            # survive through the new exception's implicit context chain.
+            raise ValueError(failure)
+        try:
+            # An explicit empty registry prevents external schema lookups.
+            Draft202012Validator(json_schema, registry=Registry()).validate(parsed)
+        except ValidationError:
+            failure = "Owner output does not satisfy the JSON schema"
+        if failure:
+            # ValidationError also retains model output. An error raised
+            # outside its handler has no provider exception as context.
+            raise ValueError(failure)
+        return parsed
+
+    def complete_structured(self, *, instructions, input, json_schema, **kwargs):
+        """Return structured output to the existing Extractor validation pipeline."""
+        import json
+
+        response = self.client.post(
+            self.url, json=self._request_body(instructions, input, json_schema)
+        )
         if response.status_code != 200:
             raise OwnerProviderStatus(response.status_code)
         choice = response.json()["choices"][0]
@@ -139,45 +195,11 @@ class OwnerLLM:
                 "Owner extraction output was truncated; retain the event"
             )
         if self.response_format_mode == "tool_call":
-            calls = choice["message"].get("tool_calls")
-            if (
-                not isinstance(calls, list)
-                or len(calls) != 1
-                or not isinstance(calls[0], dict)
-                or calls[0].get("type") != "function"
-                or not isinstance(calls[0].get("function"), dict)
-                or calls[0]["function"].get("name") != "qdrant_memory"
-                or not isinstance(calls[0]["function"].get("arguments"), str)
-            ):
-                raise ValueError("Owner output must contain one structured function response")
-            value = calls[0]["function"]["arguments"]
+            value = self._tool_arguments(choice)
         else:
             value = choice["message"]["content"]
         if self.response_format_mode != "json_schema":
-            from jsonschema import Draft202012Validator
-            from jsonschema.exceptions import ValidationError
-            from referencing import Registry
-
-            failure = None
-            try:
-                parsed = json.loads(
-                    value, parse_constant=_reject_non_json_number, parse_float=_finite_json_float
-                )
-            except ValueError:
-                failure = "Owner output is not valid JSON"
-            if failure:
-                # Raise after leaving the handler so JSONDecodeError.doc cannot
-                # survive through the new exception's implicit context chain.
-                raise ValueError(failure)
-            try:
-                # An explicit empty registry prevents external schema lookups.
-                Draft202012Validator(json_schema, registry=Registry()).validate(parsed)
-            except ValidationError:
-                failure = "Owner output does not satisfy the JSON schema"
-            if failure:
-                # ValidationError also retains model output. An error raised
-                # outside its handler has no provider exception as context.
-                raise ValueError(failure)
+            parsed = self._validated_payload(value, json_schema)
         else:
             parsed = json.loads(value)
         return SimpleNamespace(parsed=parsed)

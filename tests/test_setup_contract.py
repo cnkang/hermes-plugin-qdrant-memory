@@ -219,7 +219,8 @@ def test_setup_environment_lookup_respects_profile_scope(tmp_path, monkeypatch):
         assert not ({"url", "api_key"} & {field["key"] for field in get_config_schema()})
         save_config({"mode": "cloud"}, tmp_path)
         saved = (tmp_path / "qdrant-memory.json").read_text()
-        assert "other-profile" not in saved and "own-secret" not in saved
+        assert "other-profile" not in saved
+        assert "own-secret" not in saved
     finally:
         reset_secret_scope(token)
 

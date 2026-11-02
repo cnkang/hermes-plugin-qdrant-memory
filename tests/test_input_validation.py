@@ -23,8 +23,9 @@ from .helpers import config, runtime
 def test_tool_bounds_precede_runtime_access(text, operation, field):
     """All entry paths reject oversized strings before touching runtime resources."""
     name, args = "qdrant_memory_" + operation, {field: text}
+    prepared = Scope("u", None)
     with pytest.raises(ValueError, match="byte limit"):
-        dispatch(None, name, args, Scope("u", None), "test")
+        dispatch(None, name, args, prepared, "test")
     with pytest.raises(ValueError, match="byte limit"):
         call_tool(None, name, args)
     shared_args = args if operation == "search" else {**args, "request_id": "bounded"}

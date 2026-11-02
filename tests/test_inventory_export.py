@@ -112,11 +112,14 @@ def test_export_round_trips_through_mem0_import(tmp_path, monkeypatch):
     assert document["count"] == 2
     assert {r["memory"] for r in document["memories"]} == {"alpha fact", "beta fact"}
     record = next(r for r in document["memories"] if r["memory"] == "beta fact")
-    assert record["user_id"] == "u2" and record["agent_id"] == "bot"
+    assert record["user_id"] == "u2"
+    assert record["agent_id"] == "bot"
     no_agent = next(r for r in document["memories"] if r["memory"] == "alpha fact")
-    assert "agent_id" in no_agent and no_agent["agent_id"] is None
+    assert "agent_id" in no_agent
+    assert no_agent["agent_id"] is None
+    prepared = parser.parse_args(["export", "--output", str(target)])
     with pytest.raises(ExportTargetExistsError):
-        run(parser.parse_args(["export", "--output", str(target)]), home=tmp_path)
+        run(prepared, home=tmp_path)
     forced = run(parser.parse_args(["export", "--output", str(target), "--force"]), home=tmp_path)
     assert forced["count"] == 2
     fresh = tmp_path / "fresh"
@@ -161,13 +164,15 @@ def test_delete_all_is_durable_and_fences_prepared_writes(tmp_path, monkeypatch)
     stale_key = ledger.enqueue_operation("stale-point", "UPSERT", stale)
     never_key = ledger.enqueue_operation("never-written-point", "UPSERT", never)
     ledger.close()
+    prepared = parser.parse_args(["delete-all", "--user", "u1"])
     with pytest.raises(DeleteConfirmationRequiredError):
-        run(parser.parse_args(["delete-all", "--user", "u1"]), home=tmp_path)
+        run(prepared, home=tmp_path)
     dry = run(parser.parse_args(["delete-all", "--user", "u1", "--dry-run"]), home=tmp_path)
     assert dry["would_delete"] == 2
     assert run(parser.parse_args(["list"]), home=tmp_path)["count"]["total"] == 3
     result = run(parser.parse_args(["delete-all", "--user", "u1", "--confirm"]), home=tmp_path)
-    assert result["deleted"] == 2 and result["resumed"] is False
+    assert result["deleted"] == 2
+    assert result["resumed"] is False
     remaining = run(parser.parse_args(["list"]), home=tmp_path)
     assert remaining["count"]["total"] == 1
     assert remaining["memories"][0]["text"] == "gamma fact"
@@ -203,8 +208,9 @@ def test_repeated_resume_does_not_duplicate_fences(tmp_path, monkeypatch):
         return original(self, scope)
 
     monkeypatch.setattr(QdrantStore, "delete_scope", fail_once)
+    prepared = parser.parse_args(["delete-all", "--user", "u1", "--confirm"])
     with pytest.raises(RuntimeError):
-        run(parser.parse_args(["delete-all", "--user", "u1", "--confirm"]), home=tmp_path)
+        run(prepared, home=tmp_path)
     check = Ledger(tmp_path, ledger_namespace(cfg))
     source_id = check.delete_fence_source(Scope("u1", None))
     first = len(
@@ -327,18 +333,17 @@ def test_delete_all_all_agents_covers_every_scope(tmp_path, monkeypatch):
     assert result["deleted"] == 2
     assert "other_agent_scopes" not in result
     assert run(parser.parse_args(["list"]), home=tmp_path)["count"]["total"] == 1
+    args = parser.parse_args(
+        ["delete-all", "--user", "u1", "--agent", "bot", "--all-agents", "--confirm"]
+    )
     with pytest.raises(ScopeSelectionError):
-        run(
-            parser.parse_args(
-                ["delete-all", "--user", "u1", "--agent", "bot", "--all-agents", "--confirm"]
-            ),
-            home=tmp_path,
-        )
+        run(args, home=tmp_path)
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     begin_scope_delete(ledger, scope_delete_intent("u2", all_agents=True))
     ledger.close()
     resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
-    assert resumed["resumed"] is True and resumed["deleted"] == 1
+    assert resumed["resumed"] is True
+    assert resumed["deleted"] == 1
     assert run(parser.parse_args(["list"]), home=tmp_path)["count"]["total"] == 0
 
 
@@ -403,13 +408,15 @@ def test_export_refuses_publication_without_hard_links(tmp_path, monkeypatch):
 
     monkeypatch.setattr("qdrant_memory.inventory.os.link", unsupported)
     target = tmp_path / "fallback.json"
+    prepared = parser.parse_args(["export", "--output", str(target)])
     with pytest.raises(ExportPublicationUnsupportedError):
-        run(parser.parse_args(["export", "--output", str(target)]), home=tmp_path)
+        run(prepared, home=tmp_path)
     assert not target.exists()
     forced = run(parser.parse_args(["export", "--output", str(target), "--force"]), home=tmp_path)
     assert forced["count"] == 1
     document = json.loads(target.read_text())
-    assert document["count"] == 1 and document["memories"][0]["memory"] == "alpha fact"
+    assert document["count"] == 1
+    assert document["memories"][0]["memory"] == "alpha fact"
 
 
 def test_resume_refuses_mismatched_explicit_scope_flags(tmp_path, monkeypatch):
@@ -419,15 +426,18 @@ def test_resume_refuses_mismatched_explicit_scope_flags(tmp_path, monkeypatch):
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     begin_scope_delete(ledger, scope_delete_intent("u1", "bot"))
     ledger.close()
+    prepared = parser.parse_args(["delete-all", "--all-agents", "--confirm"])
     with pytest.raises(ScopeDeleteRefusedError):
-        run(parser.parse_args(["delete-all", "--all-agents", "--confirm"]), home=tmp_path)
+        run(prepared, home=tmp_path)
+    prepared = parser.parse_args(["delete-all", "--user", "u2", "--confirm"])
     with pytest.raises(ScopeDeleteRefusedError):
-        run(parser.parse_args(["delete-all", "--user", "u2", "--confirm"]), home=tmp_path)
+        run(prepared, home=tmp_path)
     resumed = run(
         parser.parse_args(["delete-all", "--user", "u1", "--agent", "bot", "--confirm"]),
         home=tmp_path,
     )
-    assert resumed["resumed"] is True and resumed["deleted"] == 1
+    assert resumed["resumed"] is True
+    assert resumed["deleted"] == 1
 
 
 def test_interrupted_scope_delete_blocks_commands_and_resumes(tmp_path, monkeypatch):
@@ -437,12 +447,15 @@ def test_interrupted_scope_delete_blocks_commands_and_resumes(tmp_path, monkeypa
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     begin_scope_delete(ledger, scope_delete_intent("u1"))
     ledger.close()
+    prepared = parser.parse_args(["stats"])
     with pytest.raises(ScopeDeleteRecoveryRequiredError):
-        run(parser.parse_args(["stats"]), home=tmp_path)
+        run(prepared, home=tmp_path)
+    prepared = parser.parse_args(["delete-all", "--user", "u2", "--confirm"])
     with pytest.raises(ScopeDeleteRefusedError):
-        run(parser.parse_args(["delete-all", "--user", "u2", "--confirm"]), home=tmp_path)
+        run(prepared, home=tmp_path)
     resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
-    assert resumed["resumed"] is True and resumed["deleted"] == 1
+    assert resumed["resumed"] is True
+    assert resumed["deleted"] == 1
     assert run(parser.parse_args(["stats"]), home=tmp_path)["points_count"] == 0
     assert run(parser.parse_args(["list"]), home=tmp_path)["count"]["total"] == 0
 
@@ -508,21 +521,21 @@ def test_single_star_agent_delete_does_not_widen_on_resume(tmp_path, monkeypatch
         return original(self, scope)
 
     monkeypatch.setattr(QdrantStore, "delete_scope", fail_once)
+    args = parser.parse_args(["delete-all", "--user", "u1", "--agent", "*", "--confirm"])
     with pytest.raises(RuntimeError):
-        run(
-            parser.parse_args(["delete-all", "--user", "u1", "--agent", "*", "--confirm"]),
-            home=tmp_path,
-        )
+        run(args, home=tmp_path)
     intents = scope_delete_intents(tmp_path, cfg)
     assert len(intents) == 1
     recorded = json.loads(intents[0]["scope_json"])
-    assert recorded["mode"] == "single_agent" and recorded["agent_id"] == "*"
+    assert recorded["mode"] == "single_agent"
+    assert recorded["agent_id"] == "*"
     # Other commands fail closed with a stable exit status and error JSON.
     monkeypatch.setattr("qdrant_memory.cli.active_home", lambda: tmp_path)
     assert main(parser.parse_args(["list"])) == 1
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "scope_delete_recovery_required"
     resumed = run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
-    assert resumed["resumed"] is True and resumed["deleted"] == 1
+    assert resumed["resumed"] is True
+    assert resumed["deleted"] == 1
     assert resumed["scope"]["mode"] == "single_agent"
     assert resumed["scope"]["agent_id"] == "*"
     assert scope_delete_intents(tmp_path, cfg) == []
@@ -569,7 +582,8 @@ def test_all_agents_includes_literal_star_agent_scope(tmp_path, monkeypatch):
     assert result["scope"] == {"schema_version": 2, "mode": "all_agents", "user_id": "u1"}
     assert scope_delete_intents(tmp_path, cfg) == []
     listed = run(parser.parse_args(["list"]), home=tmp_path)
-    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user star"
+    assert listed["count"]["total"] == 1
+    assert listed["memories"][0]["text"] == "other user star"
 
 
 def test_no_agent_scope_isolated_from_star_agent(tmp_path, monkeypatch):
@@ -588,7 +602,8 @@ def test_no_agent_scope_isolated_from_star_agent(tmp_path, monkeypatch):
     assert result["other_agent_scopes"] == {"*": 1}
     assert scope_delete_intents(tmp_path, cfg) == []
     listed = run(parser.parse_args(["list"]), home=tmp_path)
-    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "star fact"
+    assert listed["count"]["total"] == 1
+    assert listed["memories"][0]["text"] == "star fact"
 
 
 def test_resume_refuses_widening_and_mismatched_flags(tmp_path, monkeypatch):
@@ -604,23 +619,21 @@ def test_resume_refuses_widening_and_mismatched_flags(tmp_path, monkeypatch):
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     begin_scope_delete(ledger, scope_delete_intent("u1", "*"))
     ledger.close()
+    args = parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--confirm"])
     with pytest.raises(ScopeDeleteRefusedError):
-        run(
-            parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--confirm"]),
-            home=tmp_path,
-        )
+        run(args, home=tmp_path)
+    args = parser.parse_args(["delete-all", "--user", "u1", "--agent", "hermes", "--confirm"])
     with pytest.raises(ScopeDeleteRefusedError):
-        run(
-            parser.parse_args(["delete-all", "--user", "u1", "--agent", "hermes", "--confirm"]),
-            home=tmp_path,
-        )
+        run(args, home=tmp_path)
     resumed = run(
         parser.parse_args(["delete-all", "--user", "u1", "--agent", "*", "--confirm"]),
         home=tmp_path,
     )
-    assert resumed["resumed"] is True and resumed["deleted"] == 1
+    assert resumed["resumed"] is True
+    assert resumed["deleted"] == 1
     listed = run(parser.parse_args(["list"]), home=tmp_path)
-    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "hermes fact"
+    assert listed["count"]["total"] == 1
+    assert listed["memories"][0]["text"] == "hermes fact"
 
 
 def test_legacy_intent_refused_until_resolved(tmp_path, monkeypatch):
@@ -636,10 +649,12 @@ def test_legacy_intent_refused_until_resolved(tmp_path, monkeypatch):
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     begin_scope_delete(ledger, {"user_id": "u1", "agent_id": "*"})
     ledger.close()
+    prepared = parser.parse_args(["stats"])
     with pytest.raises(ScopeDeleteLegacyIntentError):
-        run(parser.parse_args(["stats"]), home=tmp_path)
+        run(prepared, home=tmp_path)
+    prepared = parser.parse_args(["delete-all", "--confirm"])
     with pytest.raises(ScopeDeleteLegacyIntentError):
-        run(parser.parse_args(["delete-all", "--confirm"]), home=tmp_path)
+        run(prepared, home=tmp_path)
     check = Ledger(tmp_path, ledger_namespace(cfg))
     with check.lock:
         remaining_intents = check.db.execute(
@@ -656,22 +671,22 @@ def test_legacy_intent_refused_until_resolved(tmp_path, monkeypatch):
         assert client.count(cfg["qdrant"]["collection"]).count == 3
     finally:
         client.close()
+    args = parser.parse_args(
+        ["delete-all", "--user", "u2", "--resolve-legacy", "all_agents", "--confirm"]
+    )
     with pytest.raises(ScopeDeleteRefusedError):
-        run(
-            parser.parse_args(
-                ["delete-all", "--user", "u2", "--resolve-legacy", "all_agents", "--confirm"]
-            ),
-            home=tmp_path,
-        )
+        run(args, home=tmp_path)
     resolved = run(
         parser.parse_args(
             ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--confirm"]
         ),
         home=tmp_path,
     )
-    assert resolved["deleted"] == 1 and resolved["scope"]["mode"] == "single_agent"
+    assert resolved["deleted"] == 1
+    assert resolved["scope"]["mode"] == "single_agent"
     listed = run(parser.parse_args(["list"]), home=tmp_path)
-    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "hermes fact"
+    assert listed["count"]["total"] == 1
+    assert listed["memories"][0]["text"] == "hermes fact"
 
 
 def test_legacy_intent_resolves_as_all_agents(tmp_path, monkeypatch):
@@ -694,9 +709,11 @@ def test_legacy_intent_resolves_as_all_agents(tmp_path, monkeypatch):
         ),
         home=tmp_path,
     )
-    assert resolved["deleted"] == 2 and resolved["scope"]["mode"] == "all_agents"
+    assert resolved["deleted"] == 2
+    assert resolved["scope"]["mode"] == "all_agents"
     listed = run(parser.parse_args(["list"]), home=tmp_path)
-    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user fact"
+    assert listed["count"]["total"] == 1
+    assert listed["memories"][0]["text"] == "other user fact"
 
 
 def test_corrupt_legacy_intent_is_refused_not_crashed(tmp_path, monkeypatch, capsys):
@@ -711,13 +728,11 @@ def test_corrupt_legacy_intent_is_refused_not_crashed(tmp_path, monkeypatch, cap
             (ledger.collection,),
         )
     ledger.close()
+    args = parser.parse_args(
+        ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--confirm"]
+    )
     with pytest.raises(ScopeDeleteRefusedError):
-        run(
-            parser.parse_args(
-                ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--confirm"]
-            ),
-            home=tmp_path,
-        )
+        run(args, home=tmp_path)
     # The corrupt intent still fails closed with the legacy error code.
     monkeypatch.setattr("qdrant_memory.cli.active_home", lambda: tmp_path)
     assert main(parser.parse_args(["list"])) == 1
@@ -731,20 +746,19 @@ def test_legacy_intent_without_agent_id_refuses_single_agent(tmp_path, monkeypat
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     begin_scope_delete(ledger, {"user_id": "u1"})
     ledger.close()
+    args = parser.parse_args(
+        ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--confirm"]
+    )
     with pytest.raises(ScopeDeleteRefusedError):
-        run(
-            parser.parse_args(
-                ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--confirm"]
-            ),
-            home=tmp_path,
-        )
+        run(args, home=tmp_path)
     resolved = run(
         parser.parse_args(
             ["delete-all", "--user", "u1", "--resolve-legacy", "all_agents", "--confirm"]
         ),
         home=tmp_path,
     )
-    assert resolved["deleted"] == 1 and resolved["scope"]["mode"] == "all_agents"
+    assert resolved["deleted"] == 1
+    assert resolved["scope"]["mode"] == "all_agents"
     assert scope_delete_intents(tmp_path, cfg) == []
 
 
@@ -761,22 +775,22 @@ def test_legacy_intent_with_concrete_agent_refuses_all_agents(tmp_path, monkeypa
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     begin_scope_delete(ledger, {"user_id": "u1", "agent_id": "bot"})
     ledger.close()
+    args = parser.parse_args(
+        ["delete-all", "--user", "u1", "--resolve-legacy", "all_agents", "--confirm"]
+    )
     with pytest.raises(ScopeDeleteRefusedError):
-        run(
-            parser.parse_args(
-                ["delete-all", "--user", "u1", "--resolve-legacy", "all_agents", "--confirm"]
-            ),
-            home=tmp_path,
-        )
+        run(args, home=tmp_path)
     resolved = run(
         parser.parse_args(
             ["delete-all", "--user", "u1", "--resolve-legacy", "single_agent", "--confirm"]
         ),
         home=tmp_path,
     )
-    assert resolved["deleted"] == 1 and resolved["scope"]["agent_id"] == "bot"
+    assert resolved["deleted"] == 1
+    assert resolved["scope"]["agent_id"] == "bot"
     listed = run(parser.parse_args(["list"]), home=tmp_path)
-    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "hermes fact"
+    assert listed["count"]["total"] == 1
+    assert listed["memories"][0]["text"] == "hermes fact"
 
 
 def test_all_agents_resume_after_partial_deletion(tmp_path, monkeypatch, capsys):
@@ -808,11 +822,9 @@ def test_all_agents_resume_after_partial_deletion(tmp_path, monkeypatch, capsys)
         return original(self, scope)
 
     monkeypatch.setattr(QdrantStore, "delete_scope", fail_second)
+    args = parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--confirm"])
     with pytest.raises(RuntimeError):
-        run(
-            parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--confirm"]),
-            home=tmp_path,
-        )
+        run(args, home=tmp_path)
     intents = scope_delete_intents(tmp_path, cfg)
     assert len(intents) == 1
     assert json.loads(intents[0]["scope_json"])["mode"] == "all_agents"
@@ -833,7 +845,8 @@ def test_all_agents_resume_after_partial_deletion(tmp_path, monkeypatch, capsys)
         assert len(fenced) == 1
     check.close()
     listed = run(parser.parse_args(["list"]), home=tmp_path)
-    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user fact"
+    assert listed["count"]["total"] == 1
+    assert listed["memories"][0]["text"] == "other user fact"
 
 
 def test_all_agents_handles_many_agent_scopes(tmp_path, monkeypatch):
@@ -851,7 +864,8 @@ def test_all_agents_handles_many_agent_scopes(tmp_path, monkeypatch):
     )
     assert result["deleted"] == 150
     listed = run(parser.parse_args(["list"]), home=tmp_path)
-    assert listed["count"]["total"] == 1 and listed["memories"][0]["text"] == "other user"
+    assert listed["count"]["total"] == 1
+    assert listed["memories"][0]["text"] == "other user"
 
 
 def test_legacy_intent_error_codes(tmp_path, monkeypatch, capsys):

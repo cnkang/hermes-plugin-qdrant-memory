@@ -102,8 +102,9 @@ def test_json_object_mode_preserves_nested_numeric_bounds(importance):
         )
     )
     try:
+        prepared = Extractor(llm, cfg)
         with pytest.raises(ValueError, match="schema"):
-            Extractor(llm, cfg).extract({"user": "synthetic", "assistant": "ack"})
+            prepared.extract({"user": "synthetic", "assistant": "ack"})
     finally:
         llm.close()
 
@@ -385,8 +386,9 @@ def test_truncated_structured_output_is_not_accepted(monkeypatch):
 
     llm.client = httpx.Client(transport=httpx.MockTransport(response))
     try:
+        prepared = Extractor(llm, cfg)
         with pytest.raises(ValueError, match="truncated"):
-            Extractor(llm, cfg).extract({"user": "anonymous fixture", "assistant": "ack"})
+            prepared.extract({"user": "anonymous fixture", "assistant": "ack"})
         assert budgets == [2048]
     finally:
         llm.close()
@@ -403,8 +405,7 @@ def test_output_budget_is_explicit_and_bounded(budget):
         "max_output_tokens": budget,
     }
     with pytest.raises(ValueError):
-        llm = OwnerLLM(cfg)
-        llm.close()
+        OwnerLLM(cfg)
 
 
 @pytest.mark.parametrize("effort", [None, "none", "low"])
@@ -443,7 +444,7 @@ def test_reasoning_effort_requires_explicit_configuration(effort):
 def test_invalid_reasoning_effort_fails_before_provider_io(effort):
     """Malformed inference options must fail without changing transport policy."""
     with pytest.raises(ValueError, match="reasoning"):
-        llm = OwnerLLM(
+        OwnerLLM(
             {
                 "mode": "override",
                 "provider": "openai-compatible",
@@ -452,4 +453,3 @@ def test_invalid_reasoning_effort_fails_before_provider_io(effort):
                 "reasoning_effort": effort,
             }
         )
-        llm.close()

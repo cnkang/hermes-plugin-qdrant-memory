@@ -129,7 +129,8 @@ def test_shutdown_during_initialize_cancels_before_ready_and_releases_lease(tmp_
     initializer.join(15)
     stopper.join(15)
 
-    assert not initializer.is_alive() and not stopper.is_alive()
+    assert not initializer.is_alive()
+    assert not stopper.is_alive()
     assert not shutdown_errors
     assert len(initialize_errors) == 1
     assert str(initialize_errors[0]) == "Provider initialization was stopped"
@@ -197,7 +198,8 @@ def test_shutdown_waits_for_early_initialization_failure_cleanup(tmp_path, monke
     initializer.join(15)
     stopper.join(15)
 
-    assert not initializer.is_alive() and not stopper.is_alive()
+    assert not initializer.is_alive()
+    assert not stopper.is_alive()
     assert len(initialize_errors) == 1
     assert str(initialize_errors[0]) == "Provider initialization was stopped"
     assert shutdown_errors == []
@@ -315,8 +317,9 @@ def test_resource_cleanup_failure_retains_lease_until_failed_callback_retries(tm
     assert p._cleanup_complete is False
     assert attempts == 1
 
+    prepared = load_config(str(tmp_path), config())
     with pytest.raises(WriterBusyError):
-        WriterLease.for_config(tmp_path, load_config(str(tmp_path), config()))
+        WriterLease.for_config(tmp_path, prepared)
 
     p.shutdown()
     assert p.lifecycle_state == "FAILED"

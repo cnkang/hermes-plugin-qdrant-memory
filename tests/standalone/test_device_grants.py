@@ -86,8 +86,9 @@ def test_same_agent_two_devices_private_cas_receipts_and_live_revocation(tmp_pat
 def test_logical_impersonation_rejected_before_startup(tmp_path):
     """A same-space private grant cannot name a different logical agent."""
     path = tmp_path / "policy.json"
+    grants = [grant("a" * 40, "a"), grant("b" * 40, "b", logical="codex")]
     with pytest.raises(ValueError):
-        write_policy(path, [grant("a" * 40, "a"), grant("b" * 40, "b", logical="codex")])
+        write_policy(path, grants)
 
 
 def test_expired_device_denied(tmp_path):

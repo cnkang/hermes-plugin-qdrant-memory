@@ -14,6 +14,34 @@ from .models import digest, now, timestamp
 from .retry import safe_error
 
 DELETE_FENCE_PREFIX = "hermes-qdrant-delete-fence-v1:"
+UNKNOWN_TABLE_MESSAGE = "Unknown ledger table"
+
+
+def _manifest_record_keys(records):
+    """Collect operation keys from one manifest record map, or None if malformed."""
+    if not isinstance(records, dict):
+        return None
+    keys = set()
+    for record in records.values():
+        if not isinstance(record, dict):
+            return None
+        key = record.get("operation_key")
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _manifest_operation_keys(payload_json):
+    """Return operation keys an unfinished manifest retains, or None if unreadable."""
+    try:
+        manifest = json.loads(payload_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(manifest, dict):
+        return None
+    if manifest.get("completed_at") is not None:
+        return set()
+    return _manifest_record_keys(manifest.get("records", {}))
 
 
 class Ledger:
@@ -344,7 +372,7 @@ class Ledger:
     def rows(self, table, status="PENDING"):
         """Return destination-scoped rows in insertion order for the requested status."""
         if table not in {"events", "operations"}:
-            raise ValueError("Unknown ledger table")
+            raise ValueError(UNKNOWN_TABLE_MESSAGE)
         with self.lock:
             return [
                 dict(row)
@@ -357,7 +385,7 @@ class Ledger:
     def high_watermark(self, table):
         """Snapshot a destination scan boundary before replay starts."""
         if table not in {"events", "operations"}:
-            raise ValueError("Unknown ledger table")
+            raise ValueError(UNKNOWN_TABLE_MESSAGE)
         with self.lock:
             return self.db.execute(
                 f"SELECT COALESCE(MAX(rowid),0) FROM {table} WHERE collection=?",
@@ -371,7 +399,7 @@ class Ledger:
         shift pages, and every row is returned at most once per scan.
         """
         if table not in {"events", "operations"}:
-            raise ValueError("Unknown ledger table")
+            raise ValueError(UNKNOWN_TABLE_MESSAGE)
         if batch_size < 1:
             raise ValueError("Batch size must be positive")
         upper = self.high_watermark(table) if upper is None else upper
@@ -624,66 +652,55 @@ class Ledger:
         for row in self.db.execute(
             "SELECT payload_json FROM manifests WHERE collection=?", (self.collection,)
         ):
-            try:
-                manifest = json.loads(row["payload_json"])
-            except (TypeError, ValueError):
+            found = _manifest_operation_keys(row["payload_json"])
+            if found is None:
                 return None
-            if not isinstance(manifest, dict):
-                return None
-            if manifest.get("completed_at") is not None:
-                continue
-            records = manifest.get("records", {})
-            if not isinstance(records, dict):
-                return None
-            for record in records.values():
-                if not isinstance(record, dict):
-                    return None
-                key = record.get("operation_key")
-                if key:
-                    keys.add(key)
+            keys |= found
         return keys
 
     def _scrub_terminal_payloads(self, event_keys=None, operation_keys=None):
         """Scrub terminal bodies except operations still needed by an open migration."""
+        event_count = self._scrub_event_payloads(event_keys)
+        resumable_keys = self._resumable_operation_keys
+        if resumable_keys is None:
+            return {"events": event_count, "operations": 0}
+        return {
+            "events": event_count,
+            "operations": self._scrub_operation_payloads(resumable_keys, operation_keys),
+        }
+
+    def _scrub_event_payloads(self, event_keys):
+        """Erase terminal event bodies, one acknowledgement at a time when selected.
+
+        Callers hold ``self.lock``; this helper never acquires it on its own.
+        """
         if event_keys is None:
-            event_count = self.db.execute(
+            return self.db.execute(
                 """UPDATE events SET payload_json='{}'
                 WHERE collection=? AND status IN ('COMMITTED','SUPERSEDED','CANCELLED')
                 AND payload_json!='{}'""",
                 (self.collection,),
             ).rowcount
-        else:
-            event_count = sum(
-                self.db.execute(
-                    """UPDATE events SET payload_json='{}'
+        return sum(
+            self.db.execute(
+                """UPDATE events SET payload_json='{}'
                     WHERE event_id=? AND collection=?
                     AND status IN ('COMMITTED','SUPERSEDED','CANCELLED')
                     AND payload_json!='{}'""",
-                    (key, self.collection),
-                ).rowcount
-                for key in event_keys
-            )
+                (key, self.collection),
+            ).rowcount
+            for key in event_keys
+        )
 
-        resumable_keys = self._resumable_operation_keys
-        if resumable_keys is None:
-            return {"events": event_count, "operations": 0}
+    def _scrub_operation_payloads(self, resumable_keys, operation_keys):
+        """Erase terminal operation bodies an open migration no longer needs.
+
+        Callers hold ``self.lock``; this helper never acquires it on its own.
+        """
         if operation_keys is None:
             rows = self._terminal_operation_rows()
         else:
-
-            def selected_rows():
-                """Read one acknowledgement at a time, including superseded history."""
-                for key in operation_keys:
-                    row = self.db.execute(
-                        """SELECT idempotency_key,payload_json FROM operations
-                    WHERE idempotency_key=? AND collection=?
-                    AND status IN ('COMMITTED','SUPERSEDED')""",
-                        (key, self.collection),
-                    ).fetchone()
-                    if row:
-                        yield row
-
-            rows = selected_rows()
+            rows = self._selected_operation_rows(operation_keys)
         operation_count = 0
         for row in rows:
             key = row["idempotency_key"]
@@ -695,7 +712,19 @@ class Ledger:
                 AND status IN ('COMMITTED','SUPERSEDED')""",
                 (key, self.collection),
             ).rowcount
-        return {"events": event_count, "operations": operation_count}
+        return operation_count
+
+    def _selected_operation_rows(self, operation_keys):
+        """Read one acknowledgement at a time, including superseded history."""
+        for key in operation_keys:
+            row = self.db.execute(
+                """SELECT idempotency_key,payload_json FROM operations
+                    WHERE idempotency_key=? AND collection=?
+                    AND status IN ('COMMITTED','SUPERSEDED')""",
+                (key, self.collection),
+            ).fetchone()
+            if row:
+                yield row
 
     def _terminal_operation_rows(self, point=None, before=None):
         """Read scrub candidates in stable pages, closing queries before mutations."""

@@ -577,17 +577,19 @@ def test_retry_passes_the_protected_policy_to_the_writer_lease(profile, monkeypa
     register_cli(parser)
     # The protected policy must stay inside the operator's invocation directory.
     monkeypatch.chdir(home)
+    args = parser.parse_args(["retry"])
     with pytest.raises(PermissionError):
         run(
-            parser.parse_args(["retry"]),
+            args,
             home,
             config_loader=load_standalone_config,
             secret_reader=os.environ.get,
         )
     assert seen == [None]
+    args = parser.parse_args(["retry", "--policy", str(path)])
     with pytest.raises(PermissionError):
         run(
-            parser.parse_args(["retry", "--policy", str(path)]),
+            args,
             home,
             config_loader=load_standalone_config,
             secret_reader=os.environ.get,
@@ -606,9 +608,10 @@ def test_retry_rejects_a_policy_without_a_destination(profile, monkeypatch):
     parser = argparse.ArgumentParser()
     register_cli(parser)
     monkeypatch.chdir(home)
+    args = parser.parse_args(["retry", "--policy", str(path)])
     with pytest.raises(ValueError, match="no protected destination binding"):
         run(
-            parser.parse_args(["retry", "--policy", str(path)]),
+            args,
             home,
             config_loader=load_standalone_config,
             secret_reader=os.environ.get,

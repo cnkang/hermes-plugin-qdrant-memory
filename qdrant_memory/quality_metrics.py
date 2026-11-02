@@ -24,6 +24,49 @@ def matches(text, fact):
     )
 
 
+def _validate_case(case, identifiers, facts):
+    """Validate one case identity and collect the facts it expects."""
+    key = case.get("id")
+    expected = case.get("expected")
+    if not isinstance(key, str) or not key or key in identifiers or not isinstance(expected, list):
+        raise ValueError("Unique case IDs and explicit expected facts are required")
+    identifiers.add(key)
+    for fact in expected:
+        _validate_fact(fact, facts)
+
+
+def _validate_fact(fact, facts):
+    """Validate one annotated fact and its concept/synonym groups."""
+    key, terms = fact.get("id"), fact.get("terms")
+    if not isinstance(key, str) or not key or key in facts:
+        raise ValueError("Unique fact IDs are required")
+    if (
+        not isinstance(terms, list)
+        or not terms
+        or any(
+            not isinstance(group, list)
+            or not group
+            or any(not isinstance(term, str) or not term.strip() for term in group)
+            for group in terms
+        )
+    ):
+        raise ValueError("Each fact requires nonempty concept/synonym groups")
+    facts[key] = fact
+
+
+def _validate_query(query, identifiers, facts):
+    """Validate one retrieval query against the known fact set."""
+    key = query.get("id")
+    if (
+        not isinstance(key, str)
+        or not key
+        or key in identifiers
+        or query.get("expected") not in facts
+    ):
+        raise ValueError("Unique query IDs and known expected facts are required")
+    identifiers.add(key)
+
+
 def validate_gold(dataset):
     """Reject ambiguous IDs, missing positive examples and malformed annotations."""
     cases, queries = dataset.get("cases"), dataset.get("queries")
@@ -31,43 +74,10 @@ def validate_gold(dataset):
         raise ValueError("Nonempty cases and retrieval queries are required")
     identifiers, facts = set(), {}
     for case in cases:
-        key = case.get("id")
-        expected = case.get("expected")
-        if (
-            not isinstance(key, str)
-            or not key
-            or key in identifiers
-            or not isinstance(expected, list)
-        ):
-            raise ValueError("Unique case IDs and explicit expected facts are required")
-        identifiers.add(key)
-        for fact in expected:
-            key, terms = fact.get("id"), fact.get("terms")
-            if not isinstance(key, str) or not key or key in facts:
-                raise ValueError("Unique fact IDs are required")
-            if (
-                not isinstance(terms, list)
-                or not terms
-                or any(
-                    not isinstance(group, list)
-                    or not group
-                    or any(not isinstance(term, str) or not term.strip() for term in group)
-                    for group in terms
-                )
-            ):
-                raise ValueError("Each fact requires nonempty concept/synonym groups")
-            facts[key] = fact
+        _validate_case(case, identifiers, facts)
     identifiers = set()
     for query in queries:
-        key = query.get("id")
-        if (
-            not isinstance(key, str)
-            or not key
-            or key in identifiers
-            or query.get("expected") not in facts
-        ):
-            raise ValueError("Unique query IDs and known expected facts are required")
-        identifiers.add(key)
+        _validate_query(query, identifiers, facts)
     return facts
 
 
@@ -88,6 +98,66 @@ def _matched_count(rows, facts):
     return sum(assign(row, set()) for row in range(len(rows)))
 
 
+def _extraction_totals(cases, extractions):
+    """Count matched, unmatched and negative extraction outcomes per case."""
+    totals = {"true": 0, "false": 0, "positives": 0, "recalled": 0, "negatives": 0}
+    complete = True
+    for case in cases:
+        rows = extractions.get(case["id"], [])
+        if not isinstance(rows, list) or any(not isinstance(row, str) for row in rows):
+            rows, complete = [], False
+        expected = case["expected"]
+        matched = _matched_count(rows, expected)
+        totals["true"] += matched
+        totals["false"] += len(rows) - matched
+        totals["negatives"] += not expected and not rows
+        if expected:
+            totals["positives"] += 1
+            totals["recalled"] += matched == len(expected)
+    return totals, complete
+
+
+def _reciprocal_ranks(queries, retrievals):
+    """Rank the expected fact inside the top five rows of every retrieval."""
+    ranks, complete = [], True
+    for query in queries:
+        rows = retrievals.get(query["id"], [])
+        if not isinstance(rows, list) or any(
+            row is not None and not isinstance(row, str) for row in rows
+        ):
+            rows, complete = [], False
+        top = rows[:5]
+        ranks.append(1 / (top.index(query["expected"]) + 1) if query["expected"] in top else 0)
+    return ranks, complete
+
+
+def _run_summary(totals, ranks, complete):
+    """Build the metric envelope from the counted extraction and retrieval steps."""
+    true, false = totals["true"], totals["false"]
+    return {
+        "precision": true / (true + false) if true + false else 0,
+        "positive_case_recall": totals["recalled"] / totals["positives"],
+        "recall_at_5": sum(rank > 0 for rank in ranks) / len(ranks),
+        "mrr": sum(ranks) / len(ranks),
+        "rank_limit": 5,
+        "true_positives": true,
+        "false_positives": false,
+        "negative_cases_rejected": totals["negatives"],
+        "complete": complete,
+        "thresholds": THRESHOLDS.copy(),
+    }
+
+
+def _integrity_holds(evidence):
+    """Require zero leakage/failures and confirmed replay and restart evidence."""
+    counters = all(
+        type(evidence.get(key)) is int and evidence[key] == 0
+        for key in ("scope_leaks", "provider_failures")
+    )
+    flags = all(evidence.get(key) is True for key in ("replay_safe", "restart_safe"))
+    return counters and flags
+
+
 def score_run(dataset, evidence):
     """Require complete extraction/retrieval, zero leakage and confirmed replay/restart."""
     validate_gold(dataset)
@@ -97,69 +167,32 @@ def score_run(dataset, evidence):
         extractions = {}
     if not isinstance(retrievals, dict):
         retrievals = {}
+    totals, extractions_ok = _extraction_totals(dataset["cases"], extractions)
+    ranks, retrievals_ok = _reciprocal_ranks(dataset["queries"], retrievals)
     complete = set(extractions) == {case["id"] for case in dataset["cases"]}
     complete &= set(retrievals) == {query["id"] for query in dataset["queries"]}
-    true, false, positives, recalled, negatives = 0, 0, 0, 0, 0
-    for case in dataset["cases"]:
-        rows = extractions.get(case["id"], [])
-        if not isinstance(rows, list) or any(not isinstance(row, str) for row in rows):
-            rows, complete = [], False
-        expected = case["expected"]
-        matched = _matched_count(rows, expected)
-        true += matched
-        false += len(rows) - matched
-        negatives += not expected and not rows
-        if expected:
-            positives += 1
-            recalled += matched == len(expected)
-    ranks = []
-    for query in dataset["queries"]:
-        rows = retrievals.get(query["id"], [])
-        if not isinstance(rows, list) or any(
-            row is not None and not isinstance(row, str) for row in rows
-        ):
-            rows, complete = [], False
-        top = rows[:5]
-        ranks.append(1 / (top.index(query["expected"]) + 1) if query["expected"] in top else 0)
-    result = {
-        "precision": true / (true + false) if true + false else 0,
-        "positive_case_recall": recalled / positives,
-        "recall_at_5": sum(rank > 0 for rank in ranks) / len(ranks),
-        "mrr": sum(ranks) / len(ranks),
-        "rank_limit": 5,
-        "true_positives": true,
-        "false_positives": false,
-        "negative_cases_rejected": negatives,
-        "complete": complete,
-        "thresholds": THRESHOLDS.copy(),
-    }
-    integrity = all(
-        type(evidence.get(key)) is int and evidence[key] == 0
-        for key in ("scope_leaks", "provider_failures")
-    ) and all(evidence.get(key) is True for key in ("replay_safe", "restart_safe"))
+    complete = complete and extractions_ok and retrievals_ok
+    result = _run_summary(totals, ranks, complete)
     passing = (
-        complete and integrity and all(result[key] >= value for key, value in THRESHOLDS.items())
+        complete
+        and _integrity_holds(evidence)
+        and all(result[key] >= value for key, value in THRESHOLDS.items())
     )
     result["status"] = "PASS" if passing else "FAIL"
     return result
 
 
-def score_contexts(data, observations, *, space_id, visibility):
-    """Score actual Pi input against project facts using the project-only READER grant.
-
-    Private-write Pi turns also read project memory in this fixed evaluation;
-    this scorer does not claim to validate private-memory context injection.
-    """
-    validate_gold(data)
-    expected = {row["id"] for row in data["cases"] if row.get("route") in {"pi", "project"}}
-    facts = [
-        fact for row in data["cases"] if row.get("route") == "project" for fact in row["expected"]
-    ]
-    rows = observations if isinstance(observations, list) else []
+def _context_complete(expected, rows):
+    """Require exactly one observation per expected case identity."""
     identities = [row.get("case_id") for row in rows if isinstance(row, dict)]
     complete = bool(expected) and len(identities) == len(rows) == len(expected)
-    complete = complete and set(identities) == expected
+    return complete and set(identities) == expected
+
+
+def _context_totals(rows, facts, space_id, visibility):
+    """Count injected memories, incorrect memories and scope violations."""
     injected = incorrect = scope_violations = 0
+    complete = True
     for observation in rows:
         memories = observation.get("memories") if isinstance(observation, dict) else None
         if not isinstance(memories, list):
@@ -176,6 +209,25 @@ def score_contexts(data, observations, *, space_id, visibility):
                 matches(memory["text"], fact) for fact in facts
             )
             incorrect += not (scope_ok and known)
+    return injected, incorrect, scope_violations, complete
+
+
+def score_contexts(data, observations, *, space_id, visibility):
+    """Score actual Pi input against project facts using the project-only READER grant.
+
+    Private-write Pi turns also read project memory in this fixed evaluation;
+    this scorer does not claim to validate private-memory context injection.
+    """
+    validate_gold(data)
+    expected = {row["id"] for row in data["cases"] if row.get("route") in {"pi", "project"}}
+    facts = [
+        fact for row in data["cases"] if row.get("route") == "project" for fact in row["expected"]
+    ]
+    rows = observations if isinstance(observations, list) else []
+    injected, incorrect, scope_violations, observed_ok = _context_totals(
+        rows, facts, space_id, visibility
+    )
+    complete = _context_complete(expected, rows) and observed_ok
     return {
         "status": "PASS" if complete and injected > 0 and incorrect == 0 else "FAIL",
         "complete": complete,

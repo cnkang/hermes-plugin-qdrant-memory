@@ -291,8 +291,9 @@ def test_rejection_is_not_replayed(tmp_path, monkeypatch):
             await send_event("https://memory.test/mcp", TOKEN, {"event_id": "turn-1"})
 
     try:
-        with pytest.raises(Exception) as caught:
-            asyncio.run(check())
+        prepared = check()
+        with pytest.raises(BaseExceptionGroup) as caught:
+            asyncio.run(prepared)
         failure = remote_error(caught.value)
         assert failure["reason"] == "authentication_rejected"
         assert failure["retryable"] is False
@@ -327,8 +328,9 @@ def test_tool_path_authentication_rejection_is_not_replayed(tmp_path, monkeypatc
             )
 
     try:
-        with pytest.raises(Exception) as caught:
-            asyncio.run(check())
+        prepared = check()
+        with pytest.raises(BaseExceptionGroup) as caught:
+            asyncio.run(prepared)
         failure = remote_error(caught.value)
         assert failure["reason"] == "authentication_rejected"
         assert failure["retryable"] is False
@@ -397,8 +399,9 @@ def test_replay_budget_and_jitter_are_bounded(monkeypatch):
         attempts.append(1)
         raise httpx.RemoteProtocolError("synthetic")
 
+    prepared = module._replay(cut)
     with pytest.raises(httpx.RemoteProtocolError):
-        asyncio.run(module._replay(cut))
+        asyncio.run(prepared)
     assert len(attempts) == module.RETRY_ATTEMPTS
     assert len(sleeps) == module.RETRY_ATTEMPTS - 1
     for delay, attempt in zip(sleeps, range(len(sleeps))):
@@ -481,8 +484,9 @@ def test_slow_failure_is_left_to_the_durable_outbox(monkeypatch):
         attempts.append(1)
         raise httpx.ReadTimeout("synthetic")
 
+    prepared = module._replay(slow_cut)
     with pytest.raises(httpx.ReadTimeout):
-        asyncio.run(module._replay(slow_cut))
+        asyncio.run(prepared)
     assert len(attempts) == 1
     assert sleeps == []
     assert remote_error(httpx.ReadTimeout("synthetic"))["retryable"] is True
@@ -511,8 +515,9 @@ def test_rate_limit_window_is_left_to_the_outbox(monkeypatch):
         "AsyncClient",
         lambda **kwargs: constructor(transport=httpx.MockTransport(limited), **kwargs),
     )
+    prepared = send_event("https://memory.test/mcp", TOKEN, {"event_id": "turn-1"})
     with pytest.raises(RemoteStatusError) as caught:
-        asyncio.run(send_event("https://memory.test/mcp", TOKEN, {"event_id": "turn-1"}))
+        asyncio.run(prepared)
     assert len(attempts) == 1
     assert remote_error(caught.value)["reason"] == "temporarily_unavailable"
     assert remote_error(caught.value)["retryable"] is True
@@ -542,8 +547,9 @@ def test_tool_path_rate_limit_keeps_the_server_window(monkeypatch):
             {"query": "cats"},
         )
 
-    with pytest.raises(Exception) as caught:
-        asyncio.run(check())
+    prepared = check()
+    with pytest.raises(BaseExceptionGroup) as caught:
+        asyncio.run(prepared)
     failure = remote_error(caught.value)
     assert failure["reason"] == "temporarily_unavailable"
     assert failure["retryable"] is True

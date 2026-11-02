@@ -278,6 +278,43 @@ async def control_event(url, token, event_id, action, *, ca_file=None):
     return result
 
 
+async def _reject_unsafe_response(response):
+    """Keep the HTTP status that the SDK may hide in a later stream error.
+
+    A redirect and a credential rejection are final. A saturation answer is
+    transient, so it keeps its own delay for the caller's outbox.
+    """
+    if 300 <= response.status_code < 400:
+        raise PermissionError("Remote MCP redirects are forbidden")
+    if response.status_code in (401, 403):
+        raise RemoteStatusError(response.status_code)
+    if response.status_code in RETRYABLE_STATUSES:
+        raise RemoteStatusError(
+            response.status_code,
+            retryable=True,
+            retry_after=_parse_retry_after(response.headers.get("Retry-After")),
+        )
+
+
+def _tool_value(result):
+    """Return one validated Owner payload, or fail on an unusable MCP result."""
+    if not result.content or not hasattr(result.content[0], "text"):
+        raise ValueError("Invalid remote MCP result")
+    value = json.loads(result.content[0].text)
+    if not isinstance(value, dict):
+        raise ValueError("Invalid remote MCP result")
+    error = value.get("error")
+    if isinstance(error, dict) and error.get("retryable") is True:
+        # The Owner itself reported a transient failure, so this
+        # request may not have reached its ledger entry yet.
+        raise RemoteStatusError(
+            None,
+            error_type=error.get("type"),
+            retryable=True,
+        )
+    return value
+
+
 async def call_remote(url, token, name, arguments, *, ca_file=None):
     """Use official protocol negotiation and preserve Owner receipt/error semantics.
 
@@ -295,51 +332,21 @@ async def call_remote(url, token, name, arguments, *, ca_file=None):
     http = http_module()
     context = ssl.create_default_context(cafile=ca_file)
 
-    async def reject_unsafe_response(response):
-        """Keep the HTTP status that the SDK may hide in a later stream error.
-
-        A redirect and a credential rejection are final. A saturation answer is
-        transient, so it keeps its own delay for the caller's outbox.
-        """
-        if 300 <= response.status_code < 400:
-            raise PermissionError("Remote MCP redirects are forbidden")
-        if response.status_code in (401, 403):
-            raise RemoteStatusError(response.status_code)
-        if response.status_code in RETRYABLE_STATUSES:
-            raise RemoteStatusError(
-                response.status_code,
-                retryable=True,
-                retry_after=_parse_retry_after(response.headers.get("Retry-After")),
-            )
-
     async def request():
-        async with http.AsyncClient(
-            verify=context,
-            trust_env=False,
-            follow_redirects=False,
-            timeout=REQUEST_TIMEOUT_SECONDS,
-            headers={"Authorization": "Bearer " + token},
-            event_hooks={"response": [reject_unsafe_response]},
-        ) as client:
-            async with streamable_http_client(url, http_client=client) as streams:
-                async with ClientSession(streams[0], streams[1]) as session:
-                    await session.initialize()
-                    result = await session.call_tool(name, arguments)
-                    if not result.content or not hasattr(result.content[0], "text"):
-                        raise ValueError("Invalid remote MCP result")
-                    value = json.loads(result.content[0].text)
-                    if not isinstance(value, dict):
-                        raise ValueError("Invalid remote MCP result")
-                    error = value.get("error")
-                    if isinstance(error, dict) and error.get("retryable") is True:
-                        # The Owner itself reported a transient failure, so this
-                        # request may not have reached its ledger entry yet.
-                        raise RemoteStatusError(
-                            None,
-                            error_type=error.get("type"),
-                            retryable=True,
-                        )
-                    return value
+        async with (
+            http.AsyncClient(
+                verify=context,
+                trust_env=False,
+                follow_redirects=False,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+                headers={"Authorization": "Bearer " + token},
+                event_hooks={"response": [_reject_unsafe_response]},
+            ) as client,
+            streamable_http_client(url, http_client=client) as streams,
+            ClientSession(streams[0], streams[1]) as session,
+        ):
+            await session.initialize()
+            return _tool_value(await session.call_tool(name, arguments))
 
     return await _replay(request)
 
@@ -397,6 +404,79 @@ def _transport_types(name):
     return tuple(getattr(module, name, ()) for module in modules)
 
 
+def _status_from(item):
+    """Return an HTTP status carried directly or by a wrapped response."""
+    status = getattr(item, "status_code", None)
+    if status is None:
+        status = getattr(getattr(item, "response", None), "status_code", None)
+    return status
+
+
+def _failure_facts(chain):
+    """Collect status, Owner machine type, retry verdict and delay from the chain."""
+    status, error_type = None, None
+    owner_retry, retry_after = None, None
+    for item in chain:
+        if retry_after is None:
+            retry_after = getattr(item, "retry_after", None)
+        if status is None:
+            status = _status_from(item)
+        if isinstance(item, RemoteStatusError) and item.error_type is not None:
+            error_type = error_type or item.error_type
+            owner_retry = item.retryable if owner_retry is None else owner_retry
+    return status, error_type, owner_retry, retry_after
+
+
+def _owner_reason(status, error_type, owner_retry):
+    """Map an explicit Owner verdict or HTTP status to one stable reason."""
+    if error_type == "SharedRecoveryRequiredError":
+        return "recovery_required"
+    if status in (401, 403):
+        return "authentication_rejected"
+    if owner_retry is True or (owner_retry is None and status in RETRYABLE_STATUSES):
+        return "temporarily_unavailable"
+    if status is not None and 300 <= status < 400:
+        return "protocol_error"
+    if status is not None:
+        return "business_error"
+    if error_type is not None:
+        return "business_error"
+    return None
+
+
+def _transport_reason(leaves):
+    """Classify a failure that carried no HTTP status and no Owner machine type."""
+    if any(isinstance(leaf, PermissionError) for leaf in leaves):
+        return "protocol_error"
+    if any(
+        isinstance(leaf, _transport_types("RemoteProtocolError"))
+        or isinstance(leaf, _transport_types("ReadError"))
+        or isinstance(leaf, _transport_types("WriteError"))
+        or isinstance(leaf, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError))
+        for leaf in leaves
+    ):
+        return "outcome_unknown"
+    if any(_stream_closed(leaf) for leaf in leaves):
+        return "outcome_unknown"
+    if any(
+        isinstance(leaf, _transport_types("ConnectError"))
+        or isinstance(leaf, _transport_types("ConnectTimeout"))
+        for leaf in leaves
+    ):
+        return "unreachable"
+    if any(
+        isinstance(leaf, _transport_types("TimeoutException") + (TimeoutError,)) for leaf in leaves
+    ):
+        return "timeout"
+    if any(isinstance(leaf, ConnectionError) for leaf in leaves):
+        return "unreachable"
+    if any(
+        type(leaf).__name__ in {"McpError", "MCPError", "BrokenResourceError"} for leaf in leaves
+    ):
+        return "protocol_error"
+    return "remote_error"
+
+
 def remote_error(exc, replay=None):
     """Return a stable transport diagnostic without remote text or credentials.
 
@@ -406,66 +486,15 @@ def remote_error(exc, replay=None):
     """
     leaves = _exception_leaves(exc)
     chain = [item for leaf in leaves for item in _exception_chain(leaf)]
-    status, error_type = None, None
-    owner_retry, retry_after = None, None
-    for item in chain:
-        if retry_after is None:
-            retry_after = getattr(item, "retry_after", None)
-        if status is None:
-            status = getattr(item, "status_code", None)
-            if status is None:
-                status = getattr(getattr(item, "response", None), "status_code", None)
-        if isinstance(item, RemoteStatusError) and item.error_type is not None:
-            error_type = error_type or item.error_type
-            owner_retry = item.retryable if owner_retry is None else owner_retry
+    status, error_type, owner_retry, retry_after = _failure_facts(chain)
     reason = "remote_error"
     try:
         if any(isinstance(item, ssl.SSLCertVerificationError) for item in chain):
             reason = "tls_verification_failed"
         elif any(isinstance(item, ssl.SSLError) for item in chain):
             reason = "tls_failed"
-        elif error_type == "SharedRecoveryRequiredError":
-            reason = "recovery_required"
-        elif status in (401, 403):
-            reason = "authentication_rejected"
-        elif owner_retry is True or (owner_retry is None and status in RETRYABLE_STATUSES):
-            reason = "temporarily_unavailable"
-        elif status is not None and 300 <= status < 400:
-            reason = "protocol_error"
-        elif status is not None:
-            reason = "business_error"
-        elif error_type is not None:
-            reason = "business_error"
-        elif any(isinstance(leaf, PermissionError) for leaf in leaves):
-            reason = "protocol_error"
-        elif any(
-            isinstance(leaf, _transport_types("RemoteProtocolError"))
-            or isinstance(leaf, _transport_types("ReadError"))
-            or isinstance(leaf, _transport_types("WriteError"))
-            or isinstance(leaf, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError))
-            for leaf in leaves
-        ):
-            reason = "outcome_unknown"
-        elif any(_stream_closed(leaf) for leaf in leaves):
-            reason = "outcome_unknown"
-        elif any(
-            isinstance(leaf, _transport_types("ConnectError"))
-            or isinstance(leaf, _transport_types("ConnectTimeout"))
-            for leaf in leaves
-        ):
-            reason = "unreachable"
-        elif any(
-            isinstance(leaf, _transport_types("TimeoutException") + (TimeoutError,))
-            for leaf in leaves
-        ):
-            reason = "timeout"
-        elif any(isinstance(leaf, ConnectionError) for leaf in leaves):
-            reason = "unreachable"
-        elif any(
-            type(leaf).__name__ in {"McpError", "MCPError", "BrokenResourceError"}
-            for leaf in leaves
-        ):
-            reason = "protocol_error"
+        else:
+            reason = _owner_reason(status, error_type, owner_retry) or _transport_reason(leaves)
     except ImportError:  # pragma: no cover - httpx ships with the remote extra
         pass
     result = {

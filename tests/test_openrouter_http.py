@@ -252,7 +252,8 @@ def test_excessive_retry_after_fails_without_retrying_early():
     try:
         with transport.client() as client, pytest.raises(RuntimeError):
             post(client)
-        assert len(calls) == 1 and not clock.sleeps
+        assert len(calls) == 1
+        assert not clock.sleeps
     finally:
         transport.shutdown()
 

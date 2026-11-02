@@ -31,7 +31,8 @@ def test_lifecycle_never_deduplicates_against_unmarked_legacy(tmp_path, text):
             },
         )
         rows = owner.call(token, "qdrant_memory_search", {"query": "cats"})["memories"]
-        assert len(rows) == 1 and rows[0]["text"] == text
+        assert len(rows) == 1
+        assert rows[0]["text"] == text
         original = rt.store.get(legacy["id"], scope)
         assert original.payload["text"] == "cats legacy"
         assert "shared_protocol" not in original.payload
@@ -61,7 +62,8 @@ def test_private_lifecycle_idempotency_provenance_and_shared_rule(tmp_path):
         assert lifecycle.submit(token, event) == result
         assert len(rt.extractor.llm.calls) == 1
         rows = owner.call(token, "qdrant_memory_search", {"query": "cats"})["memories"]
-        assert len(rows) == 1 and rows[0]["created_by_device"] == "mac"
+        assert len(rows) == 1
+        assert rows[0]["created_by_device"] == "mac"
         with pytest.raises(ValueError):
             lifecycle.submit(token, {**event, "user": "other"})
         with pytest.raises(ValueError):

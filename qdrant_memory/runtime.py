@@ -83,64 +83,75 @@ class Runtime:
             self._commit_action(action, group)
             start = end
 
+    def _fenced_upsert_group(self, group):
+        """Drop and supersede operations that a later delete already fenced."""
+        active_group = []
+        for row in group:
+            value = json.loads(row["payload_json"])
+            scope = Scope(value["user_id"], value.get("agent_id"))
+            # Migration preserves source timestamps; its ledger insertion time
+            # records admission. Event payloads retain the original event age.
+            admitted_at = (
+                row.get("created_at")
+                if (row.get("source_id") or "").startswith("mem0:")
+                else value.get("updated_at")
+            )
+            if self.ledger.is_delete_fenced(
+                row["point_id"],
+                scope,
+                admitted_at,
+                row.get("content_hash") or value.get("content_hash"),
+            ):
+                self.ledger.finish("operations", row["idempotency_key"], "SUPERSEDED")
+            else:
+                active_group.append(row)
+        return active_group
+
+    def _apply_group(self, action, group):
+        """Apply a batch and record throughput after successful upsert."""
+        self.check_active()
+        started = time.monotonic()
+        if action == "DELETE":
+            self.store.delete([r["point_id"] for r in group])
+            return
+        self.store.upsert([(r["point_id"], json.loads(r["payload_json"])) for r in group])
+        self.ledger.measure(
+            "upsert_points_per_second", len(group) / max(time.monotonic() - started, 1e-9)
+        )
+
+    def _record_group_failures(self, group, exc):
+        """Record one sanitized failure per affected operation and attempt."""
+        if isinstance(exc, WorkDeferred):
+            return
+        for row in group:
+            self.ledger.failure("operations", row["idempotency_key"], exc)
+
+    def _fail_group_terminally(self, group, exc):
+        """Close every operation in a group that exhausted its retry budget."""
+        for row in group:
+            self.ledger.failure(
+                "operations", row["idempotency_key"], exc, terminal=True, count_attempt=False
+            )
+
     def _commit_action(self, action, group):
         """Retry one homogeneous action group and acknowledge it after confirmation."""
         if action == "UPSERT":
-            active_group = []
-            for row in group:
-                value = json.loads(row["payload_json"])
-                scope = Scope(value["user_id"], value.get("agent_id"))
-                # Migration preserves source timestamps; its ledger insertion time
-                # records admission. Event payloads retain the original event age.
-                admitted_at = (
-                    row.get("created_at")
-                    if (row.get("source_id") or "").startswith("mem0:")
-                    else value.get("updated_at")
-                )
-                if self.ledger.is_delete_fenced(
-                    row["point_id"],
-                    scope,
-                    admitted_at,
-                    row.get("content_hash") or value.get("content_hash"),
-                ):
-                    self.ledger.finish("operations", row["idempotency_key"], "SUPERSEDED")
-                else:
-                    active_group.append(row)
-            group = active_group
+            group = self._fenced_upsert_group(group)
             if not group:
                 return
-
-        def apply():
-            """Apply a batch and record throughput after successful upsert."""
-            self.check_active()
-            started = time.monotonic()
-            if action == "DELETE":
-                self.store.delete([r["point_id"] for r in group])
-            else:
-                self.store.upsert([(r["point_id"], json.loads(r["payload_json"])) for r in group])
-                self.ledger.measure(
-                    "upsert_points_per_second", len(group) / max(time.monotonic() - started, 1e-9)
-                )
-
-        def failed(exc):
-            """Record one sanitized failure per affected operation and attempt."""
-            if isinstance(exc, WorkDeferred):
-                return
-            for row in group:
-                self.ledger.failure("operations", row["idempotency_key"], exc)
-
         # Invalidate in-process Owner recall before any possibly accepted remote
         # mutation, including an operation whose acknowledgement is then lost.
         self.mutation_revision += 1
         try:
-            run_with_retry(apply, self.cfg["write"], failed)
+            run_with_retry(
+                lambda: self._apply_group(action, group),
+                self.cfg["write"],
+                lambda exc: self._record_group_failures(group, exc),
+            )
         except WorkDeferred:
             raise
         except Exception as exc:
-            for row in group:
-                self.ledger.failure(
-                    "operations", row["idempotency_key"], exc, terminal=True, count_attempt=False
-                )
+            self._fail_group_terminally(group, exc)
             raise
         for row in group:
             # Qdrant wait=True must succeed before replayable ledger work is acknowledged.
@@ -240,57 +251,101 @@ class Runtime:
         if event["kind"] == "checkpoint" and not event["extract"]:
             return []
         if "candidates" not in event:
-            started = time.monotonic()
-            try:
-                event["candidates"] = run_with_retry(
-                    lambda: self.extractor.extract(event), self.cfg["write"]
-                )
-            except WorkDeferred:
-                raise
-            except Exception as exc:
-                # Nothing is persisted yet, so this event cannot poison a write plan.
-                raise ExtractionStageError(extraction_reason(exc), exc) from exc
-            self.ledger.measure("extract_llm_latency_ms", (time.monotonic() - started) * 1000)
-            # Persist extraction before dedupe or remote writes.
-            self.ledger.prepare_event(event["event_id"], event)
-        keys = []
-        filters = None
-        if event.get("source") == "owner_lifecycle":
-            from .owner_lifecycle import record_filters
+            self._extract_candidates(event)
+        return self._prepare_candidates(event, scope)
 
-            filters = record_filters(event)
+    def _extract_candidates(self, event):
+        """Extract and durably retain candidates before dedupe or remote writes."""
+        started = time.monotonic()
+        try:
+            event["candidates"] = run_with_retry(
+                lambda: self.extractor.extract(event), self.cfg["write"]
+            )
+        except WorkDeferred:
+            raise
+        except Exception as exc:
+            # Nothing is persisted yet, so this event cannot poison a write plan.
+            raise ExtractionStageError(extraction_reason(exc), exc) from exc
+        self.ledger.measure("extract_llm_latency_ms", (time.monotonic() - started) * 1000)
+        # Persist extraction before dedupe or remote writes.
+        self.ledger.prepare_event(event["event_id"], event)
+
+    def _event_filters(self, event):
+        """Restrict Owner lifecycle dedupe to records admitted under its authority."""
+        if event.get("source") != "owner_lifecycle":
+            return None
+        from .owner_lifecycle import record_filters
+
+        return record_filters(event)
+
+    def _decide_candidate(self, event, scope, candidate, filters):
+        """Dedupe one candidate, including any Owner authority boundary filters."""
+        return decide(
+            candidate["text"],
+            scope,
+            self.store,
+            self.extractor,
+            self.cfg["dedupe"],
+            **({"filters": filters} if filters else {}),
+            **(
+                {"replacement_context": event.get("user", "")}
+                if candidate.get("replacement_intent") is True
+                else {}
+            ),
+        )
+
+    def _candidate_source(self, event):
+        """Include Owner visibility in the point identity a candidate starts from."""
+        source = event["source"]
+        if source != "owner_lifecycle":
+            return source
+        # Visibility is part of the shared identity: a later policy generation
+        # must not reuse the previous generation's point ID.
+        authority = event.get("owner_authority") or {}
+        return f"{source}:{authority.get('visibility', '')}"
+
+    def _count_decision(self, action):
+        """Count one dedupe decision in process and in the durable ledger."""
+        self.decisions[action] += 1
+        self.ledger.increment(action)
+
+    def _skip_owner_record(self):
+        """Count a candidate that falls outside its authority's record boundary."""
+        self.ledger.increment("owner_record_boundary_skip")
+        self.decisions["SKIP"] += 1
+        self.ledger.increment("SKIP")
+
+    def _apply_record_fields(self, event, old, identifier, value):
+        """Add authoritative Owner record fields, skipping foreign boundaries."""
+        from .owner_lifecycle import record_fields
+
+        try:
+            value.update(record_fields(event, old, identifier))
+        except PermissionError:
+            # A record outside this authority's boundary is not this event's
+            # target; skip it rather than latching the Owner-wide interlock.
+            self._skip_owner_record()
+            return False
+        return True
+
+    def _prepare_candidates(self, event, scope):
+        """Dedupe, authorize and plan one UPSERT operation per candidate."""
+        keys = []
+        filters = self._event_filters(event)
         for candidate in event["candidates"]:
             self.check_active()
-            action, identifier, relation = decide(
-                candidate["text"],
-                scope,
-                self.store,
-                self.extractor,
-                self.cfg["dedupe"],
-                **({"filters": filters} if filters else {}),
-                **(
-                    {"replacement_context": event.get("user", "")}
-                    if candidate.get("replacement_intent") is True
-                    else {}
-                ),
-            )
+            action, identifier, relation = self._decide_candidate(event, scope, candidate, filters)
             if action == "SKIP":
-                self.decisions[action] += 1
-                self.ledger.increment(action)
+                self._count_decision(action)
                 continue
             candidate_hash = content_hash(candidate["text"])
-            source = event["source"]
-            if source == "owner_lifecycle":
-                # Visibility is part of the shared identity: a later policy generation
-                # must not reuse the previous generation's point ID.
-                authority = event.get("owner_authority") or {}
-                source = f"{source}:{authority.get('visibility', '')}"
-            identifier = identifier or point_id(scope, source, candidate_hash)
+            identifier = identifier or point_id(
+                scope, self._candidate_source(event), candidate_hash
+            )
             if self.ledger.is_delete_fenced(
                 identifier, scope, event.get("created_at"), candidate_hash
             ):
-                self.decisions[action] += 1
-                self.ledger.increment(action)
+                self._count_decision(action)
                 continue
             old = self.store.get(identifier, scope)
             value = payload(
@@ -304,20 +359,11 @@ class Runtime:
                 updated_at=event["created_at"],
                 metadata={"write_origin": event["kind"], **relation},
             )
-            if event.get("source") == "owner_lifecycle":
-                from .owner_lifecycle import record_fields
-
-                try:
-                    value.update(record_fields(event, old, identifier))
-                except PermissionError:
-                    # A record outside this authority's boundary is not this event's
-                    # target; skip it rather than latching the Owner-wide interlock.
-                    self.ledger.increment("owner_record_boundary_skip")
-                    self.decisions["SKIP"] += 1
-                    self.ledger.increment("SKIP")
-                    continue
-            self.decisions[action] += 1
-            self.ledger.increment(action)
+            if event.get("source") == "owner_lifecycle" and not self._apply_record_fields(
+                event, old, identifier, value
+            ):
+                continue
+            self._count_decision(action)
             keys.append(self.operation(identifier, "UPSERT", value))
         return keys
 

@@ -13,6 +13,8 @@ from contextvars import ContextVar
 from .mcp_server import create_tool_server
 from .shared_service import shared_schemas
 
+LIFECYCLE_CONTROL_PATH = "/events/manage"
+
 
 @contextmanager
 def _graceful_sigterm():
@@ -34,40 +36,58 @@ def _graceful_sigterm():
         signal.signal(signal.SIGTERM, previous)
 
 
-async def _lifecycle_request(lifecycle, token, scope, receive, send):
-    """Bound the optional event extension and keep its authority entirely Owner-side."""
-    import json
+class _LifecycleBodyTooLarge(Exception):
+    """A lifecycle request exceeded the bounded body size."""
 
-    import anyio
-    from starlette.responses import Response
 
-    from .retry import safe_error
-
+async def _read_lifecycle_body(receive, limit=131072):
+    """Read one bounded ASGI body; ``None`` means the peer disconnected."""
     body = bytearray()
     while True:
         chunk = await receive()
         if chunk["type"] == "http.disconnect":
-            return
+            return None
         body.extend(chunk.get("body", b""))
-        if len(body) > 131072:
-            await Response(status_code=413)(scope, receive, send)
-            return
+        if len(body) > limit:
+            raise _LifecycleBodyTooLarge()
         if not chunk.get("more_body", False):
-            break
+            return bytes(body)
+
+
+async def _lifecycle_dispatch(lifecycle, token, scope, event):
+    """Route one parsed event to the Owner lifecycle through a fixed schema."""
+    import anyio
+
+    if scope["path"] == LIFECYCLE_CONTROL_PATH:
+        if (
+            not isinstance(event, dict)
+            or set(event) != {"action", "event_id"}
+            or not isinstance(event["action"], str)
+            or event["action"] not in {"status", "cancel"}
+        ):
+            raise ValueError("Invalid lifecycle control")
+        method = lifecycle.inspect if event["action"] == "status" else lifecycle.cancel
+        return await anyio.to_thread.run_sync(lambda: method(token, event["event_id"]))
+    return await anyio.to_thread.run_sync(lambda: lifecycle.submit(token, event))
+
+
+async def _lifecycle_request(lifecycle, token, scope, receive, send):
+    """Bound the optional event extension and keep its authority entirely Owner-side."""
+    import json
+
+    from starlette.responses import Response
+
+    from .retry import safe_error
+
     try:
-        event = json.loads(body)
-        if scope["path"] == "/events/manage":
-            if (
-                not isinstance(event, dict)
-                or set(event) != {"action", "event_id"}
-                or not isinstance(event["action"], str)
-                or event["action"] not in {"status", "cancel"}
-            ):
-                raise ValueError("Invalid lifecycle control")
-            method = lifecycle.inspect if event["action"] == "status" else lifecycle.cancel
-            result = await anyio.to_thread.run_sync(lambda: method(token, event["event_id"]))
-        else:
-            result = await anyio.to_thread.run_sync(lambda: lifecycle.submit(token, event))
+        body = await _read_lifecycle_body(receive)
+    except _LifecycleBodyTooLarge:
+        await Response(status_code=413)(scope, receive, send)
+        return
+    if body is None:
+        return
+    try:
+        result = await _lifecycle_dispatch(lifecycle, token, scope, json.loads(body))
         status = 200
     except Exception as exc:
         result = {"error": safe_error(exc)}
@@ -89,133 +109,219 @@ def create_shared_server(owner, token_resolver):
     )
 
 
-def create_gateway(owner, *, allowed_hosts, lifecycle=None):
-    """Require explicit authority values and authenticate every HTTP request."""
-    import anyio
-    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-    from mcp.server.transport_security import TransportSecuritySettings
-    from starlette.applications import Starlette
-    from starlette.responses import Response
-    from starlette.routing import Route
-
+def _validate_allowed_hosts(allowed_hosts):
+    """Refuse an empty or wildcard Host authority list before binding."""
     if not allowed_hosts or any(
-        not isinstance(host, str) or not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]{1,5})?", host)
+        not isinstance(host, str) or not re.fullmatch(r"[A-Za-z0-9.-]+(?::\d{1,5})?", host)
         for host in allowed_hosts
     ):
         raise ValueError("Explicit HTTP Host authorities are required; wildcards are forbidden")
-    current_token = ContextVar("qdrant_memory_remote_credential")
-    server = create_shared_server(owner, current_token.get)
-    manager = StreamableHTTPSessionManager(
-        server,
-        stateless=True,
-        json_response=True,
-        max_request_body_size=131072,
-        security_settings=TransportSecuritySettings(
-            enable_dns_rebinding_protection=True,
-            allowed_hosts=list(allowed_hosts),
-            allowed_origins=[],
-        ),
-    )
-    slots = anyio.Semaphore(32)
-    buckets = {}
-    auth_limiter = anyio.CapacityLimiter(8)
 
-    async def endpoint(scope, receive, send):
-        headers = scope["headers"]
-        names = [name.lower() for name, _ in headers]
-        # The local TLS proxy strips these; client-controlled proxy metadata has
-        # no authority here. Duplicate security headers are ambiguous and denied.
-        if (
-            scope.get("query_string")
-            or any(
-                name in {b"origin", b"forwarded"} or name.startswith(b"x-forwarded-")
-                for name in names
-            )
-            or any(names.count(name) != 1 for name in (b"host", b"authorization"))
-        ):
-            await Response(status_code=403)(scope, receive, send)
-            return
-        values = dict(headers)
-        if values.get(b"host", b"").decode("latin-1") not in allowed_hosts:
-            await Response(status_code=403)(scope, receive, send)
-            return
-        auth = values.get(b"authorization", b"")
-        try:
-            if not auth.startswith(b"Bearer ") or len(auth) > 1024:
-                raise PermissionError()
-            token = auth[7:].decode("ascii")
-            # Even initialize and tools/list require a current credential.
-            grant = await anyio.to_thread.run_sync(owner.authenticate, token, limiter=auth_limiter)
-        except Exception:
-            await Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})(
-                scope, receive, send
-            )
-            return
-        key = (grant["owner_id"], grant["principal"])
-        now = time.monotonic()
-        for old_key in list(buckets):
-            times, principal_slots = buckets[old_key]
-            if times and times[-1] < now - 60 and principal_slots.value == 4:
-                del buckets[old_key]
-        arrivals, principal_slots = buckets.setdefault(key, (deque(), anyio.Semaphore(4)))
-        while arrivals and arrivals[0] < now - 60:
-            arrivals.popleft()
-        if len(arrivals) >= 240:
-            await Response(status_code=429, headers={"Retry-After": "60"})(scope, receive, send)
-            return
-        arrivals.append(now)
-        try:
-            principal_slots.acquire_nowait()
-        except anyio.WouldBlock:
-            await Response(status_code=429, headers={"Retry-After": "1"})(scope, receive, send)
-            return
-        try:
-            slots.acquire_nowait()
-        except anyio.WouldBlock:
-            principal_slots.release()
-            await Response(status_code=429, headers={"Retry-After": "1"})(scope, receive, send)
-            return
-        try:
-            await authorized(scope, receive, send, token)
-        finally:
-            slots.release()
-            principal_slots.release()
 
-    async def authorized(scope, receive, send, token):
-        if scope["method"] != "POST":
-            await Response(status_code=405, headers={"Allow": "POST"})(scope, receive, send)
-            return
-        if scope["path"] in {"/events", "/events/manage"} and lifecycle is not None:
-            await _lifecycle_request(lifecycle, token, scope, receive, send)
-            return
-        context = current_token.set(token)
-        try:
-            await manager.handle_request(scope, receive, send)
-        finally:
-            current_token.reset(context)
+class _GatewayState:
+    """Hold the single-Owner transport wiring shared by the ASGI helpers."""
+
+    def __init__(self, owner, allowed_hosts, lifecycle):
+        """Build one session manager, one admission pool and the token context."""
+        import anyio
+        from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        self.owner = owner
+        self.allowed_hosts = allowed_hosts
+        self.lifecycle = lifecycle
+        self.current_token = ContextVar("qdrant_memory_remote_credential")
+        self.server = create_shared_server(owner, self.current_token.get)
+        self.manager = StreamableHTTPSessionManager(
+            self.server,
+            stateless=True,
+            json_response=True,
+            max_request_body_size=131072,
+            security_settings=TransportSecuritySettings(
+                enable_dns_rebinding_protection=True,
+                allowed_hosts=list(allowed_hosts),
+                allowed_origins=[],
+            ),
+        )
+        self.slots = anyio.Semaphore(32)
+        self.buckets = {}
+        self.auth_limiter = anyio.CapacityLimiter(8)
 
     @asynccontextmanager
-    async def lifespan(app):
-        async with manager.run():
+    async def lifespan(self, app):
+        """Start and stop the session manager with the ASGI application."""
+        async with self.manager.run():
             yield
 
-    class Endpoint:
-        """Keep raw ASGI streams intact instead of wrapping a request handler."""
 
-        async def __call__(self, scope, receive, send):
-            async def bounded_receive():
-                with anyio.fail_after(10):
-                    return await receive()
+def _unsafe_headers(scope):
+    """Report query strings, proxy metadata and duplicated security headers."""
+    names = [name.lower() for name, _ in scope["headers"]]
+    # The local TLS proxy strips these; client-controlled proxy metadata has
+    # no authority here. Duplicate security headers are ambiguous and denied.
+    if scope.get("query_string"):
+        return True
+    if any(name in {b"origin", b"forwarded"} or name.startswith(b"x-forwarded-") for name in names):
+        return True
+    return any(names.count(name) != 1 for name in (b"host", b"authorization"))
 
-            await endpoint(scope, bounded_receive, send)
 
-    routes = [Route("/mcp", endpoint=Endpoint(), methods=["POST", "GET", "DELETE"])]
+async def _boundary_allowed(state, scope, receive, send):
+    """Check header and Host boundaries; return ``False`` after the denial."""
+    from starlette.responses import Response
+
+    if _unsafe_headers(scope):
+        await Response(status_code=403)(scope, receive, send)
+        return False
+    values = dict(scope["headers"])
+    if values.get(b"host", b"").decode("latin-1") not in state.allowed_hosts:
+        await Response(status_code=403)(scope, receive, send)
+        return False
+    return True
+
+
+async def _current_grant(state, scope, receive, send):
+    """Resolve the bearer credential; return ``(None, None)`` after the denial."""
+    import anyio
+    from starlette.responses import Response
+
+    auth = dict(scope["headers"]).get(b"authorization", b"")
+    try:
+        if not auth.startswith(b"Bearer ") or len(auth) > 1024:
+            raise PermissionError()
+        token = auth[7:].decode("ascii")
+        # Even initialize and tools/list require a current credential.
+        grant = await anyio.to_thread.run_sync(
+            state.owner.authenticate, token, limiter=state.auth_limiter
+        )
+    except Exception:
+        await Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})(
+            scope, receive, send
+        )
+        return None, None
+    return grant, token
+
+
+def _prune_buckets(state, now):
+    """Drop fully idle per-principal buckets before admitting a new request."""
+    stale = [
+        key
+        for key, (times, slots) in state.buckets.items()
+        if times and times[-1] < now - 60 and slots.value == 4
+    ]
+    for old_key in stale:
+        del state.buckets[old_key]
+
+
+def _arrivals(state, key, now):
+    """Return the trailing minute window and slot semaphore for one principal."""
+    import anyio
+
+    arrivals, principal_slots = state.buckets.setdefault(key, (deque(), anyio.Semaphore(4)))
+    while arrivals and arrivals[0] < now - 60:
+        arrivals.popleft()
+    return arrivals, principal_slots
+
+
+async def _admitted(state, scope, receive, send, grant):
+    """Acquire admission permits; return a release callback, or ``None`` on 429."""
+    import anyio
+    from starlette.responses import Response
+
+    key = (grant["owner_id"], grant["principal"])
+    now = time.monotonic()
+    _prune_buckets(state, now)
+    arrivals, principal_slots = _arrivals(state, key, now)
+    if len(arrivals) >= 240:
+        await Response(status_code=429, headers={"Retry-After": "60"})(scope, receive, send)
+        return None
+    arrivals.append(now)
+    try:
+        principal_slots.acquire_nowait()
+    except anyio.WouldBlock:
+        await Response(status_code=429, headers={"Retry-After": "1"})(scope, receive, send)
+        return None
+    try:
+        state.slots.acquire_nowait()
+    except anyio.WouldBlock:
+        principal_slots.release()
+        await Response(status_code=429, headers={"Retry-After": "1"})(scope, receive, send)
+        return None
+
+    def release():
+        """Return both admission permits exactly once."""
+        state.slots.release()
+        principal_slots.release()
+
+    return release
+
+
+async def _gateway_authorized(state, scope, receive, send, token):
+    """Dispatch one authenticated POST to the lifecycle or MCP surface."""
+    from starlette.responses import Response
+
+    if scope["method"] != "POST":
+        await Response(status_code=405, headers={"Allow": "POST"})(scope, receive, send)
+        return
+    if scope["path"] in {"/events", LIFECYCLE_CONTROL_PATH} and state.lifecycle is not None:
+        await _lifecycle_request(state.lifecycle, token, scope, receive, send)
+        return
+    context = state.current_token.set(token)
+    try:
+        await state.manager.handle_request(scope, receive, send)
+    finally:
+        state.current_token.reset(context)
+
+
+async def _gateway_endpoint(state, scope, receive, send):
+    """Authenticate one request, admit it and dispatch it inside the permit."""
+    if not await _boundary_allowed(state, scope, receive, send):
+        return
+    grant, token = await _current_grant(state, scope, receive, send)
+    if grant is None:
+        return
+    release = await _admitted(state, scope, receive, send, grant)
+    if release is None:
+        return
+    try:
+        await _gateway_authorized(state, scope, receive, send, token)
+    finally:
+        release()
+
+
+class _GatewayEndpoint:
+    """Keep raw ASGI streams intact instead of wrapping a request handler."""
+
+    def __init__(self, state):
+        """Bind the shared gateway state to one route endpoint."""
+        self._state = state
+
+    async def __call__(self, scope, receive, send):
+        """Bound each receive so an idle peer cannot hold a worker forever."""
+        import anyio
+
+        async def bounded_receive():
+            with anyio.fail_after(10):
+                return await receive()
+
+        await _gateway_endpoint(self._state, scope, bounded_receive, send)
+
+
+def create_gateway(owner, *, allowed_hosts, lifecycle=None):
+    """Require explicit authority values and authenticate every HTTP request."""
+    from starlette.applications import Starlette
+    from starlette.routing import Route
+
+    _validate_allowed_hosts(allowed_hosts)
+    state = _GatewayState(owner, allowed_hosts, lifecycle)
+    endpoint = _GatewayEndpoint(state)
+    routes = [Route("/mcp", endpoint=endpoint, methods=["POST", "GET", "DELETE"])]
     if lifecycle is not None:
-        routes.append(Route("/events", endpoint=Endpoint(), methods=["POST"]))
-        routes.append(Route("/events/manage", endpoint=Endpoint(), methods=["POST"]))
+        routes.append(Route("/events", endpoint=endpoint, methods=["POST"]))
+        routes.append(Route(LIFECYCLE_CONTROL_PATH, endpoint=endpoint, methods=["POST"]))
     return Starlette(
         routes=routes,
-        lifespan=lifespan,
+        lifespan=state.lifespan,
     )
 
 

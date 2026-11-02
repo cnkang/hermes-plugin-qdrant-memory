@@ -10,6 +10,8 @@ from pathlib import Path
 from .config import DEFAULTS, merge, validate, validate_url
 from .private_paths import checked_absolute_path
 
+PROFILE_DIRECTORY_HINT = "Choose a new canonical private profile directory"
+
 
 class ManagedProfileConflictError(ValueError):
     """Refuse an existing, changed or unowned destination without overwriting it."""
@@ -132,7 +134,7 @@ def _precheck_profile(home, cfg, owner):
         raise ManagedProfileConflictError("Unsafe profile destination")
     if home.exists():
         if not home.is_dir():
-            raise ManagedProfileConflictError("Choose a new canonical private profile directory")
+            raise ManagedProfileConflictError(PROFILE_DIRECTORY_HINT)
         _conflicts(home, cfg, owner)
 
 
@@ -141,7 +143,7 @@ def _claim_profile(home, cfg, owner):
     if home.is_symlink():
         raise ManagedProfileConflictError("Unsafe profile destination")
     if home.exists() and not home.is_dir():
-        raise ManagedProfileConflictError("Choose a new canonical private profile directory")
+        raise ManagedProfileConflictError(PROFILE_DIRECTORY_HINT)
     home.mkdir(mode=0o700, exist_ok=True)
     _conflicts(home, cfg, owner)
     marker = home / ".setup-owner.json"
@@ -178,9 +180,7 @@ def setup_profile(args):
     try:
         home = checked_absolute_path(args.profile)
     except ValueError as exc:
-        raise ManagedProfileConflictError(
-            "Choose a new canonical private profile directory"
-        ) from exc
+        raise ManagedProfileConflictError(PROFILE_DIRECTORY_HINT) from exc
     home.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     lock = home.parent / f".{home.name}.setup.lock"
     if lock.is_symlink():
