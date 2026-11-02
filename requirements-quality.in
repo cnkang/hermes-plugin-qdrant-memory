@@ -1,6 +1,6 @@
 # Extra dependencies used by the Linux Python 3.11 model evaluation.
 # Runtime and remote dependencies come from pyproject.toml.
-pytest==9.1.1
+pytest==9.2.0
 PyYAML==6.0.3
 requests==2.34.2
 ruamel.yaml==0.19.1
