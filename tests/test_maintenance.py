@@ -136,8 +136,9 @@ def test_existing_collection_requires_valid_confirmation(monkeypatch, answer, tt
     stream = io.StringIO(answer)
     monkeypatch.setattr(stream, "isatty", lambda: tty)
     monkeypatch.setattr("qdrant_memory.cli.sys.stdin", stream)
+    prepared = SimpleNamespace(existing=None)
     with pytest.raises(InitializationChoiceRequiredError):
-        existing_collection_action(SimpleNamespace(existing=None), "notes")
+        existing_collection_action(prepared, "notes")
 
 
 def test_clear_rebuilds_incompatible_collection_and_clears_only_target_ledger(
@@ -173,26 +174,31 @@ def test_clear_rebuilds_incompatible_collection_and_clears_only_target_ledger(
     other.close()
     parser = argparse.ArgumentParser()
     register_cli(parser)
+    prepared = parser.parse_args(["init", "--existing", "use"])
     with pytest.raises(ValueError, match="named dense"):
-        run(parser.parse_args(["init", "--existing", "use"]), home=tmp_path)
+        run(prepared, home=tmp_path)
     broken = Embedder()
     monkeypatch.setattr(broken, "embed_documents", lambda texts: [[0.0, 0.0, 0.0]])
     monkeypatch.setattr("qdrant_memory.cli.build_embedder", lambda ctx, cfg: broken)
+    prepared = parser.parse_args(["init", "--existing", "clear"])
     with pytest.raises(ValueError):
-        run(parser.parse_args(["init", "--existing", "clear"]), home=tmp_path)
+        run(prepared, home=tmp_path)
     client = QdrantClient(path=cfg["qdrant"]["path"])
     assert client.retrieve(cfg["qdrant"]["collection"], ids=[42])[0].payload == {"text": "old"}
     client.close()
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
-    assert ledger.rows("events") and ledger.rows("operations")
+    assert ledger.rows("events")
+    assert ledger.rows("operations")
     ledger.close()
     monkeypatch.setattr("qdrant_memory.cli.build_embedder", lambda ctx, cfg: Embedder())
     result = run(parser.parse_args(["init", "--existing", "clear"]), home=tmp_path)
-    assert result["ok"] and result["action"] == "clear"
+    assert result["ok"]
+    assert result["action"] == "clear"
     assert result["points_count"] == 0
     assert run(parser.parse_args(["verify"]), home=tmp_path)["ok"]
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
-    assert not ledger.rows("events") and not ledger.rows("operations")
+    assert not ledger.rows("events")
+    assert not ledger.rows("operations")
     assert ledger.unattributed_sessions() == {"quarantined"}
     ledger.close()
     other = Ledger(tmp_path, "other-destination")
@@ -255,7 +261,8 @@ def test_cli_reports_held_writer_lock_before_service_access(tmp_path, monkeypatc
         assert error["code"] == "writer_busy"
         assert "Stop that runtime" in error["message"]
         assert not error["retryable"]
-        assert "private.example" not in output and str(tmp_path) not in output
+        assert "private.example" not in output
+        assert str(tmp_path) not in output
         assert not (tmp_path / "qdrant-memory" / "state.db").exists()
     finally:
         lease.close()

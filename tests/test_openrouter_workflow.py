@@ -68,4 +68,5 @@ def test_remote_tiers_do_not_download_ollama_or_local_models():
     assert len(caches) == 2
     assert all(s["if"] == "steps.model-cache-keys.outputs.local-required == 'true'" for s in caches)
     artifacts = [s for s in steps if "actions/upload-artifact@" in s.get("uses", "")]
-    assert artifacts and all(s["if"] == "always()" for s in artifacts)
+    assert artifacts
+    assert all(s["if"] == "always()" for s in artifacts)

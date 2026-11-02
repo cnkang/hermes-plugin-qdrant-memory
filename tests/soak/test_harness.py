@@ -330,4 +330,5 @@ def test_module_entry_points_exist():
     ):
         assert importlib.import_module(name) is not None
     module_file = sys.modules["scripts.soak.run"].__file__
-    assert module_file is not None and Path(module_file).name == "run.py"
+    assert module_file is not None
+    assert Path(module_file).name == "run.py"

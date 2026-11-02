@@ -79,7 +79,8 @@ def test_quarantine_retains_raw_input_and_a_bounded_error(tmp_path):
         assert row["status"] == "QUARANTINED"
         plan = json.loads(row["payload_json"])
         assert plan["user"].startswith("synthetic preference")
-        assert "candidates" not in plan and "operation_keys" not in plan
+        assert "candidates" not in plan
+        assert "operation_keys" not in plan
         error = json.loads(row["last_error"])
         assert error == {
             "type": "OwnerExtractionTruncated",
@@ -103,8 +104,9 @@ def test_transient_provider_failure_keeps_the_fail_closed_gate(tmp_path):
 
     rt.extractor.extract = outage
     try:
+        prepared = event()
         with pytest.raises(TimeoutError):
-            lifecycle.submit(token, event())
+            lifecycle.submit(token, prepared)
         assert owner.blocked is True
         row = rt.ledger.db.execute("SELECT status FROM events").fetchone()
         assert row["status"] == "FAILED"
@@ -189,8 +191,9 @@ def test_a_failure_after_extraction_persistence_is_never_quarantined(tmp_path, m
 
     monkeypatch.setattr(rt, "commit", broken_commit)
     try:
+        prepared = event()
         with pytest.raises(RuntimeError):
-            lifecycle.submit(token, event())
+            lifecycle.submit(token, prepared)
         row = rt.ledger.db.execute("SELECT status,payload_json FROM events").fetchone()
         assert row["status"] == "FAILED"
         assert "candidates" in json.loads(row["payload_json"])
@@ -242,8 +245,9 @@ def test_the_ledger_refuses_to_quarantine_a_prepared_row(tmp_path):
     }
     key = rt.ledger.enqueue_event(value)
     try:
+        prepared = ValueError("x")
         with pytest.raises(ValueError):
-            rt.ledger.quarantine("events", key, ValueError("x"))
+            rt.ledger.quarantine("events", key, prepared)
         assert rt.ledger.row("events", key)["status"] == "PENDING"
     finally:
         rt.ledger.close()

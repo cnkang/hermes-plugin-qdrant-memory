@@ -23,7 +23,9 @@ def test_certifi_trust_store_fix_covers_every_dependency_lock():
         (root / "requirements-quality.txt").read_text(encoding="utf-8"),
         re.M | re.S,
     )
-    assert runtime is not None and cpu is not None and quality is not None
+    assert runtime is not None
+    assert cpu is not None
+    assert quality is not None
     versions = {
         "uv.lock": certifi["version"],
         "requirements.txt": runtime[1],

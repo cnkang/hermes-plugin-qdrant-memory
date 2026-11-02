@@ -286,11 +286,13 @@ def test_cli_resumes_reset_after_process_death(
     # Other commands fail closed; init resumes the earlier explicit authorization,
     # including when the interrupted reset left no collection to prompt about.
     monkeypatch.setattr(cli, "build_embedder", lambda *args: pytest.fail("unexpected embedder"))
+    prepared = parse_cli("stats")
     with pytest.raises(ResetRecoveryRequiredError):
-        cli.run(parse_cli("stats"), home=tmp_path)
+        cli.run(prepared, home=tmp_path)
     monkeypatch.setattr(cli, "build_embedder", lambda context, cfg: Embedder())
     result = cli.run(parse_cli("init"), home=tmp_path)
-    assert result["ok"] and result["action"] == "clear"
+    assert result["ok"]
+    assert result["action"] == "clear"
 
     client = QdrantClient(path=cfg["qdrant"]["path"])
     assert client.collection_exists(cfg["qdrant"]["collection"])
@@ -332,7 +334,8 @@ def test_reset_recovery_survives_another_hard_exit(
 
     monkeypatch.setattr(cli, "build_embedder", lambda *_args: Embedder())
     result = cli.run(parse_cli("init"), home=tmp_path)
-    assert result["ok"] and result["action"] == "clear"
+    assert result["ok"]
+    assert result["action"] == "clear"
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     assert not has_pending_reset(ledger)
     assert ledger.rows("operations") == []
@@ -342,7 +345,8 @@ def test_reset_recovery_survives_another_hard_exit(
     # A fourth init and an independent client prove leases and embedded file
     # handles were released, and the completed reset no longer repeats itself.
     result = cli.run(parse_cli("init", "--existing", "use"), home=tmp_path)
-    assert result["ok"] and result["action"] == "use"
+    assert result["ok"]
+    assert result["action"] == "use"
     client = QdrantClient(path=cfg["qdrant"]["path"])
     try:
         assert client.retrieve(cfg["qdrant"]["collection"], ids=[42]) == []
@@ -361,8 +365,9 @@ def test_failed_collection_validation_retains_intent_and_replay_rows(tmp_path, m
     monkeypatch.setattr(cli, "build_embedder", lambda context, cfg: Embedder())
     with monkeypatch.context() as patch:
         patch.setattr(QdrantStore, "_validate_identity", fail_identity)
+        prepared = parse_cli("init", "--existing", "clear")
         with pytest.raises(ValueError, match="injected identity validation failure"):
-            cli.run(parse_cli("init", "--existing", "clear"), home=tmp_path)
+            cli.run(prepared, home=tmp_path)
 
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     assert has_pending_reset(ledger)
@@ -372,7 +377,8 @@ def test_failed_collection_validation_retains_intent_and_replay_rows(tmp_path, m
     assert_other_destination_and_quarantine_survive(tmp_path, cfg)
 
     result = cli.run(parse_cli("init"), home=tmp_path)
-    assert result["ok"] and result["action"] == "clear"
+    assert result["ok"]
+    assert result["action"] == "clear"
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     assert not has_pending_reset(ledger)
     assert ledger.rows("events") == []
@@ -415,8 +421,9 @@ def test_reset_failures_preserve_data_or_a_resumable_intent(
         else:
             patch.setattr(Ledger, "clear_destination", fail)
 
+        prepared = parse_cli("init", "--existing", "clear")
         with pytest.raises(RuntimeError, match=failure_stage):
-            cli.run(parse_cli("init", "--existing", "clear"), home=tmp_path)
+            cli.run(prepared, home=tmp_path)
 
     client = QdrantClient(path=cfg["qdrant"]["path"])
     assert client.collection_exists(cfg["qdrant"]["collection"]) is collection_exists_after_failure
@@ -437,7 +444,8 @@ def test_reset_failures_preserve_data_or_a_resumable_intent(
         parse_cli("init", "--existing", "clear") if failure_stage == "intent" else parse_cli("init")
     )
     result = cli.run(retry_args, home=tmp_path)
-    assert result["ok"] and result["action"] == "clear"
+    assert result["ok"]
+    assert result["action"] == "clear"
     client = QdrantClient(path=cfg["qdrant"]["path"])
     assert client.collection_exists(cfg["qdrant"]["collection"])
     assert client.retrieve(cfg["qdrant"]["collection"], ids=[42]) == []

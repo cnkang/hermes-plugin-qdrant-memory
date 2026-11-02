@@ -91,8 +91,9 @@ def test_cancellation_never_reverses_committed_or_prepared_operations(tmp_path, 
             raise TimeoutError("synthetic lost acknowledgement")
 
         monkeypatch.setattr(rt, "commit", fail)
+        payload = {**event("two"), "user": "dogs separate"}
         with pytest.raises(TimeoutError):
-            lifecycle.submit(token, {**event("two"), "user": "dogs separate"})
+            lifecycle.submit(token, payload)
         with pytest.raises(ValueError, match="prepared|committed"):
             lifecycle.cancel(token, "two")
         row = rt.ledger.db.execute(
@@ -116,8 +117,9 @@ def test_cancel_failed_extraction_keeps_existing_owner_recovery_gate(tmp_path, m
 
     try:
         monkeypatch.setattr(rt.extractor, "extract", fail)
+        prepared = event()
         with pytest.raises(TimeoutError):
-            lifecycle.submit(token, event())
+            lifecycle.submit(token, prepared)
         assert lifecycle.cancel(token, "one")["status"] == "CANCELLED"
         assert owner.blocked is True
     finally:
@@ -191,8 +193,9 @@ def test_production_event_client_control_and_cancelled_replay(tmp_path, monkeypa
 
     async def check():
         async with app.router.lifespan_context(app):
+            payload = event()
             with pytest.raises(RuntimeError, match="not committed"):
-                await send_event("https://memory.test/mcp", token, event())
+                await send_event("https://memory.test/mcp", token, payload)
             assert (await control_event("https://memory.test/mcp", token, "one", "status"))[
                 "status"
             ] == "PENDING"

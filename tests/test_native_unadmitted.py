@@ -116,7 +116,8 @@ def test_reauthorization_continues_to_same_scope_input(tmp_path):
         admitted = []
 
         def events(value, *, include_shared):
-            assert value["scope"] == scope and include_shared is False
+            assert value["scope"] == scope
+            assert include_shared is False
             admitted.append(value)
             return [{**value, "source": "owner_lifecycle", "owner_authority": {}}]
 
@@ -224,7 +225,8 @@ def test_foreign_unadmitted_retry_can_be_discarded_offline(tmp_path, monkeypatch
         assert p.store.count() == 0
         for key in keys:
             row = p.ledger.row("events", key)
-            assert row["status"] == "CANCELLED" and row["payload_json"] == "{}"
+            assert row["status"] == "CANCELLED"
+            assert row["payload_json"] == "{}"
     finally:
         p.shutdown()
 

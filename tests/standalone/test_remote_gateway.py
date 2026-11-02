@@ -106,8 +106,9 @@ def test_empty_or_wildcard_host_allowlist_rejected(tmp_path):
     rt = runtime(tmp_path)
     try:
         for hosts in ([], ["*"], ["memory.test:*"], ["https://memory.test"]):
+            prepared = SharedOwner(rt, [])
             with pytest.raises(ValueError):
-                create_gateway(SharedOwner(rt, []), allowed_hosts=hosts)
+                create_gateway(prepared, allowed_hosts=hosts)
     finally:
         rt.ledger.close()
         rt.store.close()

@@ -122,8 +122,9 @@ def test_openrouter_quality_route_can_select_an_explicit_free_model(monkeypatch,
 def test_openrouter_quality_rejects_paid_or_invalid_model_configuration(monkeypatch, model):
     """A free-only CI credential cannot silently request a paid or injected route."""
     monkeypatch.setenv("OPENROUTER_QUALITY_MODEL", model)
+    model_profile = runner()["model_profile"]
     with pytest.raises(ValueError, match="free"):
-        runner()["model_profile"]("openrouter-free")
+        model_profile("openrouter-free")
 
 
 @pytest.mark.parametrize(
@@ -150,8 +151,9 @@ def test_background_failure_observation_keeps_stages_without_private_details():
     def fail():
         raise ValueError("synthetic-private-data")
 
+    background_job = recorder.observe_background_job(fail)
     with pytest.raises(ValueError, match="synthetic-private-data"):
-        recorder.observe_background_job(fail)()
+        background_job()
     assert recorder.background_failures[0]["type"] == "ValueError"
     assert recorder.background_failures[0]["stages"][-1]["function"] == "fail"
     assert "synthetic-private-data" not in json.dumps(recorder.background_failures)

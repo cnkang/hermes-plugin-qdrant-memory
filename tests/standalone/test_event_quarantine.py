@@ -110,8 +110,9 @@ def test_prepared_event_failure_still_blocks_unrelated_writes(tmp_path, monkeypa
 
     monkeypatch.setattr(rt, "commit", broken_commit)
     try:
+        prepared = event()
         with pytest.raises(RuntimeError):
-            lifecycle.submit(writer, event())
+            lifecycle.submit(writer, prepared)
         assert owner.blocked is True
         with pytest.raises(SharedRecoveryRequiredError):
             owner.call(

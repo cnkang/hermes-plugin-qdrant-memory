@@ -91,7 +91,8 @@ def test_plain_init_does_not_skip_pending_receipts(tmp_path, monkeypatch):
             return None
 
     args = SimpleNamespace(qdrant_command="init")
+    store, resources = Store(), Resources()
     with pytest.raises(SharedRecoveryRequiredError):
         cli._initialize_target(
-            args, Store(), tmp_path, rt.cfg, False, Resources(), lambda *a, **k: None
+            args, store, tmp_path, rt.cfg, False, resources, lambda *a, **k: None
         )

@@ -264,10 +264,12 @@ def test_cloud_smoke_uses_preflight_and_closes_resources(tmp_path, monkeypatch, 
     assert module["main"]() == (0 if problem is None else 1)
     report = json.loads(output.read_text())
     assert report["status"] == ("SMOKE_PASS" if problem is None else "FAIL")
-    assert report["quality_evaluated"] is False and report["baseline_executed"] is False
+    assert report["quality_evaluated"] is False
+    assert report["baseline_executed"] is False
     assert calls[:3] == ["preflight", "attach", "exercise"]
     assert "llm-close" in calls
-    assert homes and all(not home.exists() for home in homes)
+    assert homes
+    assert all(not home.exists() for home in homes)
     observed = report["openrouter"]
     assert observed["resources_closed"] is True
     assert report["temporary_data_cleaned"] is True
@@ -370,7 +372,8 @@ def test_cloud_quality_uses_the_frozen_scorer_and_mutation_gate(tmp_path, monkey
     report = json.loads(output.read_text())
     assert report["status"] == ("PASS" if problem is None else "FAIL")
     assert report["baseline_executed"] is True
-    assert called[0] == "preflight" and "baseline" in called
+    assert called[0] == "preflight"
+    assert "baseline" in called
     assert report["openrouter"]["resources_closed"] is True
     assert report["temporary_data_cleaned"] is True
     if problem == "no_facts":

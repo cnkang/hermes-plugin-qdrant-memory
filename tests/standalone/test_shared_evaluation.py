@@ -29,7 +29,8 @@ def test_binary_retrieval_metrics_rank_and_misses():
 def test_service_early_exit_reports_diagnostics(tmp_path):
     """Early subprocess termination surfaces diagnostics instead of decode errors."""
     spec = importlib.util.spec_from_file_location("shared_evaluation", PATH)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 

@@ -284,8 +284,9 @@ def test_protected_native_gateway_lifecycle_and_shutdown(tmp_path, monkeypatch):
 
     def start_while_provider_is_initializing(owner):
         native_start(owner)
+        prepared = owner.token()
         with pytest.raises(ProviderUnavailableError):
-            owner.owner.call(owner.token(), "qdrant_memory_search", {"query": "not ready"})
+            owner.owner.call(prepared, "qdrant_memory_search", {"query": "not ready"})
         startup_denials.append("denied")
 
     monkeypatch.setattr(NativeOwner, "start", start_while_provider_is_initializing)
@@ -370,12 +371,14 @@ def test_native_owner_lifecycle_project_handoff_and_private_isolation(tmp_path, 
         assert p.wait_idle()
         url = p._native_owner.url
         rows = call(url, tokens["reader"], "qdrant_memory_search", {"query": "Alpha"})["memories"]
-        assert len(rows) == 1 and rows[0]["text"] == "Project Alpha uses SQLite WAL."
+        assert len(rows) == 1
+        assert rows[0]["text"] == "Project Alpha uses SQLite WAL."
         assert rows[0]["capture_rule_id"] == "explicit-user-approved-alpha"
         private = call(url, tokens["native"], "qdrant_memory_search", {"query": "Alpha"})[
             "memories"
         ]
-        assert len(private) == 1 and private[0]["visibility"] == "private"
+        assert len(private) == 1
+        assert private[0]["visibility"] == "private"
         assert private[0]["id"] != rows[0]["id"]
         assert p.runtime is p._native_owner.owner.runtime
         p.queue_prefetch("Alpha")
@@ -512,13 +515,15 @@ def test_native_owner_denies_tool_calls_outside_the_owner_scope(tmp_path, monkey
         # The local dispatch fallback is unreachable, so nothing is written.
         assert p.store.count() == 1
         # Automatic hooks obey the same authority, including mixed-history checkpoints.
+        attempt = {
+            "turn": lambda: p.sync_turn("cats foreign lifecycle", "ack"),
+            "builtin": lambda: p.on_memory_write("add", "memory", "cats foreign lifecycle"),
+            "checkpoint": lambda: p.on_pre_compress(
+                [{"role": "user", "content": "cats mixed history"}]
+            ),
+        }[kind]
         with pytest.raises(PermissionError, match="limited to its owner scope"):
-            if kind == "turn":
-                p.sync_turn("cats foreign lifecycle", "ack")
-            elif kind == "builtin":
-                p.on_memory_write("add", "memory", "cats foreign lifecycle")
-            else:
-                p.on_pre_compress([{"role": "user", "content": "cats mixed history"}])
+            attempt()
         assert p.wait_idle()
         assert p.store.count() == 1
         failed = list(p.ledger.iter_rows("events", status="FAILED"))

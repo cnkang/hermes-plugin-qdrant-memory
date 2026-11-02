@@ -78,8 +78,9 @@ def test_active_provider_excludes_second_runtime_before_service_access(tmp_path,
             ["retry"],
             ["migrate", "mem0", "--source-json", "unused.json", "--quiet"],
         ):
+            prepared = parser.parse_args(arguments)
             with pytest.raises(WriterBusyError):
-                cli.run(parser.parse_args(arguments), home=tmp_path)
+                cli.run(prepared, home=tmp_path)
 
         # Exercise the actual OS lock in another process, independently of
         # Runtime.lock and of the embedded Qdrant engine's own storage lock.
@@ -305,7 +306,8 @@ def test_one_provider_serializes_delete_after_inflight_upsert(tmp_path, monkeypa
         release.set()
         updater.join(10)
         deleter.join(10)
-        assert not updater.is_alive() and not deleter.is_alive()
+        assert not updater.is_alive()
+        assert not deleter.is_alive()
         assert {json.loads(result)["action"] for result in results} == {"UPDATE", "DELETE"}
         assert owner.store.get(identifier, owner.default_scope) is None
     finally:

@@ -92,7 +92,8 @@ def test_smoke_matrix_covers_six_legs_without_fail_fast(tmp_path):
     assert "--profile quick" in script
     assert "--target-seconds 480" in script
     uploads = [step for step in steps(job) if "upload-artifact" in step.get("uses", "")]
-    assert uploads and uploads[0]["if"] == "always()"
+    assert uploads
+    assert uploads[0]["if"] == "always()"
     assert uploads[0]["with"]["if-no-files-found"] == "error"
 
 
@@ -105,7 +106,8 @@ def test_local_smoke_gate_requires_every_leg_and_runs_after_a_failure():
     script = runs(job)
     assert "--stage smoke" in script
     assert "--reports artifacts/smoke" in script
-    assert "ready=false" in script and "ready=true" in script
+    assert "ready=false" in script
+    assert "ready=true" in script
     assert "exit 1" in script
 
 
@@ -121,7 +123,8 @@ def test_cloud_job_uses_only_the_soak_cloud_environment():
     assert "needs.preflight.outputs.include_cloud == 'true'" in condition
     assert "needs.local-smoke-gate.outputs.ready == 'true'" in condition
     script = runs(job)
-    assert "SOAK_QDRANT_URL" in script and "SOAK_QDRANT_API_KEY" in script
+    assert "SOAK_QDRANT_URL" in script
+    assert "SOAK_QDRANT_API_KEY" in script
     assert "--backend cloud" in script
     assert "Settings > Environments > soak-cloud" in script
     assert "exit 1" in script, "an incomplete cloud contract must fail, not skip"
@@ -181,13 +184,15 @@ def test_final_report_always_runs_and_requires_the_artifacts():
     assert "--stage smoke" in script
     assert "--stage soak" in script
     assert 'if [ "$MODE" = "full" ]' in script
-    assert "verdict=1" in script and 'exit "$verdict"' in script
+    assert "verdict=1" in script
+    assert 'exit "$verdict"' in script
     # The stage results are checked as well, so a cancelled matrix cannot pass.
     assert '"$SOAK_RESULT" != "success"' in script
     assert '"$CLOUD_RESULT" != "success"' in script
     assert '--commit "$COMMIT_SHA"' in script
     uploads = [step for step in steps(job) if "upload-artifact" in step.get("uses", "")]
-    assert uploads and uploads[0]["with"]["name"] == "aggregate-final"
+    assert uploads
+    assert uploads[0]["with"]["name"] == "aggregate-final"
 
 
 def test_only_the_artifact_download_may_ignore_a_failure():

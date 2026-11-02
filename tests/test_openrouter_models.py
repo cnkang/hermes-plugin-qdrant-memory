@@ -93,8 +93,9 @@ def test_dispatch_then_tier_then_legacy_then_default():
 @pytest.mark.parametrize("name", ["fixture/paid", "openrouter/free", "fixture/a:free\nsecret"])
 def test_paid_dynamic_and_unsafe_names_fail_before_network(kind, name):
     """Fixed quality baselines cannot select paid or random routes."""
+    resolve_models = support()["resolve_models"]
     with pytest.raises(ValueError):
-        support()["resolve_models"]("quality", environ={}, **{kind: name})
+        resolve_models("quality", environ={}, **{kind: name})
 
 
 @pytest.mark.parametrize("tier,dimensions", [("smoke", 2048), ("quality", 2048)])

@@ -56,7 +56,9 @@ def test_restart_counts_and_reuses_the_same_profile(tmp_path):
     first = supervisor.process.pid if supervisor.process else None
     supervisor.restart(force=False)
     second = supervisor.process.pid if supervisor.process else None
-    assert first is not None and second is not None and first != second
+    assert first is not None
+    assert second is not None
+    assert first != second
     assert supervisor.restarts == 1
     assert supervisor.starts == 2
     supervisor.restart(force=True)
