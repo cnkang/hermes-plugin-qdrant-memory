@@ -11,6 +11,7 @@ RUNTIME_VERSION = "0.5.4"
 RELEASE_COMMIT = "6ddf7215479692e7882f3065885931f01908c0ac"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
+ACTIVE_INSTALL_DOCS = (*READMES, "docs/standalone.md", "docs/mcp.md")
 
 
 @pytest.fixture(params=READMES)
@@ -52,6 +53,14 @@ def test_release_notice_links_the_exact_published_runtime(release_notice):
     _, notice = release_notice
     links = re.findall(r"\[PyPI\]\(([^)]+)\)", notice)
     assert links == [f"https://pypi.org/project/hermes-plugin-qdrant-memory/{RUNTIME_VERSION}/"]
+
+
+def test_active_install_docs_use_the_exact_published_runtime():
+    """Keep every install example on the latest version available from PyPI."""
+    for name in ACTIVE_INSTALL_DOCS:
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert f"hermes-plugin-qdrant-memory[mcp]=={RUNTIME_VERSION}" in text
+        assert "hermes-plugin-qdrant-memory[mcp]==0.2.0" not in text
 
 
 def test_mcp_and_launcher_select_independent_exact_runtime_dependencies(release_notice):
