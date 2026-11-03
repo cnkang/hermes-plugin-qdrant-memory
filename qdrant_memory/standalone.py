@@ -191,6 +191,9 @@ def parser():
     codex.add_argument("action", choices=["inspect", "migrate", "export", "verify", "handoff"])
     codex.add_argument("--codex-home", type=Path)
     codex.add_argument("--source-version", choices=["v1", "v2"], action="append")
+    codex.add_argument(
+        "--heading", action="append", help="Import only these exact topic/category headings"
+    )
     codex.add_argument("--output", type=Path)
     for flag in ("dry-run", "resume", "retry-failed", "verify", "confirm"):
         codex.add_argument("--" + flag, action="store_true")

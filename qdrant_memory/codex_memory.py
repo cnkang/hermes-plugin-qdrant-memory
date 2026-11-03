@@ -87,7 +87,7 @@ def _sections(text):
         yield section
 
 
-def read_source(home=None, *, versions=None, scope=None):
+def read_source(home=None, *, versions=None, scope=None, headings=None):
     """Return an auditable snapshot; the trusted caller supplies the target scope.
 
     v1's detailed MEMORY.md takes precedence over its lossy summary. v2's
@@ -114,6 +114,8 @@ def read_source(home=None, *, versions=None, scope=None):
         file_hash = hashlib.sha256(text.encode()).hexdigest()
         modified = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat()
         for ordinal, section in enumerate(_sections(text)):
+            title = re.match(r"^#{1,4} (.+)", section)
+            heading = title.group(1).strip() if title else "Uncategorized"
             checksum = content_hash(section)
             source = {
                 "version": store["version"],
@@ -123,7 +125,9 @@ def read_source(home=None, *, versions=None, scope=None):
                 "content_hash": checksum,
             }
             status, reason = "PLANNED", None
-            if SENSITIVE.search(section) or "```" in section:
+            if headings and heading not in headings:
+                status, reason = "SKIPPED", "HEADING_FILTER"
+            elif SENSITIVE.search(section) or "```" in section:
                 status, reason = "SKIPPED", "SENSITIVE_OR_CODE_REVIEW_REQUIRED"
             elif checksum in unique:
                 unique[checksum]["codex_provenance"]["sources"].append(source)
@@ -132,6 +136,7 @@ def read_source(home=None, *, versions=None, scope=None):
                 record = {
                     "id": digest([report["source_id"], checksum]),
                     "memory": section,
+                    "categories": [heading],
                     **scope.as_dict(),
                     "created_at": modified,
                     "updated_at": modified,
@@ -159,6 +164,7 @@ def map_record(record, default_scope):
         record["memory"],
         default_scope,
         "codex_migration",
+        category=record.get("categories") or [],
         metadata={"codex": provenance},
         created_at=record["created_at"],
         updated_at=record["updated_at"],
