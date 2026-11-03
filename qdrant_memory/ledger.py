@@ -57,6 +57,7 @@ class Ledger:
         descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
         os.close(descriptor)
         path.chmod(0o600)
+        self.path = path
         self.lock = RLock()
         self.db = sqlite3.connect(path, check_same_thread=False, timeout=30)
         try:
@@ -622,6 +623,30 @@ class Ledger:
                 )
             )
             return result
+
+    def snapshot_counts(self, timeout=0.5):
+        """Read status counts on a separate connection without taking the writer lock."""
+        unavailable = {"available": False, "events": {}, "operations": {}}
+        try:
+            uri = self.path.resolve().as_uri() + "?mode=ro"
+            connection = sqlite3.connect(uri, uri=True, timeout=timeout)
+        except (OSError, sqlite3.Error, ValueError):
+            return unavailable
+        try:
+            counts = {
+                table: dict(
+                    connection.execute(
+                        f"SELECT status,COUNT(*) FROM {table} WHERE collection=? GROUP BY status",
+                        (self.collection,),
+                    )
+                )
+                for table in ("events", "operations")
+            }
+        except sqlite3.Error:
+            return unavailable
+        finally:
+            connection.close()
+        return {"available": True, **counts}
 
     def increment(self, name):
         """Increment a durable destination-specific decision counter."""
