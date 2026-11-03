@@ -93,6 +93,20 @@ def test_unicode_paths_and_contents_use_utf16_and_utf8(tmp_path):
     assert records[0]["memory"] == "# \u504f\u597d\n\u4f7f\u7528\u56de\u5f52\u6d4b\u8bd5\u3002"
 
 
+def test_home_case_aliases_share_source_and_record_identity(tmp_path):
+    """Case aliases do not create duplicate migrations or retarget filesystem reads."""
+    from pathlib import Path
+
+    root = tmp_path / "NativeHome"
+    (root / "memories").mkdir(parents=True)
+    (root / "memories/MEMORY.md").write_text("# Preference\nApproved.\n")
+    first, first_report = codex.read_source(root)
+    alias = Path(str(root).swapcase())
+    second, second_report = codex.read_source(alias)
+    assert first_report["source_id"] == second_report["source_id"]
+    assert first[0]["id"] == second[0]["id"]
+
+
 @pytest.mark.parametrize("when", ["before_anchor", "after_anchor"])
 def test_native_import_cannot_follow_replaced_parent(tmp_path, monkeypatch, when):
     """A junction substitution cannot import the attacker's alternate fact."""
