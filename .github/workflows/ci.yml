@@ -157,6 +157,8 @@ jobs:
     name: Codex Windows security (Python ${{ matrix.python }})
     runs-on: windows-latest
     timeout-minutes: 15
+    env:
+      QDRANT_WINDOWS_SMB_FIXTURE: '1'
     strategy:
       fail-fast: false
       matrix:
@@ -170,6 +172,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install Runtime and native Windows test dependencies
         run: python -m pip install . 'pytest>=8,<10' 'pytest-cov>=6,<8'
+      - name: Start disposable runner services for the loopback SMB fixture
+        run: Start-Service LanmanServer, LanmanWorkstation
       - name: Require real native Windows filesystem contracts
         run: >-
           python -m pytest -q tests/test_codex_windows_files.py
@@ -180,7 +184,7 @@ jobs:
         run: >-
           python -c "import xml.etree.ElementTree as E;
           s=E.parse('codex-windows-results.xml').findall('.//testsuite');
-          assert sum(int(x.get('tests',0)) for x in s)>=30;
+          assert sum(int(x.get('tests',0)) for x in s)>=34;
           assert sum(int(x.get('skipped',0)) for x in s)==0"
       - name: Normalize native coverage paths for cross-platform analysis
         shell: python

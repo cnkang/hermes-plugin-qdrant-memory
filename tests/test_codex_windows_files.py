@@ -79,6 +79,18 @@ def test_open_is_relative_after_drive_root(tmp_path, monkeypatch):
     assert all(relative and "\\" not in name for name, relative in calls[1:])
 
 
+def test_unicode_paths_and_contents_use_utf16_and_utf8(tmp_path):
+    """Supplementary Unicode path characters must not truncate NT names."""
+    root = tmp_path / "\u732b\U0001f9e0"
+    (root / "memories").mkdir(parents=True)
+    (root / "memories/MEMORY.md").write_text(
+        "# \u504f\u597d\n\u4f7f\u7528\u56de\u5f52\u6d4b\u8bd5\u3002\n", encoding="utf-8"
+    )
+    records, report = codex.read_source(root)
+    assert report["planned"] == 1
+    assert records[0]["memory"] == "# \u504f\u597d\n\u4f7f\u7528\u56de\u5f52\u6d4b\u8bd5\u3002"
+
+
 @pytest.mark.parametrize("when", ["before_anchor", "after_anchor"])
 def test_native_import_cannot_follow_replaced_parent(tmp_path, monkeypatch, when):
     """A junction substitution cannot import the attacker's alternate fact."""
@@ -125,16 +137,17 @@ def test_junction_is_refused_by_native_backend(tmp_path):
 
 def test_held_directory_refuses_write_handles(tmp_path):
     """A checked directory cannot be opened for in-place reparse mutation."""
+    path = str(tmp_path)
     with closing(native.open_directory(tmp_path)):
         with pytest.raises(native.pywintypes.error) as error:
             native.win32file.CreateFile(
-                str(tmp_path),
+                path,
                 native.win32con.GENERIC_WRITE,
                 7,
                 None,
                 native.win32con.OPEN_EXISTING,
                 native.win32con.FILE_FLAG_BACKUP_SEMANTICS
-                | native.win32con.FILE_FLAG_OPEN_REPARSE_POINT,
+                | 0x200000,  # FILE_FLAG_OPEN_REPARSE_POINT (not exported by win32con)
                 None,
             )
         assert error.value.winerror == 32  # ERROR_SHARING_VIOLATION
@@ -174,8 +187,55 @@ def test_non_local_drive_namespaces_fail_closed(path):
     """Unsupported namespace forms never fall back to a full-path open."""
     from pathlib import Path
 
+    path = Path(path)
     with pytest.raises(ValueError, match="local drive"):
-        native.open_directory(Path(path))
+        native.open_directory(path)
+
+
+@pytest.mark.skipif(
+    os.environ.get("QDRANT_WINDOWS_SMB_FIXTURE") != "1",
+    reason="loopback SMB fixture requires disposable Windows CI service setup",
+)
+def test_mapped_remote_drive_is_refused(tmp_path):
+    """A real loopback SMB mapping cannot bypass the local-volume requirement."""
+    import string
+    import uuid
+    from pathlib import Path
+
+    import win32net
+    import win32netcon
+    import win32wnet
+
+    used = {p[:2].upper() for p in native.win32api.GetLogicalDriveStrings().split("\x00") if p}
+    drive = next(c + ":" for c in reversed(string.ascii_uppercase) if c + ":" not in used)
+    share = "codex-test-" + uuid.uuid4().hex
+    win32net.NetShareAdd(
+        None,
+        2,
+        {
+            "netname": share,
+            "type": win32netcon.STYPE_DISKTREE,
+            "remark": "synthetic fixture",
+            "permissions": 0,
+            "max_uses": -1,
+            "current_uses": 0,
+            "path": str(tmp_path),
+            "passwd": None,
+        },
+    )
+    try:
+        win32wnet.WNetAddConnection2(
+            win32netcon.RESOURCETYPE_DISK, drive, "\\\\localhost\\" + share
+        )
+        try:
+            path = Path(drive + "\\")
+            assert native.win32file.GetDriveType(str(path)) == native.win32con.DRIVE_REMOTE
+            with pytest.raises(ValueError, match="local drive"):
+                native.open_directory(path)
+        finally:
+            win32wnet.WNetCancelConnection2(drive, 0, True)
+    finally:
+        win32net.NetShareDel(None, share)
 
 
 def test_descriptor_conversion_failure_closes_handle(tmp_path, monkeypatch):
@@ -283,3 +343,24 @@ def test_acl_capability_failure_does_not_create_directory(tmp_path, monkeypatch)
     with pytest.raises(ValueError, match="unsupported ACLs"):
         codex.write_handoff(tmp_path / "handoff", "fixture", [point], scope)
     assert not (tmp_path / "handoff").exists()
+
+
+def test_precheck_resolution_cannot_redirect_handoff(tmp_path, monkeypatch):
+    """A junction introduced during precheck resolution cannot change the target."""
+    parent, outside = tmp_path / "parent", tmp_path / "outside"
+    parent.mkdir()
+    outside.mkdir()
+    target = parent / "handoff"
+    original = codex.checked_absolute_path
+
+    def substitute(value):
+        original(value)
+        parent.rename(tmp_path / "original")
+        _junction(parent, outside)
+        return value.resolve()
+
+    monkeypatch.setattr(codex, "checked_absolute_path", substitute)
+    scope, point = _point()
+    with pytest.raises((OSError, ValueError)):
+        codex.write_handoff(target, "fixture", [point], scope)
+    assert not list(outside.iterdir())
