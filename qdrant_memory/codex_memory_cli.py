@@ -8,16 +8,13 @@ from .models import Scope
 
 def _target_records(runtime, manifest):
     """Report each migration target's actual durable operation state."""
+    from .migration import _record_status
+
     outcomes = []
     for identifier, record in manifest["records"].items():
         key = record["operation_key"]
         row = runtime.ledger.row("operations", key) if key else None
-        if row:
-            state = row["status"]
-        elif key:
-            state = "MISSING"
-        else:
-            state = "COMMITTED"
+        state = _record_status(record, row)
         if state == "COMMITTED":
             status = "SKIPPED" if record["action"] == "SKIP" else "IMPORTED"
         elif state == "SUPERSEDED":

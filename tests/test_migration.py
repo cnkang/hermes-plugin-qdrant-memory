@@ -1,10 +1,13 @@
 """Source-preserving migration, resume and exact-record verification contracts."""
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from qdrant_memory.migration import (
+    _prepare_pending_operations,
+    _record_status,
     create_manifest,
     map_record,
     migrate,
@@ -175,3 +178,29 @@ def test_verifier_detects_missing_point_even_when_count_matches(tmp_path):
     assert not result["ok"]
     rt.store.close()
     rt.ledger.close()
+
+
+@pytest.mark.parametrize(
+    "action,key,row,expected",
+    [
+        ("SKIP", None, None, "COMMITTED"),
+        ("ADD", None, None, "MISSING"),
+        ("UPDATE", "", None, "MISSING"),
+        ("SKIP", "operation", None, "MISSING"),
+        ("ADD", "operation", {"status": "FAILED"}, "FAILED"),
+    ],
+)
+def test_manifest_status_requires_a_key_for_applied_actions(action, key, row, expected):
+    """Only a planned SKIP may settle without a durable operation."""
+    assert _record_status({"action": action, "operation_key": key}, row) == expected
+
+
+def test_keyless_applied_record_never_reaches_commit():
+    """A corrupt manifest cannot report an unkeyed ADD or UPDATE as applied."""
+    runtime = SimpleNamespace(
+        ledger=SimpleNamespace(row=lambda *_: None),
+        commit=lambda *_, **__: pytest.fail("keyless record was committed"),
+    )
+    manifest = {"records": {"target": {"action": "UPDATE", "operation_key": None}}}
+    with pytest.raises(ValueError, match="Missing migration operation"):
+        _prepare_pending_operations(runtime, manifest, False, None)
