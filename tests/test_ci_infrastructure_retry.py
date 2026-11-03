@@ -139,6 +139,24 @@ def test_second_attempt_may_retry_after_http_503():
     assert plan["run_attempt"] == 2
 
 
+def test_http_status_inside_a_download_url_is_not_transient():
+    """A status-like number in a URL or commit SHA cannot authorize a rerun."""
+    sha = "a" * 37 + "500"
+    log = (
+        "Failed to download action archive: HTTP 404 Not Found from "
+        f"'https://api.github.com/repos/o/r/tarball/{sha}'"
+    )
+    plan = classify_run(REPOSITORY, fixture_run(), [bootstrap_job()], {12: log})
+    assert plan["decision"] == "not_retryable_failure"
+    assert plan["jobs"][0]["category"] == "UNKNOWN_FAILURE"
+
+
+def test_http_version_status_line_is_retryable():
+    """An explicit HTTP status line remains valid transient evidence."""
+    log = "Failed to download action archive: HTTP/1.1 502 Bad Gateway"
+    assert retry_plan(REPOSITORY, fixture_run(), [bootstrap_job()], {12: log}) == "retry"
+
+
 def test_third_attempt_is_never_retried():
     """Three total executions are the hard limit."""
     plan = classify_run(REPOSITORY, fixture_run(attempt=3), [bootstrap_job()], {12: BOOTSTRAP_503})
@@ -266,7 +284,7 @@ def test_retry_request_targets_only_failed_jobs_and_rechecks_attempt(monkeypatch
     }
     api = FakeAPI(run, {1: [bootstrap_job(), successful]}, {12: BOOTSTRAP_DNS})
     monkeypatch.setattr(retry_infrastructure, "_request", api)
-    record = process_run(REPOSITORY, 34)
+    record = process_run(REPOSITORY, 34, event_attempt=1)
     assert record["decision"] == "retry_requested"
     assert api.posts == ["repos/example/memory-runtime/actions/runs/34/rerun-failed-jobs"]
     assert api.log_ids == [12]
@@ -288,8 +306,19 @@ def test_stale_event_does_not_request_a_second_rerun(monkeypatch):
         return original(endpoint, method=method)
 
     monkeypatch.setattr(retry_infrastructure, "_request", stale)
-    assert process_run(REPOSITORY, 34)["decision"] == "stale_event"
+    assert process_run(REPOSITORY, 34, event_attempt=1)["decision"] == "stale_event"
     assert api.posts == []
+
+
+def test_delayed_event_for_older_attempt_is_rejected(monkeypatch):
+    """An event for attempt one cannot classify or rerun attempt two."""
+    run = fixture_run(attempt=2)
+    api = FakeAPI(run, {2: [bootstrap_job()]}, {12: BOOTSTRAP_DNS})
+    monkeypatch.setattr(retry_infrastructure, "_request", api)
+    record = process_run(REPOSITORY, 34, event_attempt=1)
+    assert record["decision"] == "stale_event"
+    assert api.posts == []
+    assert len(api.calls) == 1
 
 
 def test_duplicate_event_does_not_request_a_second_rerun(monkeypatch):
@@ -297,8 +326,8 @@ def test_duplicate_event_does_not_request_a_second_rerun(monkeypatch):
     run = fixture_run()
     api = FakeAPI(run, {1: [bootstrap_job()]}, {12: BOOTSTRAP_DNS})
     monkeypatch.setattr(retry_infrastructure, "_request", api)
-    assert process_run(REPOSITORY, 34)["decision"] == "retry_requested"
-    assert process_run(REPOSITORY, 34)["decision"] != "retry_requested"
+    assert process_run(REPOSITORY, 34, event_attempt=1)["decision"] == "retry_requested"
+    assert process_run(REPOSITORY, 34, event_attempt=1)["decision"] != "retry_requested"
     assert len(api.posts) == 1
 
 
@@ -347,6 +376,22 @@ def test_controller_cannot_retry_itself():
     assert retry_plan(REPOSITORY, run, [bootstrap_job()], {12: BOOTSTRAP_DNS}) == (
         "unexpected_workflow"
     )
+
+
+def test_audit_records_first_attempt_success(monkeypatch):
+    """A direct audit of a first-attempt success reports the first-attempt status."""
+    run = fixture_run(conclusion="success")
+    success_job = {**bootstrap_job(), "conclusion": "success"}
+    api = FakeAPI(
+        run,
+        {1: [success_job]},
+        {},
+        attempt_metadata={1: run},
+    )
+    monkeypatch.setattr(retry_infrastructure, "_request", api)
+    record = audit_run(REPOSITORY, 34)
+    assert record["final_status"] == "PASS_FIRST_ATTEMPT"
+    assert record["auto_retry"] is False
 
 
 def test_audit_records_recovered_run_attempts_and_first_failure(monkeypatch):

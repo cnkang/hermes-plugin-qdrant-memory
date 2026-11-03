@@ -55,7 +55,8 @@ TRANSIENT = re.compile(
     r"no such host is known|could not resolve host|name or service not known|"
     r"connection (?:timed out|reset|refused by peer)|operation (?:has )?timed out|"
     r"i/o timeout|tls handshake timeout|\bETIMEDOUT\b|\bECONNRESET\b|"
-    r"HTTP[^\n]*(?:429|50[0234])|service unavailable|bad gateway|gateway timeout|"
+    r"\bHTTP(?:/\d(?:\.\d)?)?\s+(?:429|50[0234])\b|"
+    r"service unavailable|bad gateway|gateway timeout|"
     r"internal server error",
     re.IGNORECASE,
 )
@@ -351,10 +352,21 @@ def _await_attempt(repository, run_id, attempt, timeout=20):
     return False
 
 
-def process_run(repository, run_id):
+def process_run(repository, run_id, event_attempt=None):
     """Classify the latest attempt and request only failed jobs when every failure qualifies."""
     prefix = f"repos/{repository}/actions"
     run = json.loads(_request(f"{prefix}/runs/{run_id}"))
+    if event_attempt is not None and run.get("run_attempt") != event_attempt:
+        return {
+            "run_id": run_id,
+            "workflow": run.get("name"),
+            "head_sha": run.get("head_sha"),
+            "run_attempt": run.get("run_attempt"),
+            "event_attempt": event_attempt,
+            "max_attempts": MAX_ATTEMPTS,
+            "jobs": [],
+            "decision": "stale_event",
+        }
     record = classify_run(repository, run, [], {})
     if record["decision"] != "no_failed_jobs":
         return record
@@ -367,7 +379,8 @@ def process_run(repository, run_id):
     # Serialized events and a fresh metadata read prevent a stale or duplicate
     # event from rerunning a newer attempt.
     current = json.loads(_request(f"{prefix}/runs/{run_id}"))
-    if current.get("run_attempt") != run["run_attempt"] or current.get("status") != "completed":
+    expected = run["run_attempt"] if event_attempt is None else event_attempt
+    if current.get("run_attempt") != expected or current.get("status") != "completed":
         return {**record, "decision": "stale_event"}
     _request(f"{prefix}/runs/{run_id}/rerun-failed-jobs", method="POST")
     if not _await_attempt(repository, run_id, run["run_attempt"]):
@@ -435,6 +448,9 @@ def audit_run(repository, run_id):
     attempt = run.get("run_attempt") or 1
     record["retries_used"] = max(0, attempt - 1)
     record["attempts"] = _attempt_records(repository, run_id, attempt)
+    if attempt == 1 and run.get("conclusion") == "success":
+        record["final_status"] = "PASS_FIRST_ATTEMPT"
+        return record
     if attempt > 1 and run.get("conclusion") == "success":
         record["auto_retry"] = True
         previous = json.loads(_request(f"{prefix}/runs/{run_id}/attempts/{attempt - 1}"))
@@ -520,7 +536,7 @@ def main(argv=None):
     if "--audit" in arguments:
         _publish(audit_run(repository, run_id))
     else:
-        _publish(process_run(repository, run_id))
+        _publish(process_run(repository, run_id, event["workflow_run"].get("run_attempt")))
     return 0
 
 

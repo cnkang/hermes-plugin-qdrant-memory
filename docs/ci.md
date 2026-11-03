@@ -98,7 +98,10 @@ and every retried run. The record carries the run and commit identity. It lists
 each failed job, its category and basis, and each attempt. It records the final
 status and any automatic retry. Final statuses are `PASS_FIRST_ATTEMPT`,
 `PASS_AFTER_INFRA_RETRY`, `PASS_AFTER_PERFORMANCE_RETRY`,
-`FAIL_NON_RETRYABLE`, `FAIL_RETRY_EXHAUSTED` and `INCONCLUSIVE`.
+`PASS_AFTER_UNVERIFIED_RETRY`, `FAIL_NON_RETRYABLE`, `FAIL_RETRY_EXHAUSTED`
+and `INCONCLUSIVE`. The audit emits `PASS_FIRST_ATTEMPT` only when it is run
+directly for a first-attempt success. The scheduled controller reports failures
+and retried runs, so normal first-attempt successes have no audit record.
 
 The controller reads only run metadata and job logs. It never checks out or
 executes the triggering head, consumes its artifacts or evaluates log content.
