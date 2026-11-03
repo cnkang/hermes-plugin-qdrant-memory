@@ -302,12 +302,7 @@ def _write_anchored(name, data, directory):
 def _publish_handoff(target, files):
     """Create a new bundle through anchored descriptors; never rewrite a path check."""
     if not _ANCHORED_CREATION:
-        target.mkdir(mode=0o700)
-        checked_absolute_path(target)
-        for name, data in files.items():
-            with (target / name).open("xb") as stream:
-                stream.write(data)
-        return
+        raise ValueError("Secure handoff creation requires directory-relative filesystem APIs")
     parent = _open_anchored(target.parent)
     try:
         os.mkdir(target.name, 0o700, dir_fd=parent)
