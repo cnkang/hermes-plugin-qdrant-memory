@@ -11,6 +11,7 @@ import re
 from contextlib import closing
 from ctypes import wintypes
 from functools import cache
+from pathlib import PureWindowsPath
 
 if os.name == "nt":
     import msvcrt
@@ -248,6 +249,11 @@ def publish_handoff(target, files):
     security = _private_security()
     with closing(open_directory(target.parent)) as parent:
         _require_private_volume(parent)
+        # Use the checked handle's normalized long name for policy only. Never
+        # reopen that name: short aliases must not bypass the native-store ban.
+        actual = PureWindowsPath(win32file.GetFinalPathNameByHandle(parent, 0))
+        if any(os.path.normcase(part) in {"memories", "memories_v2"} for part in actual.parts):
+            raise ValueError("Handoff must be outside native memory directories")
         directory = _open(target.name, parent, directory=True, create=True, security=security)
     with closing(directory):
         for name, data in files.items():

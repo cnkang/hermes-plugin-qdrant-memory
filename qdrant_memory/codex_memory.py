@@ -316,7 +316,7 @@ def write_handoff(path, collection, points, scope):
     target = Path(path).expanduser().absolute()
     checked_absolute_path(target)
     # A handoff must never masquerade as generated native state.
-    if any(part in {"memories", "memories_v2"} for part in target.parts):
+    if any(os.path.normcase(part) in {"memories", "memories_v2"} for part in target.parts):
         raise ValueError("Handoff must be outside native memory directories")
     records = []
     for point in points:

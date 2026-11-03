@@ -177,7 +177,15 @@ jobs:
       - name: Install Runtime and native Windows test dependencies
         run: python -m pip install . 'pytest>=8,<10' 'pytest-cov>=6,<8' 'pywin32==${{ matrix.pywin32 }}'
       - name: Start disposable runner services for the loopback SMB fixture
-        run: Start-Service LanmanServer, LanmanWorkstation
+        run: |
+          Start-Service LanmanServer, LanmanWorkstation
+          # Enable short-name creation only in the disposable CI VM so the
+          # alias bypass regression is always exercised, never silently skipped.
+          $volume = python -c "import os,tempfile; print(os.path.splitdrive(tempfile.gettempdir())[0])"
+          fsutil 8dot3name set 2
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot enable per-volume short-name settings' }
+          fsutil 8dot3name set $volume 0
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot enable short names on the fixture volume' }
       - name: Require real native Windows filesystem contracts
         run: >-
           python -m pytest -q tests/test_codex_windows_files.py
@@ -188,7 +196,7 @@ jobs:
         run: >-
           python -c "import xml.etree.ElementTree as E;
           s=E.parse('codex-windows-results.xml').findall('.//testsuite');
-          assert sum(int(x.get('tests',0)) for x in s)>=36;
+          assert sum(int(x.get('tests',0)) for x in s)>=41;
           assert sum(int(x.get('skipped',0)) for x in s)==0"
       - name: Normalize native coverage paths for cross-platform analysis
         shell: python
