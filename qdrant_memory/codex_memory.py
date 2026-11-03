@@ -24,7 +24,7 @@ SENSITIVE = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,})"
     r"|\b(?:AKIA|ASIA)[0-9A-Z]{16}\b|\bxox[abprs]-[A-Za-z0-9-]{10,}"
     r"|(?i:bearer)\s+[A-Za-z0-9._~+/=-]{20,}"
-    r"|\b[A-Za-z][A-Za-z0-9+.-]*://[^/\s@:]*:[^/\s@]+@"
+    r"|\b[A-Za-z][A-Za-z0-9+.-]*://[^/\s@:?#]*:[^/\s@?#]+@"
     r"|(?i:api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*\S+"
 )
 
