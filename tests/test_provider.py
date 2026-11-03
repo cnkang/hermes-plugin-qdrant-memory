@@ -1,6 +1,8 @@
 """Primary-agent lifecycle, author isolation and durable turn persistence contracts."""
 
 import json
+import time
+from threading import Event, Thread
 from types import SimpleNamespace
 
 from qdrant_memory.models import Scope
@@ -51,6 +53,36 @@ def test_writer_timeout_diagnostics_are_bounded_and_redacted(tmp_path):
     line = p.timeout_report(180, sample_seconds=0)
     assert line.startswith("QDANT_WRITER_TIMEOUT ")
     assert json.loads(line.split(" ", 1)[1])["progress_advanced"] is False
+    p.shutdown()
+
+
+def test_writer_diagnostics_degrade_without_blocking(tmp_path):
+    """Diagnostics stay bounded when another thread holds the writer condition."""
+    p = provider(tmp_path)
+    p.sync_turn("remember bounded diagnostics", "ack", session_id="first")
+    assert p.wait_idle()
+    entered, release = Event(), Event()
+
+    def hold_condition():
+        """Hold the writer condition past the diagnostics acquire window."""
+        with p._condition:
+            entered.set()
+            assert release.wait(5)
+
+    holder = Thread(target=hold_condition)
+    holder.start()
+    try:
+        assert entered.wait(2)
+        started = time.monotonic()
+        report = p.writer_diagnostics(elapsed_seconds=180)
+        elapsed = time.monotonic() - started
+    finally:
+        release.set()
+        holder.join(5)
+    assert report["lock_acquired"] is False
+    assert report["queue_snapshot_complete"] is False
+    assert report["worker_alive"] is True
+    assert elapsed < 2
     p.shutdown()
 
 

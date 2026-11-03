@@ -1349,11 +1349,24 @@ class QdrantMemoryProvider(MemoryProvider):
             state = self._state
             accepting = self._accepting
             busy = self._busy
-            jobs = list(self._jobs)
             worker = self._worker
             last_progress_at = self._last_progress_at
             last_progress = self._last_progress_monotonic
-            durations = list(self._job_durations)[-16:]
+            if acquired:
+                jobs = list(self._jobs)
+                queue_depth = len(jobs)
+                oldest_queued = jobs[0][3] if jobs else None
+                queued_kinds = dict(Counter(job[1] for job in jobs))
+                durations = list(self._job_durations)[-16:]
+            else:
+                # A deque can change during iteration. Use atomic reads instead.
+                queue_depth = len(self._jobs)
+                try:
+                    oldest_queued = self._jobs[0][3]
+                except IndexError:
+                    oldest_queued = None
+                queued_kinds = {}
+                durations = []
         finally:
             if acquired:
                 self._condition.release()
@@ -1368,9 +1381,12 @@ class QdrantMemoryProvider(MemoryProvider):
             "accepting": accepting,
             "worker_alive": bool(worker is not None and worker.is_alive()),
             "worker_busy": busy,
-            "queue_depth": len(jobs),
-            "queued_kinds": dict(Counter(job[1] for job in jobs)),
-            "oldest_queued_job_age_seconds": (round(now - jobs[0][3], 3) if jobs else None),
+            "queue_depth": queue_depth,
+            "queued_kinds": queued_kinds,
+            "queue_snapshot_complete": acquired,
+            "oldest_queued_job_age_seconds": (
+                round(now - oldest_queued, 3) if oldest_queued is not None else None
+            ),
             "completed_event_count": events.get("COMMITTED", 0),
             "pending_event_count": events.get("PENDING", 0),
             "failed_event_count": events.get("FAILED", 0),
