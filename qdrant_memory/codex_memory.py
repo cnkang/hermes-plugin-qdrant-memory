@@ -98,7 +98,7 @@ def inspect(home=None):
         elif directory.exists():
             stores.append({"version": version_name, "path": None, "empty": True})
     return {
-        "source_id": hashlib.sha256(str(root).encode()).hexdigest(),
+        "source_id": hashlib.sha256(os.path.normcase(str(root)).encode()).hexdigest(),
         "configured_version": version,
         "selected_version": version
         or ("v1" if (root / "memories").exists() or memories.get("dual_write") is False else "v2"),

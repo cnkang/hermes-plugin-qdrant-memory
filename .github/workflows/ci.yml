@@ -188,7 +188,7 @@ jobs:
         run: >-
           python -c "import xml.etree.ElementTree as E;
           s=E.parse('codex-windows-results.xml').findall('.//testsuite');
-          assert sum(int(x.get('tests',0)) for x in s)>=35;
+          assert sum(int(x.get('tests',0)) for x in s)>=36;
           assert sum(int(x.get('skipped',0)) for x in s)==0"
       - name: Normalize native coverage paths for cross-platform analysis
         shell: python
