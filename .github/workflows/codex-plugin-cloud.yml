@@ -36,7 +36,7 @@ jobs:
         with:
           repository: cnkang/qdrant-memory-mcp
           # Reviewed, immutable client/fixture code. Never a dispatch input or PR head.
-          ref: 4b82699cd6d3556219d7344f426ee80a771a1bb6
+          ref: 339a974a5e02989f00f089a4b52e92afc589a3dd
           path: client
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
