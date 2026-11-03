@@ -44,23 +44,67 @@ requirements. This preserves the host's security overrides, including
 `Pillow==13.0.0`. An export alone does not carry these overrides. PM checks
 installed dependencies against that lock and still rejects unrelated conflicts.
 
-## Transient runner download retries
+## Transient infrastructure retries
 
-The validation workflows have a separate, bounded retry controller for confirmed
-transient failures downloading GitHub Action archives during `Set up job`.
-It permits at most two additional run attempts (three attempts total), and
-requests only failed jobs. All failed jobs must have stopped before any workflow
-step executed. Their logs must show a download failure and a transient DNS,
-timeout or service-unavailable error. Test/quality-gate failures, permanent
-404s, foreign heads and missing evidence do not qualify.
+The validation workflows have a separate, bounded retry controller. It permits
+at most two additional run attempts (three attempts total). It classifies every
+failed job before it requests a rerun. It requests `rerun-failed-jobs`, so a
+successful matrix job never runs again.
 
-The controller reads fresh run/attempt metadata, serializes events per run and
-checks again before requesting a rerun. It needs `actions: write` only to request
-the rerun. It never checks out or executes the triggering head, consumes its
-artifacts or evaluates its logs. The controller fetches its script from the
-retry workflow's own trusted SHA. The fetch permits three download attempts at
-most. No external action is necessary to bootstrap the controller.
-Release/publish workflows are excluded.
+A failed job qualifies only under one of these evidence classes:
+
+- `TRANSIENT_BOOTSTRAP`: the job stopped in `Set up job`, and its log shows a
+  failed Action archive download plus a strict DNS, timeout or service error.
+- `TRANSIENT_NETWORK`: an allowlisted GitHub action step
+  (`checkout`, `setup-python`, `upload-artifact` or `download-artifact`) failed,
+  every earlier step succeeded, and the log shows a strict transient network or
+  service error.
+- `DEPENDENT_GATE`: the aggregate gate failed only to restate a prerequisite.
+  It is rerun only with at least one eligible root-cause job.
+
+The classifier fails closed. A test failure, a dependency conflict, a `404`, a
+missing credential, a permission error and an unreadable log never qualify.
+A `TimeoutError` from Python test code is not network evidence. Quality, lint,
+dependency and security jobs are never retried, even when their logs contain a
+timeout. A run with mixed retryable and non-retryable failures is not rerun.
+Fork pull requests, foreign heads, stale events and exhausted budgets are
+rejected. A failed controller does not rerun anything and cannot trigger
+itself.
+
+The controller reads fresh run and attempt metadata before the request and
+again after the classification. Per-attempt concurrency serializes duplicate
+events. A successful rerun is recorded separately, so the failed attempt keeps
+its original logs and check result.
+
+### Writer timeout diagnostics
+
+`QdrantMemoryProvider.timeout_report()` prints one bounded
+`QDANT_WRITER_TIMEOUT` JSON line when a writer drain times out. The report holds
+provider state, worker liveness and busy state. It also holds queue depth, ledger
+status counts, last progress age, recent job durations and a file and function
+stack snapshot. It never contains memories, prompts, payloads or credentials. It
+takes two samples two seconds apart, so a slow writer is distinguishable from a
+stalled one. Counts come from a separate read-only SQLite connection, so the
+diagnostics do not compete for the writer lock.
+
+`tests/test_provider.py::test_100_fast_turns_no_loss_and_replay` uses this report
+on its 180-second timeout. The specific Windows durability timeout remains
+non-retryable. The controller records `TEST_PERFORMANCE_TIMEOUT` and preserves
+the evidence. Automatic retry for this test stays deferred until a real run
+proves durable progress, no terminal failure and a consistent ledger.
+
+The controller writes a Markdown summary and a JSON artifact for every failure
+and every retried run. The record carries the run and commit identity. It lists
+each failed job, its category and basis, and each attempt. It records the final
+status and any automatic retry. Final statuses are `PASS_FIRST_ATTEMPT`,
+`PASS_AFTER_INFRA_RETRY`, `PASS_AFTER_PERFORMANCE_RETRY`,
+`FAIL_NON_RETRYABLE`, `FAIL_RETRY_EXHAUSTED` and `INCONCLUSIVE`.
+
+The controller reads only run metadata and job logs. It never checks out or
+executes the triggering head, consumes its artifacts or evaluates log content.
+It fetches its own script through the contents API from the retry workflow's
+trusted commit. The fetch permits three download attempts at most. Release and
+publish workflows are excluded.
 
 GitHub activates `workflow_run` workflows only after their file exists on the
 default branch. Adding this controller in a PR does not activate it before merge.
