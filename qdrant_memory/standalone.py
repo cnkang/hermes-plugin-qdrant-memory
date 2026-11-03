@@ -187,6 +187,13 @@ def parser():
     result = argparse.ArgumentParser(prog="qdrant-memory")
     result.add_argument("--home", type=Path, default=default_home())
     commands = cli.register_cli(result)
+    codex = commands.add_parser("codex", help="Inspect, migrate or hand off local Codex memory")
+    codex.add_argument("action", choices=["inspect", "migrate", "export", "verify", "handoff"])
+    codex.add_argument("--codex-home", type=Path)
+    codex.add_argument("--source-version", choices=["v1", "v2"], action="append")
+    codex.add_argument("--output", type=Path)
+    for flag in ("dry-run", "resume", "retry-failed", "verify", "confirm"):
+        codex.add_argument("--" + flag, action="store_true")
     for definition in schemas():
         name = definition["name"].removeprefix("qdrant_memory_")
         command = commands.add_parser(name, help=definition["description"])
@@ -308,6 +315,10 @@ def _immediate_command(args):
 def _result_command(args):
     """Return the single JSON result of a maintenance or fixed-scope tool route."""
     command = args.qdrant_command
+    if command == "codex":
+        from .codex_memory_cli import run
+
+        return run(args)
     if command == "prepare-model":
         return _prepared_model_result(args)
     if command == "setup":
