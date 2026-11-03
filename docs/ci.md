@@ -72,9 +72,10 @@ rejected. A failed controller does not rerun anything and cannot trigger
 itself.
 
 The controller reads fresh run and attempt metadata before the request and
-again after the classification. Per-attempt concurrency serializes duplicate
-events. A successful rerun is recorded separately, so the failed attempt keeps
-its original logs and check result.
+again after the classification. It compares the event's attempt and commit SHA
+with the live run. Per-attempt concurrency serializes duplicate events. A
+successful rerun is recorded separately, so the failed attempt keeps its
+original logs and check result.
 
 ### Writer timeout diagnostics
 

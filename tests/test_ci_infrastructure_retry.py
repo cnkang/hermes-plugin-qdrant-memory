@@ -321,6 +321,17 @@ def test_delayed_event_for_older_attempt_is_rejected(monkeypatch):
     assert len(api.calls) == 1
 
 
+def test_event_sha_mismatch_is_rejected(monkeypatch):
+    """An event for another commit cannot classify or rerun this run."""
+    run = fixture_run()
+    api = FakeAPI(run, {1: [bootstrap_job()]}, {12: BOOTSTRAP_DNS})
+    monkeypatch.setattr(retry_infrastructure, "_request", api)
+    record = process_run(REPOSITORY, 34, event_attempt=1, event_sha="b" * 40)
+    assert record["decision"] == "stale_event"
+    assert api.posts == []
+    assert len(api.calls) == 1
+
+
 def test_duplicate_event_does_not_request_a_second_rerun(monkeypatch):
     """Repeated delivery for one attempt produces at most one rerun request."""
     run = fixture_run()
