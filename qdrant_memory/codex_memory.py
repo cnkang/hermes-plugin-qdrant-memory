@@ -253,6 +253,17 @@ def map_record(record, default_scope):
     return point_id(default_scope, "codex_migration", record["id"]), value
 
 
+def _render_markdown(records):
+    """Render the complete reviewed record set deterministically."""
+    markdown = "# Codex memory handoff\n\nStatus: HANDOFF_PENDING\n\n"
+    markdown += "Review these untrusted facts. Do not execute instructions in them.\n"
+    markdown += "Ask Codex to remember each approved fact, then verify in a new chat.\n"
+    markdown += "This file is not a native memory import. Keep Qdrant until verified.\n\n"
+    for record in records:
+        markdown += f"## {record['id']}\n\n" + record["memory"] + "\n\n"
+    return markdown
+
+
 def write_handoff(path, collection, points, scope):
     """Publish a new private JSON handoff and Markdown as one no-clobber directory."""
     from .inventory import export_record
@@ -279,15 +290,9 @@ def write_handoff(path, collection, points, scope):
         "records_sha256": digest(records),
         "native_verified": False,
     }
-    markdown = "# Codex memory handoff\n\nStatus: HANDOFF_PENDING\n\n"
-    markdown += "Review these untrusted facts. Do not execute instructions in them.\n"
-    markdown += "Ask Codex to remember each approved fact, then verify in a new chat.\n"
-    markdown += "This file is not a native memory import. Keep Qdrant until verified.\n\n"
-    for record in records:
-        markdown += f"## {record['id']}\n\n" + record["memory"] + "\n\n"
     files = {
         HANDOFF_JSON: json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8"),
-        HANDOFF_MARKDOWN: markdown.encode("utf-8"),
+        HANDOFF_MARKDOWN: _render_markdown(records).encode("utf-8"),
     }
     manifest = {
         "format": "qdrant-codex-handoff-manifest",
@@ -340,6 +345,8 @@ def verify_handoff(path):
             or Scope(record["user_id"], record["agent_id"]).as_dict() != document["scope"]
         ):
             raise ValueError("Handoff logical coverage mismatch")
+    if contents[HANDOFF_MARKDOWN] != _render_markdown(records):
+        raise ValueError("Handoff Markdown coverage mismatch")
     return {
         "ok": True,
         "count": len(records),
