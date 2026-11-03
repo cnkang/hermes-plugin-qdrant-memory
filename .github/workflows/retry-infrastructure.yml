@@ -1,4 +1,4 @@
-name: Retry transient action downloads
+name: Retry transient infrastructure failures
 
 on:
   workflow_run:
@@ -10,7 +10,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: infrastructure-retry-${{ github.event.workflow_run.id }}
+  group: infrastructure-retry-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
   cancel-in-progress: false
 
 jobs:
@@ -18,13 +18,14 @@ jobs:
     if: >-
       (github.event.workflow_run.event == 'push' ||
       github.event.workflow_run.event == 'pull_request') &&
-      github.event.workflow_run.conclusion == 'failure' &&
-      github.event.workflow_run.run_attempt < 3 &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.conclusion != 'success' ||
+      github.event.workflow_run.run_attempt > 1)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Inspect bootstrap evidence and retry only confirmed transient downloads
+      - name: Fetch the controller from the trusted workflow commit
+        id: controller
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -41,4 +42,44 @@ jobs:
             sleep "$((attempt * 2))"
           done
           test "$downloaded" = true
-          python3 "$script_path"
+          echo "script=$script_path" >> "$GITHUB_OUTPUT"
+
+      - name: Classify failures and rerun only eligible jobs
+        id: retry
+        if: >-
+          github.event.workflow_run.conclusion == 'failure' &&
+          github.event.workflow_run.run_attempt < 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 "${{ steps.controller.outputs.script }}" | tee "$RUNNER_TEMP/retry-decision.json"
+          python3 -c 'import json,sys; print("decision=" + json.load(open(sys.argv[1]))["decision"])' \
+            "$RUNNER_TEMP/retry-decision.json" >> "$GITHUB_OUTPUT"
+
+      - name: Record final status and attempt history
+        if: >-
+          always() && steps.controller.outputs.script != '' &&
+          steps.retry.outputs.decision != 'retry_requested'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 "${{ steps.controller.outputs.script }}" --audit > "$RUNNER_TEMP/retry-audit.json"
+          cat "$RUNNER_TEMP/retry-audit.json"
+
+      - name: Preserve the retry audit record
+        if: always() && steps.controller.outputs.script != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: retry-audit-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: |
+            ${{ runner.temp }}/retry-audit.json
+            ${{ runner.temp }}/retry-decision.json
+          if-no-files-found: warn
+
+      - name: Report a controller failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "The retry controller did not complete. See the job log and the audit record." >> "$GITHUB_STEP_SUMMARY"
+          echo "The original failed workflow run and its logs are unchanged." >> "$GITHUB_STEP_SUMMARY"
