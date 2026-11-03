@@ -1,7 +1,7 @@
 """Handle-relative, no-reparse Codex I/O on local Windows drives.
 
-pywin32 owns handles and security descriptors. Only the missing NtCreateFile
-binding and the handle-based volume capability query use ctypes. There is no
+pywin32 owns handles and security descriptors. Only missing handle-relative
+open and volume-query bindings use ctypes. There is no
 full-path fallback after opening the drive root.
 """
 
@@ -45,6 +45,10 @@ class _IoStatusBlock(ctypes.Structure):
     _fields_ = [("Status", ctypes.c_void_p), ("Information", ctypes.c_size_t)]
 
 
+class _DeviceInformation(ctypes.Structure):
+    _fields_ = [("DeviceType", wintypes.ULONG), ("Characteristics", wintypes.ULONG)]
+
+
 @cache
 def _nt_create_file():
     function = ctypes.WinDLL("ntdll").NtCreateFile
@@ -72,6 +76,36 @@ def _status_to_error():
     return function
 
 
+@cache
+def _query_device_information():
+    function = ctypes.WinDLL("ntdll").NtQueryVolumeInformationFile
+    function.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(_IoStatusBlock),
+        ctypes.c_void_p,
+        wintypes.ULONG,
+        wintypes.ULONG,
+    ]
+    function.restype = wintypes.LONG
+    return function
+
+
+def _require_local_device(handle):
+    """Check the opened volume itself, including mapped network drive letters."""
+    information, status = _DeviceInformation(), _IoStatusBlock()
+    code = _query_device_information()(
+        int(handle),
+        ctypes.byref(status),
+        ctypes.byref(information),
+        ctypes.sizeof(information),
+        4,  # FileFsDeviceInformation
+    )
+    if code != 0:
+        raise ctypes.WinError(_status_to_error()(code))
+    if information.Characteristics & 0x10:  # FILE_REMOTE_DEVICE
+        raise ValueError("Secure Windows Codex I/O requires a local drive")
+
+
 def _component(name):
     """Permit one literal component, never an NT namespace or stream name."""
     if (
@@ -92,7 +126,7 @@ def _open(name, parent=None, *, directory=False, create=False, security=None):
     length = len(name.encode("utf-16-le"))
     if length > 65532:
         raise ValueError("Windows path component is too long")
-    buffer = ctypes.create_unicode_buffer(name)
+    buffer = ctypes.create_unicode_buffer(name, length // 2 + 1)
     text = _UnicodeString(length, length + 2, ctypes.cast(buffer, wintypes.LPWSTR))
     descriptor = ctypes.create_string_buffer(bytes(security)) if security is not None else None
     attributes = _ObjectAttributes(
@@ -143,6 +177,7 @@ def open_directory(path):
         raise ValueError("Secure Windows Codex I/O requires an absolute local drive path")
     handle = _open("\\??\\" + path.anchor, directory=True)
     try:
+        _require_local_device(handle)
         for part in path.parts[1:]:
             child = _open(part, handle, directory=True)
             handle.Close()

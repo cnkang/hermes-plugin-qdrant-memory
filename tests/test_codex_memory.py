@@ -347,6 +347,28 @@ def test_handoff_bundle_is_created_private(tmp_path):
         assert stat.S_IMODE((target / name).stat().st_mode) == 0o600
 
 
+@requires_posix_anchoring
+def test_handoff_keeps_requested_path_after_precheck_resolution_race(tmp_path, monkeypatch):
+    """A raced resolve result cannot authorize publication in a different directory."""
+    parent, outside = tmp_path / "parent", tmp_path / "outside"
+    parent.mkdir()
+    outside.mkdir()
+    target = parent / "handoff"
+    original = codex.checked_absolute_path
+
+    def substitute(value):
+        original(value)
+        parent.rename(tmp_path / "original")
+        parent.symlink_to(outside, target_is_directory=True)
+        return value.resolve()
+
+    monkeypatch.setattr(codex, "checked_absolute_path", substitute)
+    scope = Scope("u", "codex")
+    with pytest.raises(OSError):
+        codex.write_handoff(target, "fixture", [], scope)
+    assert not list(outside.iterdir())
+
+
 def test_handoff_creation_refuses_platforms_without_anchoring(tmp_path, monkeypatch):
     """A platform without directory-relative creation fails closed."""
     monkeypatch.setattr(codex, "_ANCHORED_CREATION", False)

@@ -50,7 +50,7 @@ no-follow directory descriptors, then open the leaf relative to the checked
 directory and use only that descriptor and its metadata, including provenance
 mtime. Windows uses pywin32 and a small native API binding to traverse local-drive
 paths relative to directory handles, rejecting every reparse point (including
-junctions). UNC/device namespaces and ambiguous component names are refused;
+junctions). UNC/device namespaces, mapped network drives and ambiguous component names are refused;
 there is no full-path open fallback after opening the drive root. Platforms
 without either safe backend refuse Codex artifact reads. Heading splitting honors
 backtick/tilde code fences; unclosed fenced tails stay quarantined.

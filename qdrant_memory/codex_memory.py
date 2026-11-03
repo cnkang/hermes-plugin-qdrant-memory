@@ -67,9 +67,10 @@ def _read(path, *, max_bytes=MAX_SOURCE_BYTES, with_metadata=False):
 
 def inspect(home=None):
     """Inspect configuration and known semantic artifacts; never create paths."""
-    root = checked_absolute_path(
+    root = (
         Path(home or os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser().absolute()
     )
+    checked_absolute_path(root)
     config = root / "config.toml"
     cfg = tomllib.loads(_read(config)) if config.exists() or config.is_symlink() else {}
     memories = cfg.get("memories", {})
@@ -311,7 +312,8 @@ def write_handoff(path, collection, points, scope):
     """Publish a new private JSON handoff and Markdown as one no-clobber directory."""
     from .inventory import export_record
 
-    target = checked_absolute_path(Path(path).expanduser().absolute())
+    target = Path(path).expanduser().absolute()
+    checked_absolute_path(target)
     # A handoff must never masquerade as generated native state.
     if any(part in {"memories", "memories_v2"} for part in target.parts):
         raise ValueError("Handoff must be outside native memory directories")
@@ -358,7 +360,8 @@ def write_handoff(path, collection, points, scope):
 
 def verify_handoff(path):
     """Verify bytes and logical coverage without claiming native system adoption."""
-    root = checked_absolute_path(Path(path).expanduser().absolute())
+    root = Path(path).expanduser().absolute()
+    checked_absolute_path(root)
     manifest = json.loads(_read(root / "manifest.json", max_bytes=MAX_HANDOFF_FILE_BYTES))
     if (
         manifest.get("format") != "qdrant-codex-handoff-manifest"
