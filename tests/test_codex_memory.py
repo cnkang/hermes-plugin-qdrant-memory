@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import stat
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -228,6 +229,42 @@ def test_handoff_limit_is_enforced_before_directory_publication(tmp_path, monkey
     monkeypatch.setattr(codex, "MAX_HANDOFF_FILE_BYTES", max(sizes.values()))
     codex.write_handoff(tmp_path / "exact-bound", "test", [point], scope)
     assert codex.verify_handoff(tmp_path / "exact-bound")["ok"]
+
+
+@pytest.mark.skipif(not codex._ANCHORED_CREATION, reason="no directory-relative creation")
+def test_handoff_creation_is_anchored_to_the_checked_parent(tmp_path, monkeypatch):
+    """Swapping the verified parent cannot redirect the new bundle."""
+    scope = Scope("u", "codex")
+    point = SimpleNamespace(id="id", payload={"text": "Approved.", **scope.as_dict()})
+    parent = tmp_path / "nested"
+    parent.mkdir()
+    moved = tmp_path / "moved"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    original = codex._open_anchored
+
+    def replace(path):
+        descriptor = original(path)
+        parent.rename(moved)
+        parent.symlink_to(outside, target_is_directory=True)
+        return descriptor
+
+    monkeypatch.setattr(codex, "_open_anchored", replace)
+    codex.write_handoff(parent / "handoff", "test", [point], scope)
+    assert not list(outside.iterdir())
+    assert codex.verify_handoff(moved / "handoff")["count"] == 1
+
+
+@pytest.mark.skipif(not codex._ANCHORED_CREATION, reason="no directory-relative creation")
+def test_handoff_bundle_is_created_private(tmp_path):
+    """The bundle directory and its files carry creation-time private modes."""
+    scope = Scope("u", "codex")
+    point = SimpleNamespace(id="id", payload={"text": "Approved.", **scope.as_dict()})
+    target = tmp_path / "handoff"
+    codex.write_handoff(target, "test", [point], scope)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o700
+    for name in (codex.HANDOFF_JSON, codex.HANDOFF_MARKDOWN, "manifest.json"):
+        assert stat.S_IMODE((target / name).stat().st_mode) == 0o600
 
 
 def test_config_and_environment(tmp_path, monkeypatch):

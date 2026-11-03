@@ -267,6 +267,61 @@ def _render_markdown(records):
     return markdown
 
 
+_DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+# Windows has no directory-relative create; it revalidates the path instead.
+_ANCHORED_CREATION = hasattr(os, "supports_dir_fd") and {os.open, os.mkdir} <= os.supports_dir_fd
+
+
+def _open_anchored(path):
+    """Walk from the filesystem anchor without following a substituted link."""
+    descriptor = os.open(path.anchor, _DIRECTORY_FLAGS)
+    try:
+        for part in path.parts[1:]:
+            child = os.open(part, _DIRECTORY_FLAGS | _NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
+def _write_anchored(name, data, directory):
+    """Create one private file relative to the handoff directory descriptor."""
+    descriptor = os.open(
+        name,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW,
+        0o600,
+        dir_fd=directory,
+    )
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(data)
+
+
+def _publish_handoff(target, files):
+    """Create a new bundle through anchored descriptors; never rewrite a path check."""
+    if not _ANCHORED_CREATION:
+        target.mkdir(mode=0o700)
+        checked_absolute_path(target)
+        for name, data in files.items():
+            with (target / name).open("xb") as stream:
+                stream.write(data)
+        return
+    parent = _open_anchored(target.parent)
+    try:
+        os.mkdir(target.name, 0o700, dir_fd=parent)
+        directory = os.open(target.name, _DIRECTORY_FLAGS | _NOFOLLOW, dir_fd=parent)
+    finally:
+        os.close(parent)
+    try:
+        os.fchmod(directory, 0o700)
+        for name, data in files.items():
+            _write_anchored(name, data, directory)
+    finally:
+        os.close(directory)
+
+
 def write_handoff(path, collection, points, scope):
     """Publish a new private JSON handoff and Markdown as one no-clobber directory."""
     from .inventory import export_record
@@ -306,11 +361,7 @@ def write_handoff(path, collection, points, scope):
     if any(len(data) > MAX_HANDOFF_FILE_BYTES for data in files.values()):
         raise ValueError("Handoff file exceeds byte limit")
     # Reserve a new bundle only after all files satisfy the verification limit.
-    target.mkdir(mode=0o700)
-    for name, data in files.items():
-        with (target / name).open("xb") as stream:
-            os.chmod(stream.name, 0o600)
-            stream.write(data)
+    _publish_handoff(target, files)
     return {
         "ok": True,
         "status": "HANDOFF_PENDING",

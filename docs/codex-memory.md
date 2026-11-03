@@ -71,8 +71,9 @@ export. Destination scope always comes from the fixed profile, never source text
 ## Exit, backup and rollback
 
 Each handoff file has a separate 64 MiB bound. The writer checks the final UTF-8
-JSON, Markdown and manifest bytes before creating the output directory, and
-verification uses that same bound. The small native-source limit does not apply
+JSON, Markdown and manifest bytes before creating the output directory. It also
+rejects substituted paths and creates each file exclusively with private modes.
+Verification uses that same bound. The small native-source limit does not apply
 to a larger valid handoff. Verification parses the same JSON bytes it hashed
 and requires the Markdown to match the complete JSON record set, even when a
 modified Markdown file has a matching manifest checksum.
