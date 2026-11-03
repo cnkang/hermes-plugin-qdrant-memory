@@ -169,13 +169,16 @@ def read_qdrant_records(client, collection):
             return
 
 
-def plan(records, cfg, progress=None):
+def plan(records, cfg, progress=None, *, source_type=None):
     """Validate records and reject conflicting versions of one source ID."""
     scope = Scope(**cfg["scope"])
     unique = {}
+    mapper = map_record
+    if source_type == "codex-native":
+        from .codex_memory import map_record as mapper
     total = len(records) if hasattr(records, "__len__") else None
     for completed, record in enumerate(records, 1):
-        identifier, value = map_record(record, scope)
+        identifier, value = mapper(record, scope)
         value = enforce_limits(value, cfg["limits"])
         if identifier in unique and digest(unique[identifier]) != digest(value):
             # Export merges must resolve conflicts explicitly, never pick an
@@ -342,7 +345,11 @@ def _record_is_stale(runtime, identifier, record):
 def durable_plan(runtime, records, source_type, source_identifier, source_sha256, progress=None):
     """Validate a source snapshot and retain sanitized planning failures."""
     try:
-        planned = plan(records, runtime.cfg, progress)
+        planned = (
+            plan(records, runtime.cfg, progress, source_type=source_type)
+            if source_type == "codex-native"
+            else plan(records, runtime.cfg, progress)
+        )
     except Exception as exc:
         runtime.ledger.save_manifest(
             {
@@ -420,7 +427,9 @@ def create_manifest(runtime, planned, source_type, source_identifier, source_sha
                     identifier,
                     "UPSERT",
                     value,
-                    "mem0:" + value["cloud_origin"]["id"],
+                    "codex:" + identifier
+                    if source_type == "codex-native"
+                    else "mem0:" + value["cloud_origin"]["id"],
                     value["updated_at"],
                     generation=manifest["migration_id"],
                 )
