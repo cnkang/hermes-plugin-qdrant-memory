@@ -33,6 +33,10 @@ def _open_nofollow(path):
     """Open a file relative to its no-follow, descriptor-anchored ancestors."""
     if not _ANCHORED_READING:
         raise ValueError("Secure Codex reads require directory-relative no-follow filesystem APIs")
+    if os.name == "nt":
+        from .windows_files import open_read
+
+        return open_read(path)
     parent = _open_anchored(path.parent)
     try:
         return os.open(path.name, os.O_RDONLY | _NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
@@ -248,10 +252,11 @@ def _render_markdown(records):
 
 _DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
-_ANCHORED_READING = bool(_NOFOLLOW and getattr(os, "O_DIRECTORY", 0)) and os.open in getattr(
+_POSIX_ANCHORING = bool(_NOFOLLOW and getattr(os, "O_DIRECTORY", 0)) and os.open in getattr(
     os, "supports_dir_fd", set()
 )
-_ANCHORED_CREATION = _ANCHORED_READING and os.mkdir in os.supports_dir_fd
+_ANCHORED_READING = _POSIX_ANCHORING or os.name == "nt"
+_ANCHORED_CREATION = os.name == "nt" or (_POSIX_ANCHORING and os.mkdir in os.supports_dir_fd)
 
 
 def _open_anchored(path):
@@ -284,6 +289,10 @@ def _publish_handoff(target, files):
     """Create a new bundle through anchored descriptors; never rewrite a path check."""
     if not _ANCHORED_CREATION:
         raise ValueError("Secure handoff creation requires directory-relative filesystem APIs")
+    if os.name == "nt":
+        from .windows_files import publish_handoff
+
+        return publish_handoff(target, files)
     parent = _open_anchored(target.parent)
     try:
         os.mkdir(target.name, 0o700, dir_fd=parent)

@@ -86,6 +86,7 @@ def test_required_gate_executes_actual_workflow_step(
             "LINT_RESULT": lint,
             "TEST_RESULT": tests,
             "MCP_RESULT": mcp,
+            "WINDOWS_RESULT": "success",
             "HOST_PINS_RESULT": host_pins,
             "DEP_LOCK_RESULT": dep_lock,
             "SONAR_RESULT": sonar,
@@ -98,6 +99,41 @@ def test_required_gate_executes_actual_workflow_step(
         timeout=5,
     )
     assert result.returncode == expected
+
+
+@pytest.mark.parametrize("windows", ["failure", "skipped", "cancelled"])
+@pytest.mark.skipif(os.name == "nt", reason="The checked workflow step is POSIX Bash.")
+def test_windows_security_failure_blocks_required_gate(windows):
+    """Native filesystem checks remain required even when scanners may skip."""
+    path = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+    gate = YAML(typ="safe").load(path.read_text(encoding="utf-8"))["jobs"]["scan-gate"]
+    assert "codex-windows" in gate["needs"]
+    result = subprocess.run(
+        ["bash", "-e", "-c", gate["steps"][0]["run"]],
+        env={
+            **os.environ,
+            **{
+                name: "success"
+                for name in (
+                    "LINT_RESULT",
+                    "TEST_RESULT",
+                    "MCP_RESULT",
+                    "HOST_PINS_RESULT",
+                    "DEP_LOCK_RESULT",
+                    "SONAR_RESULT",
+                    "SNYK_RESULT",
+                    "SNYK_CODE_RESULT",
+                )
+            },
+            "WINDOWS_RESULT": windows,
+            "DEPENDABOT": "true",
+            "MAIN_REF": "false",
+        },
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode == 1
 
 
 def test_cloud_smoke_push_trigger_excludes_codex_branches():

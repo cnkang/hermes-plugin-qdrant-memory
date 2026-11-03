@@ -48,9 +48,11 @@ rejected. No native file, transcript, credential, DB or production collection is
 modified. A source file is bounded to 2 MiB. Reads traverse each ancestor with
 no-follow directory descriptors, then open the leaf relative to the checked
 directory and use only that descriptor and its metadata, including provenance
-mtime. Platforms without directory-relative no-follow APIs, including Windows,
-refuse Codex artifact reads (native import and handoff verification); no full-path
-open fallback is used. Heading splitting honors
+mtime. Windows uses pywin32 and a small native API binding to traverse local-drive
+paths relative to directory handles, rejecting every reparse point (including
+junctions). UNC/device namespaces and ambiguous component names are refused;
+there is no full-path open fallback after opening the drive root. Platforms
+without either safe backend refuse Codex artifact reads. Heading splitting honors
 backtick/tilde code fences; unclosed fenced tails stay quarantined.
 v1 imports semantic sections from
 MEMORY.md (summary fallback); v2 imports summary sections. Duplicate normalized
@@ -76,12 +78,12 @@ export. Destination scope always comes from the fixed profile, never source text
 
 Each handoff file has a separate 64 MiB bound. The writer checks the final UTF-8
 JSON, Markdown and manifest bytes before creating the output directory. It
-refuses to reuse an existing bundle. Handoff creation needs directory-relative
-filesystem APIs, so a platform without them refuses the export instead of using
-a path-based write. The writer creates the directory through a descriptor for
-the checked parent directory, so a later path substitution cannot redirect the
-write. Every platform that supports creation makes directories with mode 0o700
-and files with mode 0o600.
+refuses to reuse an existing bundle. Handoff creation uses a descriptor/handle
+for the checked parent directory, so a later path substitution cannot redirect
+the write. POSIX creates directories with mode 0o700 and files with mode 0o600.
+Windows applies a protected DACL granting only the current user full access at
+creation time; filesystems without persistent ACLs are refused before creating
+the directory. A platform without either safe backend refuses the export.
 Verification uses that same bound. The small native-source limit does not apply
 to a larger valid handoff. Verification parses the same JSON bytes it hashed
 and requires the Markdown to match the complete JSON record set, even when a
