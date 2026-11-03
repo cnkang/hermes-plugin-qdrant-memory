@@ -51,6 +51,7 @@ def test_hermes_manifest_parser_surfaces_v2_metadata():
         "httpx>=0.28,<1",
         "portalocker>=3.2,<4",
         "jsonschema>=4.23,<5",
+        "pywin32>=311,<313; sys_platform == 'win32'",
         "mcp>=1.30,<3",
         "uvicorn>=0.35,<1",
     ]
