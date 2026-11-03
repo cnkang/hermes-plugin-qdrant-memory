@@ -18,6 +18,8 @@ from .private_paths import checked_absolute_path
 
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_HANDOFF_FILE_BYTES = 64 * 1024 * 1024
+HANDOFF_JSON = "handoff.json"
+HANDOFF_MARKDOWN = "handoff.md"
 SENSITIVE = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,})"
     r"|(?i:api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*\S+"
@@ -123,27 +125,78 @@ def inspect(home=None):
     }
 
 
+def _fence_after_line(line, fence):
+    """Track matching Markdown fences without interpreting their contents."""
+    marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line.rstrip("\r\n"))
+    if marker is None:
+        return fence
+    run, suffix = marker.groups()
+    if fence is None:
+        return run[0], len(run)
+    if run[0] == fence[0] and len(run) >= fence[1] and not suffix.strip():
+        return None
+    return fence
+
+
 def _sections(text):
     """Import semantic sections, excluding code and transcript-like blocks."""
     sections, current, fence = [], [], None
     for line in text.splitlines(keepends=True):
-        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line.rstrip("\r\n"))
         if fence is None and re.match(r"^#{1,4} ", line) and current:
             sections.append("".join(current))
             current = []
         current.append(line)
-        if marker:
-            run, suffix = marker.groups()
-            if fence is None:
-                fence = (run[0], len(run))
-            elif run[0] == fence[0] and len(run) >= fence[1] and not suffix.strip():
-                fence = None
+        fence = _fence_after_line(line, fence)
     sections.append("".join(current))
     for section in sections:
         section = section.strip()
         if not section or not re.sub(r"(?m)^#{1,6} .*\n?", "", section).strip():
             continue
         yield section
+
+
+def _store_records(store, source_id, scope, headings, unique):
+    """Read one artifact and retain its section outcomes and shared provenance."""
+    path = store["path"]
+    text, metadata = _read(path, with_metadata=True)
+    file_hash = hashlib.sha256(text.encode()).hexdigest()
+    modified = datetime.fromtimestamp(metadata.st_mtime, UTC).isoformat()
+    records, outcomes = [], []
+    for ordinal, section in enumerate(_sections(text)):
+        title = re.match(r"^#{1,4} (.+)", section)
+        heading = title.group(1).strip() if title else "Uncategorized"
+        checksum = content_hash(section)
+        source = {
+            "version": store["version"],
+            "file": path.name,
+            "file_hash": file_hash,
+            "ordinal": ordinal,
+            "content_hash": checksum,
+        }
+        status, reason = "PLANNED", None
+        if headings and heading not in headings:
+            status, reason = "SKIPPED", "HEADING_FILTER"
+        elif SENSITIVE.search(section) or any(
+            re.match(r"^ {0,3}(?:`{3,}|~{3,})", line) for line in section.splitlines()
+        ):
+            status, reason = "SKIPPED", "SENSITIVE_OR_CODE_REVIEW_REQUIRED"
+        elif checksum in unique:
+            unique[checksum]["codex_provenance"]["sources"].append(source)
+            status, reason = "SKIPPED", "DUPLICATE"
+        else:
+            record = {
+                "id": digest([source_id, checksum]),
+                "memory": section,
+                "categories": [heading],
+                **scope.as_dict(),
+                "created_at": modified,
+                "updated_at": modified,
+                "codex_provenance": {"source_id": source_id, "sources": [source]},
+            }
+            records.append(record)
+            unique[checksum] = record
+        outcomes.append({**source, "status": status, "reason": reason})
+    return records, outcomes
 
 
 def read_source(home=None, *, versions=None, scope=None, headings=None):
@@ -168,44 +221,11 @@ def read_source(home=None, *, versions=None, scope=None, headings=None):
                 }
             )
             continue
-        path = store["path"]
-        text, metadata = _read(path, with_metadata=True)
-        file_hash = hashlib.sha256(text.encode()).hexdigest()
-        modified = datetime.fromtimestamp(metadata.st_mtime, UTC).isoformat()
-        for ordinal, section in enumerate(_sections(text)):
-            title = re.match(r"^#{1,4} (.+)", section)
-            heading = title.group(1).strip() if title else "Uncategorized"
-            checksum = content_hash(section)
-            source = {
-                "version": store["version"],
-                "file": path.name,
-                "file_hash": file_hash,
-                "ordinal": ordinal,
-                "content_hash": checksum,
-            }
-            status, reason = "PLANNED", None
-            if headings and heading not in headings:
-                status, reason = "SKIPPED", "HEADING_FILTER"
-            elif SENSITIVE.search(section) or any(
-                re.match(r"^ {0,3}(?:`{3,}|~{3,})", line) for line in section.splitlines()
-            ):
-                status, reason = "SKIPPED", "SENSITIVE_OR_CODE_REVIEW_REQUIRED"
-            elif checksum in unique:
-                unique[checksum]["codex_provenance"]["sources"].append(source)
-                status, reason = "SKIPPED", "DUPLICATE"
-            else:
-                record = {
-                    "id": digest([report["source_id"], checksum]),
-                    "memory": section,
-                    "categories": [heading],
-                    **scope.as_dict(),
-                    "created_at": modified,
-                    "updated_at": modified,
-                    "codex_provenance": {"source_id": report["source_id"], "sources": [source]},
-                }
-                records.append(record)
-                unique[checksum] = record
-            outcomes.append({**source, "status": status, "reason": reason})
+        store_records, store_outcomes = _store_records(
+            store, report["source_id"], scope, headings, unique
+        )
+        records.extend(store_records)
+        outcomes.extend(store_outcomes)
     public = {k: v for k, v in report.items() if k != "stores"}
     public.update(
         records=outcomes,
@@ -266,8 +286,8 @@ def write_handoff(path, collection, points, scope):
     for record in records:
         markdown += f"## {record['id']}\n\n" + record["memory"] + "\n\n"
     files = {
-        "handoff.json": json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8"),
-        "handoff.md": markdown.encode("utf-8"),
+        HANDOFF_JSON: json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8"),
+        HANDOFF_MARKDOWN: markdown.encode("utf-8"),
     }
     manifest = {
         "format": "qdrant-codex-handoff-manifest",
@@ -299,7 +319,7 @@ def verify_handoff(path):
     if (
         manifest.get("format") != "qdrant-codex-handoff-manifest"
         or manifest.get("version") != 1
-        or set(manifest.get("files", {})) != {"handoff.json", "handoff.md"}
+        or set(manifest.get("files", {})) != {HANDOFF_JSON, HANDOFF_MARKDOWN}
     ):
         raise ValueError("Unsupported handoff manifest")
     contents = {}
@@ -307,7 +327,7 @@ def verify_handoff(path):
         contents[name] = _read(root / name, max_bytes=MAX_HANDOFF_FILE_BYTES)
         if hashlib.sha256(contents[name].encode()).hexdigest() != checksum:
             raise ValueError("Handoff checksum mismatch")
-    document = json.loads(contents["handoff.json"])
+    document = json.loads(contents[HANDOFF_JSON])
     if document.get("format") != "qdrant-codex-handoff" or document.get("version") != 1:
         raise ValueError("Unsupported handoff version")
     records = document["memories"]
