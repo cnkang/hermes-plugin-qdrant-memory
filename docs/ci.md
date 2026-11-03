@@ -115,6 +115,17 @@ default branch. Adding this controller in a PR does not activate it before merge
 See [workflow event behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
 and [failed-job rerun API](https://docs.github.com/en/rest/actions/workflow-runs#re-run-failed-jobs-from-a-workflow-run).
 
+## Release gate
+
+`publish.yml` requires successful runs of `CI`, `Platform compatibility`,
+`Standalone compatibility` and `Shared destination security` for the exact
+tagged commit on `main`. A missing, failed or still-running workflow blocks the
+build before it creates any distribution. A tag can no longer publish a commit
+while the Windows matrix is red. The check reads workflow metadata with
+`actions: read` and then stops. It does not change Trusted Publishing, OIDC or
+environment approvals. A release from an older commit needs green required
+workflows for that commit, or a newer commit.
+
 See [standalone CLI and MCP](standalone.md) for the additive host-independent
 interface, shared durable core, fixed operator scope and its validation boundary.
 
