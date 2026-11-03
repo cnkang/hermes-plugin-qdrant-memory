@@ -1529,9 +1529,11 @@ class QdrantMemoryProvider(MemoryProvider):
             self._jobs.clear()
             self._condition.notify_all()
         snapshot = self.writer_diagnostics()
+        stack = " -> ".join(snapshot["worker_stack_snapshot"][:4]) or "unavailable"
         raise TimeoutError(
             "Shutdown deadline exceeded; worker retains writer ownership "
             f"(state={snapshot['provider_state']}, busy={snapshot['worker_busy']}, "
             f"queue={snapshot['queue_depth']}, "
-            f"last_progress_age={snapshot['last_progress_age_seconds']})"
+            f"last_progress_age={snapshot['last_progress_age_seconds']}, "
+            f"stack={stack})"
         )
