@@ -20,6 +20,9 @@ requires_anchored_creation = pytest.mark.skipif(
 requires_anchored_reading = pytest.mark.skipif(
     not codex._ANCHORED_READING, reason="platform lacks directory-relative no-follow reads"
 )
+requires_posix_anchoring = pytest.mark.skipif(
+    not codex._POSIX_ANCHORING, reason="POSIX internals; Windows has native handle/ACL regressions"
+)
 
 
 @pytest.mark.parametrize(
@@ -218,7 +221,7 @@ def test_read_checks_descriptor_type_and_size_before_reading(tmp_path, monkeypat
             codex._read(fifo)
 
 
-@requires_anchored_reading
+@requires_posix_anchoring
 @pytest.mark.parametrize("when", ["before_anchor", "after_anchor"])
 def test_store_records_cannot_follow_substituted_ancestors(tmp_path, monkeypatch, when):
     """Source import either refuses a switched parent or reads the original descriptor."""
@@ -307,7 +310,7 @@ def test_handoff_limit_is_enforced_before_directory_publication(tmp_path, monkey
     assert codex.verify_handoff(tmp_path / "exact-bound")["ok"]
 
 
-@requires_anchored_creation
+@requires_posix_anchoring
 def test_handoff_creation_is_anchored_to_the_checked_parent(tmp_path, monkeypatch):
     """Swapping the verified parent cannot redirect the new bundle."""
     scope = Scope("u", "codex")
@@ -332,7 +335,7 @@ def test_handoff_creation_is_anchored_to_the_checked_parent(tmp_path, monkeypatc
     assert codex.verify_handoff(moved / "handoff")["count"] == 1
 
 
-@requires_anchored_creation
+@requires_posix_anchoring
 def test_handoff_bundle_is_created_private(tmp_path):
     """The bundle directory and its files carry creation-time private modes."""
     scope = Scope("u", "codex")
