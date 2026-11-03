@@ -352,17 +352,20 @@ def _await_attempt(repository, run_id, attempt, timeout=20):
     return False
 
 
-def process_run(repository, run_id, event_attempt=None):
+def process_run(repository, run_id, event_attempt=None, event_sha=None):
     """Classify the latest attempt and request only failed jobs when every failure qualifies."""
     prefix = f"repos/{repository}/actions"
     run = json.loads(_request(f"{prefix}/runs/{run_id}"))
-    if event_attempt is not None and run.get("run_attempt") != event_attempt:
+    attempt_mismatch = event_attempt is not None and run.get("run_attempt") != event_attempt
+    sha_mismatch = event_sha is not None and run.get("head_sha") != event_sha
+    if attempt_mismatch or sha_mismatch:
         return {
             "run_id": run_id,
             "workflow": run.get("name"),
             "head_sha": run.get("head_sha"),
             "run_attempt": run.get("run_attempt"),
             "event_attempt": event_attempt,
+            "event_sha": event_sha,
             "max_attempts": MAX_ATTEMPTS,
             "jobs": [],
             "decision": "stale_event",
@@ -536,7 +539,14 @@ def main(argv=None):
     if "--audit" in arguments:
         _publish(audit_run(repository, run_id))
     else:
-        _publish(process_run(repository, run_id, event["workflow_run"].get("run_attempt")))
+        _publish(
+            process_run(
+                repository,
+                run_id,
+                event["workflow_run"].get("run_attempt"),
+                event["workflow_run"].get("head_sha"),
+            )
+        )
     return 0
 
 
