@@ -14,6 +14,10 @@ from qdrant_memory import codex_memory as codex
 from qdrant_memory.codex_memory_cli import run
 from qdrant_memory.models import Scope
 
+requires_anchored_creation = pytest.mark.skipif(
+    not codex._ANCHORED_CREATION, reason="platform lacks directory-relative creation"
+)
+
 
 @pytest.mark.parametrize(
     "version,filename", [("memories", "MEMORY.md"), ("memories_v2", "memory_summary.md")]
@@ -200,6 +204,7 @@ def test_read_checks_descriptor_type_and_size_before_reading(tmp_path, monkeypat
             codex._read(fifo)
 
 
+@requires_anchored_creation
 def test_handoff_larger_than_native_source_limit_round_trips(tmp_path):
     """A valid export can exceed the independent native artifact limit."""
     scope = Scope("u", "codex")
@@ -211,6 +216,7 @@ def test_handoff_larger_than_native_source_limit_round_trips(tmp_path):
     assert codex.verify_handoff(target)["count"] == 1
 
 
+@requires_anchored_creation
 @pytest.mark.parametrize("filename", ["handoff.json", "handoff.md", "manifest.json"])
 def test_handoff_limit_is_enforced_before_directory_publication(tmp_path, monkeypatch, filename):
     """Each file uses the same inclusive write/read bound, including UTF-8 bytes."""
@@ -232,7 +238,7 @@ def test_handoff_limit_is_enforced_before_directory_publication(tmp_path, monkey
     assert codex.verify_handoff(tmp_path / "exact-bound")["ok"]
 
 
-@pytest.mark.skipif(not codex._ANCHORED_CREATION, reason="no directory-relative creation")
+@requires_anchored_creation
 def test_handoff_creation_is_anchored_to_the_checked_parent(tmp_path, monkeypatch):
     """Swapping the verified parent cannot redirect the new bundle."""
     scope = Scope("u", "codex")
@@ -256,7 +262,7 @@ def test_handoff_creation_is_anchored_to_the_checked_parent(tmp_path, monkeypatc
     assert codex.verify_handoff(moved / "handoff")["count"] == 1
 
 
-@pytest.mark.skipif(not codex._ANCHORED_CREATION, reason="no directory-relative creation")
+@requires_anchored_creation
 def test_handoff_bundle_is_created_private(tmp_path):
     """The bundle directory and its files carry creation-time private modes."""
     scope = Scope("u", "codex")
@@ -266,6 +272,14 @@ def test_handoff_bundle_is_created_private(tmp_path):
     assert stat.S_IMODE(target.stat().st_mode) == 0o700
     for name in (codex.HANDOFF_JSON, codex.HANDOFF_MARKDOWN, "manifest.json"):
         assert stat.S_IMODE((target / name).stat().st_mode) == 0o600
+
+
+def test_handoff_creation_refuses_platforms_without_anchoring(tmp_path, monkeypatch):
+    """A platform without directory-relative creation fails closed."""
+    monkeypatch.setattr(codex, "_ANCHORED_CREATION", False)
+    with pytest.raises(ValueError, match="directory-relative"):
+        codex.write_handoff(tmp_path / "handoff", "test", [], Scope("u", "codex"))
+    assert not (tmp_path / "handoff").exists()
 
 
 def test_config_and_environment(tmp_path, monkeypatch):
@@ -332,6 +346,7 @@ def cli_profile(tmp_path, monkeypatch):
     return home
 
 
+@requires_anchored_creation
 def test_cli_confirmed_import_and_handoff_use_real_profile(tmp_path, monkeypatch, cli_profile):
     """Exercise CLI confirmation, scoped import and export through real storage."""
     home = cli_profile
@@ -405,6 +420,7 @@ def test_handoff_tilde_profile_checks_actual_recovery_ledger(
     assert not output.exists()
 
 
+@requires_anchored_creation
 @pytest.mark.parametrize("markdown", ["# Empty handoff\n", "# Changed fact\nUnapproved memory.\n"])
 def test_handoff_rejects_rehashed_markdown_with_incomplete_records(tmp_path, markdown):
     """A self-consistent byte manifest cannot hide missing or changed Markdown facts."""
@@ -448,6 +464,7 @@ def test_cli_target_status_reports_durable_outcome(action, key, state, expected)
     assert result == [{"target_id": "target", "status": expected, "content_hash": "hash"}]
 
 
+@requires_anchored_creation
 def test_handoff_checksums_scope_no_clobber(tmp_path):
     """Detect tampering and prevent overwrites or scope widening."""
     scope = Scope("u", "codex")
@@ -465,6 +482,7 @@ def test_handoff_checksums_scope_no_clobber(tmp_path):
         codex.write_handoff(tmp_path / "other", "test", [point], other_scope)
 
 
+@requires_anchored_creation
 def test_manifest_path_traversal_and_false_native_success(tmp_path):
     """Manifest entries must be the fixed contained handoff filenames."""
     target = tmp_path / "handoff"
@@ -477,6 +495,7 @@ def test_manifest_path_traversal_and_false_native_success(tmp_path):
         codex.verify_handoff(target)
 
 
+@requires_anchored_creation
 def test_durable_import_resume_and_export(tmp_path, monkeypatch):
     """Recover failed writes through the actual SQLite migration ledger."""
     from qdrant_memory.migration import migrate
