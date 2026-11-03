@@ -3,10 +3,13 @@
 import importlib.util
 import json
 import logging
+import sys
 import time
 import uuid
-from collections import deque
+from collections import Counter, deque
 from contextvars import copy_context
+from datetime import UTC, datetime
+from pathlib import Path
 from threading import Condition, RLock
 
 from agent.memory_provider import MemoryProvider, spawn_context_thread
@@ -36,6 +39,11 @@ logger = logging.getLogger(__name__)
 
 INITIALIZATION_STOPPED_MESSAGE = "Provider initialization was stopped"
 CLEANUP_FAILED_MESSAGE = "Provider cleanup failed; writer ownership may remain active"
+
+# Emitted once on a writer-drain timeout. CI reads this line as bounded,
+# content-free evidence; it never contains memories, prompts or credentials.
+DIAGNOSTICS_MARKER = "QDANT_WRITER_TIMEOUT"
+DIAGNOSTICS_SCHEMA = "qdrant-memory-writer-timeout-v1"
 
 
 class _RetryableExitStack:
@@ -78,6 +86,29 @@ class ProviderUnavailableError(RuntimeError):
         super().__init__(f"Qdrant Memory provider is unavailable ({code})")
 
 
+def _worker_stack(worker, limit=10):
+    """Describe the writer's call stack without reading locals or payloads."""
+    if worker is None or worker.ident is None:
+        return []
+    frame = sys._current_frames().get(worker.ident)
+    frames = []
+    while frame is not None and len(frames) < limit:
+        frames.append(
+            f"{Path(frame.f_code.co_filename).name}:{frame.f_lineno}:{frame.f_code.co_name}"
+        )
+        frame = frame.f_back
+    return frames
+
+
+def _progressed(first, second):
+    """Report whether durable work advanced between two bounded snapshots."""
+    if second["completed_event_count"] > first["completed_event_count"]:
+        return True
+    if second["pending_event_count"] < first["pending_event_count"]:
+        return True
+    return second["queue_depth"] < first["queue_depth"]
+
+
 class QdrantMemoryProvider(MemoryProvider):
     """Adapt Hermes lifecycle hooks to a durable, scoped serial memory worker."""
 
@@ -100,6 +131,9 @@ class QdrantMemoryProvider(MemoryProvider):
         self._accepting = False
         self._worker = None
         self._busy = False
+        self._last_progress_at = None
+        self._last_progress_monotonic = None
+        self._job_durations = deque(maxlen=64)
         self._cache_hits = self._cache_calls = 0
         self._latencies = []
         self._stop_at = None
@@ -530,7 +564,7 @@ class QdrantMemoryProvider(MemoryProvider):
             else:
                 # Admit events and the recovery job in the same transition. A host
                 # callback can never observe READY without a live worker.
-                self._jobs.append((copy_context(), "recover", None))
+                self._jobs.append((copy_context(), "recover", None, time.monotonic()))
                 self._accepting = True
                 self._state = "READY"
                 stopped_during_init = False
@@ -579,7 +613,7 @@ class QdrantMemoryProvider(MemoryProvider):
         with self._condition:
             if not self._accepting:
                 return False
-            self._jobs.append((copy_context(), kind, value))
+            self._jobs.append((copy_context(), kind, value, time.monotonic()))
             self._condition.notify()
             return True
 
@@ -606,6 +640,7 @@ class QdrantMemoryProvider(MemoryProvider):
             if job is None:
                 return
             context, kind, value = job
+            started = time.monotonic()
             try:
                 context.run(self._run_job, kind, value)
             except Exception as exc:
@@ -613,6 +648,11 @@ class QdrantMemoryProvider(MemoryProvider):
             finally:
                 with self._condition:
                     self._busy = False
+                    self._last_progress_at = datetime.now(UTC).isoformat(timespec="seconds")
+                    self._last_progress_monotonic = time.monotonic()
+                    self._job_durations.append(
+                        {"kind": kind, "seconds": round(time.monotonic() - started, 3)}
+                    )
                     self._condition.notify_all()
 
     def _next_job(self):
@@ -624,7 +664,7 @@ class QdrantMemoryProvider(MemoryProvider):
                 self._jobs.clear()
             if not self._jobs:
                 return None
-            context, kind, value = self._jobs.popleft()
+            context, kind, value, _ = self._jobs.popleft()
             self._busy = True
             return context, kind, value
 
@@ -1297,6 +1337,87 @@ class QdrantMemoryProvider(MemoryProvider):
         """Persist non-secret setup values for the specified profile home."""
         save_config(values, hermes_home)
 
+    def writer_diagnostics(self, elapsed_seconds=None):
+        """Return a bounded writer snapshot without competing for the writer lock.
+
+        The worker holds the same condition while it runs a job. A short acquire
+        attempt therefore degrades to lock-free reads instead of stalling the drain.
+        Counts come from a separate read-only ledger connection.
+        """
+        acquired = self._condition.acquire(timeout=0.5)
+        try:
+            state = self._state
+            accepting = self._accepting
+            busy = self._busy
+            jobs = list(self._jobs)
+            worker = self._worker
+            last_progress_at = self._last_progress_at
+            last_progress = self._last_progress_monotonic
+            durations = list(self._job_durations)[-16:]
+        finally:
+            if acquired:
+                self._condition.release()
+        now = time.monotonic()
+        ledger = getattr(self, "ledger", None)
+        counts = ledger.snapshot_counts() if ledger is not None else {}
+        events = counts.get("events", {})
+        operations = counts.get("operations", {})
+        return {
+            "schema": DIAGNOSTICS_SCHEMA,
+            "provider_state": state,
+            "accepting": accepting,
+            "worker_alive": bool(worker is not None and worker.is_alive()),
+            "worker_busy": busy,
+            "queue_depth": len(jobs),
+            "queued_kinds": dict(Counter(job[1] for job in jobs)),
+            "oldest_queued_job_age_seconds": (round(now - jobs[0][3], 3) if jobs else None),
+            "completed_event_count": events.get("COMMITTED", 0),
+            "pending_event_count": events.get("PENDING", 0),
+            "failed_event_count": events.get("FAILED", 0),
+            "quarantined_event_count": events.get("QUARANTINED", 0),
+            "pending_operation_count": operations.get("PENDING", 0),
+            "failed_operation_count": operations.get("FAILED", 0),
+            "ledger_counts_available": bool(counts.get("available")),
+            "last_progress_timestamp": last_progress_at,
+            "last_progress_age_seconds": (
+                round(now - last_progress, 3) if last_progress is not None else None
+            ),
+            "recent_job_durations": durations,
+            "worker_stack_snapshot": _worker_stack(worker),
+            "elapsed_seconds": (round(elapsed_seconds, 3) if elapsed_seconds is not None else None),
+            "lock_acquired": acquired,
+        }
+
+    def timeout_report(self, elapsed_seconds, *, sample_seconds=2.0):
+        """Sample progress twice, print the bounded CI marker and return it.
+
+        Two samples separate a slow but live writer from a stalled one. The
+        report contains state, counters and stack frames only. It never contains
+        memories, prompts, provider payloads or credentials.
+        """
+        first = self.writer_diagnostics(elapsed_seconds)
+        time.sleep(max(0.0, sample_seconds))
+        second = self.writer_diagnostics(elapsed_seconds + max(0.0, sample_seconds))
+        report = {
+            "schema": DIAGNOSTICS_SCHEMA,
+            "elapsed_seconds": round(elapsed_seconds, 3),
+            "sample_seconds": round(max(0.0, sample_seconds), 3),
+            "first": first,
+            "second": second,
+            "progress_advanced": _progressed(first, second),
+            "no_terminal_failures": (
+                first["failed_event_count"] == 0
+                and first["failed_operation_count"] == 0
+                and first["quarantined_event_count"] == 0
+            ),
+            "ledger_counts_available": (
+                first["ledger_counts_available"] and second["ledger_counts_available"]
+            ),
+        }
+        line = f"{DIAGNOSTICS_MARKER} {json.dumps(report, sort_keys=True, separators=(',', ':'))}"
+        print(line, flush=True)
+        return line
+
     def wait_idle(self, timeout=30):
         """Wait for queued and active work, returning False on timeout."""
         deadline = time.monotonic() + timeout
@@ -1407,4 +1528,10 @@ class QdrantMemoryProvider(MemoryProvider):
         with self._condition:
             self._jobs.clear()
             self._condition.notify_all()
-        raise TimeoutError("Shutdown deadline exceeded; worker retains writer ownership")
+        snapshot = self.writer_diagnostics()
+        raise TimeoutError(
+            "Shutdown deadline exceeded; worker retains writer ownership "
+            f"(state={snapshot['provider_state']}, busy={snapshot['worker_busy']}, "
+            f"queue={snapshot['queue_depth']}, "
+            f"last_progress_age={snapshot['last_progress_age_seconds']})"
+        )

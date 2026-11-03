@@ -25,13 +25,32 @@ def test_100_fast_turns_no_loss_and_replay(tmp_path):
     for index in range(100):
         p.sync_turn(f"preference number {index}", "ack", session_id="first")
     # A cold Windows runner can need more than 60 s for 100 turns.
-    assert p.wait_idle(180)
+    assert p.wait_idle(180), p.timeout_report(180)
     assert p.ledger.stats()["events"]["COMMITTED"] == 100
     assert p.store.count() == 100
     for _ in range(10):
         p.sync_turn("preference number 0", "ack", session_id="first")
     assert p.wait_idle()
     assert p.store.count() == 100
+    p.shutdown()
+
+
+def test_writer_timeout_diagnostics_are_bounded_and_redacted(tmp_path):
+    """Timeout evidence reports state and progress without memory content."""
+    p = provider(tmp_path)
+    marker = "sentinel-unique-content-9e2b"
+    p.sync_turn(f"remember {marker}", "ack", session_id="first")
+    assert p.wait_idle()
+    report = p.writer_diagnostics(elapsed_seconds=180)
+    assert report["schema"] == "qdrant-memory-writer-timeout-v1"
+    assert report["worker_alive"] is True
+    assert report["completed_event_count"] == 1
+    assert report["queue_depth"] == 0
+    assert report["ledger_counts_available"] is True
+    assert marker not in json.dumps(report)
+    line = p.timeout_report(180, sample_seconds=0)
+    assert line.startswith("QDANT_WRITER_TIMEOUT ")
+    assert json.loads(line.split(" ", 1)[1])["progress_advanced"] is False
     p.shutdown()
 
 
