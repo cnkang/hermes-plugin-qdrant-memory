@@ -66,6 +66,7 @@ def test_sensitive_code_unknown_and_empty(tmp_path):
         "SLACK_TOKEN=" + "xox" + "b-EXAMPLE-TOKEN-VALUE",
         "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload",
         "postgres://operator:s3cr3t-pass@db.example.com/app",
+        "REDIS_URL=redis://:s3cr3t-pass@cache.example.com/0",
     ],
 )
 def test_common_credential_shapes_are_skipped(tmp_path, secret):
