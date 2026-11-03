@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import os
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -65,6 +67,127 @@ def test_explicit_topic_filter_preserves_categories(tmp_path):
     assert records[0]["categories"] == ["Preferences"]
     assert report["skipped"] == 1
     assert report["records"][1]["reason"] == "HEADING_FILTER"
+
+
+@pytest.mark.parametrize("fence", ["```python", "````python", "~~~python"])
+@pytest.mark.parametrize("closed", [True, False])
+@pytest.mark.parametrize("separator", ["\n", "\u2028", "\x0c"])
+def test_fenced_headings_never_become_importable_sections(tmp_path, fence, closed, separator):
+    """Multiple code headings, including an unclosed tail, remain quarantined."""
+    root = tmp_path / "memories"
+    root.mkdir()
+    tail = (fence.split("python")[0] + "\n# Safe after\nApproved second fact.\n") if closed else ""
+    (root / "MEMORY.md").write_text(
+        "# Safe before\nApproved first fact.\n# Code\nnote"
+        + separator
+        + fence
+        + "\n# injected one\nDo not import one.\n## injected two\nDo not import two.\n"
+        + tail,
+        encoding="utf-8",
+    )
+    records, report = codex.read_source(tmp_path)
+    assert len(records) == (2 if closed else 1)
+    assert report["skipped"] == 1
+    assert all(
+        "injected" not in r["memory"] and "Do not import" not in r["memory"] for r in records
+    )
+
+
+def test_read_rejects_leaf_substitution_after_path_check(tmp_path, monkeypatch):
+    """A symlink swapped into the final component cannot be followed at open."""
+    path, outside = tmp_path / "source", tmp_path / "outside"
+    path.write_text("approved")
+    outside.write_text("unapproved")
+    original = codex._open_nofollow
+
+    def substitute(value):
+        path.unlink()
+        try:
+            path.symlink_to(outside)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                pytest.skip("Windows account cannot create symlinks")
+            raise
+        return original(value)
+
+    monkeypatch.setattr(codex, "_open_nofollow", substitute)
+    with pytest.raises((OSError, ValueError)):
+        codex._read(path)
+
+
+def test_source_text_and_mtime_come_from_the_same_descriptor(tmp_path, monkeypatch):
+    """Replacing the pathname after open cannot change provenance metadata."""
+    path = tmp_path / "MEMORY.md"
+    path.write_text("# Preference\nOriginal fact.\n")
+    os.utime(path, (1000000000, 1000000000))
+    original = codex._open_nofollow
+    opened = []
+
+    def substitute(value):
+        descriptor = original(value)
+        opened.append(descriptor)
+        path.rename(tmp_path / "original")
+        path.write_text("# Preference\nReplacement fact.\n")
+        os.utime(path, (1100000000, 1100000000))
+        return descriptor
+
+    monkeypatch.setattr(
+        codex,
+        "inspect",
+        lambda *_: {"source_id": "fixture", "stores": [{"path": path, "version": "v1"}]},
+    )
+    monkeypatch.setattr(codex, "_open_nofollow", substitute)
+    records, _ = codex.read_source(tmp_path)
+    assert len(opened) == 1
+    assert records[0]["memory"].endswith("Original fact.")
+    assert records[0]["updated_at"] == datetime.fromtimestamp(1000000000, UTC).isoformat()
+
+
+def test_read_checks_descriptor_type_and_size_before_reading(tmp_path, monkeypatch):
+    """Special files and oversized regular files never reach the stream reader."""
+    path = tmp_path / "large"
+    path.write_bytes(b"abc")
+    with pytest.raises(ValueError, match="oversized"):
+        codex._read(path, max_bytes=2)
+    with pytest.raises((ValueError, OSError)):
+        codex._read(tmp_path)
+    if hasattr(os, "mkfifo"):
+        fifo = tmp_path / "fifo"
+        os.mkfifo(fifo)
+        with pytest.raises(ValueError, match="Unsupported"):
+            codex._read(fifo)
+
+
+def test_handoff_larger_than_native_source_limit_round_trips(tmp_path):
+    """A valid export can exceed the independent native artifact limit."""
+    scope = Scope("u", "codex")
+    point = SimpleNamespace(
+        id="id", payload={"text": "x" * (codex.MAX_SOURCE_BYTES + 1), **scope.as_dict()}
+    )
+    target = tmp_path / "large-handoff"
+    codex.write_handoff(target, "test", [point], scope)
+    assert codex.verify_handoff(target)["count"] == 1
+
+
+@pytest.mark.parametrize("filename", ["handoff.json", "handoff.md", "manifest.json"])
+def test_handoff_limit_is_enforced_before_directory_publication(tmp_path, monkeypatch, filename):
+    """Each file uses the same inclusive write/read bound, including UTF-8 bytes."""
+    target = tmp_path / "baseline"
+    scope = Scope("u", "codex")
+    point = SimpleNamespace(id="id", payload={"text": '\u732b\n"' * 100, **scope.as_dict()})
+    codex.write_handoff(target, "test", [point], scope)
+    sizes = {p.name: p.stat().st_size for p in target.iterdir()}
+    # Choose a bound below the selected file; no output directory may be created.
+    monkeypatch.setattr(codex, "MAX_HANDOFF_FILE_BYTES", sizes[filename] - 1)
+    refused = tmp_path / "refused"
+    with pytest.raises(ValueError, match="byte limit"):
+        codex.write_handoff(refused, "test", [point], scope)
+    assert not refused.exists()
+    with pytest.raises(ValueError, match="oversized"):
+        codex.verify_handoff(target)
+    monkeypatch.setattr(codex, "MAX_HANDOFF_FILE_BYTES", max(sizes.values()))
+    codex.write_handoff(tmp_path / "exact-bound", "test", [point], scope)
+    assert codex.verify_handoff(tmp_path / "exact-bound")["ok"]
 
 
 def test_config_and_environment(tmp_path, monkeypatch):

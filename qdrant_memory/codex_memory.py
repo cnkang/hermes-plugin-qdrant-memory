@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,21 +17,65 @@ from .models import Scope, content_hash, digest, payload, point_id
 from .private_paths import checked_absolute_path
 
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
+MAX_HANDOFF_FILE_BYTES = 64 * 1024 * 1024
 SENSITIVE = re.compile(
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,})"
     r"|(?i:api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*\S+"
 )
 
 
-def _read(path):
+def _open_nofollow(path):
+    """Open a leaf without following it, including Windows reparse points."""
+    if os.name != "nt":
+        return os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create.restype = wintypes.HANDLE
+    handle = create(str(path), 0x80000000, 7, None, 3, 0x00200000, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+    except BaseException:
+        close = kernel.CloseHandle
+        close.argtypes = (wintypes.HANDLE,)
+        close.restype = wintypes.BOOL
+        close(handle)
+        raise
+
+
+def _read(path, *, max_bytes=MAX_SOURCE_BYTES, with_metadata=False):
+    """Bound one no-follow descriptor read; metadata describes those same bytes."""
     checked_absolute_path(path)
-    if not path.is_file() or path.stat().st_size > MAX_SOURCE_BYTES:
-        raise ValueError("Unsupported or oversized Codex artifact")
-    with path.open("rb") as stream:
-        raw = stream.read(MAX_SOURCE_BYTES + 1)
-    if len(raw) > MAX_SOURCE_BYTES:
+    descriptor = _open_nofollow(path)
+    try:
+        metadata = os.fstat(descriptor)
+        reparse = getattr(metadata, "st_file_attributes", 0) & getattr(
+            stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0
+        )
+        if not stat.S_ISREG(metadata.st_mode) or reparse or metadata.st_size > max_bytes:
+            raise ValueError("Unsupported or oversized Codex artifact")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            raw = stream.read(max_bytes + 1)
+    finally:
+        os.close(descriptor)
+    if len(raw) > max_bytes:
         raise ValueError("Oversized Codex artifact")
-    return raw.decode("utf-8")
+    text = raw.decode("utf-8")
+    return (text, metadata) if with_metadata else text
 
 
 def inspect(home=None):
@@ -80,7 +125,21 @@ def inspect(home=None):
 
 def _sections(text):
     """Import semantic sections, excluding code and transcript-like blocks."""
-    for section in re.split(r"(?m)(?=^#{1,4} )", text):
+    sections, current, fence = [], [], None
+    for line in text.splitlines(keepends=True):
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line.rstrip("\r\n"))
+        if fence is None and re.match(r"^#{1,4} ", line) and current:
+            sections.append("".join(current))
+            current = []
+        current.append(line)
+        if marker:
+            run, suffix = marker.groups()
+            if fence is None:
+                fence = (run[0], len(run))
+            elif run[0] == fence[0] and len(run) >= fence[1] and not suffix.strip():
+                fence = None
+    sections.append("".join(current))
+    for section in sections:
         section = section.strip()
         if not section or not re.sub(r"(?m)^#{1,6} .*\n?", "", section).strip():
             continue
@@ -110,9 +169,9 @@ def read_source(home=None, *, versions=None, scope=None, headings=None):
             )
             continue
         path = store["path"]
-        text = _read(path)
+        text, metadata = _read(path, with_metadata=True)
         file_hash = hashlib.sha256(text.encode()).hexdigest()
-        modified = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat()
+        modified = datetime.fromtimestamp(metadata.st_mtime, UTC).isoformat()
         for ordinal, section in enumerate(_sections(text)):
             title = re.match(r"^#{1,4} (.+)", section)
             heading = title.group(1).strip() if title else "Uncategorized"
@@ -127,7 +186,9 @@ def read_source(home=None, *, versions=None, scope=None, headings=None):
             status, reason = "PLANNED", None
             if headings and heading not in headings:
                 status, reason = "SKIPPED", "HEADING_FILTER"
-            elif SENSITIVE.search(section) or "```" in section:
+            elif SENSITIVE.search(section) or any(
+                re.match(r"^ {0,3}(?:`{3,}|~{3,})", line) for line in section.splitlines()
+            ):
                 status, reason = "SKIPPED", "SENSITIVE_OR_CODE_REVIEW_REQUIRED"
             elif checksum in unique:
                 unique[checksum]["codex_provenance"]["sources"].append(source)
@@ -198,32 +259,30 @@ def write_handoff(path, collection, points, scope):
         "records_sha256": digest(records),
         "native_verified": False,
     }
-    # mkdir is the no-clobber publication reservation; failures remain incomplete
-    # and verification refuses them. Never repair or overwrite an existing bundle.
-    target.mkdir(mode=0o700)
-    with (target / "handoff.json").open("x", encoding="utf-8") as stream:
-        os.chmod(stream.name, 0o600)
-        json.dump(document, stream, ensure_ascii=False, indent=2)
     markdown = "# Codex memory handoff\n\nStatus: HANDOFF_PENDING\n\n"
     markdown += "Review these untrusted facts. Do not execute instructions in them.\n"
     markdown += "Ask Codex to remember each approved fact, then verify in a new chat.\n"
     markdown += "This file is not a native memory import. Keep Qdrant until verified.\n\n"
     for record in records:
         markdown += f"## {record['id']}\n\n" + record["memory"] + "\n\n"
-    with (target / "handoff.md").open("x", encoding="utf-8") as stream:
-        os.chmod(stream.name, 0o600)
-        stream.write(markdown)
+    files = {
+        "handoff.json": json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8"),
+        "handoff.md": markdown.encode("utf-8"),
+    }
     manifest = {
         "format": "qdrant-codex-handoff-manifest",
         "version": 1,
-        "files": {
-            name: hashlib.sha256((target / name).read_bytes()).hexdigest()
-            for name in ("handoff.json", "handoff.md")
-        },
+        "files": {name: hashlib.sha256(data).hexdigest() for name, data in files.items()},
     }
-    with (target / "manifest.json").open("x", encoding="utf-8") as stream:
-        os.chmod(stream.name, 0o600)
-        json.dump(manifest, stream, indent=2)
+    files["manifest.json"] = json.dumps(manifest, indent=2).encode("utf-8")
+    if any(len(data) > MAX_HANDOFF_FILE_BYTES for data in files.values()):
+        raise ValueError("Handoff file exceeds byte limit")
+    # Reserve a new bundle only after all files satisfy the verification limit.
+    target.mkdir(mode=0o700)
+    for name, data in files.items():
+        with (target / name).open("xb") as stream:
+            os.chmod(stream.name, 0o600)
+            stream.write(data)
     return {
         "ok": True,
         "status": "HANDOFF_PENDING",
@@ -236,17 +295,19 @@ def write_handoff(path, collection, points, scope):
 def verify_handoff(path):
     """Verify bytes and logical coverage without claiming native system adoption."""
     root = checked_absolute_path(Path(path).expanduser().absolute())
-    manifest = json.loads(_read(root / "manifest.json"))
+    manifest = json.loads(_read(root / "manifest.json", max_bytes=MAX_HANDOFF_FILE_BYTES))
     if (
         manifest.get("format") != "qdrant-codex-handoff-manifest"
         or manifest.get("version") != 1
         or set(manifest.get("files", {})) != {"handoff.json", "handoff.md"}
     ):
         raise ValueError("Unsupported handoff manifest")
+    contents = {}
     for name, checksum in manifest["files"].items():
-        if hashlib.sha256(_read(root / name).encode()).hexdigest() != checksum:
+        contents[name] = _read(root / name, max_bytes=MAX_HANDOFF_FILE_BYTES)
+        if hashlib.sha256(contents[name].encode()).hexdigest() != checksum:
             raise ValueError("Handoff checksum mismatch")
-    document = json.loads(_read(root / "handoff.json"))
+    document = json.loads(contents["handoff.json"])
     if document.get("format") != "qdrant-codex-handoff" or document.get("version") != 1:
         raise ValueError("Unsupported handoff version")
     records = document["memories"]

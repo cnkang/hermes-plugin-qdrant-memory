@@ -45,7 +45,10 @@ qdrant-memory codex verify --output ./new-handoff
 Explicit output paths must stay within the invocation directory. Source paths
 are explicitly authorized canonical Codex homes, with symlink/reparse ancestors
 rejected. No native file, transcript, credential, DB or production collection is
-modified. A source file is bounded to 2 MiB. v1 imports semantic sections from
+modified. A source file is bounded to 2 MiB. Reads use one no-follow descriptor
+and descriptor metadata, including the provenance mtime. Heading splitting honors
+backtick/tilde code fences; unclosed fenced tails stay quarantined.
+v1 imports semantic sections from
 MEMORY.md (summary fallback); v2 imports summary sections. Duplicate normalized
 sections are imported once, retaining both source mappings. Differently worded
 summaries are not automatically declared equivalent. Semantic deduplication,
@@ -66,6 +69,11 @@ including project-named sections, before importing. Heading categories survive
 export. Destination scope always comes from the fixed profile, never source text.
 
 ## Exit, backup and rollback
+
+Each handoff file has a separate 64 MiB bound. The writer checks the final UTF-8
+JSON, Markdown and manifest bytes before creating the output directory, and
+verification uses that same bound. The small native-source limit does not apply
+to a larger valid handoff. Verification parses the same JSON bytes it hashed.
 
 Export selects exactly the profile user/agent scope. The JSON preserves source
 metadata and timestamps; SHA-256 covers each text, the logical record list and
