@@ -10,16 +10,21 @@ jobs:
   preflight:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
+    outputs:
+      runtime_sha: ${{ steps.checked.outputs.runtime_sha }}
     steps:
       - name: Require reviewed upstream main
+        id: checked
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF: ${{ github.ref }}
           REPOSITORY: ${{ github.repository }}
+          RUNTIME_SHA: ${{ github.sha }}
         run: |
           test "$EVENT_NAME" = workflow_dispatch
           test "$REF" = refs/heads/main
           test "$REPOSITORY" = cnkang/hermes-plugin-qdrant-memory
+          printf 'runtime_sha=%s\n' "$RUNTIME_SHA" >> "$GITHUB_OUTPUT"
   cloud:
     name: Codex harness and Ollama Cloud (synthetic memories only)
     needs: preflight
@@ -31,7 +36,7 @@ jobs:
         with:
           repository: cnkang/qdrant-memory-mcp
           # Reviewed, immutable client/fixture code. Never a dispatch input or PR head.
-          ref: f864eeaef16e42fe118351bcd1de9cd5c35dae85
+          ref: a88d817279a66cf31ddfc192d6b363855a33992c
           path: client
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -41,10 +46,17 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install pinned Codex and private Runtime environment
+        env:
+          VERIFIED_RUNTIME_SHA: ${{ needs.preflight.outputs.runtime_sha }}
         run: |
           npm install --global @openai/codex@0.165.0
           python -m venv "$RUNNER_TEMP/codex-runtime"
           "$RUNNER_TEMP/codex-runtime/bin/python" -m pip install -r client/plugins/qdrant-memory/requirements.txt
+          # Keep the client's fixed dependency set, then replace only the test
+          # Runtime with the exact main revision admitted by preflight.
+          "$RUNNER_TEMP/codex-runtime/bin/python" -m pip install --no-deps --force-reinstall \
+            "hermes-plugin-qdrant-memory @ git+https://github.com/cnkang/hermes-plugin-qdrant-memory.git@${VERIFIED_RUNTIME_SHA}"
+          "$RUNNER_TEMP/codex-runtime/bin/python" -c 'import importlib.metadata as m,json,os; d=m.distribution("hermes-plugin-qdrant-memory"); source=json.loads(d.read_text("direct_url.json")); assert source["vcs_info"]["commit_id"] == os.environ["VERIFIED_RUNTIME_SHA"]; print(json.dumps({"runtime_commit":source["vcs_info"]["commit_id"],"runtime_version":d.version}))'
       - name: Run actual Codex with the protected Ollama model
         env:
           SOAK_LLM_BASE_URL: ${{ vars.SOAK_LLM_BASE_URL }}
