@@ -154,7 +154,7 @@ jobs:
           if-no-files-found: error
 
   codex-windows:
-    name: Codex Windows security (Python ${{ matrix.python }})
+    name: Codex Windows security (Python ${{ matrix.python }}, pywin32 ${{ matrix.pywin32 }})
     runs-on: windows-latest
     timeout-minutes: 15
     env:
@@ -163,6 +163,10 @@ jobs:
       fail-fast: false
       matrix:
         python: ['3.11', '3.14']
+        pywin32: ['312']
+        include:
+          - python: '3.14'
+            pywin32: '311'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -171,7 +175,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install Runtime and native Windows test dependencies
-        run: python -m pip install . 'pytest>=8,<10' 'pytest-cov>=6,<8'
+        run: python -m pip install . 'pytest>=8,<10' 'pytest-cov>=6,<8' 'pywin32==${{ matrix.pywin32 }}'
       - name: Start disposable runner services for the loopback SMB fixture
         run: Start-Service LanmanServer, LanmanWorkstation
       - name: Require real native Windows filesystem contracts
@@ -203,7 +207,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: codex-windows-python-${{ matrix.python }}
+          name: codex-windows-python-${{ matrix.python }}-pywin32-${{ matrix.pywin32 }}
           path: |
             codex-windows-results.xml
             coverage-windows.xml
@@ -333,7 +337,7 @@ jobs:
           name: mcp-coverage
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: codex-windows-python-3.14
+          name: codex-windows-python-3.14-pywin32-312
       - name: Require SonarCloud credentials
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

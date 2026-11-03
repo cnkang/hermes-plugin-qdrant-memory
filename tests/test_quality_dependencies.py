@@ -28,7 +28,19 @@ def test_quality_lock_covers_runtime_remote_and_installer_requirements():
         + project["build-system"]["requires"]
         + [line for line in inputs if line.strip() and not line.lstrip().startswith("#")]
     )
+    # This lock installs the Linux Python 3.11 model driver. Windows-only
+    # dependencies are resolved and tested in the native Windows jobs instead.
+    environment = {
+        "sys_platform": "linux",
+        "platform_system": "Linux",
+        "os_name": "posix",
+        "python_version": "3.11",
+        "python_full_version": "3.11.0",
+        "extra": "",
+    }
     for value in requirements:
         required = Requirement(value)
+        if required.marker is not None and not required.marker.evaluate(environment):
+            continue
         assert canonicalize_name(required.name) in locked, required.name
         assert locked[canonicalize_name(required.name)] in required.specifier, required.name

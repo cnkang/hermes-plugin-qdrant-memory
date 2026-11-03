@@ -84,7 +84,9 @@ def test_unicode_paths_and_contents_use_utf16_and_utf8(tmp_path):
     root = tmp_path / "\u732b\U0001f9e0"
     (root / "memories").mkdir(parents=True)
     (root / "memories/MEMORY.md").write_text(
-        "# \u504f\u597d\n\u4f7f\u7528\u56de\u5f52\u6d4b\u8bd5\u3002\n", encoding="utf-8"
+        "# \u504f\u597d\n\u4f7f\u7528\u56de\u5f52\u6d4b\u8bd5\u3002\n",
+        encoding="utf-8",
+        newline="\n",
     )
     records, report = codex.read_source(root)
     assert report["planned"] == 1
