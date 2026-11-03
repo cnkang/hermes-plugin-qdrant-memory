@@ -15,6 +15,8 @@ def _target_records(runtime, manifest):
         key = record["operation_key"]
         row = runtime.ledger.row("operations", key) if key else None
         state = _record_status(record, row)
+        if record.get("status") == "SUPERSEDED":
+            state = "SUPERSEDED"
         if state == "COMMITTED":
             status = "SKIPPED" if record["action"] == "SKIP" else "IMPORTED"
         elif state == "SUPERSEDED":

@@ -465,6 +465,59 @@ def test_cli_target_status_reports_durable_outcome(action, key, state, expected)
     assert result == [{"target_id": "target", "status": expected, "content_hash": "hash"}]
 
 
+def test_manifest_superseded_overrides_committed_operation():
+    """A committed operation cannot overrule a superseded manifest record."""
+    from qdrant_memory.codex_memory_cli import _target_records
+
+    runtime = SimpleNamespace(ledger=SimpleNamespace(row=lambda *_: {"status": "COMMITTED"}))
+    manifest = {
+        "records": {
+            "target": {
+                "operation_key": "op",
+                "action": "ADD",
+                "content_hash": "hash",
+                "status": "SUPERSEDED",
+            }
+        }
+    }
+    result = _target_records(runtime, manifest)
+    assert result[0]["status"] == "CONFLICT"
+
+
+@requires_anchored_creation
+def test_deleted_import_reports_conflict_without_verify(tmp_path, cli_profile):
+    """A real resumed import preserves a later delete even with verification off."""
+    from qdrant_memory.standalone import open_runtime
+    from qdrant_memory.tools import dispatch
+
+    directory = tmp_path / "native/memories_v2"
+    directory.mkdir(parents=True)
+    (directory / "memory_summary.md").write_text("# Preference\nPrefer small changes.\n")
+    args = argparse.Namespace(
+        action="migrate",
+        home=cli_profile,
+        codex_home=directory.parent,
+        source_version=None,
+        dry_run=False,
+        confirm=True,
+        resume=False,
+        retry_failed=False,
+        verify=False,
+    )
+    imported = run(args)
+    identifier = imported["target_records"][0]["target_id"]
+    key = imported["migration"]["records"][identifier]["operation_key"]
+    with open_runtime(cli_profile) as runtime:
+        scope = Scope(**runtime.cfg["scope"])
+        dispatch(runtime, "qdrant_memory_delete", {"id": identifier}, scope, "fixture")
+        assert runtime.ledger.row("operations", key)["status"] == "COMMITTED"
+    args.resume = True
+    resumed = run(args)
+    assert resumed["migration"]["records"][identifier]["status"] == "SUPERSEDED"
+    assert resumed["target_records"][0]["status"] == "CONFLICT"
+    assert resumed["ok"] is False
+
+
 @requires_anchored_creation
 def test_handoff_checksums_scope_no_clobber(tmp_path):
     """Detect tampering and prevent overwrites or scope widening."""
