@@ -71,11 +71,13 @@ export. Destination scope always comes from the fixed profile, never source text
 ## Exit, backup and rollback
 
 Each handoff file has a separate 64 MiB bound. The writer checks the final UTF-8
-JSON, Markdown and manifest bytes before creating the output directory. It also
-rejects substituted paths, refuses to reuse an existing bundle, and applies
-private file modes on platforms with POSIX permissions. Handoff creation needs
-directory-relative filesystem APIs, so a platform without them refuses the
-export instead of using a path-based write.
+JSON, Markdown and manifest bytes before creating the output directory. It
+refuses to reuse an existing bundle. Handoff creation needs directory-relative
+filesystem APIs, so a platform without them refuses the export instead of using
+a path-based write. The writer creates the directory through a descriptor for
+the checked parent directory, so a later path substitution cannot redirect the
+write. Every platform that supports creation makes directories with mode 0o700
+and files with mode 0o600.
 Verification uses that same bound. The small native-source limit does not apply
 to a larger valid handoff. Verification parses the same JSON bytes it hashed
 and requires the Markdown to match the complete JSON record set, even when a
