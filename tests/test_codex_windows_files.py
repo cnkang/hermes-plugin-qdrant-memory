@@ -350,6 +350,41 @@ def test_handoff_has_private_acl_from_creation_and_round_trips(tmp_path, monkeyp
     assert {p.name: p.read_bytes() for p in target.iterdir()} == before
 
 
+@pytest.mark.parametrize("name", ["Memories", "MEMORIES_V2"])
+@pytest.mark.parametrize("position", ["parent", "target"])
+def test_native_directory_case_aliases_refuse_handoff(tmp_path, name, position):
+    """Case aliases cannot create a bundle inside or as a native memory store."""
+    root = tmp_path / name
+    if position == "parent":
+        root.mkdir()
+        target = root / "handoff"
+    else:
+        target = root
+    before = set(tmp_path.rglob("*"))
+    scope, point = _point()
+    with pytest.raises(ValueError, match="outside native"):
+        codex.write_handoff(target, "fixture", [point], scope)
+    assert set(tmp_path.rglob("*")) == before
+
+
+@pytest.mark.skipif(
+    os.environ.get("QDRANT_WINDOWS_SMB_FIXTURE") != "1",
+    reason="8.3 alias fixture requires disposable Windows CI volume setup",
+)
+def test_short_native_directory_alias_refuses_handoff(tmp_path):
+    """A real 8.3 alias is checked against the opened parent's normalized long name."""
+    from pathlib import Path
+
+    root = tmp_path / "memories_v2"
+    root.mkdir()
+    short = Path(native.win32api.GetShortPathName(str(root)))
+    assert short.name.casefold() != root.name.casefold(), "CI must enable real short aliases"
+    scope, point = _point()
+    with pytest.raises(ValueError, match="outside native"):
+        codex.write_handoff(short / "handoff", "fixture", [point], scope)
+    assert not list(root.iterdir())
+
+
 def test_handoff_creation_remains_anchored_after_parent_replacement(tmp_path, monkeypatch):
     """Replacing the output parent's pathname cannot redirect new files."""
     parent, outside = tmp_path / "parent", tmp_path / "outside"

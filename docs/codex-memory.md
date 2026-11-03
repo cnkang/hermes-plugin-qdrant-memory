@@ -83,7 +83,9 @@ for the checked parent directory, so a later path substitution cannot redirect
 the write. POSIX creates directories with mode 0o700 and files with mode 0o600.
 Windows applies a protected DACL granting only the current user full access at
 creation time; filesystems without persistent ACLs are refused before creating
-the directory. A platform without either safe backend refuses the export.
+the directory. Native-directory exclusions also check the Windows parent
+handle's normalized long name, so case and 8.3 aliases cannot bypass them.
+A platform without either safe backend refuses the export.
 Verification uses that same bound. The small native-source limit does not apply
 to a larger valid handoff. Verification parses the same JSON bytes it hashed
 and requires the Markdown to match the complete JSON record set, even when a
