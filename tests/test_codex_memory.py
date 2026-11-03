@@ -56,6 +56,45 @@ def test_sensitive_code_unknown_and_empty(tmp_path):
     assert report["skipped"] == 2
 
 
+@pytest.mark.parametrize(
+    "secret",
+    [
+        "AKIAIOSFODNN7EXAMPLE",
+        "ASIAY34FZKBOKMUTVV7A",
+        # Keep the fixture split so the source never holds a contiguous token.
+        "SLACK_TOKEN=" + "xox" + "b-EXAMPLE-TOKEN-VALUE",
+        "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload",
+        "postgres://operator:s3cr3t-pass@db.example.com/app",
+    ],
+)
+def test_common_credential_shapes_are_skipped(tmp_path, secret):
+    """High-confidence credential formats never reach an import plan."""
+    root = tmp_path / "memories"
+    root.mkdir()
+    (root / "MEMORY.md").write_text(f"# Credentials\nUse {secret} for the task.\n")
+    records, report = codex.read_source(tmp_path)
+    assert not records
+    assert report["records"][0]["reason"] == "SENSITIVE_OR_CODE_REVIEW_REQUIRED"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The bearer of this note delivered the approved change.",
+        "Read https://example.com/docs before the change.",
+        "AKIA is only a prefix in this sentence.",
+    ],
+)
+def test_unrelated_text_is_not_treated_as_a_credential(tmp_path, text):
+    """Credential detection must not quarantine ordinary project notes."""
+    root = tmp_path / "memories"
+    root.mkdir()
+    (root / "MEMORY.md").write_text(f"# Notes\n{text}\n")
+    records, report = codex.read_source(tmp_path)
+    assert len(records) == 1
+    assert report["skipped"] == 0
+
+
 def test_explicit_topic_filter_preserves_categories(tmp_path):
     """Select source topics without widening the fixed destination scope."""
     directory = tmp_path / "memories_v2"
