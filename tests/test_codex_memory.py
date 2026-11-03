@@ -228,6 +228,89 @@ def test_dry_run_zero_destination_writes(tmp_path, monkeypatch):
     assert not target.exists()
 
 
+def test_cli_confirmed_import_and_handoff_use_real_profile(tmp_path, monkeypatch):
+    """Exercise CLI confirmation, scoped import and export through real storage."""
+    from qdrant_memory import cli, standalone
+
+    from .helpers import Embedder, config
+
+    class LocalEmbedder(Embedder):
+        """Provide deterministic embeddings with the Runtime lifecycle contract."""
+
+        def close(self):
+            """The deterministic fixture owns no external resources."""
+
+    home = tmp_path / "profile"
+    home.mkdir()
+    (home / "qdrant-memory.json").write_text(
+        json.dumps(config(scope={"user_id": "fixture", "agent_id": "codex"}))
+    )
+    monkeypatch.setattr(cli, "build_embedder", lambda *a, **kw: LocalEmbedder())
+    monkeypatch.setattr(standalone, "build_embedder", lambda *a, **kw: LocalEmbedder())
+    parser = argparse.ArgumentParser()
+    cli.register_cli(parser)
+    assert cli.run(parser.parse_args(["init", "--existing", "use"]), home=home)["ok"]
+    source = tmp_path / "native/memories_v2"
+    source.mkdir(parents=True)
+    (source / "memory_summary.md").write_text("# Preference\nUse verified handoffs.\n")
+    monkeypatch.chdir(tmp_path)
+    args = argparse.Namespace(
+        action="inspect",
+        home=home,
+        codex_home=source.parent,
+        source_version=None,
+        dry_run=False,
+        confirm=False,
+        resume=False,
+        retry_failed=False,
+        verify=True,
+        output=None,
+    )
+    assert run(args)["planned"] == 1
+    args.action = "migrate"
+    with pytest.raises(ValueError, match="--confirm"):
+        run(args)
+    args.confirm = True
+    imported = run(args)
+    assert imported["ok"]
+    assert imported["target_records"][0]["status"] == "IMPORTED"
+    args.action = "export"
+    args.output = tmp_path / "handoff"
+    args.confirm = False
+    with pytest.raises(ValueError, match="--confirm"):
+        run(args)
+    assert not args.output.exists()
+    args.confirm = True
+    assert run(args)["count"] == 1
+    args.action = "verify"
+    assert run(args)["count"] == 1
+    args.output = None
+    with pytest.raises(ValueError, match="--output"):
+        run(args)
+
+
+@pytest.mark.parametrize(
+    "action,key,state,expected",
+    [
+        ("SKIP", None, None, "SKIPPED"),
+        ("ADD", "op", None, "FAILED"),
+        ("ADD", "op", "SUPERSEDED", "CONFLICT"),
+        ("ADD", "op", "FAILED", "FAILED"),
+    ],
+)
+def test_cli_target_status_reports_durable_outcome(action, key, state, expected):
+    """Missing and superseded operations must never be reported as imported."""
+    from qdrant_memory.codex_memory_cli import _target_records
+
+    row = {"status": state} if state else None
+    runtime = SimpleNamespace(ledger=SimpleNamespace(row=lambda *_: row))
+    manifest = {
+        "records": {"target": {"operation_key": key, "action": action, "content_hash": "hash"}}
+    }
+    result = _target_records(runtime, manifest)
+    assert result == [{"target_id": "target", "status": expected, "content_hash": "hash"}]
+
+
 def test_handoff_checksums_scope_no_clobber(tmp_path):
     """Detect tampering and prevent overwrites or scope widening."""
     scope = Scope("u", "codex")
@@ -240,8 +323,9 @@ def test_handoff_checksums_scope_no_clobber(tmp_path):
     (target / "handoff.md").write_text("tampered")
     with pytest.raises(ValueError, match="checksum"):
         codex.verify_handoff(target)
+    other_scope = Scope("other", None)
     with pytest.raises(ValueError, match="scope"):
-        codex.write_handoff(tmp_path / "other", "test", [point], Scope("other", None))
+        codex.write_handoff(tmp_path / "other", "test", [point], other_scope)
 
 
 def test_manifest_path_traversal_and_false_native_success(tmp_path):
@@ -275,7 +359,7 @@ def test_durable_import_resume_and_export(tmp_path, monkeypatch):
 
     try:
         monkeypatch.setattr(rt.store, "upsert", fail)
-        with pytest.raises(Exception):
+        with pytest.raises(ConnectionError, match="simulated unavailable destination"):
             migrate(
                 rt,
                 records,
