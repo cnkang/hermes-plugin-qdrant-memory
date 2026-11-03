@@ -61,6 +61,10 @@ Content-derived IDs make unchanged snapshots repeatable. Changing content create
 a new logical source record; old records remain until an explicit authorized edit.
 The generic Mem0 mapper remains unchanged for ordinary JSON imports.
 
+Use repeated `--heading` options to select exact source topic/category headings,
+including project-named sections, before importing. Heading categories survive
+export. Destination scope always comes from the fixed profile, never source text.
+
 ## Exit, backup and rollback
 
 Export selects exactly the profile user/agent scope. The JSON preserves source

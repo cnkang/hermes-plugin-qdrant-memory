@@ -53,6 +53,20 @@ def test_sensitive_code_unknown_and_empty(tmp_path):
     assert report["skipped"] == 2
 
 
+def test_explicit_topic_filter_preserves_categories(tmp_path):
+    """Select source topics without widening the fixed destination scope."""
+    directory = tmp_path / "memories_v2"
+    directory.mkdir()
+    (directory / "memory_summary.md").write_text(
+        "# Preferences\nUse tests.\n# Project\nUse Python.\n"
+    )
+    records, report = codex.read_source(tmp_path, headings=["Preferences"])
+    assert len(records) == 1
+    assert records[0]["categories"] == ["Preferences"]
+    assert report["skipped"] == 1
+    assert report["records"][1]["reason"] == "HEADING_FILTER"
+
+
 def test_config_and_environment(tmp_path, monkeypatch):
     """Honor CODEX_HOME and reject unrecognized explicit versions."""
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))

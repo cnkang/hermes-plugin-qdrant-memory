@@ -10,7 +10,9 @@ def run(args):
     from .standalone import _operator_path, load_standalone_config, open_runtime
 
     if args.action == "inspect":
-        _, report = codex_memory.read_source(args.codex_home, versions=args.source_version)
+        _, report = codex_memory.read_source(
+            args.codex_home, versions=args.source_version, headings=getattr(args, "heading", None)
+        )
         return report
     if args.action == "verify":
         if args.output is None:
@@ -20,7 +22,10 @@ def run(args):
     scope = Scope(**cfg["scope"])
     if args.action == "migrate":
         records, report = codex_memory.read_source(
-            args.codex_home, versions=args.source_version, scope=scope
+            args.codex_home,
+            versions=args.source_version,
+            scope=scope,
+            headings=getattr(args, "heading", None),
         )
         planned = plan(records, cfg, source_type="codex-native")
         report.update(dry_run=args.dry_run, target_ids=list(planned))
