@@ -124,7 +124,9 @@ build before it creates any distribution. A tag can no longer publish a commit
 while the Windows matrix is red. The check reads workflow metadata with
 `actions: read` and then stops. It does not change Trusted Publishing, OIDC or
 environment approvals. A release from an older commit needs green required
-workflows for that commit, or a newer commit.
+workflows for that commit, or a newer commit. The workflow file is read from the
+tagged commit. Tag a commit that contains this gate. A tag on an older commit
+uses that commit's workflow file and cannot receive this check.
 
 See [standalone CLI and MCP](standalone.md) for the additive host-independent
 interface, shared durable core, fixed operator scope and its validation boundary.
