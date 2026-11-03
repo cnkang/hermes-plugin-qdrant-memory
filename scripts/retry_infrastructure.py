@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 MAX_ATTEMPTS = 3
@@ -387,12 +388,30 @@ def _attempt_records(repository, run_id, attempt):
                 "conclusion": metadata.get("conclusion"),
                 "started_at": metadata.get("run_started_at"),
                 "updated_at": metadata.get("updated_at"),
+                "duration_seconds": _duration_seconds(
+                    metadata.get("run_started_at"), metadata.get("updated_at")
+                ),
                 "jobs": [
-                    {"name": job.get("name"), "conclusion": job.get("conclusion")} for job in jobs
+                    {
+                        "id": job.get("id"),
+                        "name": job.get("name"),
+                        "conclusion": job.get("conclusion"),
+                    }
+                    for job in jobs
                 ],
             }
         )
     return records
+
+
+def _duration_seconds(started, finished):
+    """Return a bounded attempt duration, or None when timestamps are absent."""
+    try:
+        start = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
+        end = datetime.fromisoformat(str(finished).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return round((end - start).total_seconds(), 3)
 
 
 def audit_run(repository, run_id):
@@ -404,6 +423,7 @@ def audit_run(repository, run_id):
         "workflow": run.get("name"),
         "head_sha": run.get("head_sha"),
         "run_attempt": run.get("run_attempt"),
+        "retries_used": 0,
         "conclusion": run.get("conclusion"),
         "attempts": [],
         "first_failure": None,
@@ -413,10 +433,18 @@ def audit_run(repository, run_id):
     if run.get("status") != "completed":
         return record
     attempt = run.get("run_attempt") or 1
+    record["retries_used"] = max(0, attempt - 1)
     record["attempts"] = _attempt_records(repository, run_id, attempt)
     if attempt > 1 and run.get("conclusion") == "success":
         record["auto_retry"] = True
         previous = json.loads(_request(f"{prefix}/runs/{run_id}/attempts/{attempt - 1}"))
+        previous = {
+            **previous,
+            "name": previous.get("name") or run.get("name"),
+            "head_sha": previous.get("head_sha") or run.get("head_sha"),
+            "event": previous.get("event") or run.get("event"),
+            "head_repository": previous.get("head_repository") or run.get("head_repository"),
+        }
         jobs = _fetch_jobs(repository, run_id, attempt - 1)
         logs = _fetch_logs(repository, jobs)
         first = classify_run(repository, previous, jobs, logs)

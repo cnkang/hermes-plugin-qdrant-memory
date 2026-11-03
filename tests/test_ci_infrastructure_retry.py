@@ -352,8 +352,16 @@ def test_controller_cannot_retry_itself():
 def test_audit_records_recovered_run_attempts_and_first_failure(monkeypatch):
     """A successful retry is reported with its original failure classification."""
     run = fixture_run(attempt=2, conclusion="success")
-    attempt_one = fixture_run(attempt=1)
-    attempt_two = fixture_run(attempt=2, conclusion="success")
+    attempt_one = {
+        **fixture_run(attempt=1),
+        "run_started_at": "2026-11-02T21:29:13Z",
+        "updated_at": "2026-11-02T21:47:34Z",
+    }
+    attempt_two = {
+        **fixture_run(attempt=2, conclusion="success"),
+        "run_started_at": "2026-11-02T21:50:00Z",
+        "updated_at": "2026-11-02T22:00:00Z",
+    }
     success_job = {**bootstrap_job(), "conclusion": "success"}
     api = FakeAPI(
         run,
@@ -366,6 +374,9 @@ def test_audit_records_recovered_run_attempts_and_first_failure(monkeypatch):
     assert record["auto_retry"] is True
     assert record["final_status"] == "PASS_AFTER_INFRA_RETRY"
     assert record["first_failure"]["jobs"][0]["category"] == "TRANSIENT_BOOTSTRAP"
+    assert record["retries_used"] == 1
+    assert record["attempts"][0]["duration_seconds"] == 1101.0
+    assert record["attempts"][0]["jobs"][0]["id"] == 12
     assert [entry["attempt"] for entry in record["attempts"]] == [1, 2]
 
 
