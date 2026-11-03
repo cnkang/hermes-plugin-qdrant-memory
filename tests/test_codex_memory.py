@@ -426,7 +426,10 @@ def test_handoff_rejects_rehashed_markdown_with_incomplete_records(tmp_path, mar
     "action,key,state,expected",
     [
         ("SKIP", None, None, "SKIPPED"),
+        ("SKIP", "", None, "SKIPPED"),
         ("ADD", "op", None, "FAILED"),
+        ("ADD", None, None, "FAILED"),
+        ("UPDATE", "", None, "FAILED"),
         ("ADD", "op", "SUPERSEDED", "CONFLICT"),
         ("ADD", "op", "FAILED", "FAILED"),
     ],

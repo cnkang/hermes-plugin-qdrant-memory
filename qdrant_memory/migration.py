@@ -260,7 +260,8 @@ def _prepare_pending_operations(runtime, manifest, retry_failed, progress):
     for record in manifest["records"].values():
         key = record["operation_key"]
         row = runtime.ledger.row("operations", key) if key else None
-        if key and row is None:
+        # Only a planned SKIP may omit its key; any other gap is a corrupt manifest.
+        if (not key and record["action"] != "SKIP") or (key and row is None):
             raise ValueError("Missing migration operation")
         # Only retry this migration's operations, never unrelated provider writes.
         if retry_failed and row and row["status"] == "FAILED":
@@ -452,10 +453,12 @@ def _record_operation_row(runtime, record):
 
 
 def _record_status(record, row):
-    """Derive a manifest status from a present, missing or absent operation key."""
+    """Derive a manifest status; only a planned SKIP may omit its operation key."""
     if row:
         return row["status"]
-    return "MISSING" if record["operation_key"] else "COMMITTED"
+    if record["action"] == "SKIP" and not record["operation_key"]:
+        return "COMMITTED"
+    return "MISSING"
 
 
 def _count_acknowledged(counts, record):
