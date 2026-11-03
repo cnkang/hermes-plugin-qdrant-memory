@@ -1,0 +1,67 @@
+name: Codex plugin cloud acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: codex-plugin-cloud
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require reviewed upstream main
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          test "$EVENT_NAME" = workflow_dispatch
+          test "$REF" = refs/heads/main
+          test "$REPOSITORY" = cnkang/hermes-plugin-qdrant-memory
+  cloud:
+    name: Codex harness and Ollama Cloud (synthetic memories only)
+    needs: preflight
+    runs-on: ubuntu-24.04
+    environment: soak-cloud
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: cnkang/qdrant-memory-mcp
+          # Reviewed, immutable client/fixture code. Never a dispatch input or PR head.
+          ref: 3cc580ecbc26126427ad25c6a52630f9d1d0100d
+          path: client
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.11'
+      - name: Install pinned Codex and private Runtime environment
+        run: |
+          npm install --global @openai/codex@0.165.0
+          python -m venv "$RUNNER_TEMP/codex-runtime"
+          "$RUNNER_TEMP/codex-runtime/bin/python" -m pip install -r client/plugins/qdrant-memory/requirements.txt
+      - name: Run actual Codex with the protected Ollama model
+        env:
+          SOAK_LLM_BASE_URL: ${{ vars.SOAK_LLM_BASE_URL }}
+          SOAK_LLM_MODEL: ${{ vars.SOAK_LLM_MODEL }}
+          SOAK_LLM_API_KEY: ${{ secrets.SOAK_LLM_API_KEY }}
+        run: |
+          python client/scripts/codex_account_acceptance.py --mode cloud \
+            --runtime "$RUNNER_TEMP/codex-runtime/bin/qdrant-memory" \
+            --workdir "$RUNNER_TEMP/codex-synthetic-window" \
+            > "$RUNNER_TEMP/codex-plugin-result.json"
+      - name: Summarize explicit outcome
+        if: always()
+        run: |
+          python -c 'import json,os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"codex-plugin-result.json"; r=json.loads(p.read_text()) if p.exists() else {"status":"NOT VERIFIED","reason":"acceptance did not run"}; print(json.dumps(r,indent=2))' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: codex-ollama-synthetic-result
+          path: ${{ runner.temp }}/codex-plugin-result.json
+          if-no-files-found: warn
