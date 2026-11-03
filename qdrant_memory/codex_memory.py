@@ -30,36 +30,14 @@ SENSITIVE = re.compile(
 
 
 def _open_nofollow(path):
-    """Open a leaf without following it, including Windows reparse points."""
-    if os.name != "nt":
-        return os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    import ctypes
-    import msvcrt
-    from ctypes import wintypes
-
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    create = kernel.CreateFileW
-    create.argtypes = (
-        wintypes.LPCWSTR,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        ctypes.c_void_p,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        wintypes.HANDLE,
-    )
-    create.restype = wintypes.HANDLE
-    handle = create(str(path), 0x80000000, 7, None, 3, 0x00200000, None)
-    if handle == wintypes.HANDLE(-1).value:
-        raise ctypes.WinError(ctypes.get_last_error())
+    """Open a file relative to its no-follow, descriptor-anchored ancestors."""
+    if not _ANCHORED_READING:
+        raise ValueError("Secure Codex reads require directory-relative no-follow filesystem APIs")
+    parent = _open_anchored(path.parent)
     try:
-        return msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
-    except BaseException:
-        close = kernel.CloseHandle
-        close.argtypes = (wintypes.HANDLE,)
-        close.restype = wintypes.BOOL
-        close(handle)
-        raise
+        return os.open(path.name, os.O_RDONLY | _NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+    finally:
+        os.close(parent)
 
 
 def _read(path, *, max_bytes=MAX_SOURCE_BYTES, with_metadata=False):
@@ -130,10 +108,11 @@ def inspect(home=None):
 
 def _fence_after_line(line, fence):
     """Track matching Markdown fences without interpreting their contents."""
-    marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line.rstrip("\r\n"))
+    marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
     if marker is None:
         return fence
-    run, suffix = marker.groups()
+    run = marker.group(1)
+    suffix = line[marker.end() :]
     if fence is None:
         return run[0], len(run)
     if run[0] == fence[0] and len(run) >= fence[1] and not suffix.strip():
@@ -269,8 +248,10 @@ def _render_markdown(records):
 
 _DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
-# Windows has no directory-relative create; it revalidates the path instead.
-_ANCHORED_CREATION = hasattr(os, "supports_dir_fd") and {os.open, os.mkdir} <= os.supports_dir_fd
+_ANCHORED_READING = bool(_NOFOLLOW and getattr(os, "O_DIRECTORY", 0)) and os.open in getattr(
+    os, "supports_dir_fd", set()
+)
+_ANCHORED_CREATION = _ANCHORED_READING and os.mkdir in os.supports_dir_fd
 
 
 def _open_anchored(path):

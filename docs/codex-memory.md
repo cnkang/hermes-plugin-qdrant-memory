@@ -45,8 +45,12 @@ qdrant-memory codex verify --output ./new-handoff
 Explicit output paths must stay within the invocation directory. Source paths
 are explicitly authorized canonical Codex homes, with symlink/reparse ancestors
 rejected. No native file, transcript, credential, DB or production collection is
-modified. A source file is bounded to 2 MiB. Reads use one no-follow descriptor
-and descriptor metadata, including the provenance mtime. Heading splitting honors
+modified. A source file is bounded to 2 MiB. Reads traverse each ancestor with
+no-follow directory descriptors, then open the leaf relative to the checked
+directory and use only that descriptor and its metadata, including provenance
+mtime. Platforms without directory-relative no-follow APIs, including Windows,
+refuse Codex artifact reads (native import and handoff verification); no full-path
+open fallback is used. Heading splitting honors
 backtick/tilde code fences; unclosed fenced tails stay quarantined.
 v1 imports semantic sections from
 MEMORY.md (summary fallback); v2 imports summary sections. Duplicate normalized

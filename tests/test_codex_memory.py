@@ -17,11 +17,15 @@ from qdrant_memory.models import Scope
 requires_anchored_creation = pytest.mark.skipif(
     not codex._ANCHORED_CREATION, reason="platform lacks directory-relative creation"
 )
+requires_anchored_reading = pytest.mark.skipif(
+    not codex._ANCHORED_READING, reason="platform lacks directory-relative no-follow reads"
+)
 
 
 @pytest.mark.parametrize(
     "version,filename", [("memories", "MEMORY.md"), ("memories_v2", "memory_summary.md")]
 )
+@requires_anchored_reading
 def test_supported_semantic_layouts(tmp_path, version, filename):
     """Read both verified layouts without changing source bytes."""
     root = tmp_path / version
@@ -36,6 +40,7 @@ def test_supported_semantic_layouts(tmp_path, version, filename):
     assert report["native_import"] == "UNSUPPORTED"
 
 
+@requires_anchored_reading
 def test_dual_write_dedup_and_exclusions(tmp_path):
     """Retain dual provenance while excluding supporting transcripts."""
     for name in ("memories", "memories_v2"):
@@ -49,6 +54,7 @@ def test_dual_write_dedup_and_exclusions(tmp_path):
     assert report["skipped"] == 1
 
 
+@requires_anchored_reading
 def test_sensitive_code_unknown_and_empty(tmp_path):
     """Report exclusions and unknown layouts rather than importing raw data."""
     root = tmp_path / "memories"
@@ -73,6 +79,7 @@ def test_sensitive_code_unknown_and_empty(tmp_path):
         "REDIS_URL=redis://:s3cr3t-pass@cache.example.com/0",
     ],
 )
+@requires_anchored_reading
 def test_common_credential_shapes_are_skipped(tmp_path, secret):
     """High-confidence credential formats never reach an import plan."""
     root = tmp_path / "memories"
@@ -92,6 +99,7 @@ def test_common_credential_shapes_are_skipped(tmp_path, secret):
         "AKIA is only a prefix in this sentence.",
     ],
 )
+@requires_anchored_reading
 def test_unrelated_text_is_not_treated_as_a_credential(tmp_path, text):
     """Credential detection must not quarantine ordinary project notes."""
     root = tmp_path / "memories"
@@ -102,6 +110,7 @@ def test_unrelated_text_is_not_treated_as_a_credential(tmp_path, text):
     assert report["skipped"] == 0
 
 
+@requires_anchored_reading
 def test_explicit_topic_filter_preserves_categories(tmp_path):
     """Select source topics without widening the fixed destination scope."""
     directory = tmp_path / "memories_v2"
@@ -119,6 +128,7 @@ def test_explicit_topic_filter_preserves_categories(tmp_path):
 @pytest.mark.parametrize("fence", ["```python", "````python", "~~~python"])
 @pytest.mark.parametrize("closed", [True, False])
 @pytest.mark.parametrize("separator", ["\n", "\u2028", "\x0c"])
+@requires_anchored_reading
 def test_fenced_headings_never_become_importable_sections(tmp_path, fence, closed, separator):
     """Multiple code headings, including an unclosed tail, remain quarantined."""
     root = tmp_path / "memories"
@@ -140,6 +150,7 @@ def test_fenced_headings_never_become_importable_sections(tmp_path, fence, close
     )
 
 
+@requires_anchored_reading
 def test_read_rejects_leaf_substitution_after_path_check(tmp_path, monkeypatch):
     """A symlink swapped into the final component cannot be followed at open."""
     path, outside = tmp_path / "source", tmp_path / "outside"
@@ -162,6 +173,7 @@ def test_read_rejects_leaf_substitution_after_path_check(tmp_path, monkeypatch):
         codex._read(path)
 
 
+@requires_anchored_reading
 def test_source_text_and_mtime_come_from_the_same_descriptor(tmp_path, monkeypatch):
     """Replacing the pathname after open cannot change provenance metadata."""
     path = tmp_path / "MEMORY.md"
@@ -190,6 +202,7 @@ def test_source_text_and_mtime_come_from_the_same_descriptor(tmp_path, monkeypat
     assert records[0]["updated_at"] == datetime.fromtimestamp(1000000000, UTC).isoformat()
 
 
+@requires_anchored_reading
 def test_read_checks_descriptor_type_and_size_before_reading(tmp_path, monkeypatch):
     """Special files and oversized regular files never reach the stream reader."""
     path = tmp_path / "large"
@@ -203,6 +216,61 @@ def test_read_checks_descriptor_type_and_size_before_reading(tmp_path, monkeypat
         os.mkfifo(fifo)
         with pytest.raises(ValueError, match="Unsupported"):
             codex._read(fifo)
+
+
+@requires_anchored_reading
+@pytest.mark.parametrize("when", ["before_anchor", "after_anchor"])
+def test_store_records_cannot_follow_substituted_ancestors(tmp_path, monkeypatch, when):
+    """Source import either refuses a switched parent or reads the original descriptor."""
+    directory = tmp_path / "native/memories"
+    directory.mkdir(parents=True)
+    path = directory / "MEMORY.md"
+    path.write_text("# Preference\nApproved source fact.\n")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "MEMORY.md").write_text("# Preference\nUnapproved outside fact.\n")
+    monkeypatch.setattr(
+        codex,
+        "inspect",
+        lambda *_: {"source_id": "fixture", "stores": [{"path": path, "version": "v1"}]},
+    )
+
+    def substitute():
+        directory.rename(tmp_path / "original")
+        directory.symlink_to(outside, target_is_directory=True)
+
+    if when == "before_anchor":
+        original = codex._open_nofollow
+
+        def open_file(value):
+            substitute()
+            return original(value)
+
+        monkeypatch.setattr(codex, "_open_nofollow", open_file)
+        with pytest.raises(OSError):
+            codex.read_source(tmp_path / "native")
+    else:
+        original = codex._open_anchored
+
+        def open_parent(value):
+            descriptor = original(value)
+            substitute()
+            return descriptor
+
+        monkeypatch.setattr(codex, "_open_anchored", open_parent)
+        records, _ = codex.read_source(tmp_path / "native")
+        assert len(records) == 1
+        assert records[0]["memory"] == "# Preference\nApproved source fact."
+
+
+def test_native_reads_refuse_platforms_without_anchoring(tmp_path, monkeypatch):
+    """Unsupported platforms never fall back to opening the full file pathname."""
+    path = tmp_path / "MEMORY.md"
+    path.write_text("# Preference\nUnapproved fallback.\n")
+    monkeypatch.setattr(codex, "_ANCHORED_READING", False)
+    monkeypatch.setattr(codex.os, "open", lambda *a, **kw: pytest.fail("path open fallback"))
+    with pytest.raises(ValueError, match="directory-relative no-follow"):
+        codex._read(path)
 
 
 @requires_anchored_creation
@@ -259,6 +327,7 @@ def test_handoff_creation_is_anchored_to_the_checked_parent(tmp_path, monkeypatc
 
     monkeypatch.setattr(codex, "_open_anchored", replace)
     codex.write_handoff(parent / "handoff", "test", [point], scope)
+    monkeypatch.setattr(codex, "_open_anchored", original)
     assert not list(outside.iterdir())
     assert codex.verify_handoff(moved / "handoff")["count"] == 1
 
@@ -278,11 +347,13 @@ def test_handoff_bundle_is_created_private(tmp_path):
 def test_handoff_creation_refuses_platforms_without_anchoring(tmp_path, monkeypatch):
     """A platform without directory-relative creation fails closed."""
     monkeypatch.setattr(codex, "_ANCHORED_CREATION", False)
+    scope = Scope("u", "codex")
     with pytest.raises(ValueError, match="directory-relative"):
-        codex.write_handoff(tmp_path / "handoff", "test", [], Scope("u", "codex"))
+        codex.write_handoff(tmp_path / "handoff", "test", [], scope)
     assert not (tmp_path / "handoff").exists()
 
 
+@requires_anchored_reading
 def test_config_and_environment(tmp_path, monkeypatch):
     """Honor CODEX_HOME and reject unrecognized explicit versions."""
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
@@ -294,6 +365,7 @@ def test_config_and_environment(tmp_path, monkeypatch):
         codex.inspect()
 
 
+@requires_anchored_reading
 def test_symlink_and_malformed_rejected(tmp_path):
     """Refuse substituted and corrupt native artifacts."""
     root = tmp_path / "memories"
@@ -307,6 +379,7 @@ def test_symlink_and_malformed_rejected(tmp_path):
         codex.read_source(tmp_path)
 
 
+@requires_anchored_reading
 def test_dry_run_zero_destination_writes(tmp_path, monkeypatch):
     """Preview cannot acquire a writer or create a destination."""
     source = tmp_path / "codex"
