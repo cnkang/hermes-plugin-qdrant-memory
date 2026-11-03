@@ -82,7 +82,8 @@ def inspect(home=None):
         ("memories", "v1", ("MEMORY.md", "memory_summary.md")),
         ("memories_v2", "v2", ("memory_summary.md",)),
     ):
-        directory = checked_absolute_path(root / name)
+        directory = root / name
+        checked_absolute_path(directory)
         selected = next(
             (
                 directory / f
