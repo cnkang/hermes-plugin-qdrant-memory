@@ -140,7 +140,13 @@ def _open(name, parent=None, *, directory=False, create=False, security=None):
     )
     result, status = wintypes.HANDLE(), _IoStatusBlock()
     # SYNCHRONIZE | FILE_READ_ATTRIBUTES, plus traversal or actual file I/O.
-    access = 0x100080 | (0x20 if directory else (0x2 if create else 0x1))
+    access = 0x100080
+    if directory:
+        access |= 0x20
+    elif create:
+        access |= 0x2
+    else:
+        access |= 0x1
     if create:
         access |= 0x20000  # READ_CONTROL for checking the new object's private ACL.
     options = 0x200000 | 0x20 | (0x1 if directory else 0x40)

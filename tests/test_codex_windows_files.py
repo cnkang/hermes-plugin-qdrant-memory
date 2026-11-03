@@ -48,9 +48,11 @@ def _assert_private(security):
     )
     assert security.GetSecurityDescriptorControl()[0] & 0x1000  # SE_DACL_PROTECTED
     acl = security.GetSecurityDescriptorDacl()
-    assert acl is not None and acl.GetAceCount() == 1
+    assert acl is not None
+    assert acl.GetAceCount() == 1
     (kind, _), mask, trustee = acl.GetAce(0)
-    assert kind == 0 and mask == 0x1F01FF  # ACCESS_ALLOWED_ACE_TYPE, FILE_ALL_ACCESS
+    assert kind == 0  # ACCESS_ALLOWED_ACE_TYPE
+    assert mask == 0x1F01FF  # FILE_ALL_ACCESS
     assert ConvertSidToStringSid(trustee) == ConvertSidToStringSid(owner)
 
 
@@ -138,7 +140,8 @@ def test_native_import_cannot_follow_replaced_parent(tmp_path, monkeypatch, when
             codex.read_source(tmp_path / "native")
     else:
         records, _ = codex.read_source(tmp_path / "native")
-        assert len(records) == 1 and records[0]["memory"].endswith("Approved fact.")
+        assert len(records) == 1
+        assert records[0]["memory"].endswith("Approved fact.")
 
 
 def test_junction_is_refused_by_native_backend(tmp_path):
