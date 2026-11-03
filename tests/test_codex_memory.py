@@ -88,6 +88,7 @@ def test_common_credential_shapes_are_skipped(tmp_path, secret):
     [
         "The bearer of this note delivered the approved change.",
         "Read https://example.com/docs before the change.",
+        "Read https://example.com?contact=ops:oncall@example.com before the change.",
         "AKIA is only a prefix in this sentence.",
     ],
 )
