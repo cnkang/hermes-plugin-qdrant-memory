@@ -1,5 +1,7 @@
 """Operator-only Codex portability orchestration over Runtime and its ledger."""
 
+from pathlib import Path
+
 from . import codex_memory
 from .models import Scope
 
@@ -78,14 +80,13 @@ def _export(args, scope):
     if args.output is None or not args.confirm:
         raise ValueError("Handoff requires a new --output directory and --confirm")
     output = _operator_path(args.output, reject_symlinks=True)
-    cfg = load_standalone_config(args.home)
+    home = Path(args.home).expanduser().resolve()
+    cfg = load_standalone_config(home)
     namespace = ledger_namespace(cfg)
     with ExitStack() as resources:
-        lease = WriterLease.for_config(args.home, cfg)
+        lease = WriterLease.for_config(home, cfg)
         resources.callback(lease.close)
-        if has_pending_reset_file(args.home, namespace) or pending_scope_deletes_file(
-            args.home, namespace
-        ):
+        if has_pending_reset_file(home, namespace) or pending_scope_deletes_file(home, namespace):
             raise ValueError("Complete pending recovery before creating a handoff")
         store = QdrantStore(build_client(cfg), cfg, None)
         resources.callback(store.close)

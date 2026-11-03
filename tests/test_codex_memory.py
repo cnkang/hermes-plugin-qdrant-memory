@@ -1,6 +1,7 @@
 """Codex portability never writes native state or opens a dry-run destination."""
 
 import argparse
+import hashlib
 import json
 import os
 from datetime import UTC, datetime
@@ -228,8 +229,9 @@ def test_dry_run_zero_destination_writes(tmp_path, monkeypatch):
     assert not target.exists()
 
 
-def test_cli_confirmed_import_and_handoff_use_real_profile(tmp_path, monkeypatch):
-    """Exercise CLI confirmation, scoped import and export through real storage."""
+@pytest.fixture
+def cli_profile(tmp_path, monkeypatch):
+    """Initialize a real isolated profile with deterministic embeddings."""
     from qdrant_memory import cli, standalone
 
     from .helpers import Embedder, config
@@ -250,6 +252,12 @@ def test_cli_confirmed_import_and_handoff_use_real_profile(tmp_path, monkeypatch
     parser = argparse.ArgumentParser()
     cli.register_cli(parser)
     assert cli.run(parser.parse_args(["init", "--existing", "use"]), home=home)["ok"]
+    return home
+
+
+def test_cli_confirmed_import_and_handoff_use_real_profile(tmp_path, monkeypatch, cli_profile):
+    """Exercise CLI confirmation, scoped import and export through real storage."""
+    home = cli_profile
     source = tmp_path / "native/memories_v2"
     source.mkdir(parents=True)
     (source / "memory_summary.md").write_text("# Preference\nUse verified handoffs.\n")
@@ -287,6 +295,55 @@ def test_cli_confirmed_import_and_handoff_use_real_profile(tmp_path, monkeypatch
     args.output = None
     with pytest.raises(ValueError, match="--output"):
         run(args)
+
+
+@pytest.mark.parametrize("intent", ["reset", "scope-delete"])
+def test_handoff_tilde_profile_checks_actual_recovery_ledger(
+    tmp_path, monkeypatch, cli_profile, intent
+):
+    """A quoted ~/profile must not bypass durable recovery checks."""
+    from pathlib import Path
+
+    from qdrant_memory.config import ledger_namespace
+    from qdrant_memory.ledger import Ledger
+    from qdrant_memory.reset import begin_destination_reset, begin_scope_delete, scope_delete_intent
+    from qdrant_memory.standalone import load_standalone_config
+
+    monkeypatch.setenv("HOME", str(cli_profile.parent))
+    monkeypatch.setenv("USERPROFILE", str(cli_profile.parent))
+    monkeypatch.chdir(tmp_path)
+    cfg = load_standalone_config(cli_profile)
+    ledger = Ledger(cli_profile, ledger_namespace(cfg))
+    try:
+        if intent == "reset":
+            begin_destination_reset(ledger)
+        else:
+            begin_scope_delete(ledger, scope_delete_intent("fixture", "codex"))
+    finally:
+        ledger.close()
+    output = tmp_path / "handoff"
+    args = argparse.Namespace(action="export", home=Path("~/profile"), output=output, confirm=True)
+    with pytest.raises(ValueError, match="pending recovery"):
+        run(args)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("markdown", ["# Empty handoff\n", "# Changed fact\nUnapproved memory.\n"])
+def test_handoff_rejects_rehashed_markdown_with_incomplete_records(tmp_path, markdown):
+    """A self-consistent byte manifest cannot hide missing or changed Markdown facts."""
+    scope = Scope("fixture", "codex")
+    target = tmp_path / "handoff"
+    point = SimpleNamespace(id="fixture-id", payload={"text": "Approved fact.", **scope.as_dict()})
+    codex.write_handoff(target, "fixture", [point], scope)
+    assert codex.verify_handoff(target)["count"] == 1
+    raw = markdown.encode("utf-8")
+    (target / "handoff.md").write_bytes(raw)
+    manifest = target / "manifest.json"
+    document = json.loads(manifest.read_text())
+    document["files"]["handoff.md"] = hashlib.sha256(raw).hexdigest()
+    manifest.write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="Markdown coverage"):
+        codex.verify_handoff(target)
 
 
 @pytest.mark.parametrize(
