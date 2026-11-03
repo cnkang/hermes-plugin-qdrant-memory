@@ -137,6 +137,29 @@ def test_junction_is_refused_by_native_backend(tmp_path):
         native.open_read(link / "memory")
 
 
+def test_store_precheck_resolution_cannot_redirect_import(tmp_path, monkeypatch):
+    """Store discovery cannot resolve a switched junction into an authorized home."""
+    home = tmp_path / "native"
+    source, outside = home / "memories", tmp_path / "outside"
+    source.mkdir(parents=True)
+    outside.mkdir()
+    (source / "MEMORY.md").write_text("# Preference\nApproved.\n")
+    (outside / "MEMORY.md").write_text("# Preference\nUnapproved.\n")
+    original = codex.checked_absolute_path
+
+    def substitute(value):
+        result = original(value)
+        if value == source:
+            source.rename(tmp_path / "original")
+            _junction(source, outside)
+            return value.resolve()
+        return result
+
+    monkeypatch.setattr(codex, "checked_absolute_path", substitute)
+    with pytest.raises(ValueError, match="reparse"):
+        codex.read_source(home)
+
+
 def test_held_directory_refuses_write_handles(tmp_path):
     """A checked directory cannot be opened for in-place reparse mutation."""
     path = str(tmp_path)

@@ -176,6 +176,30 @@ def test_read_rejects_leaf_substitution_after_path_check(tmp_path, monkeypatch):
         codex._read(path)
 
 
+@requires_posix_anchoring
+def test_store_precheck_resolution_cannot_redirect_import(tmp_path, monkeypatch):
+    """Store discovery cannot adopt a raced resolve result outside the chosen home."""
+    home = tmp_path / "native"
+    source, outside = home / "memories", tmp_path / "outside"
+    source.mkdir(parents=True)
+    outside.mkdir()
+    (source / "MEMORY.md").write_text("# Preference\nApproved.\n")
+    (outside / "MEMORY.md").write_text("# Preference\nUnapproved.\n")
+    original = codex.checked_absolute_path
+
+    def substitute(value):
+        result = original(value)
+        if value == source:
+            source.rename(tmp_path / "original")
+            source.symlink_to(outside, target_is_directory=True)
+            return value.resolve()
+        return result
+
+    monkeypatch.setattr(codex, "checked_absolute_path", substitute)
+    with pytest.raises(ValueError, match="symlink"):
+        codex.read_source(home)
+
+
 @requires_anchored_reading
 def test_source_text_and_mtime_come_from_the_same_descriptor(tmp_path, monkeypatch):
     """Replacing the pathname after open cannot change provenance metadata."""
