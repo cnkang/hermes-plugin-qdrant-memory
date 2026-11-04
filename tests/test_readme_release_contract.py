@@ -8,11 +8,19 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_VERSION = "0.5.5"
-RELEASE_COMMIT = "2865fe586bf64a0ebc9532afe85da2bddd9ced7f"
+RUNTIME_VERSION = "0.6.0"
+RELEASE_COMMIT = "e1fafac7a86ad384813717d0a6b3204fcc242895"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
-ACTIVE_INSTALL_DOCS = (*READMES, "docs/standalone.md", "docs/mcp.md")
+ACTIVE_INSTALL_DOCS = {
+    **dict.fromkeys(READMES, "mcp"),
+    "docs/standalone.md": "mcp",
+    "docs/mcp.md": "mcp",
+    "docs/local-embedding.md": "mcp,local",
+    "docs/shared-memory/README.md": "mcp",
+    "docs/shared-memory/README.zh-CN.md": "mcp",
+    "docs/shared-memory/remote-owner.md": "remote",
+}
 
 
 @pytest.fixture(params=READMES)
@@ -58,9 +66,9 @@ def test_release_notice_links_the_exact_published_runtime(release_notice):
 
 def test_active_install_docs_use_the_exact_published_runtime():
     """Keep every install example on the latest version available from PyPI."""
-    for name in ACTIVE_INSTALL_DOCS:
+    for name, extras in ACTIVE_INSTALL_DOCS.items():
         text = (ROOT / name).read_text(encoding="utf-8")
-        assert f"hermes-plugin-qdrant-memory[mcp]=={RUNTIME_VERSION}" in text
+        assert f"hermes-plugin-qdrant-memory[{extras}]=={RUNTIME_VERSION}" in text
         assert "hermes-plugin-qdrant-memory[mcp]==0.2.0" not in text
 
 
