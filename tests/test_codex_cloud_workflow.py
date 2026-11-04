@@ -57,18 +57,21 @@ def test_cloud_lane_is_manual_main_only_and_uses_existing_approval():
 
 
 @pytest.mark.parametrize(
-    "raw,expected",
+    "raw,expected,preserve",
     [
-        (None, "NOT VERIFIED"),
-        (b"", "NOT VERIFIED"),
-        (b"{", "NOT VERIFIED"),
-        (b"\xff", "NOT VERIFIED"),
-        (b"[]", "NOT VERIFIED"),
-        (b'{"status":"PASS","count":3}', "PASS"),
-        (b'{"status":"FAIL","detail":"fixture"}', "FAIL"),
+        (None, "NOT VERIFIED", False),
+        (b"", "NOT VERIFIED", False),
+        (b"{", "NOT VERIFIED", False),
+        (b"\xff", "NOT VERIFIED", False),
+        (b"[]", "NOT VERIFIED", False),
+        (b'{"status":"UNKNOWN"}', "NOT VERIFIED", False),
+        (b'{"count":3}', "NOT VERIFIED", False),
+        (b'{ "status": "NOT VERIFIED", "reason": "fixture" }\n', "NOT VERIFIED", True),
+        (b'{"status":"PASS","count":3}', "PASS", True),
+        (b'{"status":"FAIL","detail":"fixture"}', "FAIL", True),
     ],
 )
-def test_cloud_summary_retains_an_explicit_result_artifact(tmp_path, raw, expected):
+def test_cloud_summary_retains_an_explicit_result_artifact(tmp_path, raw, expected, preserve):
     """Preserve valid results and publish a fallback after interrupted setup."""
     workflow = YAML(typ="safe").load(
         (ROOT / ".github/workflows/codex-plugin-cloud.yml").read_text(encoding="utf-8")
@@ -90,7 +93,7 @@ def test_cloud_summary_retains_an_explicit_result_artifact(tmp_path, raw, expect
     assert result.returncode == 0, result.stderr
     artifact = json.loads(output.read_text(encoding="utf-8"))
     assert artifact["status"] == expected
-    if expected != "NOT VERIFIED":
+    if preserve:
         assert output.read_bytes() == raw
     rendered = report.read_text(encoding="utf-8")
     assert rendered.startswith("Previous summary\n")
