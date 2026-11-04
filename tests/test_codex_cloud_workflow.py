@@ -1,8 +1,13 @@
 """The Codex cloud lane inherits the existing main-only protected environment."""
 
+import json
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
+import pytest
 from ruamel.yaml import YAML
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,3 +54,45 @@ def test_cloud_lane_is_manual_main_only_and_uses_existing_approval():
     assert "--mode cloud" in step["run"]
     assert "SOAK_QDRANT_API_KEY" not in text
     assert "github.event.inputs" not in text
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (None, "NOT VERIFIED"),
+        (b"", "NOT VERIFIED"),
+        (b"{", "NOT VERIFIED"),
+        (b"\xff", "NOT VERIFIED"),
+        (b"[]", "NOT VERIFIED"),
+        (b'{"status":"PASS","count":3}', "PASS"),
+        (b'{"status":"FAIL","detail":"fixture"}', "FAIL"),
+    ],
+)
+def test_cloud_summary_retains_an_explicit_result_artifact(tmp_path, raw, expected):
+    """Preserve valid results and publish a fallback after interrupted setup."""
+    workflow = YAML(typ="safe").load(
+        (ROOT / ".github/workflows/codex-plugin-cloud.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["cloud"]["steps"]
+    summary = next(s for s in steps if s.get("name") == "Summarize explicit outcome")
+    assert summary["if"] == "always()"
+    assert summary["shell"] == "python"
+    output = tmp_path / "codex-plugin-result.json"
+    if raw is not None:
+        output.write_bytes(raw)
+    report = tmp_path / "summary.md"
+    report.write_text("Previous summary\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-c", summary["run"]],
+        env={**os.environ, "RUNNER_TEMP": str(tmp_path), "GITHUB_STEP_SUMMARY": str(report)},
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    artifact = json.loads(output.read_text(encoding="utf-8"))
+    assert artifact["status"] == expected
+    if expected != "NOT VERIFIED":
+        assert output.read_bytes() == raw
+    rendered = report.read_text(encoding="utf-8")
+    assert rendered.startswith("Previous summary\n")
+    assert json.dumps(artifact, indent=2) in rendered
+    assert steps[-1]["with"]["if-no-files-found"] == "error"
