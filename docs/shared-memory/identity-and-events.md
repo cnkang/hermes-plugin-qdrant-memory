@@ -33,7 +33,7 @@ The existing Runtime performs extraction, scoped deduplication, CAS, idempotent
 operations, and writes. Modern private dedupe cannot promote unmarked legacy data.
 
 Event inspection and cancellation require the original authorized device. Only
-unprepared PENDING/FAILED raw events can be cancelled. Cancellation atomically
+unprepared PENDING, FAILED or QUARANTINED raw events can be cancelled. Cancellation atomically
 checks the ledger status and payload before scrubbing raw content and the receipt. It is terminal across retry and restart. Prepared, committed, or uncertain writes
 must recover instead. Cancelling a raw event does not clear a recovery gate.
 

@@ -84,17 +84,22 @@ not an atomic application-level read-check-write transaction across clients.
 ## Identity and data model
 
 Each **operator-configured** credential hash grants one principal one fixed
-`owner_id`/`space_id`, visibility and permission. A space maps to existing
-`Scope(user_id=owner_id, agent_id="shared:v1:" + space_id)`. The caller agent is
+`owner_id`/`space_id`, visibility and permission. A shared, project or legacy
+private space maps to existing
+`Scope(user_id=owner_id, agent_id="shared:v1:" + space_id)`. A private space with
+a logical agent identity maps to `shared:v2:<digest of space and identity>`.
+The caller agent is
 `principal`. It is deliberately distinct from the stable storage partition.
-Private grants require a unique principal for that owner/space. Shared/project
+Private grants must share one logical agent identity in a space. Each device of
+that agent can hold one grant, and a legacy grant without an identity keeps the
+one-principal rule. Shared/project
 grants may authorize multiple principals. Use separate credentials for separate
 spaces. Tool calls cannot select or widen a space.
 
 Newly written shared points include the grant's visibility in their derived
 identity, and the duplicate-add lookup is constrained to the caller's
 marker/space/visibility boundary. Records written by earlier versions remain
-readable and deduplicate within their own visibility; a later policy generation
+readable and deduplicate within their own visibility. A later policy generation
 cannot collide with, or learn about, an earlier visibility class.
 
 Payloads retain schema-v1 core fields and add `shared_protocol`, `space_id`,
@@ -154,7 +159,9 @@ reject non-loopback URLs, environment proxies and redirects. Secrets are supplie
 through environment variables. Policy stores only the SHA256 of high-entropy tokens
 and requires owner-only POSIX permissions. Windows requires operator-managed ACLs.
 Audit stderr records hashed principals and allow/deny only. It contains no
-memory text, credentials or raw errors. Policy changes/revocation require restart. Protect/supervise the
+memory text, credentials or raw errors. The service re-reads the policy file on
+every authentication, so a grant change or revocation applies to the next
+request. The destination binding stays fixed at startup. Protect/supervise the
 service and rotate client credentials as local OS account security requires.
 Same-OS-user malicious code is outside this credential boundary. It can
 inspect process environments, configuration and storage. No public endpoint, CORS or multi-host access.
@@ -162,9 +169,10 @@ inspect process environments, configuration and storage. No public endpoint, COR
 Agents use official SDK **stdio MCP** bridges. Only the opt-in shared catalogue
 requires `request_id` and update/delete `expected_version`. Existing stdio and
 Hermes schemas are unchanged. This is not a claim of host-native integration tests
-for DSH/WorkBuddy/Hermes applications. Native Provider automatic sharing is deferred
-until there is an explicit host author/space consent contract. The provider stays
-private, and duplicate Hermes interfaces must not be registered.
+for DSH/WorkBuddy/Hermes applications. Automatic sharing by the Native Provider
+stays deferred until there is an explicit host author/space consent contract. The
+opt-in Native Owner is that contract: it captures only for granted spaces, and
+private defaults stay private. Duplicate Hermes interfaces must not be registered.
 
 ## Upstream references checked
 
@@ -204,9 +212,11 @@ separate configured clients within the documented local OS trust boundary. They
 do not provide confidentiality against a privileged local process or hostile code
 running as the same OS user.
 
-`sonar-project.properties` records one rule/resource exception: `python:S5332`
-for `qdrant_memory/shared_service.py`. This is the component that implements the
-private HTTP API. The Sonar quality thresholds and all other security rules remain
+`sonar-project.properties` records two rule/resource exceptions. `python:S5332`
+for `qdrant_memory/shared_service.py` covers the
+private HTTP API. `python:S7503` for `qdrant_memory/remote_client.py` records that
+its response hook must be a coroutine function, because HTTPX awaits every
+response hook. The Sonar quality thresholds and all other security rules remain
 active, including SSRF analysis of the client. The policy is recorded explicitly in the repository,
 rather than hiding the finding with a source annotation.
 
