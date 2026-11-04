@@ -164,8 +164,10 @@ body slots or quotas. Per-source limits and TLS/header timeouts at the proxy are
 required. The example sets header and body timeouts. The TLS handshake timeout
 belongs to the terminating proxy. Application quotas do not prevent
 network-layer denial of service. The
-listener accepts connections before Host, bearer and quota checks run. The proxy
-must cap concurrent connections per source (`limit_conn`) and keep the listener on
+listener accepts connections before Host, bearer and quota checks run. A front L4
+firewall or load balancer must cap TCP connections and the new-connection rate per
+source. `limit_conn` counts only requests that reached the HTTP layer, so it does
+not cover the TLS handshake or incomplete request headers. Keep the listener on
 loopback. The listener closes connections whose request headers are incomplete
 after 10 seconds, including requests on reused connections. Complete headers end
 that deadline. Active MCP requests use the gateway's existing deadlines.

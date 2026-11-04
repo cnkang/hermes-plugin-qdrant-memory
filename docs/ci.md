@@ -174,8 +174,9 @@ Pull requests and branch pushes verify the dependency inputs with the
 credential-free `dependency-lock` job instead. That job rejects ranges, remote or
 VCS sources, option lines, unpinned entries, unhashed snapshot entries and
 snapshot drift. Snyk Code
-stays on same-repository pull requests and branch pushes because it analyzes text
-and executes no contributor code.
+stays on same-repository pull requests, pushes to `main` and repository
+development branches, and manual dispatches. It analyzes text and executes no
+contributor code.
 The dependency scan is therefore a post-merge gate: a failure on `main` blocks
 later work and needs a fix-forward, because the merge already happened. A
 repository writer can still edit a workflow that holds a scanner token, because
