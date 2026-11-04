@@ -3,8 +3,8 @@
 ## 0.6.0
 
 - Allow 15 minutes per model artifact within a 30-minute total network budget
-  during explicit preparation, retaining
-  size/hash validation and atomic cache publication; widen CPU CI's job budget.
+  during explicit preparation. Size and hash validation and atomic cache
+  publication stay in place. The CPU CI job budget is now 60 minutes.
 
 - Add explicit, read-only inspection and import of Codex v1/v2 semantic memory
   artifacts, with previews, operation tracking and scoped result verification.
@@ -12,7 +12,7 @@
   excluded from import plans.
 - Add portable, size-bounded JSON/Markdown handoff packages with checksum and
   record-fidelity verification. Native adoption remains `HANDOFF_PENDING` until
-  the destination actually confirms it; uninstall preserves stored memories and
+  the destination actually confirms it. Uninstall preserves stored memories and
   exports.
 - Anchor artifact reads to checked file descriptors on macOS/Linux and native
   handles on Windows. Windows rejects reparse points and remote volumes and
@@ -49,9 +49,9 @@
 ## 0.5.3
 
 - Add an explicit, synchronized provider lifecycle. A failed initialization
-  cleans up that attempt before the provider can be retried; lifecycle hooks and
-  tools no longer touch missing resources or report an unwritten event as
-  persisted.
+  cleans up that attempt before the provider can be retried. Lifecycle hooks and
+  tools no longer touch missing resources, and they do not report an unwritten
+  event as persisted.
 - Keep a writer lease until native listeners, workers, and owned resources have
   shut down successfully. Stop event admission before worker-exit cleanup, and
   preserve checkpoint fail-closed behavior when a required checkpoint cannot
@@ -59,7 +59,7 @@
 - Return redacted, structured unavailable errors from tools and empty results
   from safe prefetch paths. After cleanup completes, a host may explicitly
   reinitialize the same provider instance. The Runtime does not poll a busy
-  writer lease in the background; on hosts that do not reconstruct a failed
+  writer lease in the background. On hosts that do not reconstruct a failed
   provider, restart Hermes after the competing writer exits.
 - No collection schema, point identity, Ledger schema, scope, configuration,
   public tool schema, or minimum Hermes version changed. Existing memory data
@@ -109,9 +109,9 @@
 
 - Breaking configuration change: non-loopback embedding endpoints now require
   HTTPS even without a credential. Before upgrade, put a trusted TLS proxy in
-  front of a remote embedding service, or use a loopback address for a service
-  on the same host. Keep its model and dimensions unchanged. Loopback HTTP remains
-  supported.
+  front of a remote embedding service. For a service on the same host, use a
+  loopback address. Keep its model and dimensions unchanged. Loopback HTTP
+  remains supported.
 - Clear Lifecycle and shared admission receipts during an authorized destination
   reset, and treat an uncommitted lifecycle receipt as pending replay work, so a
   cleared conversation cannot be re-created on the next Owner start.

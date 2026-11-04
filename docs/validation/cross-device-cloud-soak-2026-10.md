@@ -97,11 +97,11 @@ restarted cleanly all 330 times with no double lease and no WAL damage.
 ## 8. Verdict
 
 **SOAK COMPLETED.** The full window ran on both hosts with intact journals
-on A and a reconstructed tail on B. Product findings: quarantine contained
-two slow extractions, private isolation held with zero leaks, restarts stayed
-short and clean, and 23 restart-boundary writes exposed a retryable
+on A and a reconstructed tail on B. Product findings follow. Quarantine
+contained two slow extractions, and private isolation held with zero leaks.
+Restarts stayed short and clean. 23 restart-boundary writes exposed a retryable
 contract gap. The low agent success counter is a harness metric defect, not a
-storage loss: every sampled agent row exists at rank 1 under its exact text.
+storage loss. Every sampled agent row exists at rank 1 under its exact text.
 The next run needs random markers, an archived journal on resume, an
 executable report step, and a decision on retryable classification for
 restart cuts.
