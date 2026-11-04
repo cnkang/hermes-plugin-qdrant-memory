@@ -662,13 +662,15 @@ def _fence_prepared_writes(ledger, scopes, fenced, intent_time):
 def _supersede_scope_events(ledger, scopes):
     """Invalidate admitted-but-unprocessed turn events for the deleted scopes.
 
-    Events admitted after the deletion are unaffected: the provider cannot
+    Quarantined events are included: a later retry would otherwise requeue them
+    and recreate memories in the deleted scope. Events admitted after the
+    deletion are unaffected: the provider cannot
     start while the deletion intent is pending, and new events can only be
     admitted once it is cleared. One bounded pass covers every target scope.
     """
     targets = {(scope.user_id, scope.agent_id) for scope in scopes}
     superseded = 0
-    for status in ("PENDING", "FAILED"):
+    for status in ("PENDING", "FAILED", "QUARANTINED"):
         for row in ledger.iter_rows("events", status):
             try:
                 value = json.loads(row["payload_json"] or "{}")

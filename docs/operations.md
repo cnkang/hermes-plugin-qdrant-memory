@@ -31,8 +31,8 @@ delivery budget. Cache generations prevent old background results from
 repopulating a switched session.
 
 Events move through PENDING to COMMITTED, QUARANTINED or FAILED. An explicit
-discard ends a raw event as CANCELLED, and a scoped delete marks its
-uncommitted event as SUPERSEDED. A deterministic extraction failure with no
+discard ends a raw event as CANCELLED, and a scoped delete marks its pending,
+failed or quarantined event as SUPERSEDED. A deterministic extraction failure with no
 persisted plan quarantines only that event. Other
 clients keep writing. The plugin persists extraction
 results and prepared operation payloads before remote mutations. It acknowledges

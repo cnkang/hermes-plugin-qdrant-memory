@@ -273,6 +273,8 @@ def test_pending_events_are_invalidated_by_scoped_delete(tmp_path, monkeypatch):
     stale_key = ledger.enqueue_event(stale_event)
     failed_key = ledger.enqueue_event({**stale_event, "turn_number": 2})
     ledger.failure("events", failed_key, RuntimeError("extraction failed"), terminal=True)
+    quarantined_key = ledger.enqueue_event({**stale_event, "turn_number": 3})
+    ledger.quarantine("events", quarantined_key, RuntimeError("truncated extraction"))
     other_key = ledger.enqueue_event(
         {
             "kind": "turn",
@@ -286,16 +288,18 @@ def test_pending_events_are_invalidated_by_scoped_delete(tmp_path, monkeypatch):
     )
     ledger.close()
     result = run(parser.parse_args(["delete-all", "--user", "u1", "--confirm"]), home=tmp_path)
-    assert result["superseded_events"] == 2
+    assert result["superseded_events"] == 3
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     assert ledger.row("events", stale_key)["status"] == "SUPERSEDED"
     assert ledger.row("events", failed_key)["status"] == "SUPERSEDED"
+    assert ledger.row("events", quarantined_key)["status"] == "SUPERSEDED"
     assert ledger.row("events", other_key)["status"] == "PENDING"
     ledger.close()
-    # Retry must not requeue the invalidated failed event.
+    # Retry must not requeue the invalidated failed or quarantined event.
     run(parser.parse_args(["retry"]), home=tmp_path)
     ledger = Ledger(tmp_path, ledger_namespace(cfg))
     assert ledger.row("events", failed_key)["status"] == "SUPERSEDED"
+    assert ledger.row("events", quarantined_key)["status"] == "SUPERSEDED"
     ledger.close()
     # A provider restart recovers only the surviving scope's event.
     p = provider(tmp_path)
