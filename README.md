@@ -553,7 +553,7 @@ See [CI service setup](docs/ci.md) and [validation evidence](docs/validation.md)
 Real evidence, not badges:
 
 - Hermes native lifecycle tests: [validation](docs/validation.md)
-- Cross-harness sharing and client-specific limits: [integration matrix](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/cross-harness-architecture.md)
+- Cross-harness sharing and client-specific limits: [architecture and support boundaries](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/cross-harness-architecture.md)
 - Codex import, handoff and platform boundaries: [Codex portability](docs/codex-memory.md)
 - Crash / restart / idempotency: [bounded recovery](docs/recovery-benchmark.md)
 - Authorization and isolation: [security](docs/security.md), [threat model](docs/shared-memory/threat-model-v1.md)

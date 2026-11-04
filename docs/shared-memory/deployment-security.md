@@ -2,7 +2,7 @@
 
 Runtime 0.5.0 adds opt-in destination protection and `shared-doctor`. Check the
 installed version and command help before using them. Runtime 0.4.0 does not
-provide these additions. Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.5/)
+provide these additions. Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.0/)
 for package availability before upgrading.
 
 The Owner coordinates authorized tools through its Ledger and revision checks.
