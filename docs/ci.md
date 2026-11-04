@@ -190,8 +190,8 @@ tests without scanner credentials. Their scanner jobs are skipped by conditions.
 A missing required token fails a scanner job only when that job is scheduled.
 The `Required security scan gate` runs even after workflow cancellation.
 It rejects failed, skipped, or cancelled prerequisites.
-It requires successful lint, tests, MCP protocol coverage, Windows Codex store
-contracts, host pin compatibility, dependency lock, and SonarCloud. It requires a successful dependency scan on
+It requires successful lint, tests, MCP protocol coverage, Codex Windows security,
+host pin compatibility, dependency lock, and SonarCloud. It requires a successful dependency scan on
 `main` and accepts its skip elsewhere.
 [GitHub permits a merge when a required job skips execution](https://docs.github.com/en/pull-requests/reference/status-checks).
 The gate uses `always()` to prevent this result after cancellation.
