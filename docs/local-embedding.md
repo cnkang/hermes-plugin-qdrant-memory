@@ -35,11 +35,11 @@ python -m pip install '.[mcp,local]'
 
 For a published package, install the same extras with the release version:
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.5/) for
-Runtime 0.5.5 availability before running this command.
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.0/) for
+Runtime 0.6.0 availability before running this command.
 
 ```sh
-python -m pip install 'hermes-plugin-qdrant-memory[mcp,local]==0.5.5'
+python -m pip install 'hermes-plugin-qdrant-memory[mcp,local]==0.6.0'
 ```
 
 Choose **one** setup command and replace the profile path with a new absolute
