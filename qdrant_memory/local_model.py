@@ -152,17 +152,19 @@ async def _download(client, path, name, expected):
     url = f"https://huggingface.co/{MODEL_REPOSITORY}/resolve/{MODEL_REVISION}/{name}"
     received = 0
     try:
-        async with asyncio.timeout(ARTIFACT_DOWNLOAD_SECONDS):
-            async with client.stream("GET", url) as response:
-                response.raise_for_status()
-                with path.open("xb") as stream:
-                    async for block in response.aiter_bytes(1024 * 1024):
-                        received += len(block)
-                        if received > expected[1]:
-                            raise LocalModelIntegrityError("Model download exceeded its size limit")
-                        stream.write(block)
-                    stream.flush()
-                    os.fsync(stream.fileno())
+        async with (
+            asyncio.timeout(ARTIFACT_DOWNLOAD_SECONDS),
+            client.stream("GET", url) as response,
+        ):
+            response.raise_for_status()
+            with path.open("xb") as stream:
+                async for block in response.aiter_bytes(1024 * 1024):
+                    received += len(block)
+                    if received > expected[1]:
+                        raise LocalModelIntegrityError("Model download exceeded its size limit")
+                    stream.write(block)
+                stream.flush()
+                os.fsync(stream.fileno())
     except TimeoutError as exc:
         raise LocalModelIntegrityError("Model download exceeded its time limit") from exc
     _check_artifact(path, expected)
