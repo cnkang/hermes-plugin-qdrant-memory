@@ -1,11 +1,12 @@
 """Pinned model downloads become usable only after complete verification."""
 
+import asyncio
 import hashlib
 import json
 import os
 import stat
+import time
 from pathlib import Path
-from types import SimpleNamespace
 
 import httpx
 import portalocker
@@ -26,18 +27,23 @@ def model_source(monkeypatch):
             for name, content in data.items()
         },
     )
-    client = httpx.Client
+    client = httpx.AsyncClient
     requests = []
 
-    def respond(request):
+    async def respond(request):
         requests.append(request)
         assert request.url.scheme == "https"
         assert local_model.MODEL_REVISION in str(request.url)
         assert "authorization" not in request.headers
-        return httpx.Response(200, content=data[request.url.path.rsplit("/", 1)[-1]])
+        value = data[request.url.path.rsplit("/", 1)[-1]]
+        if callable(value):
+            return await value(request)
+        if isinstance(value, httpx.AsyncByteStream):
+            return httpx.Response(200, stream=value)
+        return httpx.Response(200, content=value)
 
     monkeypatch.setattr(
-        httpx, "Client", lambda **kw: client(**kw, transport=httpx.MockTransport(respond))
+        httpx, "AsyncClient", lambda **kw: client(**kw, transport=httpx.MockTransport(respond))
     )
     return local_model, data, requests
 
@@ -70,20 +76,24 @@ def test_corrupt_download_never_becomes_ready_and_can_be_retried(tmp_path, model
     assert module.prepare_model(root) == module.verify_model(root)
 
 
-@pytest.mark.parametrize("transfer_seconds, succeeds", [(600, True), (901, False)])
+@pytest.mark.parametrize("transfer_seconds, succeeds", [(0.3, True), (3, False)])
 def test_slow_download_has_a_fresh_bounded_window_per_artifact(
     tmp_path, model_source, monkeypatch, transfer_seconds, succeeds
 ):
     """Allow slow complete transfers without publishing an over-budget cache."""
     module, data, requests = model_source
-    elapsed = 0
 
-    def monotonic():
-        nonlocal elapsed
-        elapsed += transfer_seconds
-        return elapsed
+    class Delayed(httpx.AsyncByteStream):
+        def __init__(self, content):
+            self.content = content
 
-    monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=monotonic))
+        async def __aiter__(self):
+            await asyncio.sleep(transfer_seconds)
+            yield self.content
+
+    for name, content in list(data.items()):
+        data[name] = Delayed(content)
+    monkeypatch.setattr(module, "ARTIFACT_DOWNLOAD_SECONDS", 1)
     if succeeds:
         assert module.prepare_model(tmp_path) == module.verify_model(tmp_path)
         assert len(requests) == len(data)
@@ -93,6 +103,95 @@ def test_slow_download_has_a_fresh_bounded_window_per_artifact(
         with pytest.raises(module.LocalModelNotPreparedError):
             module.verify_model(tmp_path)
         assert not list(tmp_path.glob(".prepare-*"))
+
+
+def test_slow_fragments_are_cancelled_before_a_megabyte_and_release_resources(
+    tmp_path, model_source, monkeypatch
+):
+    """Continuous network activity must not evade the total deadline."""
+    module, data, _ = model_source
+    first = next(iter(data))
+    original = data[first]
+
+    class Drip(httpx.AsyncByteStream):
+        chunks = 0
+        cancelled = False
+        closed = False
+
+        async def __aiter__(self):
+            try:
+                for _ in range(100):
+                    await asyncio.sleep(0.01)
+                    self.chunks += 1
+                    yield b"x"
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+
+        async def aclose(self):
+            self.closed = True
+
+    drip = Drip()
+    data[first] = drip
+    monkeypatch.setattr(module, "ARTIFACT_DOWNLOAD_SECONDS", 0.1)
+    started = time.monotonic()
+    with pytest.raises(module.LocalModelIntegrityError, match="time limit"):
+        module.prepare_model(tmp_path)
+    assert time.monotonic() - started < 0.8
+    assert 0 < drip.chunks < 100
+    assert drip.cancelled and drip.closed
+    assert not list(tmp_path.glob(".prepare-*"))
+    with pytest.raises(module.LocalModelNotPreparedError):
+        module.verify_model(tmp_path)
+    # The next attempt must acquire the released lock and publish verified bytes.
+    data[first] = original
+    assert module.prepare_model(tmp_path) == module.verify_model(tmp_path)
+
+
+def test_deadline_cancels_waiting_for_response_headers(tmp_path, model_source, monkeypatch):
+    """The artifact budget starts before response headers arrive."""
+    module, data, _ = model_source
+    cancelled = False
+
+    async def headers(_request):
+        nonlocal cancelled
+        try:
+            await asyncio.sleep(1)
+            return httpx.Response(200, content=b"late")
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+
+    data[next(iter(data))] = headers
+    monkeypatch.setattr(module, "ARTIFACT_DOWNLOAD_SECONDS", 0.05)
+    with pytest.raises(module.LocalModelIntegrityError, match="time limit"):
+        module.prepare_model(tmp_path)
+    assert cancelled
+    assert not list(tmp_path.glob(".prepare-*"))
+
+
+def test_https_redirect_guard_runs_before_a_downgraded_request(tmp_path, model_source):
+    """Async HTTP hooks retain the pre-request HTTPS-only boundary."""
+    module, data, requests = model_source
+
+    async def redirect(_request):
+        return httpx.Response(302, headers={"location": "http://example.invalid/model"})
+
+    data[next(iter(data))] = redirect
+    with pytest.raises(module.LocalModelIntegrityError, match="HTTPS"):
+        module.prepare_model(tmp_path)
+    assert len(requests) == 1
+    assert not list(tmp_path.glob(".prepare-*"))
+
+
+def test_synchronous_preparation_works_inside_an_existing_event_loop(tmp_path, model_source):
+    """The caller's event loop must not prevent explicit synchronous setup."""
+    module, _, _ = model_source
+
+    async def caller():
+        return module.prepare_model(tmp_path)
+
+    assert asyncio.run(caller()) == module.verify_model(tmp_path)
 
 
 @pytest.mark.parametrize("filename", ["model_optimized.onnx", "tokenizer.json", "ready.json"])

@@ -4,13 +4,14 @@ Normal embedding startup only verifies this cache; it never downloads files.
 Model bytes are versioned independently of profiles and memory storage.
 """
 
+import asyncio
 import hashlib
 import json
 import os
 import shutil
 import sys
 import tempfile
-import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .private_paths import checked_absolute_path
@@ -139,27 +140,56 @@ def verify_model(cache_dir=None):
     return target
 
 
-def _require_https(request):
+async def _require_https(request):
     """Reject downgrade redirects before sending the redirected request."""
     if request.url.scheme != "https":
         raise LocalModelIntegrityError("Model downloads require HTTPS")
 
 
-def _download(client, path, name, expected, deadline):
-    """Bound transfer length/time and verify a revision-pinned artifact."""
+async def _download(client, path, name, expected):
+    """Cancel the entire network transfer, including headers and tiny fragments."""
     url = f"https://huggingface.co/{MODEL_REPOSITORY}/resolve/{MODEL_REVISION}/{name}"
     received = 0
-    with client.stream("GET", url) as response:
-        response.raise_for_status()
-        with path.open("xb") as stream:
-            for block in response.iter_bytes(1024 * 1024):
-                received += len(block)
-                if received > expected[1] or time.monotonic() > deadline:
-                    raise LocalModelIntegrityError("Model download exceeded its size or time limit")
-                stream.write(block)
-            stream.flush()
-            os.fsync(stream.fileno())
+    try:
+        async with asyncio.timeout(ARTIFACT_DOWNLOAD_SECONDS):
+            async with client.stream("GET", url) as response:
+                response.raise_for_status()
+                with path.open("xb") as stream:
+                    async for block in response.aiter_bytes(1024 * 1024):
+                        received += len(block)
+                        if received > expected[1]:
+                            raise LocalModelIntegrityError("Model download exceeded its size limit")
+                        stream.write(block)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+    except TimeoutError as exc:
+        raise LocalModelIntegrityError("Model download exceeded its time limit") from exc
     _check_artifact(path, expected)
+
+
+async def _download_artifacts(staging):
+    """Share one client while giving each artifact a separate cancellable window."""
+    import httpx
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(30, connect=10),
+        follow_redirects=True,
+        event_hooks={"request": [_require_https]},
+    ) as client:
+        for name, expected in ARTIFACTS.items():
+            await _download(client, staging / name, name, expected)
+
+
+def _prepare_downloads(staging):
+    """Keep the synchronous preparation API usable from a running event loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_download_artifacts(staging))
+    else:
+        # Wait for cancellation and stream/client cleanup before touching staging.
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(asyncio.run, _download_artifacts(staging)).result()
 
 
 def _sync_directory(path):
@@ -181,7 +211,6 @@ def prepare_model(cache_dir=None):
     completed models are verified, never silently overwritten or repaired.
     Rerunning after failure retries preparation; rerunning after success is offline.
     """
-    import httpx
     import portalocker
 
     root = _root(cache_dir)
@@ -200,15 +229,7 @@ def prepare_model(cache_dir=None):
             return verify_model(root)
         staging = Path(tempfile.mkdtemp(prefix=".prepare-", dir=root))
         try:
-            with httpx.Client(
-                timeout=httpx.Timeout(30, connect=10),
-                follow_redirects=True,
-                event_hooks={"request": [_require_https]},
-            ) as client:
-                for name, expected in ARTIFACTS.items():
-                    # Give each artifact its own window so a slow earlier file cannot starve the rest.
-                    deadline = time.monotonic() + ARTIFACT_DOWNLOAD_SECONDS
-                    _download(client, staging / name, name, expected, deadline)
+            _prepare_downloads(staging)
             with (staging / "ready.json").open("x", encoding="utf-8") as marker:
                 json.dump({"pipeline": pipeline_identity()}, marker)
                 marker.flush()
