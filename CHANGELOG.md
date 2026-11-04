@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.0
+
+- Add explicit, read-only inspection and import of Codex v1/v2 semantic memory
+  artifacts, with previews, operation tracking and scoped result verification.
+  Credential-shaped content, code fences and unsupported source artifacts are
+  excluded from import plans.
+- Add portable, size-bounded JSON/Markdown handoff packages with checksum and
+  record-fidelity verification. Native adoption remains `HANDOFF_PENDING` until
+  the destination actually confirms it; uninstall preserves stored memories and
+  exports.
+- Anchor artifact reads to checked file descriptors on macOS/Linux and native
+  handles on Windows. Windows rejects reparse points and remote volumes and
+  creates handoff directories with private, persistent ACLs.
+- Validate the Codex plugin with real subscription-account tests locally and a
+  protected, synthetic-only Codex/Ollama Cloud lane. Fixed client requirements
+  remain separate from the exact Runtime main revision admitted by preflight.
+
 ## 0.5.5
 
 - Upgrade the optional local CPU embedding backend to the upstream FastEmbed
