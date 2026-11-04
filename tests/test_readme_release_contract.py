@@ -2,6 +2,7 @@
 
 import re
 import shlex
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -143,3 +144,10 @@ def test_demo_script_pins_the_published_release_commit():
     match = re.search(r'^RELEASE_REF="([0-9a-f]{40})"', script, re.M)
     assert match, "scripts/demo.sh must pin a full release commit"
     assert match.group(1) == RELEASE_COMMIT
+
+
+def test_pypi_description_installs_the_version_being_built():
+    """Immutable package metadata must not recommend the previous PyPI release."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    description = (ROOT / project["readme"]).read_text(encoding="utf-8")
+    assert f"hermes-plugin-qdrant-memory[mcp]=={project['version']}" in description
