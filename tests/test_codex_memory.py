@@ -73,9 +73,10 @@ def test_sensitive_code_unknown_and_empty(tmp_path):
 @pytest.mark.parametrize(
     "secret",
     [
-        "AKIAIOSFODNN7EXAMPLE",
-        "ASIAY34FZKBOKMUTVV7A",
-        # Keep the fixture split so the source never holds a contiguous token.
+        # Keep AWS-shaped fixtures split so the source never holds a
+        # contiguous token that secret scanners might flag.
+        "AKIA" + "NOTAREALKEY00000",
+        "ASIA" + "NOTAREALKEY00000",
         "SLACK_TOKEN=" + "xox" + "b-EXAMPLE-TOKEN-VALUE",
         "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload",
         "postgres://operator:s3cr3t-pass@db.example.com/app",
