@@ -25,6 +25,9 @@ Keep one writer per destination. See [shared setup](docs/shared-memory/README.md
 > It retains official FastEmbed 0.9.1. This guide selects Runtime 0.6.0.
 > Check its availability on
 > [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.0/) before installation.
+> If that version is unavailable, its package commands cannot run yet: use the
+> [published 0.5.5 guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.5.5/README.md)
+> or the reviewed source preview below. Source availability is not PyPI publication.
 > The generic MCP distribution and managed launcher select their own exact Runtime
 > dependency and are released independently.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release

@@ -23,6 +23,9 @@
 > 保留官方 FastEmbed 0.9.1。本指南选择 Runtime 0.6.0。
 > 安装前请在[PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.0/)
 > 核实该版本是否已公开。
+> 若该版本尚不可用，精确版本的包安装命令暂不能执行；请使用
+> [已发布的 0.5.5 指南](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.5.5/README.zh-CN.md)
+> 或下方经审核的源码预览。源码可用不代表已发布到 PyPI。
 > 通用 MCP 发行包和托管启动器各自选择精确的 Runtime 依赖，分别发布。
 > Hermes Plugin Catalog 使用独立审核的固定版本（不可变），PyPI 发布不会自动升级目录中的版本。
 > 每个目的地仍只允许一个写入者。
