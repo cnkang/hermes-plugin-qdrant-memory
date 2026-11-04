@@ -162,6 +162,11 @@ def test_demo_script_pins_the_reviewed_implementation_preview():
     assert match, "scripts/demo.sh must pin a full reviewed implementation SHA"
     assert match.group(1) == IMPLEMENTATION_PREVIEW_COMMIT
 
+    remote_owner = (ROOT / "docs/shared-memory/remote-owner.md").read_text(encoding="utf-8")
+    source_match = re.search(r"hermes-plugin-qdrant-memory\.git@([0-9a-f]{40})", remote_owner)
+    assert source_match, "remote-owner.md must pin a full source preview SHA"
+    assert source_match.group(1) == IMPLEMENTATION_PREVIEW_COMMIT
+
 
 def test_pypi_description_installs_the_version_being_built():
     """Immutable package metadata must not recommend the previous PyPI release."""
