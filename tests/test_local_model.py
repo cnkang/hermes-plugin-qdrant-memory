@@ -120,9 +120,9 @@ def test_slow_fragments_are_cancelled_before_a_megabyte_and_release_resources(
         async def __aiter__(self):
             try:
                 for _ in range(100):
-                    await asyncio.sleep(0.01)
                     self.chunks += 1
                     yield b"x"
+                    await asyncio.sleep(0.01)
             except asyncio.CancelledError:
                 self.cancelled = True
                 raise
@@ -135,7 +135,7 @@ def test_slow_fragments_are_cancelled_before_a_megabyte_and_release_resources(
     monkeypatch.setattr(module, "ARTIFACT_DOWNLOAD_SECONDS", 0.1)
     with pytest.raises(module.LocalModelIntegrityError, match="time limit"):
         module.prepare_model(tmp_path)
-    assert drip.chunks < 100
+    assert 0 < drip.chunks < 100
     assert drip.cancelled and drip.closed
     assert not list(tmp_path.glob(".prepare-*"))
     with pytest.raises(module.LocalModelNotPreparedError):
