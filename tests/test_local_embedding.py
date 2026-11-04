@@ -127,6 +127,7 @@ def test_cpu_startup_never_downloads_a_missing_model(tmp_path, monkeypatch):
         pytest.fail("Normal provider startup must not download models")
 
     monkeypatch.setattr(httpx.Client, "send", forbidden)
+    monkeypatch.setattr(httpx.AsyncClient, "send", forbidden)
     cfg = local_cfg(tmp_path / "models")
     with pytest.raises(local_model.LocalModelNotPreparedError):
         build_embedder(None, cfg)

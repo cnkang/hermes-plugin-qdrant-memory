@@ -2,7 +2,8 @@
 
 ## 0.6.0
 
-- Allow 15 minutes per model artifact during explicit preparation, retaining
+- Allow 15 minutes per model artifact within a 30-minute total network budget
+  during explicit preparation, retaining
   size/hash validation and atomic cache publication; widen CPU CI's job budget.
 
 - Add explicit, read-only inspection and import of Codex v1/v2 semantic memory

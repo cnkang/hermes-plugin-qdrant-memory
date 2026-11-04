@@ -44,6 +44,7 @@ ARTIFACTS = {
 }
 DOWNLOAD_BYTES = sum(size for _, size in ARTIFACTS.values())
 ARTIFACT_DOWNLOAD_SECONDS = 15 * 60
+TOTAL_DOWNLOAD_SECONDS = 30 * 60
 
 
 class LocalModelNotPreparedError(RuntimeError):
@@ -176,8 +177,14 @@ async def _download_artifacts(staging):
         follow_redirects=True,
         event_hooks={"request": [_require_https]},
     ) as client:
-        for name, expected in ARTIFACTS.items():
-            await _download(client, staging / name, name, expected)
+        try:
+            async with asyncio.timeout(TOTAL_DOWNLOAD_SECONDS):
+                for name, expected in ARTIFACTS.items():
+                    await _download(client, staging / name, name, expected)
+        except TimeoutError as exc:
+            raise LocalModelIntegrityError(
+                "Model preparation exceeded its total download time limit"
+            ) from exc
 
 
 def _prepare_downloads(staging):
