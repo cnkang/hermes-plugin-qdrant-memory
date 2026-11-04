@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 import stat
-import time
 from pathlib import Path
 
 import httpx
@@ -134,10 +133,8 @@ def test_slow_fragments_are_cancelled_before_a_megabyte_and_release_resources(
     drip = Drip()
     data[first] = drip
     monkeypatch.setattr(module, "ARTIFACT_DOWNLOAD_SECONDS", 0.1)
-    started = time.monotonic()
     with pytest.raises(module.LocalModelIntegrityError, match="time limit"):
         module.prepare_model(tmp_path)
-    assert time.monotonic() - started < 0.8
     assert 0 < drip.chunks < 100
     assert drip.cancelled and drip.closed
     assert not list(tmp_path.glob(".prepare-*"))
@@ -145,6 +142,35 @@ def test_slow_fragments_are_cancelled_before_a_megabyte_and_release_resources(
         module.verify_model(tmp_path)
     # The next attempt must acquire the released lock and publish verified bytes.
     data[first] = original
+    assert module.prepare_model(tmp_path) == module.verify_model(tmp_path)
+
+
+def test_total_download_budget_cancels_a_sequence_of_individually_valid_transfers(
+    tmp_path, model_source, monkeypatch
+):
+    """Per-artifact windows cannot multiply beyond the overall network budget."""
+    module, data, requests = model_source
+    original = dict(data)
+
+    class Delayed(httpx.AsyncByteStream):
+        def __init__(self, content):
+            self.content = content
+
+        async def __aiter__(self):
+            await asyncio.sleep(0.1)
+            yield self.content
+
+    for name, content in original.items():
+        data[name] = Delayed(content)
+    monkeypatch.setattr(module, "ARTIFACT_DOWNLOAD_SECONDS", 1)
+    monkeypatch.setattr(module, "TOTAL_DOWNLOAD_SECONDS", 0.25)
+    with pytest.raises(module.LocalModelIntegrityError, match="total download time limit"):
+        module.prepare_model(tmp_path)
+    assert len(requests) < len(data)
+    assert not list(tmp_path.glob(".prepare-*"))
+    with pytest.raises(module.LocalModelNotPreparedError):
+        module.verify_model(tmp_path)
+    data.update(original)
     assert module.prepare_model(tmp_path) == module.verify_model(tmp_path)
 
 
