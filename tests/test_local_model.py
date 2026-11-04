@@ -5,6 +5,7 @@ import json
 import os
 import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import portalocker
@@ -67,6 +68,31 @@ def test_corrupt_download_never_becomes_ready_and_can_be_retried(tmp_path, model
     assert not list(root.glob(".prepare-*"))
     data[first] = original
     assert module.prepare_model(root) == module.verify_model(root)
+
+
+@pytest.mark.parametrize("transfer_seconds, succeeds", [(600, True), (901, False)])
+def test_slow_download_has_a_fresh_bounded_window_per_artifact(
+    tmp_path, model_source, monkeypatch, transfer_seconds, succeeds
+):
+    """Allow slow complete transfers without publishing an over-budget cache."""
+    module, data, requests = model_source
+    elapsed = 0
+
+    def monotonic():
+        nonlocal elapsed
+        elapsed += transfer_seconds
+        return elapsed
+
+    monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=monotonic))
+    if succeeds:
+        assert module.prepare_model(tmp_path) == module.verify_model(tmp_path)
+        assert len(requests) == len(data)
+    else:
+        with pytest.raises(module.LocalModelIntegrityError, match="time limit"):
+            module.prepare_model(tmp_path)
+        with pytest.raises(module.LocalModelNotPreparedError):
+            module.verify_model(tmp_path)
+        assert not list(tmp_path.glob(".prepare-*"))
 
 
 @pytest.mark.parametrize("filename", ["model_optimized.onnx", "tokenizer.json", "ready.json"])

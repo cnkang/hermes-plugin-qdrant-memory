@@ -42,6 +42,7 @@ ARTIFACTS = {
     ),
 }
 DOWNLOAD_BYTES = sum(size for _, size in ARTIFACTS.values())
+ARTIFACT_DOWNLOAD_SECONDS = 15 * 60
 
 
 class LocalModelNotPreparedError(RuntimeError):
@@ -206,7 +207,7 @@ def prepare_model(cache_dir=None):
             ) as client:
                 for name, expected in ARTIFACTS.items():
                     # Give each artifact its own window so a slow earlier file cannot starve the rest.
-                    deadline = time.monotonic() + 300
+                    deadline = time.monotonic() + ARTIFACT_DOWNLOAD_SECONDS
                     _download(client, staging / name, name, expected, deadline)
             with (staging / "ready.json").open("x", encoding="utf-8") as marker:
                 json.dump({"pipeline": pipeline_identity()}, marker)
