@@ -19,12 +19,12 @@ Use Python 3.11+ and an isolated environment. Runtime 0.5.0 includes this
 feature. Install the PyPI release, or use a reviewed checkout at an immutable
 commit for development.
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.4/)
-for Runtime 0.5.4 availability before package installation.
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.5/)
+for Runtime 0.5.5 availability before package installation.
 
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env
-/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.4'
+/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.5'
 /absolute/path/shared-runtime-env/bin/qdrant-memory setup \
   --profile /absolute/path/shared-owner --embedding-provider ollama \
   --model qwen3-embedding:0.6b --dimensions 1024 \
@@ -70,7 +70,9 @@ with Path("policy.json").open("x") as stream:
 
 Keep the files out of Git. Policy must have POSIX mode 0600 (use private Windows
 ACLs on Windows). `visibility: project` is another explicitly granted space. `visibility: private`
-must have one principal per owner/space. A credential grants exactly one
+binds one logical agent identity per owner/space, and each device of that agent
+can hold one grant. A legacy grant without a logical identity keeps the
+one-principal rule. A credential grants exactly one
 configured space. Use a different credential/process for other spaces.
 
 Start the Owner from the private directory that contains the policy.
@@ -94,12 +96,14 @@ WriterLease.
 A credential binds `principal`, `owner_id`, `space_id`, `permission` and
 `visibility` in trusted configuration. `permission: read` rejects every write at
 the service boundary. `write` permits reads and authorized changes. A
-`visibility: private` space allows one principal only. `shared` or `project`
-spaces can explicitly grant several agents. One token connects to one space, so
+`visibility: private` space binds one logical agent identity, and each device of
+that agent can hold one grant. `shared` or `project` spaces can explicitly grant
+several agents. One token connects to one space, so
 use a different credential and connection for another space.
 
-The owner maps to the existing `user_id`. A stable space maps to the reserved
-`agent_id: shared:v1:<space>`. The creator is stored in `created_by` and the
+The owner maps to the existing `user_id`. A shared or project space maps to the
+reserved `agent_id: shared:v1:<space>`. A private space with a logical agent
+identity maps to `shared:v2:<digest>`. The creator is stored in `created_by` and the
 last updater in `updated_by`. Search validates scope, shared marker and
 visibility together. ID mutations validate the same boundary. Records without
 the explicit shared marker stay private, and the previous `agent_id: null` is
@@ -257,9 +261,12 @@ the same OS user, or a privileged local process, is outside the credential
 confidentiality boundary. Do not expose this private API through a public proxy.
 Remote clients must use the separate HTTPS MCP endpoint from Runtime 0.5.0.
 
-The repository records one Sonar rule exception: `python:S5332` (cleartext HTTP)
+The repository records two Sonar rule exceptions. `python:S5332` (cleartext HTTP)
 applies the local transport design decision to `qdrant_memory/shared_service.py`
-only. All other security rules and quality thresholds stay active. See the
+only. `python:S7503` records that the response hook in
+`qdrant_memory/remote_client.py` must be a coroutine function, because HTTPX
+awaits every response hook. All other security rules and quality thresholds stay
+active. See the
 [architecture note](architecture.md#reviewed-local-http-transport-decision-sonar-s5332)
-for the rationale and tests. Remove this exception and review TLS and remote
+for the rationale and tests. Remove these exceptions and review TLS and remote
 identity authorization before adding a remote or wildcard listener.

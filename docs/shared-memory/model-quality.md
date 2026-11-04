@@ -152,7 +152,8 @@ It queries the model's captured text to check the storage round trip. It does no
 Empty captures, provider failures, invalid payloads, missing observations, or failed checks produce FAIL.
 Each repetition uses new Owner data, device credentials, and host state. The Ollama process and fixed weights remain warm.
 Any failed repetition stops the run. A later success cannot replace that failure.
-The report retains each completed repetition in `runs`; `requested_repetitions` records the required count.
+The report retains each completed repetition in `runs`. `requested_repetitions`
+records the required count.
 Success is `SMOKE_PASS`, with `quality_evaluated=false` and `baseline_executed=false`.
 This result cannot certify the full quality baseline or mutation gates.
 
@@ -173,7 +174,7 @@ Ollama reported 574,074,386 loaded bytes for generation and 49,387,928 for embed
 These values describe loaded models, not peak process memory.
 The [4B comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39681606697) also passed five lifecycles, but loaded 3,146,734,631 generation bytes.
 The [0.6B comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39681613565) still failed with empty project capture.
-Select 0.8B as the default. Other profiles remain manual options; CI does not run a model matrix.
+Select 0.8B as the default. Other profiles remain manual options. CI does not run a model matrix.
 The effective prompt changed, so earlier quality results do not certify the new adapter.
 The [main-branch comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39691877748) at `24f9b11` repeated the full evaluation with Liquid Chat and local embeddings.
 Precision, positive-case recall, Recall@5 and MRR@5 were each 1.0. Mutation and context gates passed, with 29 observed Chat responses and zero provider failures.
@@ -324,8 +325,10 @@ Remote profiles reuse dependency caches and omit Ollama archive and weight downl
 ### Read the results and change an Embedding model
 
 Download `owner-model-quality` from the workflow run's Artifacts section.
-The JSON report records source, corpus and configuration fingerprints; model IDs; actual vector dimensions;
-API attempts, HTTP status counts, bounded retries, latency percentiles and failure categories.
+The JSON report records source, corpus and configuration fingerprints, model IDs
+and actual vector dimensions. It also records
+API attempts, HTTP status counts, bounded retries, latency percentiles and failure
+categories.
 It records provider-reported cost when present. Missing cost data is unverified, not a measured zero.
 A failed attempt also keeps total cost unverified, even if a retry succeeds.
 Quality reports retain precision, positive-case recall, Recall@5, MRR@5, mutation and context results.
@@ -345,7 +348,8 @@ The [default Quality run](https://github.com/cnkang/hermes-plugin-qdrant-memory/
 The [same-Chat local-embedding comparison](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39699248654) also received HTTP 404.
 These runs did not execute baseline scoring. Actual remote vector dimensions and model quality remained unverified.
 All three failure artifacts confirmed temporary-data cleanup. The comparison also stopped its test-owned Ollama process.
-The initial diagnostic category was `model_unavailable`; it did not identify the specific HTTP 404 router reason.
+The initial diagnostic category was `model_unavailable`. It did not identify the
+specific HTTP 404 router reason.
 These failures do not establish low semantic quality. Keep the failures and obtain new evidence after a route or capability correction.
 
 All quality profiles use the full frozen corpus and the same quality thresholds.
@@ -377,7 +381,8 @@ Setup records Ollama's loaded-model size in `quality-model-resources.json`. This
 The 3B attempt reported 2,168,360,795 bytes for generation and 1,237,875,425 bytes for embeddings, with zero GPU memory.
 Dependency and historical Ollama installation caches were restored in that run. The changed model set was downloaded and saved under a new key.
 Current runs cache the verified archive and extract it again, so cached executables cannot bypass archive validation.
-The 1.7B model uses [Apache License 2.0](https://ollama.com/library/qwen3:1.7b); CI downloads it for evaluation and does not bundle its weights.
+The 1.7B model uses [Apache License 2.0](https://ollama.com/library/qwen3:1.7b).
+CI downloads it for evaluation and does not bundle its weights.
 
 The [first 1.7B attempt](https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/39578556397) used provider-default thinking and failed before baseline completion.
 It observed 27 successful responses and five 30-second read timeouts. Model-call p50 was 10.74 seconds and p95 was 30.03 seconds.
@@ -523,7 +528,8 @@ These results describe the recorded runs. They do not establish production accep
 The Dots run selected `dots-studio/dots-3-note-preview:free`.
 The exact cause of its HTTP 400 response remains unverified.
 Later reports use `failed_model_calls` to identify failed extraction cases by their frozen case IDs.
-Relation failures use `relation`; unknown calls use `other` or `extract/unattributed`.
+Relation failures use `relation`. Unknown calls use `other` or
+`extract/unattributed`.
 These counters do not contain raw input, response bodies, or exception messages.
 The Free Router run observed `liquid/lfm-2.5-2.6b:free` and `dots-studio/dots-3-note-preview:free`.
 The fixed Liquid run used `liquid/lfm-2.5-2.6b:free` on Runtime `0b1b05289eae3731af30e1c38c427aec7c6ac635`.

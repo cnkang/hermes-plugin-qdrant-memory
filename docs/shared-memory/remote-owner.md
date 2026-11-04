@@ -1,22 +1,22 @@
-# HTTPS MCP Owner (Runtime 0.5.4)
+# HTTPS MCP Owner (Runtime 0.5.5)
 
-Install Runtime 0.5.4 with the `[remote]` extra in a private environment:
+Install Runtime 0.5.5 with the `[remote]` extra in a private environment:
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.4/)
-for Runtime 0.5.4 availability before running the package command.
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.5/)
+for Runtime 0.5.5 availability before running the package command.
 
 ```sh
-python -m pip install 'hermes-plugin-qdrant-memory[remote]==0.5.4'
+python -m pip install 'hermes-plugin-qdrant-memory[remote]==0.5.5'
 ```
 
 The commands include `remote-serve`, `remote-mcp`, `remote-event` and
 `shared-device`. A source checkout must include the same extra.
 
-Before PyPI publication, use the reviewed immutable source in a separate
-environment. This revision includes the 0.5.0 runtime and plugin dependencies:
+To install from a source revision instead, use the tag target for the current
+release:
 
 ```sh
-python -m pip install 'hermes-plugin-qdrant-memory[remote] @ git+https://github.com/cnkang/hermes-plugin-qdrant-memory.git@60762c3e39f4cb3419f6e983aeb61833952bf216'
+python -m pip install 'hermes-plugin-qdrant-memory[remote] @ git+https://github.com/cnkang/hermes-plugin-qdrant-memory.git@2865fe586bf64a0ebc9532afe85da2bddd9ced7f'
 ```
 
 ## Roles and topology
@@ -161,14 +161,14 @@ inactivity to 10 seconds. It allows 240 requests per minute per authenticated
 principal. Authentication work has a separate worker limit. Unauthenticated
 requests cannot consume authenticated
 body slots or quotas. Per-source limits and TLS/header timeouts at the proxy are
-required. The example sets header and body timeouts; the TLS handshake timeout
+required. The example sets header and body timeouts. The TLS handshake timeout
 belongs to the terminating proxy. Application quotas do not prevent
-network-layer denial of service: the
-listener accepts connections before Host, bearer and quota checks run, so the proxy
+network-layer denial of service. The
+listener accepts connections before Host, bearer and quota checks run. The proxy
 must cap concurrent connections per source (`limit_conn`) and keep the listener on
 loopback. The listener closes connections whose request headers are incomplete
 after 10 seconds, including requests on reused connections. Complete headers end
-that deadline; active MCP requests use the gateway's existing deadlines.
+that deadline. Active MCP requests use the gateway's existing deadlines.
 Set an OS descriptor limit (`LimitNOFILE=4096` in systemd) as a further resource
 bound. A local process that bypasses the proxy can still exhaust that limit
 through a rapid connection flood. Logs must not retain
@@ -238,9 +238,9 @@ Native Owner is disabled.
 When a project capture rule is denied, private capture continues and a durable
 denial counter records the skipped rule. Other devices' writes remain available.
 When the private credential itself is denied, the raw turn is retained FAILED
-without blocking unrelated clients. Restore authorization, stop the Owner,
-run the existing explicit operator `retry` with the protected policy
-(`--policy ./owner-policy.json`) from the directory that holds it, and pass an
+without blocking unrelated clients. Restore authorization and stop the Owner.
+Run the existing explicit operator `retry` with the protected policy
+(`--policy ./owner-policy.json`) from the directory that holds it. Pass an
 absolute `--home`. Then restart. Reauthorization of an
 unadmitted turn recovers private data only. It never retroactively publishes
 that turn into a project. An identity mismatch fails closed.
@@ -291,7 +291,7 @@ A new identifier can add a second record.
 The adapter replays a fast failure two times with the original identifier. It
 waits at least that many seconds when `retry_after` is 1 s or less. It does not
 replay a failure that took more than 5 s, and it does not replay automatically
-when `retry_after` is greater than 1 s. The caller's outbox owns that wait; keep
+when `retry_after` is greater than 1 s. The caller's outbox owns that wait. Keep
 the original identifier when it retries.
 
 A `recovery_required` reason, or an Owner error type

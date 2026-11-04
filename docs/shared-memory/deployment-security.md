@@ -2,7 +2,7 @@
 
 Runtime 0.5.0 adds opt-in destination protection and `shared-doctor`. Check the
 installed version and command help before using them. Runtime 0.4.0 does not
-provide these additions. Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.4/)
+provide these additions. Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.5/)
 for package availability before upgrading.
 
 The Owner coordinates authorized tools through its Ledger and revision checks.
@@ -133,8 +133,9 @@ Each check has a stable `code`, `status` and sanitized `message`. Status values:
 `PASS`, `FAIL`, `UNVERIFIED`. Exit codes respectively 0, 1, 2, with FAIL taking
 precedence. Policy/config parse failure produces a structured `configuration`
 failure. Other codes include `policy`, `destination`, `owner_state`, `recovery`,
-`local_ownership`, `local_writer`, `database_schema`, `loopback_design`,
-`service_readiness`, `credential_isolation` and `backup`. `loopback_design`
+`quarantine`, `local_ownership`, `local_writer`, `database_schema`, `loopback_design`,
+`service_readiness`, `credential_isolation` and `backup`. `quarantine` fails while a
+retained capture event needs retry or cancellation. `loopback_design`
 states a code invariant about the supported bind address. It does not inspect a
 running listener.
 

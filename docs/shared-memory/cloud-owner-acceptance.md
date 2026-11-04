@@ -61,7 +61,7 @@ configuration file last. Do not use production credentials for this lane.
 
 This lane does not certify collection-scoped database permissions. The separate
 scoped lane retains its required HTTP 403 check. Neither lane changes Agent grants
-or bypasses the Owner. A forced runner shutdown can prevent cleanup; if that occurs,
+or bypasses the Owner. A forced runner shutdown can prevent cleanup. If that occurs,
 an operator must verify and remove only the invocation's disposable collection.
 
 ```sh

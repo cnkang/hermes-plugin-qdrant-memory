@@ -16,12 +16,12 @@ WorkBuddy 的默认行为保持私有且不变。本次工作不会重新配置�
 使用 Python 3.11+ 和隔离环境。Runtime 0.5.0 包含此功能。请安装 PyPI 发行版，或在开发
 时使用固定 commit 的已审核 checkout。
 
-安装包前，请检查 [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.4/)
-是否已提供 Runtime 0.5.4。
+安装包前，请检查 [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.5/)
+是否已提供 Runtime 0.5.5。
 
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env
-/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.4'
+/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.5.5'
 /absolute/path/shared-runtime-env/bin/qdrant-memory setup \
   --profile /absolute/path/shared-owner --embedding-provider ollama \
   --model qwen3-embedding:0.6b --dimensions 1024 \
@@ -64,8 +64,9 @@ with Path("policy.json").open("x") as stream:
 ```
 
 这些文件必须排除在 Git 之外。policy 必须为 POSIX 0600 模式（Windows 上使用私有 ACL）。
-`visibility: project` 是另一种显式授予的空间。`visibility: private` 在每个 owner/空间
-中只能有一个 principal。一份凭据只授予一个已配置空间。访问其他空间请使用不同的凭据和
+`visibility: project` 是另一种显式授予的空间。`visibility: private` 在每个 owner/空间中
+绑定一个逻辑 Agent 身份，该身份的每个设备可以持有一份授权。没有逻辑身份的旧式授权仍适用
+单 principal 规则。一份凭据只授予一个已配置空间。访问其他空间请使用不同的凭据和
 进程。
 
 从包含策略文件的私有目录启动 Owner。解析后的 `--policy` 路径必须位于当前工作目录内。
@@ -86,10 +87,12 @@ cd /absolute/path
 
 凭据在可信配置中绑定 `principal`、`owner_id`、`space_id`、`permission` 和
 `visibility`。`permission: read` 在服务边界拒绝所有写入。`write` 允许读取和经授权的
-修改。`visibility: private` 空间只允许一个 principal。`shared` 或 `project` 空间可
-显式授予多个 Agent。一个 token 只连接一个空间，访问其他空间需使用不同凭据和连接。
+修改。`visibility: private` 空间绑定一个逻辑 Agent 身份，该身份的每个设备可以持有一份授权。
+`shared` 或 `project` 空间可显式授予多个 Agent。一个 token 只连接一个空间，访问其他空间
+需使用不同凭据和连接。
 
-owner 映射到现有 `user_id`。稳定空间映射到保留的 `agent_id: shared:v1:<space>`。
+owner 映射到现有 `user_id`。shared 或 project 空间映射到保留的
+`agent_id: shared:v1:<space>`。带逻辑 Agent 身份的 private 空间映射到 `shared:v2:<digest>`。
 创建者存入 `created_by`，最后更新者存入 `updated_by`。搜索同时校验 scope、共享标记
 和 visibility。ID 修改校验同一边界。没有显式共享标记的记录保持私有，原有的
 `agent_id: null` 不是跨 Agent 通配符。工具参数不能覆盖 owner、Agent 身份或空间。
@@ -221,7 +224,9 @@ metadata 过滤的语义存储/检索。Qdrant Memory 侧重 Agent 记忆生命�
 的客户端。以同一 OS 用户运行的恶意代码或本机特权进程不在凭据保密边界内。
 此私有 API 不得通过公共代理暴露。远程客户端必须使用 Runtime 0.5.0 的独立 HTTPS MCP 端点。
 
-仓库记录了一项 Sonar 规则例外：`python:S5332`（明文 HTTP）仅对
-`qdrant_memory/shared_service.py` 应用上述本机传输设计决定。其他所有安全规则和质量
+仓库记录了两项 Sonar 规则例外。`python:S5332`（明文 HTTP）仅对
+`qdrant_memory/shared_service.py` 应用上述本机传输设计决定。`python:S7503` 记录
+`qdrant_memory/remote_client.py` 的响应 hook 必须是 coroutine function，因为 HTTPX
+会 await 每个响应 hook。其他所有安全规则和质量
 阈值继续生效。理由和测试见[架构说明](architecture.md#reviewed-local-http-transport-decision-sonar-s5332)。
-在增加远程或通配监听前，请移除此例外，并重新审核 TLS 与远程身份授权。
+在增加远程或通配监听前，请移除这些例外，并重新审核 TLS 与远程身份授权。
