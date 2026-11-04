@@ -17,7 +17,7 @@ The commands include `remote-serve`, `remote-mcp`, `remote-event` and
 To install a source preview instead, use the reviewed implementation revision:
 
 ```sh
-python -m pip install 'hermes-plugin-qdrant-memory[remote] @ git+https://github.com/cnkang/hermes-plugin-qdrant-memory.git@e1fafac7a86ad384813717d0a6b3204fcc242895'
+python -m pip install 'hermes-plugin-qdrant-memory[remote] @ git+https://github.com/cnkang/hermes-plugin-qdrant-memory.git@cd4634f52f56ba54aae886290dd59056108ffbfe'
 ```
 
 ## Roles and topology
