@@ -2,7 +2,7 @@
 # Demo: durable memory with the qdrant-memory plugin, in embedded mode.
 #
 # The script uses a dedicated HERMES_HOME, so it does not touch an existing
-# Hermes profile. It installs the pinned release, teaches a preference,
+# Hermes profile. It installs the reviewed implementation preview, teaches a preference,
 # waits for the background extraction, recalls the preference in a new
 # session, and walks through export and scoped deletion.
 #
@@ -39,7 +39,7 @@
 
 set -euo pipefail
 DEMO_HOME="${1:-$HOME/.hermes-qdrant-demo}"
-RELEASE_REF="e1fafac7a86ad384813717d0a6b3204fcc242895"   # Runtime 0.6.0 release commit
+IMPLEMENTATION_PREVIEW_REF="e1fafac7a86ad384813717d0a6b3204fcc242895"   # Reviewed Runtime 0.6.0 implementation preview
 # Local CLI sessions attribute memory to the host's local session identity
 # (uid:<os-uid>). The inventory and deletion commands must use the same scope.
 SCOPE_USER="uid:$(id -u)"
@@ -100,8 +100,8 @@ memories_total() {
     | python3 -c "import sys,json;print(json.load(sys.stdin)['count']['total'])" 2>/dev/null || echo -1
 }
 
-say "Install the pinned release through the Hermes CLI"
-install_args=(https://github.com/cnkang/hermes-plugin-qdrant-memory --ref "$RELEASE_REF")
+say "Install the reviewed implementation preview through the Hermes CLI"
+install_args=(https://github.com/cnkang/hermes-plugin-qdrant-memory --ref "$IMPLEMENTATION_PREVIEW_REF")
 install_help=$(hermes plugins install --help 2>/dev/null || true)
 # --yes-deps exists on newer Hermes; older releases prepare dependencies by
 # default and reject the unknown flag. --force reinstalls over an existing
