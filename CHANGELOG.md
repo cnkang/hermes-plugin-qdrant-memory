@@ -20,6 +20,8 @@
 - Validate the Codex plugin with real subscription-account tests locally and a
   protected, synthetic-only Codex/Ollama Cloud lane. Fixed client requirements
   remain separate from the exact Runtime main revision admitted by preflight.
+- Supersede quarantined events when a scoped deletion removes their scope. A
+  later retry cannot recreate memories in the deleted scope.
 
 ## 0.5.5
 
