@@ -21,6 +21,9 @@ commit for development.
 
 Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.0/)
 for Runtime 0.6.0 availability before package installation.
+If unavailable, use the
+[published guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.5.5/docs/shared-memory/README.md)
+or a reviewed source preview; the package command below requires publication.
 
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env

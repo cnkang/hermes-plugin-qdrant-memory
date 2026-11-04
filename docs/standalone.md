@@ -11,6 +11,9 @@ plugin discovery and `hermes qdrant-memory` grammar are compatible.
 
 Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.0/)
 for Runtime 0.6.0 availability before package installation.
+If unavailable, these package commands cannot run yet. Use the
+[published guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.5.5/docs/standalone.md)
+or a reviewed source preview; do not treat a source checkout as a PyPI release.
 
 ```bash
 python3 -m venv .venv

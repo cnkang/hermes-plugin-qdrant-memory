@@ -37,6 +37,9 @@ For a published package, install the same extras with the release version:
 
 Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.0/) for
 Runtime 0.6.0 availability before running this command.
+If unavailable, use the
+[published guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.5.5/docs/local-embedding.md)
+or a reviewed source preview; the package command below requires publication.
 
 ```sh
 python -m pip install 'hermes-plugin-qdrant-memory[mcp,local]==0.6.0'
