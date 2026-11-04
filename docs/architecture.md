@@ -73,9 +73,9 @@ are `is_available`, `unavailable_reason`, `initialize`, `system_prompt_block`,
 callbacks are a separate host interface, not
 generic plugin event hooks.
 
-The v2 `python_dependencies` metadata repeats the runtime requirements from
-`pyproject.toml` for discovery. Hermes surfaces this field but does not install from
-it. Hermes PM installation continues to use the project dependency declaration.
+The v2 `python_dependencies` metadata repeats the runtime requirements and the
+`remote` extra from `pyproject.toml` for discovery. Hermes surfaces this field
+but does not install from it. Hermes PM installation continues to use the project dependency declaration.
 
 ## Scope, cache and prompt invariants
 
@@ -138,7 +138,7 @@ interrupted recovery itself. Other destinations and transcript quarantine remain
 intact. Collection
 deletion/recreation is recoverable rather than atomic.
 
-v0.1 supports dense retrieval only. Sparse/hybrid retrieval, reranking and recency
+This Runtime supports dense retrieval only. Sparse/hybrid retrieval, reranking and recency
 weighting are future work. Host embedding inheritance is feature-detected and requires
 an explicit fallback. The minimum supported Hermes release is v0.21.5 (v2026.9.24).
 Earlier tags lack required authoritative builtin replacement metadata. Live Server REST/gRPC

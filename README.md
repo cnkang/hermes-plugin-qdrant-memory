@@ -11,7 +11,7 @@ Skills—with explicit access control, conflict-safe updates, and crash recovery
 Shared deployment hardening in this checkout is documented in the
 [protected destination guide](docs/shared-memory/deployment-security.md) and
 [versioned threat model](docs/shared-memory/threat-model-v1.md). These additions
-are included in Runtime 0.5.4. Remote access needs the `[remote]` extra.
+are included in Runtime 0.5.0. Remote access needs the `[remote]` extra.
 
 ## One Memory, Multiple Agents — opt-in shared owner
 
@@ -335,8 +335,9 @@ already authorized reset before you enable the provider.
 For scripts, explicitly pass `--existing use` or `--existing clear`. The `clear`
 choice authorizes deletion. `--collection NAME` overrides only this command's
 target, not the collection configured for subsequent agent sessions.
-`init`, `migrate` and `retry` require exclusive writer ownership in all deployment
-modes. The OS lease coordinates local processes that use that profile destination.
+`init`, `migrate`, `retry`, `delete-all` and `discard-unadmitted-event`
+require exclusive writer ownership in all deployment modes. The OS lease
+coordinates local processes that use that profile destination.
 It is not a distributed lock. Stop every Hermes session or gateway on every host
 that writes to the same destination before you run them. If `doctor` already
 reports `ok: true`, the collection is ready. Initialization is unnecessary. Remote
@@ -539,7 +540,7 @@ pre-commit hook as described in [development setup](docs/development.md). The ho
 checks the staged snapshot. CI runs lint, both Python versions, Snyk and
 SonarCloud. See [CI services](docs/ci.md) for the tested host versions and lanes.
 The staged [soak system](docs/testing/soak.md) runs real Owner, Gateway, Ledger
-and Qdrant windows on x64 and ARM64 runners, and admits a five-hour matrix only
+and Qdrant windows on x64 and ARM64 runners. It admits a five-hour matrix only
 after the short matrix passes.
 
 Build isolated dependency environments with Hermes PM. Then run the host's

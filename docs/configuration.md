@@ -10,7 +10,7 @@ Runtime 0.5.0 adds a breaking transport requirement. A non-loopback
 HTTP embedding URL, including a container service name or LAN address, is rejected.
 Before upgrade, configure a trusted TLS proxy and use its HTTPS URL. For a service
 on the same host, a loopback HTTP URL is also supported. Keep the embedding model
-and dimensions unchanged; do not disable certificate checks.
+and dimensions unchanged. Do not disable certificate checks.
 
 The additive host-independent CLI and MCP interface is documented in
 [standalone setup](standalone.md), including its separate profile, operator-secret
@@ -27,8 +27,8 @@ prompt. The wizard still requests missing settings. The wizard reports variable
 names only.
 An existing environment URL supersedes a previously saved explicit URL. Setup saves
 `url_env` and `api_key_env` references, without copying environment values or credentials.
-Endpoint and HTTPS transport checks still apply. Any non-loopback endpoint that
-receives memory text must use HTTPS, with or without a credential; loopback HTTP
+Endpoint and HTTPS transport checks still apply. Any non-loopback embedding
+endpoint must use HTTPS, with or without a credential. Loopback HTTP
 remains supported. Deployment mode remains a user choice.
 
 ```json
@@ -71,8 +71,10 @@ base URL can end in `/v1`. The adapter avoids duplicating that segment.
 The fingerprint includes both prefixes along with provider, model, endpoint,
 dimension, metric, dimension-sending policy and normalization version.
 
-An embedding `mode: inherit` requires an `inherit_fallback` object with provider,
-model, base_url and dimensions. Until a compatible Hermes facade exists, the plugin
+An embedding `mode: inherit` requires a non-empty `inherit_fallback` object. The
+fallback accepts provider, model, base_url and dimensions. Fields that you omit
+take the plugin defaults: Ollama, `qwen3-embedding:4b`, 2560 dimensions and the
+loopback endpoint. Until a compatible Hermes facade exists, the plugin
 uses the fallback. Different dimensions, metrics or fingerprints require a new
 collection and explicit migration. The plugin never changes a live vector schema.
 

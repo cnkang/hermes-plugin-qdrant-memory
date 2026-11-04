@@ -6,8 +6,7 @@
 
 当前 checkout 中新增的共享部署加固措施记录在
 [受保护目的地指南](docs/shared-memory/deployment-security.md)和
-[版本化威胁模型](docs/shared-memory/threat-model-v1.md)中。这些新增内容包含在 Runtime 0.5.4 中。
-远程访问需要安装 `[remote]` extra。
+[版本化威胁模型](docs/shared-memory/threat-model-v1.md)中。这些新增内容包含在 Runtime 0.5.0 中。远程访问需要安装 `[remote]` extra。
 
 ## One Memory, Multiple Agents — 可选的共享 owner
 
@@ -284,7 +283,7 @@ dense vector、维度、距离和 pipeline 身份，然后检查每条已存记�
 在同一目的地重新运行 `init`，即可在启用 provider 前继续已授权的重置。
 脚本中请显式传入 `--existing use` 或 `--existing clear`。`clear` 即授权删除。
 `--collection NAME` 只覆盖本次命令的目标，不改变后续 Agent 会话使用的 collection。
-`init`、`migrate` 和 `retry` 在所有部署模式下都要求独占写入权。OS lease 只协调使用
+`init`、`migrate`、`retry`、`delete-all` 和 `discard-unadmitted-event` 在所有部署模式下都要求独占写入权。OS lease 只协调使用
 该 profile 目的地的本机进程，不是分布式锁。运行前请停止所有主机上向同一目的地写入的
 Hermes 会话或 gateway。若 `doctor` 已报告 `ok: true`，collection 已就绪，无需初始化。
 远端 `doctor`、`stats` 和 `verify` 可在 writer 运行时检查它。`retry` 会把失败事件
