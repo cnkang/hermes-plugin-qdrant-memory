@@ -459,7 +459,7 @@ CI 运行测试、SonarCloud 质量门禁以及 Snyk 依赖/代码扫描。
 真实证据，而非徽章：
 
 - Hermes 原生生命周期测试：[验证](docs/validation.md)
-- 跨 Harness 共享与各客户端边界：[集成矩阵](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/cross-harness-architecture.md)
+- 跨 Harness 共享与各客户端边界：[架构与支持边界](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/cross-harness-architecture.md)
 - Codex 导入、交接与平台边界：[可移植流程](docs/codex-memory.md)
 - 崩溃 / 重启 / 幂等性：[有界恢复](docs/recovery-benchmark.md)
 - 授权与隔离：[安全](docs/security.md)、[威胁模型](docs/shared-memory/threat-model-v1.md)
