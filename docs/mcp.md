@@ -45,7 +45,7 @@ versioned Runtime with the optional `mcp` extra:
 Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.0/)
 for Runtime 0.6.0 availability before package installation.
 If unavailable, use the
-[published guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.5.5/docs/mcp.md)
+[published guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/e1fafac7a86ad384813717d0a6b3204fcc242895/docs/mcp.md)
 or a reviewed source preview; the package command below requires publication.
 
 ```bash
