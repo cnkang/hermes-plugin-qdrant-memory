@@ -10,9 +10,9 @@ and the Owner refuses further shared writes until an operator reconciles it.
 
 That behavior protects durability. It also lets one deterministic model failure
 remove memory service from every device. The two-device acceptance run recorded
-this outcome: a truncated extraction on the Pi device stopped writes from both
-OpenCode devices until the operator raised the token budget, ran `retry` and
-restarted the Owner.
+this outcome. A truncated extraction on the Pi device stopped writes from both
+OpenCode devices. The operator raised the token budget, ran `retry` and restarted
+the Owner.
 
 ## Decision
 
@@ -83,7 +83,7 @@ requires. A client credential cannot clear a quarantine.
 
 The change adds one status value and one counter. Existing rows, collections and
 receipts keep their meaning. An older Runtime reads `QUARANTINED` as an unknown
-status: it skips the row in replay and reports it in `stats`, so a rollback
+status. It skips the row in replay and reports it in `stats`. A rollback then
 retains the data but stops automatic retry until the newer build returns.
 
 ## Observability
