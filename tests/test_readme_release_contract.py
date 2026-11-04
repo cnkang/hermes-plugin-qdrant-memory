@@ -9,7 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_VERSION = "0.6.0"
-RELEASE_COMMIT = "e1fafac7a86ad384813717d0a6b3204fcc242895"
+IMPLEMENTATION_PREVIEW_COMMIT = "e1fafac7a86ad384813717d0a6b3204fcc242895"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
 ACTIVE_INSTALL_DOCS = {
@@ -123,17 +123,26 @@ def test_current_runtime_is_the_recommended_installation(recommended_installatio
     assert "Hermes CLI" in heading
 
 
-def test_recommended_install_pins_the_published_commit(recommended_installation):
-    """Reject the preview SHA, abbreviated SHAs, mutable refs, and catalog shortcuts."""
+def test_recommended_install_pins_the_reviewed_source_preview(recommended_installation):
+    """Reject abbreviated SHAs, mutable refs, and catalog shortcuts."""
     _, commands = recommended_installation
     installs = [command for command in commands if command[:3] == ["hermes", "plugins", "install"]]
-    assert installs == [["hermes", "plugins", "install", REPOSITORY_URL, "--ref", RELEASE_COMMIT]]
+    assert installs == [
+        ["hermes", "plugins", "install", REPOSITORY_URL, "--ref", IMPLEMENTATION_PREVIEW_COMMIT]
+    ]
 
 
 def test_pinned_install_preserves_the_profile_and_guided_setup(recommended_installation):
     """The release example must select its profile before enabling and initializing."""
     _, commands = recommended_installation
-    install = ["hermes", "plugins", "install", REPOSITORY_URL, "--ref", RELEASE_COMMIT]
+    install = [
+        "hermes",
+        "plugins",
+        "install",
+        REPOSITORY_URL,
+        "--ref",
+        IMPLEMENTATION_PREVIEW_COMMIT,
+    ]
     install_index = commands.index(install)
     assert ["export", "HERMES_HOME=/absolute/path/to/your/hermes-profile"] in commands[
         :install_index
@@ -146,12 +155,12 @@ def test_pinned_install_preserves_the_profile_and_guided_setup(recommended_insta
     ]
 
 
-def test_demo_script_pins_the_published_release_commit():
-    """The shipped demo script must install the same released commit."""
+def test_demo_script_pins_the_reviewed_implementation_preview():
+    """The demo pins the same reviewed Runtime source preview as the README."""
     script = (ROOT / "scripts/demo.sh").read_text(encoding="utf-8")
-    match = re.search(r'^RELEASE_REF="([0-9a-f]{40})"', script, re.M)
-    assert match, "scripts/demo.sh must pin a full release commit"
-    assert match.group(1) == RELEASE_COMMIT
+    match = re.search(r'^IMPLEMENTATION_PREVIEW_REF="([0-9a-f]{40})"', script, re.M)
+    assert match, "scripts/demo.sh must pin a full reviewed implementation SHA"
+    assert match.group(1) == IMPLEMENTATION_PREVIEW_COMMIT
 
 
 def test_pypi_description_installs_the_version_being_built():
