@@ -595,7 +595,7 @@ def _remaining_agent_scopes(store, user, agent):
 
 
 def _agents_with_work(store, ledger, user):
-    """Agent values with stored memories or pending/failed work for one user.
+    """Agent values with stored memories or pending/failed/quarantined work.
 
     ``None`` is the no-agent scope; events keep their admitted scope under the
     payload's ``scope`` key, operations carry it at the payload top level.
@@ -606,9 +606,9 @@ def _agents_with_work(store, ledger, user):
 
 
 def _pending_work_agents(ledger, user):
-    """Collect the agent values of pending and failed work for one user."""
+    """Collect agent values for pending, failed, and quarantined work."""
     agents = set()
-    for status in ("PENDING", "FAILED"):
+    for status in ("PENDING", "FAILED", "QUARANTINED"):
         for table in ("operations", "events"):
             for row in ledger.iter_rows(table, status):
                 scope_value = _row_scope(row, table)

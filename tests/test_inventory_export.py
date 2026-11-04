@@ -321,6 +321,20 @@ def test_delete_all_all_agents_covers_every_scope(tmp_path, monkeypatch):
             (4, payload("other user fact", Scope("u2", None), "manual", "s1")),
         ],
     )
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    quarantined_event = ledger.enqueue_event(
+        {
+            "kind": "turn",
+            "source": "conversation",
+            "session_id": "s2",
+            "scope": {"user_id": "u1", "agent_id": "quarantine-only"},
+            "user": "synthetic retained fact",
+            "assistant": "ack",
+            "turn_number": 1,
+        }
+    )
+    ledger.quarantine("events", quarantined_event, RuntimeError("extraction truncated"))
+    ledger.close()
     strict = run(parser.parse_args(["delete-all", "--user", "u1", "--confirm"]), home=tmp_path)
     assert strict["deleted"] == 1
     assert strict["other_agent_scopes"] == {"bot": 1, "hermes": 1}
@@ -329,14 +343,32 @@ def test_delete_all_all_agents_covers_every_scope(tmp_path, monkeypatch):
         home=tmp_path,
     )
     assert dry["would_delete"] == 2
-    assert {item["agent_id"] for item in dry["scopes"]} == {"bot", "hermes"}
+    assert {item["agent_id"] for item in dry["scopes"]} == {
+        "bot",
+        "hermes",
+        "quarantine-only",
+    }
     result = run(
         parser.parse_args(["delete-all", "--user", "u1", "--all-agents", "--confirm"]),
         home=tmp_path,
     )
     assert result["deleted"] == 2
+    assert result["superseded_events"] == 1
     assert "other_agent_scopes" not in result
     assert run(parser.parse_args(["list"]), home=tmp_path)["count"]["total"] == 1
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    assert ledger.row("events", quarantined_event)["status"] == "SUPERSEDED"
+    ledger.close()
+    run(parser.parse_args(["retry"]), home=tmp_path)
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    assert ledger.row("events", quarantined_event)["status"] == "SUPERSEDED"
+    ledger.close()
+    p = provider(tmp_path)
+    try:
+        assert p.wait_idle()
+        assert p.store.count(Scope("u1", "quarantine-only")) == 0
+    finally:
+        p.shutdown()
     args = parser.parse_args(
         ["delete-all", "--user", "u1", "--agent", "bot", "--all-agents", "--confirm"]
     )
