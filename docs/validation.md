@@ -22,9 +22,9 @@ Local validation for the maintainability release:
   split.
 
 The same environment-gated skips as 0.5.3 remain. They require prepared local
-model caches, authenticated Cloud or live shared-security deployments, a
-device-server URL in the full-suite lane, an optional relation model, or a
-separate Pi adapter checkout. GitHub's minimum/latest Hermes matrix,
+model caches, authenticated Cloud or live shared-security deployments, and a
+device-server URL in the full-suite lane. Some also need an optional relation
+model or a separate Pi adapter checkout. GitHub's minimum/latest Hermes matrix,
 Linux/macOS/Windows contracts, CodeQL and the dependency/security jobs run on
 the release commit and are recorded in the release pull request.
 
@@ -47,7 +47,7 @@ Local validation for the provider initialization lifecycle fix:
   `python-dotenv==1.2.4` from its declared dependencies.
 - Python 3.14.0: 1,227 passed, 14 environment-gated skips, 0 failed.
 - The full runs emitted one and two warnings respectively from Qdrant's embedded
-  local mode about server-only payload indexes/search parameters; no test failed.
+  local mode about server-only payload indexes/search parameters. No test failed.
 - A disposable `qdrant/qdrant` Server pinned to
   `sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863`
   passed the HTTP/gRPC remote contract and real WriterLease contention/recovery
@@ -56,8 +56,8 @@ Local validation for the provider initialization lifecycle fix:
 - Ruff lint, Ruff format check and `git diff --check` passed.
 
 The skipped tests require prepared local model caches, authenticated Cloud or
-live shared-security deployments, a device-server URL in the full-suite lane, an
-optional relation model, or a separate Pi adapter checkout. They are not claimed
+live shared-security deployments, and a device-server URL in the full-suite lane.
+Some also need an optional relation model or a separate Pi adapter checkout. They are not claimed
 as verified here. At this pre-release checkpoint, GitHub's minimum/latest Hermes
 matrix, Linux/macOS/Windows contracts, CodeQL, dependency/security jobs,
 packaging and published-artifact installation were still pending. The following
@@ -72,9 +72,11 @@ Post-publication checks used a fresh Python 3.15 virtual environment and install
 
 - The WriterBusy lifecycle regression passed, including failed initialization, safe callbacks and tool errors, explicit retry, and a subsequent memory write/read.
 - The real cross-process WriterLease contention and recovery regression passed using the installed package in the child process.
-- The official MCP stdio SDK test passed with MCP SDK 2.3.0; `tools/list` returned the four existing tools and an isolated write/read request succeeded.
+- The official MCP stdio SDK test passed with MCP SDK 2.3.0. `tools/list` returned the four existing tools and an isolated write/read request succeeded.
 
-These checks did not access a production collection or user memory. The post-publication run verifies the public Python package and isolated local behavior; it does not claim live Cloud, shared-security deployment, Pi adapter, or all operating-system coverage beyond the linked CI matrices.
+These checks did not access a production collection or user memory. The post-publication run verifies the public Python package and isolated local
+behavior. It does not claim live Cloud, shared-security deployment, Pi adapter
+support, or all operating-system coverage beyond the linked CI matrices.
 
 ## Runtime 0.5.2 checks (2026-10-29)
 
@@ -209,10 +211,10 @@ not unrestricted live-model compatibility.
 ## Cross-device OpenCode and Pi acceptance (2026-10-23)
 
 Two physical devices, three agent instances (OpenCode on each device and Pi on the
-second) shared one protected Owner over verified HTTPS. Basic sharing, update,
-delete, compare-and-swap, concurrency, authorization isolation, Pi lifecycle
-capture and recall, restart, crash, outage replay and backup restore were
-exercised with real agent processes. The run found three Runtime defects, all
+second) shared one protected Owner over verified HTTPS. The run exercised basic
+sharing, update, delete, compare-and-swap, concurrency and authorization
+isolation. It also exercised Pi lifecycle capture and recall, restart, crash,
+outage replay and backup restore, with real agent processes. The run found three Runtime defects, all
 fixed here, and two open design limits. See the
 [cross-device acceptance record](validation/cross-device-opencode-pi-2026-10.md)
 for the matrix, evidence and limits.
@@ -252,9 +254,10 @@ and [Cloud integration](https://github.com/cnkang/hermes-plugin-qdrant-memory/ac
 A live Quick Start on 2026-10-09 used a fresh macOS arm64 profile and local Ollama
 embeddings. It passed installation, conversation extraction, cross-session
 recall, update/delete and restart verification. Slow local chat models exceeded
-the default auxiliary-call timeout. The [troubleshooting guide](troubleshooting.md)
-explains timeout configuration and retry. This was one deployment, not a
-production capacity benchmark.
+the default auxiliary-call timeout. The [configuration guide](configuration.md)
+documents the LLM output budget and the embedding timeouts. The
+[operations guide](operations.md) documents retry and recovery. This was one
+deployment, not a production capacity benchmark.
 
 ## Reproducing checks and interpreting results
 

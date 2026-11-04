@@ -11,7 +11,7 @@ also run `pip check` after installing their test dependencies.
 FastEmbed 0.9.1 includes upstream support for Pillow 13, which contains fixes for
 advisories in Pillow 12.3.0. The optional CPU snapshot pins the official 0.9.1
 wheel hashes. CI installs that package directly, requires Pillow 13.0.0, and
-runs `pip check`; no local metadata patch or compatibility wheel is needed.
+runs `pip check`. No local metadata patch or compatibility wheel is needed.
 The provider accepts exactly FastEmbed 0.9.1, and its pipeline identity includes
 that pinned backend version.
 
@@ -80,8 +80,9 @@ original logs and check result.
 ### Writer timeout diagnostics
 
 `QdrantMemoryProvider.timeout_report()` prints one bounded
-`QDANT_WRITER_TIMEOUT` JSON line when a writer drain times out. The report holds
-provider state, worker liveness and busy state. It also holds queue depth, ledger
+`QDANT_WRITER_TIMEOUT` JSON line and returns it. Use it to diagnose a slow or
+stalled writer drain. The report holds provider state, worker liveness and
+busy state. It also holds queue depth, ledger
 status counts, last progress age, recent job durations and a file and function
 stack snapshot. It never contains memories, prompts, payloads or credentials. It
 takes two samples two seconds apart, so a slow writer is distinguishable from a
@@ -105,7 +106,8 @@ directly for a first-attempt success. The scheduled controller reports failures
 and retried runs, so normal first-attempt successes have no audit record.
 
 The controller reads only run metadata and job logs. It never checks out or
-executes the triggering head, consumes its artifacts or evaluates log content.
+executes the triggering head, and it never consumes its artifacts. It reads log
+text only to classify a failure.
 It fetches its own script through the contents API from the retry workflow's
 trusted commit. The fetch permits three download attempts at most. Release and
 publish workflows are excluded.
@@ -172,7 +174,8 @@ Pull requests and branch pushes verify the dependency inputs with the
 credential-free `dependency-lock` job instead. That job rejects ranges, remote or
 VCS sources, option lines, unpinned entries, unhashed snapshot entries and
 snapshot drift. Snyk Code
-stays on pull requests because it analyzes text and executes no contributor code.
+stays on same-repository pull requests and branch pushes because it analyzes text
+and executes no contributor code.
 The dependency scan is therefore a post-merge gate: a failure on `main` blocks
 later work and needs a fix-forward, because the merge already happened. A
 repository writer can still edit a workflow that holds a scanner token, because
@@ -187,8 +190,8 @@ tests without scanner credentials. Their scanner jobs are skipped by conditions.
 A missing required token fails a scanner job only when that job is scheduled.
 The `Required security scan gate` runs even after workflow cancellation.
 It rejects failed, skipped, or cancelled prerequisites.
-It requires successful lint, tests, MCP protocol coverage, host pin compatibility,
-dependency lock, and SonarCloud. It requires a successful dependency scan on
+It requires successful lint, tests, MCP protocol coverage, Windows Codex store
+contracts, host pin compatibility, dependency lock, and SonarCloud. It requires a successful dependency scan on
 `main` and accepts its skip elsewhere.
 [GitHub permits a merge when a required job skips execution](https://docs.github.com/en/pull-requests/reference/status-checks).
 The gate uses `always()` to prevent this result after cancellation.

@@ -25,11 +25,15 @@ run on one context-preserving plugin worker. A process exit or bounded host
 shutdown can lose a callback still waiting in the host queue. The plugin's durable
 recovery starts at its own SQLite admission point. Tool mutations share the
 serialization lock. Background prefetch caches belong to a session and scope.
-`prefetch()` returns cached results without embedding or network calls. Cache
-generations prevent old background results from repopulating a switched session.
+`prefetch()` returns cached private results without embedding or network calls.
+When shared read is enabled, it also queries the shared Owner within a small
+delivery budget. Cache generations prevent old background results from
+repopulating a switched session.
 
-Events move through PENDING to COMMITTED, QUARANTINED or FAILED. A deterministic
-extraction failure with no persisted plan quarantines only that event. Other
+Events move through PENDING to COMMITTED, QUARANTINED or FAILED. An explicit
+discard ends a raw event as CANCELLED, and a scoped delete marks its
+uncommitted event as SUPERSEDED. A deterministic extraction failure with no
+persisted plan quarantines only that event. Other
 clients keep writing. The plugin persists extraction
 results and prepared operation payloads before remote mutations. It acknowledges
 operation batches only after Qdrant confirms completion. Timeouts, transport
@@ -44,9 +48,11 @@ the plugin discards queued jobs, and durable work remains available for recovery
 An in-flight network call cannot be forcibly cancelled. Timeout raises an explicit
 error, and the worker retains its writer lease and connections until it exits.
 The plugin refuses a replacement provider or a mutating maintenance CLI for that
-profile destination while the old worker owns the lease. Lease files live under
-`HERMES_HOME`, so separate profile homes on the same machine do not coordinate
-writes to one remote collection. Deploy only one writer per destination across
+profile destination while the old worker owns the lease. Profile lease files live
+under `HERMES_HOME`. An account-level lock under `~/.qdrant-memory-owners`
+serializes destination enrollment on one machine and gives a protected
+destination exclusive access. Neither lock coordinates ordinary writes between
+separate profile homes. Deploy only one writer per destination across
 all profiles and hosts. Leases do not provide distributed exclusion or make a
 shared absolute storage path safe. Stop writers on every host before maintenance.
 Never delete `state.db` to recover an error. Inspect stats and correct
@@ -107,7 +113,7 @@ Replay paging bounds transient backlog reads, not the total database or an indiv
 event/manifest size. Pending/FAILED bodies are recovery inputs. Completed manifests
 retain source-plan hashes, operation keys and payload hashes for audit and resume.
 Do not delete terminal identity rows, tombstones or manifests as routine compaction.
-They protect replay idempotency and later deletion intent. Version 0.1.0 does not
+They protect replay idempotency and later deletion intent. This Runtime does not
 implement automatic retention compaction. It requires a separate design.
 
 Stop the agent for maintenance before you monitor `state.db`, `state.db-wal`,

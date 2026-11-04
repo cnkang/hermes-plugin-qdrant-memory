@@ -35,11 +35,11 @@ python -m pip install '.[mcp,local]'
 
 For a published package, install the same extras with the release version:
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.4/) for
-Runtime 0.5.4 availability before running this command.
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.5.5/) for
+Runtime 0.5.5 availability before running this command.
 
 ```sh
-python -m pip install 'hermes-plugin-qdrant-memory[mcp,local]==0.5.4'
+python -m pip install 'hermes-plugin-qdrant-memory[mcp,local]==0.5.5'
 ```
 
 Choose **one** setup command and replace the profile path with a new absolute
@@ -104,7 +104,9 @@ or `~/.cache`. It is separate from memory profiles, Qdrant data and the ledger.
 Managed cache/profile paths must be canonical absolute paths without symlinks
 or Windows reparse points, including intermediate directories.
 
-Preparation requires network access and may take several minutes. Start MCP
+Preparation requires network access and may take several minutes. Each artifact
+has a 15-minute download limit, and all downloads share a 30-minute total budget.
+A timeout removes temporary files, and the next attempt starts cleanly. Start MCP
 after preparation and setup complete. Do not place the download inside a
 30-second connection handshake. Normal provider startup verifies cached files
 and performs no downloads. Prepared CPU inference works offline and does not

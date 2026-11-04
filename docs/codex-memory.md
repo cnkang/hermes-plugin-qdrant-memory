@@ -20,7 +20,7 @@ Inspected openai/codex main `616cab3a3529f572c3385098c12698278770ea98`:
 - `codex-rs/memories/write/src/storage.rs`: raw memories and rollout evidence
   are generated inputs. This adapter deliberately excludes them.
 - `codex-rs/ext/memories/src/local/ad_hoc_note.rs`: an internal note backend
-  exists; it is not a stable external bulk-import API.
+  exists. It is not a stable external bulk-import API.
 - `codex-rs/app-server-protocol/src/protocol/v2/memory.rs`: thread read/status
   do not constitute a public bulk-import interface.
 
@@ -46,28 +46,28 @@ Explicit output paths must stay within the invocation directory. Source paths
 are explicitly authorized canonical Codex homes, with symlink/reparse ancestors
 rejected. No native file, transcript, credential, DB or production collection is
 modified. A source file is bounded to 2 MiB. Reads traverse each ancestor with
-no-follow directory descriptors, then open the leaf relative to the checked
+no-follow directory descriptors. They open the leaf relative to the checked
 directory and use only that descriptor and its metadata, including provenance
 mtime. Windows uses pywin32 and a small native API binding to traverse local-drive
 paths relative to directory handles, rejecting every reparse point (including
-junctions). UNC/device namespaces, mapped network drives and ambiguous component names are refused;
-there is no full-path open fallback after opening the drive root. Platforms
+junctions). UNC/device namespaces, mapped network drives and ambiguous component names are refused.
+There is no full-path open fallback after opening the drive root. Platforms
 without either safe backend refuse Codex artifact reads. Heading splitting honors
-backtick/tilde code fences; unclosed fenced tails stay quarantined.
+backtick/tilde code fences. Unclosed fenced tails stay quarantined.
 v1 imports semantic sections from
-MEMORY.md (summary fallback); v2 imports summary sections. Duplicate normalized
+MEMORY.md (summary fallback). v2 imports summary sections. Duplicate normalized
 sections are imported once, retaining both source mappings. Differently worded
 summaries are not automatically declared equivalent. Semantic deduplication,
 project selection and user-supplied sensitive data classification require review.
 Code fences and likely credentials are skipped. This heuristic cannot identify
 all personal data: inspect the source and dry run before approving any import.
 Large sections exceeding Runtime payload or the CPU model's 128-token bound fail
-explicitly; there is no silent truncation or cloud fallback.
+explicitly. There is no silent truncation or cloud fallback.
 
 Imports use the configured fixed user/agent scope, existing migration manifests,
 SQLite operations, retries, fingerprint checks, WriterLease and crash recovery.
 Content-derived IDs make unchanged snapshots repeatable. Changing content creates
-a new logical source record; old records remain until an explicit authorized edit.
+a new logical source record. Old records remain until an explicit authorized edit.
 The generic Mem0 mapper remains unchanged for ordinary JSON imports.
 
 Use repeated `--heading` options to select exact source topic/category headings,
@@ -82,41 +82,42 @@ refuses to reuse an existing bundle. Handoff creation uses a descriptor/handle
 for the checked parent directory, so a later path substitution cannot redirect
 the write. POSIX creates directories with mode 0o700 and files with mode 0o600.
 Windows applies a protected DACL granting only the current user full access at
-creation time; filesystems without persistent ACLs are refused before creating
+creation time. Filesystems without persistent ACLs are refused before creating
 the directory. Native-directory exclusions also check the Windows parent
 handle's normalized long name, so case and 8.3 aliases cannot bypass them.
 A platform without either safe backend refuses the export.
 Verification uses that same bound. The small native-source limit does not apply
-to a larger valid handoff. Verification parses the same JSON bytes it hashed
-and requires the Markdown to match the complete JSON record set, even when a
+to a larger valid handoff. Verification parses the same JSON bytes it hashed.
+It requires the Markdown to match the complete JSON record set, even when a
 modified Markdown file has a matching manifest checksum.
 
 Export selects exactly the profile user/agent scope. The JSON preserves source
-metadata and timestamps; SHA-256 covers each text, the logical record list and
+metadata and timestamps. SHA-256 covers each text, the logical record list and
 both JSON/Markdown files. An interrupted handoff directory is incomplete and must
-fail verification; select a new directory to retry. Existing exports are never
+fail verification. Select a new directory to retry. Existing exports are never
 overwritten. No raw credentials or source paths are included in migration reports.
 
 Handoff is **HANDOFF_PENDING**, never NATIVE_VERIFIED. Review the Markdown or JSON
-in a local Codex chat. Ask Codex to remember each approved fact using the installed
-client's supported memory interaction, enable native memories there, and verify
+in a local Codex chat. Ask Codex to remember each approved fact through the installed
+client's supported memory interaction. Enable native memories there, and verify
 the actual resulting memory in a fresh chat. This can use the client's model
-processing path; obtain the user's approval before submitting private content.
+processing path. Obtain the user's approval before submitting private content.
 Do not write generated Codex files or internal SQLite tables. AGENTS.md requires
 separate authorization and is project instruction, not native memory import.
 Retain Qdrant until adoption is independently confirmed. Disable/uninstall the
-plugin using Codex; this never deletes Qdrant, native files or handoff bundles.
+plugin using Codex. This never deletes Qdrant, native files or handoff bundles.
 
 Protected Shared Owner collections remain protected. Offline operator migration
 does not bypass enrollment or start a second writer. Stop competing runtimes only
-with authorization; for concurrent agents use existing credential-bound Shared
-Owner MCP. Shared Owner bulk migration is not implemented by this adapter.
+with authorization. For concurrent agents, use the existing credential-bound
+Shared Owner MCP. Shared Owner bulk migration is not implemented by this adapter.
 
 ## Provider migration
 
 Reuse Runtime's existing `setup`, `prepare-model`, `doctor`, `migrate mem0` and
-JSON export. CPU is the Codex onboarding default. Ollama and OpenAI-compatible
-services are explicit alternatives, never inferred from Codex login credentials.
+JSON export. For Codex onboarding, this guide uses CPU embeddings. Ollama and
+OpenAI-compatible services are explicit alternatives, never inferred from Codex
+login credentials. Setup requires an explicit provider selection.
 Changing provider/model/instructions/normalization changes the pipeline identity.
 Export a backup, choose a new profile/collection, re-embed with resumable migration,
 verify, then approve the client configuration switch. Keep the previous collection

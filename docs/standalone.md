@@ -147,10 +147,12 @@ Tool failures use sanitized error results. Startup failures use stderr and a
 nonzero process exit. This is a local subprocess interface, not a network
 server or authentication service.
 
-The MCP process holds the writer lease for its lifetime. Standalone CLI writes,
-Hermes providers and another MCP process must not overlap in the same home and
-destination. Read/search CLI sessions also acquire the lease so embedded
-storage and recovery are coordinated. Separate homes or machines do not share
+The MCP server process holds the writer lease for its whole stdio session, and
+each standalone tool command takes the lease for that command. Standalone CLI
+writes, Hermes providers and another MCP process must not overlap in the same
+home and destination. Read-only CLI
+commands do not take the lease, so stop writers before you run them on an
+embedded destination. Separate homes or machines do not share
 a distributed lock. Reusing a Hermes destination requires explicit matching
 scope/home/ledger and a compatible embedding fingerprint. Do not point unrelated
 profiles at the same remote collection and assume simultaneous writes are safe.
