@@ -14,6 +14,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -41,6 +45,10 @@ jobs:
         run: |
           python -m pip install --force-reinstall "$(find dist -name '*.tar.gz')[mcp]"
           python -I -m pytest --import-mode=importlib -q tests/standalone
+      - name: Attest the built distributions
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'dist/*'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: runtime-distributions
