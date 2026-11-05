@@ -8,6 +8,7 @@ import sys
 
 REQUIRED_WORKFLOWS = (
     "CI",
+    "CodeQL",
     "Platform compatibility",
     "Standalone compatibility",
     "Shared destination security",
