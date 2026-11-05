@@ -44,7 +44,8 @@ jobs:
           HERMES_RUNTIME_DIR: ${{ runner.temp }}/hermes-platform-runtime
         shell: bash
         run: |
-          python -m pm.build_env --source "$GITHUB_WORKSPACE/.host" \
+          python -m pm.build_env --python "$(python -c 'import sys; print(sys.executable)')" \
+            --source "$GITHUB_WORKSPACE/.host" \
             --export-requirements "$RUNNER_TEMP/host-test-requirements.txt"
           python - <<'PY'
           import os
@@ -62,7 +63,11 @@ jobs:
           )
           PY
           python -m pm.build_env --out "$GITHUB_WORKSPACE/.test-env" \
+            --python "$(python -c 'import sys; print(sys.executable)')" \
             --requirements "$RUNNER_TEMP/host-test-requirements.txt"
+      - name: Verify Python matrix interpreter and install target
+        shell: bash
+        run: python scripts/verify_ci_python.py --expected "${{ matrix.python }}" --environment "$GITHUB_WORKSPACE/.test-env" --distribution hermes-plugin-qdrant-memory
       - name: Run local behavior and host lifecycle contracts
         shell: bash
         env:
