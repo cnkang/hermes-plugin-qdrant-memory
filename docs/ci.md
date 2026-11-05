@@ -119,7 +119,7 @@ and [failed-job rerun API](https://docs.github.com/en/rest/actions/workflow-runs
 
 ## Release gate
 
-`publish.yml` requires successful runs of `CI`, `Platform compatibility`,
+`publish.yml` requires successful runs of `CI`, `CodeQL`, `Platform compatibility`,
 `Standalone compatibility` and `Shared destination security` for the exact
 tagged commit on `main`. A missing, failed or still-running workflow blocks the
 build before it creates any distribution. A tag can no longer publish a commit
@@ -166,17 +166,14 @@ a digest-pinned Qdrant
 v1.15.5 service and requires REST/gRPC integration, including restart persistence.
 Ruff is pinned to 0.15.1 in CI and the local
 [pre-commit setup](development.md). Lint includes docstrings and import ordering.
-Actions use immutable SHA pins. Authenticated scans run on same-repository PRs,
-pushes to `main` and repository development branches, and manual workflow dispatches.
-The dependency scan is the one exception. It holds the organization Snyk token
-and never runs on a tree that a contributor controls: it runs only from `main`.
-Pull requests and branch pushes verify the dependency inputs with the
-credential-free `dependency-lock` job instead. That job rejects ranges, remote or
-VCS sources, option lines, unpinned entries, unhashed snapshot entries and
-snapshot drift. Snyk Code
-stays on same-repository pull requests, pushes to `main` and repository
-development branches, and manual dispatches. It analyzes text and executes no
-contributor code.
+Actions use immutable SHA pins. Both Snyk jobs hold the organization token and
+run only from `main`. Pull requests and branch pushes verify the dependency
+inputs with the credential-free `dependency-lock` job and `Dependency review`
+instead. The lock job rejects ranges, remote or VCS sources, option lines,
+unpinned entries, unhashed snapshot entries and snapshot drift. Dependency review
+fails a pull request that adds a high or critical advisory, or a dependency under
+a denied strong-copyleft license. `scheduled-security.yml` repeats the Snyk Code
+scan weekly and on maintainer dispatch, so a scan can exist without a push.
 The dependency scan is therefore a post-merge gate: a failure on `main` blocks
 later work and needs a fix-forward, because the merge already happened. A
 repository writer can still edit a workflow that holds a scanner token, because
@@ -192,11 +189,16 @@ A missing required token fails a scanner job only when that job is scheduled.
 The `Required security scan gate` runs even after workflow cancellation.
 It rejects failed, skipped, or cancelled prerequisites.
 It requires successful lint, tests, MCP protocol coverage, Codex Windows security,
-host pin compatibility, dependency lock, and SonarCloud. It requires a successful dependency scan on
-`main` and accepts its skip elsewhere.
+host pin compatibility, dependency lock, workflow security, secret scanning and,
+on pull requests, dependency review. It requires SonarCloud on trusted trees and
+requires the Snyk jobs on `main`.
 [GitHub permits a merge when a required job skips execution](https://docs.github.com/en/pull-requests/reference/status-checks).
-The gate uses `always()` to prevent this result after cancellation.
-The gate also fails on safely skipped fork scans.
+The gate uses `always()` and reads `toJSON(needs)` through `scripts/ci_gate.py`.
+It accepts a skip only for a named credential-gated job in the one context that
+forbids the credential, and it rejects a successful credentialed scan in an
+untrusted context: that would mean the token reached contributor code. A fork
+pull request therefore passes with the token-free jobs green and fails on any
+skipped test job.
 
 Dependabot pull requests are the one deliberate exception. They run
 lint, tests and the platform matrix. Their credentialed
@@ -209,8 +211,9 @@ of a successful scan. The gate needs no secrets and executes no PR code.
 ## Dependency updates (Dependabot)
 
 Dependabot opens grouped weekly version updates for the Python dependencies
-and for the GitHub Actions pins (`.github/dependabot.yml`). Repository-level
-security updates are enabled as well. Dependabot pull requests run the lint,
+and for the GitHub Actions pins (`.github/dependabot.yml`). Every ecosystem uses
+a seven-day cooldown, so a freshly published release is not adopted on the day
+it appears. Repository-level security updates are enabled as well. Dependabot pull requests run the lint,
 test and platform jobs. The credentialed scanner jobs are skipped for
 `dependabot[bot]` and re-run on the push to `main` after merge. A dependency
 range change also requires the plugin manifest's `python_dependencies` to be
@@ -313,3 +316,42 @@ expiry conditions](shared-memory/architecture.md#reviewed-local-http-transport-d
 with the shared-service PR. This does not change the quality thresholds or exempt
 other security analysis. Remove the exception before introducing a remote listener and complete a new
 transport and authorization review.
+
+## Workflow security and secret scanning
+
+Three credential-free jobs run on every push and pull request. They need no
+paid service and no secret, so a fork pull request runs them normally.
+
+- `Workflow security analysis` runs actionlint 1.7.12 and zizmor 1.32.0 over
+  `.github/`. zizmor fails on any finding. `.github/zizmor.yml` holds three
+  reviewed, file-scoped exceptions: the `workflow_run` retry controller, the
+  pinned global CLI in the Codex cloud probe, and the `./` reusable-workflow
+  form. Rules are never disabled globally.
+- `Secret scan` runs gitleaks 8.30.1 over the commits that the event
+  introduced. It prints findings with `--redact`, so a value never reaches a
+  log, and it writes no artifact. A synthetic fixture that trips a rule gets an
+  inline `gitleaks:allow` comment with a reason; a scan report is never
+  committed, because it carries commit metadata. Full-history detection stays
+  with GitHub secret scanning and push protection, which need no workflow and
+  are enabled on this repository.
+- `Dependency review` runs on pull requests, fails on high or critical
+  advisories, and denies AGPL-3.0, GPL-2.0, GPL-3.0 and SSPL-1.0 licenses. It
+  reads the dependency graph that GitHub maintains for the repository.
+
+Both binaries are downloaded from a GitHub release over HTTPS and verified
+against a committed SHA-256 before use. The zizmor action is pinned to a full
+commit SHA and to an exact zizmor version.
+
+`scheduled-security.yml` repeats the Snyk Code scan weekly and on maintainer
+dispatch. That is the only credentialed scan outside a `main` push, and no pull
+request can trigger it.
+
+`scorecard.yml` publishes an OpenSSF Scorecard result weekly, on `main` pushes
+and on dispatch. It uses the workflow's own OIDC identity and a read-only
+repository token. It never gates a pull request, and no long-lived token is
+created to raise a score.
+
+Free-tier limits, trigger counts and the settings that only the maintainer can
+change are recorded in [CI free-tier policy](ci-free-tier-policy.md). The
+current risk register and trust boundaries are in
+[CI security audit](ci-security-audit.md).
