@@ -58,12 +58,14 @@ Trigger policy:
 
 | Job | Trigger | Calls per trigger |
 | --- | --- | --- |
-| `snyk` (Open Source) | push to `main` only | two `test` calls, two `monitor` calls |
-| `snyk-code` | push to `main` only | one `snyk code test`, at most two attempts |
-| `Snyk Code weekly scan` | weekly schedule, maintainer dispatch | one `snyk code test`, at most two attempts |
+| `snyk` (Open Source) | push to `main`; manual dispatch on `main` | two `test` calls; two `monitor` calls on push only |
+| `snyk-code` | push to `main`; manual dispatch on `main` | one `snyk code test`, at most three attempts |
+| `Snyk Code weekly scan` | weekly schedule; manual dispatch on `main` | one `snyk code test`, at most two attempts |
 
-No pull request, branch push or matrix leg calls Snyk. The token is a repository
-secret that GitHub does not expose to fork pull requests.
+No pull request, non-main branch push or matrix leg calls Snyk. Both workflows
+skip their credentialed scans when manually dispatched against a non-main ref.
+The two `monitor` calls in `ci.yml` run only on a push to `main`. The token is a
+repository secret that GitHub does not expose to fork pull requests.
 
 Failure classification:
 
@@ -81,9 +83,10 @@ requires a successful CI run for the tagged commit, so a release cannot proceed
 while the security baseline is unknown. That is intentional: the gate does not
 fall back to "no findings".
 
-A scan that does not run because the job is skipped is reported by
-`scripts/ci_gate.py` as `skipped`, which is accepted only where the credential
-is forbidden. Everywhere else a skip fails the gate.
+`scripts/ci_gate.py` accepts only these intentional skip cases: SonarCloud is
+skipped on fork and Dependabot pull requests, Snyk jobs are skipped outside
+`main`, and `Dependency review` is skipped on non-PR events because there is no
+base commit to compare. Every other required job must succeed.
 
 ## CodeRabbit
 

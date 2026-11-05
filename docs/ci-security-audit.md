@@ -40,7 +40,7 @@ A control that cannot state all three is treated as a finding.
 | `owner-model-quality.yml` | `workflow_call` | `model-quality`/`model-smoke` | Tier 3 | Internal |
 | `owner-model-smoke.yml` | selected paths, dispatch | none | Tier 3 | Independent |
 | `upstream-compat.yml` | weekly, dispatch | none | Tier 3 | Independent |
-| `scheduled-security.yml` | weekly, dispatch | `SNYK_TOKEN` | Tier 3 | Independent |
+| `scheduled-security.yml` | weekly, main dispatch | `SNYK_TOKEN` | Tier 3 | Independent |
 | `scorecard.yml` | push `main`, weekly, dispatch | OIDC, read-only token | Tier 3 | Never gates |
 | `retry-infrastructure.yml` | `workflow_run` | `actions: write` | Trusted controller | Never gates |
 | `ci.yml` secret scan / workflow security / dependency review | any push or PR | none | Tier 0 | Required |
@@ -151,10 +151,12 @@ runner, so the cost is run-list noise, not minutes.
 - actionlint 1.7.12 on the whole tree: clean.
 - zizmor 1.32.0 offline, regular persona: no findings, with three reviewed
   file-scoped exceptions in `.github/zizmor.yml`.
-- gitleaks 8.30.1 over the full history: two findings, both synthetic test
-  fixtures in `tests/`, and no production finding. The scan report is not
-  committed. GitHub secret scanning and push protection keep covering the full
-  history without a workflow artifact.
+- gitleaks 8.30.1 over the full history identified two synthetic test fixtures
+  in `tests/` and no production finding. The workflow ignores only their exact
+  historical fingerprints in `.gitleaksignore`; a changed commit, path, rule or
+  line is scanned normally. The scan report is not committed. GitHub secret
+  scanning and push protection keep covering the full history without a
+  workflow artifact.
 
 ## Manual actions
 

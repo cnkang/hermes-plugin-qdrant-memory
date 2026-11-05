@@ -153,9 +153,9 @@ Snyk dependency and code jobs run
 independently in parallel. Both Python versions run files serially because remote
 tests restart their disposable server. Python 3.14 collects coverage. SonarCloud
 waits for the test matrix and consumes that artifact, then waits for its quality
-gate. Snyk runs the code scan on same-repository pull requests, branch pushes and
-dispatches, and the dependency scan only from `main`. The required test matrix
-validates the support range endpoints. It covers the minimum supported release
+gate. The Snyk jobs in `ci.yml` run on pushes to `main` and manual dispatches
+targeting `main`; their `monitor` steps run only on pushes. The required test
+matrix validates the support range endpoints. It covers the minimum supported release
 v0.21.5 (v2026.9.24, `f97608f`) and the latest Hermes `main`. The `main` ref
 moves, and each run records its checked-out SHA in the run summary. The latest-main lane
 intentionally tracks the moving upstream ref inside the required matrix. An
@@ -167,8 +167,9 @@ v1.15.5 service and requires REST/gRPC integration, including restart persistenc
 Ruff is pinned to 0.15.1 in CI and the local
 [pre-commit setup](development.md). Lint includes docstrings and import ordering.
 Actions use immutable SHA pins. Both Snyk jobs hold the organization token and
-run only from `main`. Pull requests and branch pushes verify the dependency
-inputs with the credential-free `dependency-lock` job and `Dependency review`
+run only on `main` pushes or manual dispatches targeting `main`. Pull requests
+and branch pushes verify the dependency inputs with the credential-free
+`dependency-lock` job and `Dependency review`
 instead. The lock job rejects ranges, remote or VCS sources, option lines,
 unpinned entries, unhashed snapshot entries and snapshot drift. Dependency review
 fails a pull request that adds a high or critical advisory, or a dependency under
@@ -295,8 +296,9 @@ test covers indexes, scope, mutation, migration and reconnection. Deployment res
 remains a Server lane check because Cloud infrastructure is service-owned.
 
 SonarCloud and Snyk use maintainer-managed repository secrets. Contributors do
-not need scanner credentials. Snyk runs the code scan on every event and the
-dependency scan from `main` only. High or
+not need scanner credentials. The `ci.yml` Snyk jobs run only on `main` pushes or
+manual dispatches targeting `main`; `scheduled-security.yml` adds a weekly scan
+and a manual scan restricted to `main`. High or
 critical findings fail the job, and authentication errors also fail.
 `requirements.txt` is the PM-exported runtime lock snapshot.
 
@@ -319,8 +321,9 @@ transport and authorization review.
 
 ## Workflow security and secret scanning
 
-Three credential-free jobs run on every push and pull request. They need no
-paid service and no secret, so a fork pull request runs them normally.
+`Workflow security analysis` and `Secret scan` run on every push and pull
+request. `Dependency review` runs on pull requests, including forks. All three
+are credential-free, so these checks can safely process untrusted pull requests.
 
 - `Workflow security analysis` runs actionlint 1.7.12 and zizmor 1.32.0 over
   `.github/`. zizmor fails on any finding. `.github/zizmor.yml` holds three
@@ -329,7 +332,9 @@ paid service and no secret, so a fork pull request runs them normally.
   form. Rules are never disabled globally.
 - `Secret scan` runs gitleaks 8.30.1 over the commits that the event
   introduced. It prints findings with `--redact`, so a value never reaches a
-  log, and it writes no artifact. A synthetic fixture that trips a rule gets an
+  log, and it writes no artifact. The root `.gitleaksignore` contains exact
+  fingerprints for the two audited synthetic test fixtures; other findings
+  remain blocking. A synthetic fixture that trips a new rule gets an
   inline `gitleaks:allow` comment with a reason; a scan report is never
   committed, because it carries commit metadata. Full-history detection stays
   with GitHub secret scanning and push protection, which need no workflow and

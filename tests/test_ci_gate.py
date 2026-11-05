@@ -254,8 +254,31 @@ def test_security_tools_are_pinned():
 
 def test_scheduled_security_has_no_pull_request_trigger():
     """A pull request must never reach the Snyk organization token."""
-    triggers = _workflow("scheduled-security.yml")["on"]
+    workflow = _workflow("scheduled-security.yml")
+    triggers = workflow["on"]
     assert set(triggers) == {"schedule", "workflow_dispatch"}
+    assert workflow["jobs"]["snyk-code"]["if"] == "github.ref == 'refs/heads/main'"
+
+
+def test_snyk_code_pipelines_propagate_failures_through_tee():
+    """A successful tee must not hide a failed or timed-out Snyk command."""
+    for name in ("ci.yml", "scheduled-security.yml"):
+        workflow = _workflow(name)
+        scan = next(
+            step
+            for step in workflow["jobs"]["snyk-code"]["steps"]
+            if step.get("name") == "Scan source"
+        )
+        assert "set -o pipefail" in scan["run"].splitlines()
+
+
+def test_gitleaks_allowlist_is_limited_to_audited_test_fixtures():
+    """Only the two known synthetic fixtures may bypass the secret scanner."""
+    allowlist = set((ROOT / ".gitleaksignore").read_text(encoding="utf-8").splitlines())
+    assert allowlist == {
+        "67766b6996121b7ecfe3bb77e98649bb9303ed4f:tests/test_codex_memory.py:aws-access-token:63",
+        "ba4d429b2e8e4d4092ee99c9625ccd206603c113:tests/standalone/test_shared_reader.py:generic-api-key:180",
+    }
 
 
 def test_scorecard_runs_only_on_trusted_events():
@@ -265,7 +288,7 @@ def test_scorecard_runs_only_on_trusted_events():
     assert workflow["on"]["push"]["branches"] == ["main"]
     permissions = workflow["jobs"]["analysis"]["permissions"]
     assert permissions["id-token"] == "write"
-    assert permissions["security-events"] == "write"
+    assert "security-events" not in permissions
     step = next(
         item
         for item in workflow["jobs"]["analysis"]["steps"]
