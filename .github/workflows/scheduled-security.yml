@@ -19,6 +19,9 @@ concurrency:
 jobs:
   snyk-code:
     name: Snyk Code weekly scan
+    # A manual dispatch may select any branch; keep the organization token on
+    # the protected main tree, as in ci.yml.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -35,6 +38,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
+          set -o pipefail
           attempts=2
           for attempt in 1 2; do
             echo "Snyk Code scan attempt ${attempt}/${attempts} (12-minute limit)"

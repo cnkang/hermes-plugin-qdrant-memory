@@ -443,6 +443,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
+          set -o pipefail
           attempts=3
           for attempt in 1 2 3; do
             echo "Snyk Code scan attempt ${attempt}/${attempts} (8-minute limit)"
