@@ -351,10 +351,10 @@ commit SHA and to an exact zizmor version.
 dispatch. That is the only credentialed scan outside a `main` push, and no pull
 request can trigger it.
 
-`scorecard.yml` publishes an OpenSSF Scorecard result weekly, on `main` pushes
-and on dispatch. It uses the workflow's own OIDC identity and a read-only
-repository token. It never gates a pull request, and no long-lived token is
-created to raise a score.
+`scorecard.yml` publishes an OpenSSF Scorecard result weekly, on `main` pushes,
+and on manual dispatches targeting `main`. A dispatch from another ref skips
+the job. It uses a read-only `GITHUB_TOKEN` and requests OIDC only to publish
+the score. It never gates a pull request, and no long-lived token is created.
 
 Free-tier limits, trigger counts and the settings that only the maintainer can
 change are recorded in [CI free-tier policy](ci-free-tier-policy.md). The

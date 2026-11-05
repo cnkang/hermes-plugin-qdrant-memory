@@ -19,7 +19,7 @@ service or changing a trigger.
 | zizmor | Open source, runs offline, no account | No | Yes |
 | actionlint | Open source, no account | No | Yes |
 | gitleaks (CLI) | Open source, MIT, no account | No | Yes |
-| OpenSSF Scorecard | Open source action; publishing uses the workflow's OIDC identity | No | No (trusted events only) |
+| OpenSSF Scorecard | Open source action; publishing uses the workflow's OIDC identity | No | No (push/schedule on main; manual dispatch is main-only) |
 | SonarCloud | Free for public repositories | Analysis is unmetered for public projects; no card required | No (token held by the maintainer) |
 | Snyk | Free plan; public repositories are exempt from test limits | Partly: see below | No |
 | CodeRabbit | Open-source plan for public repositories | Partly: see below | It may comment, but it is not a gate |
