@@ -32,9 +32,6 @@ ALWAYS_REQUIRED = (
     "secret-scan",
 )
 
-# Job -> the only result that policy allows, per trust context.
-UNTRUSTED_CREDENTIALED = ("sonarcloud",)
-
 
 def _result(needs: dict, job: str) -> str:
     """Return the reported result for one job, or ``missing``."""
