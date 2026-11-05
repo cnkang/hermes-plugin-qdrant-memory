@@ -36,7 +36,9 @@ jobs:
         env:
           HERMES_HOME: ${{ runner.temp }}/hermes-lint-home
           HERMES_RUNTIME_DIR: ${{ runner.temp }}/hermes-lint-runtime
-        run: python -m pm.build_env --out "$GITHUB_WORKSPACE/.lint-env" --requirement 'ruff==0.15.1'
+        run: python -m pm.build_env --python "$(python -c 'import sys; print(sys.executable)')" --out "$GITHUB_WORKSPACE/.lint-env" --requirement 'ruff==0.15.1'
+      - name: Verify Ruff environment interpreter and install target
+        run: python scripts/verify_ci_python.py --expected 3.11 --environment "$GITHUB_WORKSPACE/.lint-env" --distribution ruff --require-distribution
       - name: Lint source, docstrings and imports
         run: .lint-env/bin/ruff check .
       - name: Check formatting
@@ -103,14 +105,17 @@ jobs:
           HERMES_HOME: ${{ runner.temp }}/hermes-test-home
           HERMES_RUNTIME_DIR: ${{ runner.temp }}/hermes-test-runtime
         run: |
-          python -m pm.build_env --source "$GITHUB_WORKSPACE/.host" --export-requirements "$RUNNER_TEMP/host-test-requirements.txt"
+          python -m pm.build_env --python "$(python -c 'import sys; print(sys.executable)')" --source "$GITHUB_WORKSPACE/.host" --export-requirements "$RUNNER_TEMP/host-test-requirements.txt"
           python -c 'import tomllib; from pathlib import Path; p = tomllib.loads(Path("../pyproject.toml").read_text()); print("\n".join(p["project"]["dependencies"] + p["dependency-groups"]["test"]))' >> "$RUNNER_TEMP/host-test-requirements.txt"
           # Preserve the host's locked security overrides, including Pillow 13.
           # Exported requirements alone do not contain uv manifest overrides.
           python -m pm.build_env --out "$GITHUB_WORKSPACE/.test-env" \
+            --python "$(python -c 'import sys; print(sys.executable)')" \
             --lock "$GITHUB_WORKSPACE/.host/uv.lock" \
             --requirements "$RUNNER_TEMP/host-test-requirements.txt" \
             --requirement "hermes-plugin-qdrant-memory[mcp] @ file://$GITHUB_WORKSPACE"
+      - name: Verify Python matrix interpreter and install target
+        run: python scripts/verify_ci_python.py --expected "${{ matrix.python }}" --environment "$GITHUB_WORKSPACE/.test-env" --distribution hermes-plugin-qdrant-memory
       - name: Run canonical host test runner
         working-directory: .host
         env:
@@ -136,13 +141,15 @@ jobs:
           HERMES_HOME: ${{ runner.temp }}/wheel-home
           HERMES_RUNTIME_DIR: ${{ runner.temp }}/wheel-runtime
         run: |
-          python -m pm.build_env --out "$RUNNER_TEMP/wheel-build-env" --requirement 'setuptools>=77,<83' --requirement 'wheel>=0.45,<1'
+          python -m pm.build_env --python "$(python -c 'import sys; print(sys.executable)')" --out "$RUNNER_TEMP/wheel-build-env" --requirement 'setuptools>=77,<83' --requirement 'wheel>=0.45,<1'
           cd "$GITHUB_WORKSPACE"
           "$RUNNER_TEMP/wheel-build-env/bin/python" -c 'import os, setuptools.build_meta as b; b.build_wheel(os.environ["RUNNER_TEMP"] + "/plugin-wheel")'
           cd .pm-host
-          python -m pm.build_env --out "$RUNNER_TEMP/wheel-env" --requirements "$RUNNER_TEMP/host-test-requirements.txt" \
+          python -m pm.build_env --python "$(python -c 'import sys; print(sys.executable)')" --out "$RUNNER_TEMP/wheel-env" --requirements "$RUNNER_TEMP/host-test-requirements.txt" \
             --lock "$GITHUB_WORKSPACE/.host/uv.lock" \
             --requirement "hermes-plugin-qdrant-memory @ file://$(find "$RUNNER_TEMP/plugin-wheel" -name 'hermes_plugin_qdrant_memory-*.whl' -print -quit)"
+          python "$GITHUB_WORKSPACE/scripts/verify_ci_python.py" --expected "${{ matrix.python }}" --environment "$RUNNER_TEMP/wheel-build-env" --distribution setuptools --require-distribution
+          python "$GITHUB_WORKSPACE/scripts/verify_ci_python.py" --expected "${{ matrix.python }}" --environment "$RUNNER_TEMP/wheel-env" --require-distribution
           cd "$RUNNER_TEMP"
           PYTHONPATH="$GITHUB_WORKSPACE/.host" "$RUNNER_TEMP/wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/verify_packaged.py"
       - name: Save coverage for SonarCloud
@@ -176,6 +183,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install Runtime and native Windows test dependencies
         run: python -m pip install . 'pytest>=8,<10' 'pytest-cov>=6,<8' 'pywin32==${{ matrix.pywin32 }}'
+      - name: Verify setup-python selection and Runtime install target
+        run: python scripts/verify_ci_python.py --expected "${{ matrix.python }}" --require-distribution
       - name: Start disposable runner services for the loopback SMB fixture
         run: |
           Start-Service LanmanServer, LanmanWorkstation
@@ -247,10 +256,11 @@ jobs:
         run: |
           for sdk in 1 2; do
             upper=$((sdk + 1))
-            python -m pm.build_env --out "$RUNNER_TEMP/mcp-coverage-$sdk" \
+            python -m pm.build_env --python "$(python -c 'import sys; print(sys.executable)')" --out "$RUNNER_TEMP/mcp-coverage-$sdk" \
               --requirement "hermes-plugin-qdrant-memory[remote] @ file://$GITHUB_WORKSPACE" \
               --requirement "mcp>=$sdk,<$upper" \
               --requirement 'pytest>=8,<10' --requirement 'pytest-cov>=6,<8'
+            python "$GITHUB_WORKSPACE/scripts/verify_ci_python.py" --expected 3.14 --environment "$RUNNER_TEMP/mcp-coverage-$sdk" --require-distribution
             cd "$GITHUB_WORKSPACE"
             COVERAGE_FILE="$GITHUB_WORKSPACE/.coverage-mcp" \
               "$RUNNER_TEMP/mcp-coverage-$sdk/bin/python" -m pytest -q tests/standalone \
@@ -323,8 +333,9 @@ jobs:
             --host "$GITHUB_WORKSPACE/.host" \
             --emit-requirements "$RUNNER_TEMP/host-pins.txt" \
             --print-plugin-requirement)
-          python -m pm.build_env --out "$RUNNER_TEMP/pin-check" \
+          python -m pm.build_env --python "$(python -c 'import sys; print(sys.executable)')" --out "$RUNNER_TEMP/pin-check" \
             --requirements "$RUNNER_TEMP/host-pins.txt" --requirement "$plugin_requirement"
+          python "$GITHUB_WORKSPACE/scripts/verify_ci_python.py" --expected "${{ matrix.python }}" --environment "$RUNNER_TEMP/pin-check" --require-distribution
 
   sonarcloud:
     name: SonarCloud quality gate
@@ -394,8 +405,9 @@ jobs:
           HERMES_HOME: ${{ runner.temp }}/hermes-security-home
           HERMES_RUNTIME_DIR: ${{ runner.temp }}/hermes-security-runtime
         run: |
-          python -m pm.build_env --out "$GITHUB_WORKSPACE/.scan-env" \
+          python -m pm.build_env --python "$(python -c 'import sys; print(sys.executable)')" --out "$GITHUB_WORKSPACE/.scan-env" \
             --requirements "$GITHUB_WORKSPACE/requirements.txt" --requirement 'pip>=25,<27'
+          python "$GITHUB_WORKSPACE/scripts/verify_ci_python.py" --expected 3.11 --environment "$GITHUB_WORKSPACE/.scan-env" --distribution pip --require-distribution
           "$GITHUB_WORKSPACE/.scan-env/bin/python" -m pip --version
       - name: Scan dependencies
         env:
