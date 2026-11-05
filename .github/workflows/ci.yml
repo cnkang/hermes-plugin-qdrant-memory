@@ -329,7 +329,9 @@ jobs:
   sonarcloud:
     name: SonarCloud quality gate
     needs: [tests, mcp-coverage, codex-windows]
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')
+    # The token is unavailable to fork pull requests. Dependabot pull requests
+    # are skipped by their immutable author identity, not by the mutable actor.
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !(github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -398,7 +400,7 @@ jobs:
       - name: Scan dependencies
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: snyk test --file=requirements.txt --package-manager=pip --command=.scan-env/bin/python --severity-threshold=high
+        run: snyk test --file=requirements.txt --package-manager=pip --command=.scan-env/bin/python --severity-threshold=high --remote-repo-url="https://github.com/${{ github.repository }}"
       - name: Monitor main dependency snapshot
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
@@ -411,7 +413,7 @@ jobs:
       - name: Scan optional CPU dependencies
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        run: snyk test --file=requirements-local.txt --package-manager=pip --command=.scan-env/bin/python --severity-threshold=high
+        run: snyk test --file=requirements-local.txt --package-manager=pip --command=.scan-env/bin/python --severity-threshold=high --remote-repo-url="https://github.com/${{ github.repository }}"
       - name: Monitor main optional CPU dependency snapshot
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
@@ -420,7 +422,11 @@ jobs:
 
   snyk-code:
     name: Snyk code security
-    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !(github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')
+    # Snyk Code consumes the organization token and a metered service. Keep it
+    # on the protected main tree; scheduled-security.yml repeats the scan weekly
+    # and a maintainer can dispatch it explicitly. Pull requests rely on CodeQL,
+    # SonarCloud and review instead, so no contributor tree ever holds the token.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -440,11 +446,19 @@ jobs:
           attempts=3
           for attempt in 1 2 3; do
             echo "Snyk Code scan attempt ${attempt}/${attempts} (8-minute limit)"
+            log="$RUNNER_TEMP/snyk-code-${attempt}.log"
             if timeout --kill-after=30s 8m \
-              snyk code test . --severity-threshold=high; then
+              snyk code test . --severity-threshold=high 2>&1 | tee "$log"; then
               exit 0
             else
-              status=$?
+              status=${PIPESTATUS[0]}
+            fi
+
+            # A credential or entitlement failure is final: retrying cannot
+            # resolve it, and it must never be reported as a pass.
+            if grep -qiE 'authentication failed|not authenticated|invalid token|unauthorized|SNYK_TOKEN' "$log"; then
+              echo "::error::Snyk Code authentication failed (AUTH_ERROR)."
+              exit 1
             fi
 
             case "$status" in
@@ -478,60 +492,105 @@ jobs:
       - name: Verify exact pins and hashes without credentials
         run: python3 scripts/check_dependency_inputs.py
 
+  dependency-review:
+    name: Dependency review
+    # Free for public repositories and needs no secret, so it runs on every
+    # pull request including forks.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          deny-licenses: AGPL-3.0, GPL-2.0, GPL-3.0, SSPL-1.0
+          comment-summary-in-pr: never
+          retry-on-snapshot-warnings: true
+          retry-on-snapshot-warnings-timeout: 120
+
+  workflow-security:
+    name: Workflow security analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install verified actionlint 1.7.12
+        env:
+          ACTIONLINT_ARCHIVE: ${{ runner.temp }}/actionlint.tar.gz
+        run: |
+          curl --fail --silent --show-error --location --proto "=https" --proto-redir "=https" --output "$ACTIONLINT_ARCHIVE" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $ACTIONLINT_ARCHIVE" | sha256sum --check
+          tar -xzf "$ACTIONLINT_ARCHIVE" -C "$RUNNER_TEMP" actionlint
+      - name: Validate workflow syntax, expressions and shell steps
+        run: '"$RUNNER_TEMP/actionlint" -color'
+      - name: Audit workflow security with zizmor 1.32.0
+        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          advanced-security: false
+          online-audits: false
+          version: 1.32.0
+          persona: regular
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install verified gitleaks 8.30.1
+        env:
+          GITLEAKS_ARCHIVE: ${{ runner.temp }}/gitleaks.tar.gz
+        run: |
+          curl --fail --silent --show-error --location --proto "=https" --proto-redir "=https" --output "$GITLEAKS_ARCHIVE" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $GITLEAKS_ARCHIVE" | sha256sum --check
+          tar -xzf "$GITLEAKS_ARCHIVE" -C "$RUNNER_TEMP" gitleaks
+      - name: Scan the commits introduced by this event
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -eu
+          scan_range="$HEAD_SHA"
+          if [ "$EVENT_NAME" = pull_request ] || [ "$EVENT_NAME" = push ]; then
+            case "${BASE_SHA:-}" in
+              "" | 0000000000000000000000000000000000000000) ;;
+              *)
+                if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+                  scan_range="$BASE_SHA..$HEAD_SHA"
+                fi
+                ;;
+            esac
+          fi
+          echo "Scanning $scan_range"
+          "$RUNNER_TEMP/gitleaks" git --no-banner --redact --exit-code 1 --log-opts="$scan_range" .
+
   scan-gate:
     name: Required security scan gate
-    needs: [lint, tests, mcp-coverage, codex-windows, host-pins, sonarcloud, dependency-lock, snyk, snyk-code]
-    # A skipped required job permits merge. Cancellation must still fail this gate.
+    needs: [lint, tests, mcp-coverage, codex-windows, host-pins, dependency-lock, workflow-security, secret-scan, dependency-review, sonarcloud, snyk, snyk-code]
+    # A skipped required job permits merge, so the gate must run even after a
+    # cancellation. `!cancelled()` would create a merge hole; the gate itself
+    # fails on cancelled and skipped results.
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - name: Require successful tests and authenticated scans
         env:
-          LINT_RESULT: ${{ needs.lint.result }}
-          TEST_RESULT: ${{ needs.tests.result }}
-          MCP_RESULT: ${{ needs.mcp-coverage.result }}
-          WINDOWS_RESULT: ${{ needs.codex-windows.result }}
-          HOST_PINS_RESULT: ${{ needs.host-pins.result }}
-          DEP_LOCK_RESULT: ${{ needs.dependency-lock.result }}
-          SONAR_RESULT: ${{ needs.sonarcloud.result }}
-          SNYK_RESULT: ${{ needs.snyk.result }}
-          SNYK_CODE_RESULT: ${{ needs.snyk-code.result }}
+          NEEDS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
+          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          DEPENDABOT: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
           MAIN_REF: ${{ github.ref == 'refs/heads/main' }}
-          DEPENDABOT: ${{ github.event_name == 'pull_request' && github.actor == 'dependabot[bot]' }}
-        run: |
-          if [ "$LINT_RESULT" != success ] || [ "$TEST_RESULT" != success ] || [ "$MCP_RESULT" != success ] || [ "$WINDOWS_RESULT" != success ] || [ "$HOST_PINS_RESULT" != success ] || [ "$DEP_LOCK_RESULT" != success ]; then
-            echo "::error::Required checks did not succeed: lint=$LINT_RESULT tests=$TEST_RESULT mcp=$MCP_RESULT windows=$WINDOWS_RESULT host-pins=$HOST_PINS_RESULT dependency-lock=$DEP_LOCK_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
-            exit 1
-          fi
-          if [ "$DEPENDABOT" = "true" ]; then
-            for result in "$SONAR_RESULT" "$SNYK_RESULT" "$SNYK_CODE_RESULT"; do
-              case "$result" in
-                success|skipped) ;;
-                *)
-                  echo "::error::Dependabot scanner did not skip cleanly: sonarcloud=$SONAR_RESULT snyk=$SNYK_RESULT snyk-code=$SNYK_CODE_RESULT."
-                  exit 1
-                  ;;
-              esac
-            done
-            echo "Dependabot pull request: credentialed scans are skipped by design and re-run on main after merge."
-            exit 0
-          fi
-          if [ "$SONAR_RESULT" != success ] || [ "$SNYK_CODE_RESULT" != success ]; then
-            echo "::error::Required checks did not succeed: sonarcloud=$SONAR_RESULT snyk-code=$SNYK_CODE_RESULT. Fork scans stay isolated and skipped; missing credentials fail scheduled scanners."
-            exit 1
-          fi
-          if [ "$MAIN_REF" = "true" ]; then
-            if [ "$SNYK_RESULT" != success ]; then
-              echo "::error::The main tree requires a successful dependency scan: snyk=$SNYK_RESULT."
-              exit 1
-            fi
-          else
-            case "$SNYK_RESULT" in
-              success|skipped) ;;
-              *)
-                echo "::error::The dependency scan must be skipped outside main, got snyk=$SNYK_RESULT. The token stays out of contributor-controlled trees."
-                exit 1
-                ;;
-            esac
-          fi
+        run: python3 scripts/ci_gate.py

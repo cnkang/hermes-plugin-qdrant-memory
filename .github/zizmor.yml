@@ -1,0 +1,28 @@
+# zizmor configuration.
+#
+# Every entry below is a reviewed, file-scoped exception. Rules are never
+# disabled globally: a new workflow that triggers the same audit still fails.
+#
+# Review this file with `.github/workflows/ci.yml` whenever a workflow changes.
+
+rules:
+  # workflow_run is the only API GitHub offers for retrying a completed run.
+  # This workflow never checks out or executes pull-request content: it reads
+  # the controller from github.workflow_sha (the trusted default-branch copy),
+  # rejects fork events, and only asks the API to rerun failed jobs.
+  dangerous-triggers:
+    ignore:
+      - retry-infrastructure.yml
+
+  # The Codex cloud probe installs a pinned global CLI. A global npm tool has
+  # no lockfile to consume, the version is exact, and the job holds no
+  # repository or publishing credentials.
+  adhoc-packages:
+    ignore:
+      - codex-plugin-cloud.yml
+
+  # Reusable-workflow calls use the documented './' form. The '$/' form is
+  # part of the workflow-lockfile preview and is not adopted here.
+  self-repository:
+    ignore:
+      - owner-model-smoke.yml
