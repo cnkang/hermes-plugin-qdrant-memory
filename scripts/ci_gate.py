@@ -1,9 +1,10 @@
 """Fail-closed evaluation of the required CI security gate.
 
-The gate consumes only the job results that GitHub reports for the current
-workflow run and the identity of the triggering event. It never reads code,
-logs or artifacts, so a contribution cannot influence its decision beyond
-making a job fail.
+The gate consumes the job results that GitHub reports for the current workflow
+run and the identity of the triggering event. The `scan-gate` job runs this file
+from the checkout of the event under evaluation, so a pull request that edits
+this file or that job can change the verdict. Review changes to both; the
+accepted risk is recorded in docs/ci-security-audit.md (F-12).
 
 Policy:
 
