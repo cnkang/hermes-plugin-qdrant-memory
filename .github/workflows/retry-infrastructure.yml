@@ -52,9 +52,11 @@ jobs:
           github.event.workflow_run.run_attempt < 3
         env:
           GH_TOKEN: ${{ github.token }}
+          # Passed through the environment so the step body stays literal.
+          CONTROLLER: ${{ steps.controller.outputs.script }}
         run: |
           set -euo pipefail
-          python3 "${{ steps.controller.outputs.script }}" | tee "$RUNNER_TEMP/retry-decision.json"
+          python3 "$CONTROLLER" | tee "$RUNNER_TEMP/retry-decision.json"
           python3 -c 'import json,sys; print("decision=" + json.load(open(sys.argv[1]))["decision"])' \
             "$RUNNER_TEMP/retry-decision.json" >> "$GITHUB_OUTPUT"
 
@@ -64,8 +66,9 @@ jobs:
           steps.retry.outputs.decision != 'retry_requested'
         env:
           GH_TOKEN: ${{ github.token }}
+          CONTROLLER: ${{ steps.controller.outputs.script }}
         run: |
-          python3 "${{ steps.controller.outputs.script }}" --audit > "$RUNNER_TEMP/retry-audit.json"
+          python3 "$CONTROLLER" --audit > "$RUNNER_TEMP/retry-audit.json"
           cat "$RUNNER_TEMP/retry-audit.json"
 
       - name: Preserve the retry audit record

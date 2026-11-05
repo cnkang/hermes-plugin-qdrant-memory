@@ -103,13 +103,16 @@ jobs:
       - name: Record the resolved profile
         env:
           COMMIT_SHA: ${{ github.sha }}
+          PROFILE_MODE: ${{ steps.profile.outputs.mode }}
+          INCLUDE_CLOUD: ${{ steps.profile.outputs.include_cloud }}
+          CLOUD_SECONDS: ${{ steps.profile.outputs.cloud_seconds }}
         run: |
           {
             echo "## Soak preflight"
             echo ""
-            echo "- Mode: \`${{ steps.profile.outputs.mode }}\`"
-            echo "- Cloud window requested: \`${{ steps.profile.outputs.include_cloud }}\`"
-            echo "- Cloud window length: \`${{ steps.profile.outputs.cloud_seconds }}\` seconds"
+            echo "- Mode: \`$PROFILE_MODE\`"
+            echo "- Cloud window requested: \`$INCLUDE_CLOUD\`"
+            echo "- Cloud window length: \`$CLOUD_SECONDS\` seconds"
             echo "- Commit: \`$COMMIT_SHA\`"
             echo "- Workflow: actionlint 1.7.12 and the harness contract tests passed"
           } >> "$GITHUB_STEP_SUMMARY"
