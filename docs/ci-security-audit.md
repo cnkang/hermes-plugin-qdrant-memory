@@ -41,7 +41,7 @@ A control that cannot state all three is treated as a finding.
 | `owner-model-smoke.yml` | selected paths, dispatch | none | Tier 3 | Independent |
 | `upstream-compat.yml` | weekly, dispatch | none | Tier 3 | Independent |
 | `scheduled-security.yml` | weekly, main dispatch | `SNYK_TOKEN` | Tier 3 | Independent |
-| `scorecard.yml` | push `main`, weekly, dispatch | OIDC, read-only token | Tier 3 | Never gates |
+| `scorecard.yml` | push `main`, weekly, dispatch on `main` | OIDC, read-only token | Tier 3 | Never gates |
 | `retry-infrastructure.yml` | `workflow_run` | `actions: write` | Trusted controller | Never gates |
 | `ci.yml` secret scan / workflow security / dependency review | any push or PR | none | Tier 0 | Required |
 
@@ -76,9 +76,9 @@ no `workflow_run` consumes artifacts.
 **Caches.** No workflow uses `actions/cache`, and the release workflow reads no
 cache. `setup-node` caching is not enabled anywhere in this repository.
 
-**OIDC.** Only `publish.yml` and `scorecard.yml` request `id-token: write`, both
-behind a tag or a trusted branch, and both with a protected environment or a
-non-gating purpose.
+**OIDC.** Only `publish.yml` and `scorecard.yml` request `id-token: write`.
+Publication jobs use protected environments; Scorecard runs only on `main` and
+uses OIDC for its non-gating result publication.
 
 ## Findings
 

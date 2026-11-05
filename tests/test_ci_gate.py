@@ -286,6 +286,7 @@ def test_scorecard_runs_only_on_trusted_events():
     workflow = _workflow("scorecard.yml")
     assert set(workflow["on"]) == {"push", "schedule", "workflow_dispatch"}
     assert workflow["on"]["push"]["branches"] == ["main"]
+    assert workflow["jobs"]["analysis"]["if"] == "github.ref == 'refs/heads/main'"
     permissions = workflow["jobs"]["analysis"]["permissions"]
     assert permissions["id-token"] == "write"
     assert "security-events" not in permissions
