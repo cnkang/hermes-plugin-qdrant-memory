@@ -326,6 +326,22 @@ def test_release_gate_requires_code_scanning(tmp_path):
     assert report["passed"] is True
 
 
+def test_verify_manifest_stays_scoped_and_resolvable():
+    """The local verify manifest must name real, host-free tests."""
+    manifest = json.loads((ROOT / ".hermes/environment.json").read_text(encoding="utf-8"))
+    recipe = manifest["recipe"]
+    assert manifest["version"] == 1
+    assert "smoke" in recipe["name"].lower()
+    assert ".test-env/bin/python" in recipe["bootstrap"][0]
+    command = recipe["test"][0]
+    targets = [token for token in command.split() if token.startswith("tests/")]
+    assert targets, "The recipe must name explicit test files"
+    for target in targets:
+        assert (ROOT / target).is_file(), target
+    assert "test_manifest_contract.py" not in command, "That module needs the Hermes host"
+    assert recipe["start"] is None
+
+
 @pytest.mark.parametrize(
     "filename,job", [("ci.yml", "tests"), ("upstream-compat.yml", "latest-hermes")]
 )

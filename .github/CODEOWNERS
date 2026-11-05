@@ -5,3 +5,4 @@
 /tests/test_dependency_inputs.py @cnkang
 /requirements.txt @cnkang
 /requirements-local.txt @cnkang
+/.hermes/ @cnkang

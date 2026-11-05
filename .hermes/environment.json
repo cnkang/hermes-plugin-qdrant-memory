@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "recipe": {
+    "name": "Hermes Qdrant memory plugin (repository contract smoke)",
+    "kind": "python",
+    "bootstrap": [
+      "test -x .test-env/bin/python || { echo 'Missing .test-env. Build it with pm.build_env as described in docs/development.md.'; exit 1; }"
+    ],
+    "build": [],
+    "test": [
+      ".test-env/bin/python -m pytest -q tests/test_ci_gate.py tests/test_dependency_inputs.py"
+    ],
+    "start": null,
+    "port": null,
+    "readinessPath": "/",
+    "evidence": [
+      "Scoped repository-contract smoke: the CI gate policy and the dependency-input policy.",
+      "These tests need no Hermes checkout and no Qdrant container.",
+      "The full suite requires the Hermes host runner and a disposable Qdrant server; see docs/development.md."
+    ]
+  }
+}

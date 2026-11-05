@@ -48,6 +48,25 @@ the latest Hermes `main` (each run records the moving ref's checked-out SHA).
 Linux/macOS/Windows compatibility has a separate six-job matrix. See
 [CI services](ci.md).
 
+## Hermes verify manifest
+
+`.hermes/environment.json` defines a scoped smoke check for `hermes verify`.
+Without the manifest, detection treats this plugin as a FastAPI application. It
+would run `uv sync` and a bare `pytest`. That cannot import the host and would
+rewrite `uv.lock`.
+
+The manifest runs two repository-contract suites: the CI gate policy and the
+dependency-input policy. Both need no Hermes checkout and no Qdrant server. The
+bootstrap phase stops with a clear message when `.test-env` is missing.
+
+```bash
+hermes verify --json --phase bootstrap --phase test
+```
+
+This check is a smoke check. It does not replace the full behavior suite above.
+A green result does not certify host behavior, Server persistence or release
+readiness.
+
 The current retrieval fixture contains 24 labeled queries. `scripts/evaluate.py`
 requires a live embedding service and uses only a temporary collection. For a
 separate synthetic ledger recovery/storage measurement with no Qdrant network calls:
