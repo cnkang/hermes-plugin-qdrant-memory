@@ -11,6 +11,9 @@ updates:
       prefix: deps
     labels:
       - dependencies
+    # Wait a week before adopting a freshly published release.
+    cooldown:
+      default-days: 7
     ignore:
       # fastembed 0.9.x requires huggingface-hub <2; wait for upstream support.
       - dependency-name: huggingface-hub
@@ -33,6 +36,8 @@ updates:
       prefix: deps
     labels:
       - dependencies
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns:
