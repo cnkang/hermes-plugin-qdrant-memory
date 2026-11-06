@@ -15,6 +15,8 @@ from .retry import safe_error
 
 DELETE_FENCE_PREFIX = "hermes-qdrant-delete-fence-v1:"
 UNKNOWN_TABLE_MESSAGE = "Unknown ledger table"
+OWNER_BACKLOG_PER_AUTHORITY = 128
+OWNER_BACKLOG_TOTAL = 1024
 
 
 def _manifest_record_keys(records):
@@ -68,7 +70,8 @@ class Ledger:
                 CREATE TABLE IF NOT EXISTS events (
                     event_id TEXT PRIMARY KEY, session_id TEXT, payload_json TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0,
-                    last_error TEXT, created_at TEXT, committed_at TEXT, collection TEXT NOT NULL);
+                    last_error TEXT, created_at TEXT, committed_at TEXT, collection TEXT NOT NULL,
+                    owner_authority TEXT NOT NULL DEFAULT '');
                 CREATE TABLE IF NOT EXISTS operations (
                     idempotency_key TEXT PRIMARY KEY, point_id TEXT NOT NULL, action TEXT NOT NULL,
                     payload_json TEXT NOT NULL, source_id TEXT, source_version TEXT, content_hash TEXT,
@@ -102,6 +105,19 @@ class Ledger:
                     explicit_author INTEGER NOT NULL, history_known INTEGER NOT NULL,
                     PRIMARY KEY(session_id,collection));
             """)
+            columns = {row[1] for row in self.db.execute("PRAGMA table_info(events)")}
+            if "owner_authority" not in columns:
+                # Additive upgrade: existing rows keep an empty authority and
+                # are no longer charged to every capture principal's budget.
+                self.db.execute(
+                    "ALTER TABLE events ADD COLUMN owner_authority TEXT NOT NULL DEFAULT ''"
+                )
+                self.db.commit()
+            self.db.execute(
+                "CREATE INDEX IF NOT EXISTS events_by_collection_authority_status "
+                "ON events(collection,owner_authority,status)"
+            )
+            self._backfill_event_authority()
             self._resumable_operation_keys = self._load_resumable_operation_keys()
             with self.lock, self.db:
                 self._scrub_terminal_payloads()
@@ -111,6 +127,26 @@ class Ledger:
             except Exception as cleanup_exc:
                 exc.add_note(f"SQLite ledger cleanup failed ({type(cleanup_exc).__name__})")
             raise
+
+    def _backfill_event_authority(self):
+        """Attribute unsettled lifecycle events written before the column existed."""
+        rows = self.db.execute(
+            "SELECT event_id,payload_json FROM events WHERE collection=? "
+            "AND owner_authority='' AND status IN ('PENDING','FAILED','QUARANTINED')",
+            (self.collection,),
+        )
+        updates = []
+        for row in rows:
+            try:
+                value = json.loads(row["payload_json"])
+            except (TypeError, ValueError):
+                continue
+            authority = value.get("owner_authority") if isinstance(value, dict) else None
+            if isinstance(authority, dict):
+                updates.append((digest(authority), row["event_id"]))
+        if updates:
+            with self.lock, self.db:
+                self.db.executemany("UPDATE events SET owner_authority=? WHERE event_id=?", updates)
 
     def clear_destination(self):
         """Forget every destination-scoped replay record so cleared memories cannot replay.
@@ -261,15 +297,36 @@ class Ledger:
     def enqueue_event(self, value):
         """Persist an immutable event once and return its deterministic key."""
         key = digest([self.collection, value])
+        authority = value.get("owner_authority", "")
+        if not isinstance(authority, str):
+            # Lifecycle plans keep the authority mapping for replay; the
+            # per-authority backlog column stores its stable digest.
+            authority = digest(authority)
         with self.lock, self.db:
+            if authority:
+                exists = self.db.execute("SELECT 1 FROM events WHERE event_id=?", (key,)).fetchone()
+                if exists is None:
+                    row = self.db.execute(
+                        "SELECT SUM(CASE WHEN owner_authority=? THEN 1 ELSE 0 END), COUNT(*) "
+                        "FROM events WHERE collection=? AND status IN "
+                        "('PENDING','FAILED','QUARANTINED')",
+                        (authority, self.collection),
+                    ).fetchone()
+                    if (row[0] or 0) >= OWNER_BACKLOG_PER_AUTHORITY or row[
+                        1
+                    ] >= OWNER_BACKLOG_TOTAL:
+                        # Covers direct Native Owner admission as well as the
+                        # remote lifecycle _new_plan pre-check.
+                        raise RuntimeError("Owner lifecycle backlog is full")
             self.db.execute(
-                "INSERT OR IGNORE INTO events(event_id,session_id,payload_json,created_at,collection) VALUES(?,?,?,?,?)",
+                "INSERT OR IGNORE INTO events(event_id,session_id,payload_json,created_at,collection,owner_authority) VALUES(?,?,?,?,?,?)",
                 (
                     key,
                     value["session_id"],
                     json.dumps(value, ensure_ascii=False),
                     now(),
                     self.collection,
+                    authority,
                 ),
             )
         return key
