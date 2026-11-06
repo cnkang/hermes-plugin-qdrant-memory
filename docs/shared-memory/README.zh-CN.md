@@ -11,6 +11,10 @@ WorkBuddy 的默认行为保持私有且不变。本次工作不会重新配置�
 见[架构/安全契约](architecture.md)、[英文操作指南](README.md)和
 [实测验证报告](report.md)。不要在生产 profile 上试验下方命令。
 
+提交完整轮次的宿主集成必须遵循
+[Owner 生命周期事件契约](lifecycle-events.zh-CN.md)，包括版本化候选 schema
+和基于 receipt 的重试边界。
+
 ## 安装并创建独立的 owner profile
 
 使用 Python 3.11+ 和隔离环境。Runtime 0.5.0 包含此功能。请安装 PyPI 发行版，或在开发

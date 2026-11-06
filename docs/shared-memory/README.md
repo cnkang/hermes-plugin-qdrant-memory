@@ -13,6 +13,10 @@ See the [architecture/security contract](architecture.md),
 [中文操作说明](README.zh-CN.md), and [observed validation report](report.md).
 Do not use commands below against an existing production profile for experiments.
 
+Host integrations that submit completed turns must follow the
+[Owner lifecycle event contract](lifecycle-events.md), including the versioned
+candidate schema and receipt-based retry boundary.
+
 ## Install and create a separate owner profile
 
 Use Python 3.11+ and an isolated environment. Runtime 0.5.0 includes this

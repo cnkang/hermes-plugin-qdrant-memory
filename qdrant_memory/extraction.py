@@ -1,4 +1,4 @@
-"""Only the host LLM facade performs extraction and relation adjudication."""
+"""The configured model facade extracts and reviews shared Runtime candidates."""
 
 import json
 

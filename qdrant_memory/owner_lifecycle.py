@@ -5,22 +5,91 @@ Identity, space, capture policy, extraction and persistence remain Owner-side.
 """
 
 import json
+import math
 
 from .event_quarantine import EventQuarantined
 from .models import digest, now
 
+_TURN_FIELDS = {"event_id", "session_id", "kind", "user", "assistant"}
+_CANDIDATE_FIELDS = {"event_id", "session_id", "kind", "candidate_schema", "candidates"}
+_CANDIDATE_CONTEXT_FIELDS = _CANDIDATE_FIELDS | {"replacement_context"}
+_CANDIDATE_SCHEMA = "qdrant-memory/extraction-v1"
+_MAX_CANDIDATES = 32
+_MAX_CANDIDATE_TEXT = 4096
+
+
+def _check_candidate(candidate):
+    """Accept only one bounded record in the Runtime extraction schema."""
+    if not isinstance(candidate, dict) or set(candidate) != {
+        "text",
+        "category",
+        "importance",
+        "replacement_intent",
+    }:
+        return False
+    text = candidate["text"]
+    category = candidate["category"]
+    importance = candidate["importance"]
+    try:
+        valid_importance = (
+            isinstance(importance, (int, float))
+            and not isinstance(importance, bool)
+            and math.isfinite(importance)
+            and 0 <= importance <= 1
+        )
+    except OverflowError:
+        valid_importance = False
+    return (
+        isinstance(text, str)
+        and 0 < len(text.strip()) <= _MAX_CANDIDATE_TEXT
+        and isinstance(category, list)
+        and len(category) <= 8
+        and all(isinstance(item, str) and 0 < len(item) <= 64 for item in category)
+        and valid_importance
+        and isinstance(candidate["replacement_intent"], bool)
+    )
+
 
 def _check_turn(event):
-    """Reject any host payload that is not one bounded completed turn."""
+    """Reject anything except a bounded raw turn or versioned candidate event."""
+    if not isinstance(event, dict):
+        raise ValueError("Invalid lifecycle event")
+    raw_turn = set(event) == _TURN_FIELDS
+    candidate_fields = set(event)
+    candidates = candidate_fields in (_CANDIDATE_FIELDS, _CANDIDATE_CONTEXT_FIELDS)
     valid = (
-        isinstance(event, dict)
-        and set(event) == {"event_id", "session_id", "kind", "user", "assistant"}
+        (raw_turn or candidates)
         and event.get("kind") == "turn_completed"
-        and all(isinstance(value, str) for value in event.values())
+        and isinstance(event.get("event_id"), str)
         and 0 < len(event["event_id"]) <= 128
+        and isinstance(event.get("session_id"), str)
         and 0 < len(event["session_id"]) <= 256
-        and len(json.dumps(event).encode()) <= 131072
     )
+    if valid and raw_turn:
+        valid = all(isinstance(event[key], str) for key in ("user", "assistant"))
+    elif valid and candidates:
+        candidate_list = event.get("candidates")
+        valid = (
+            event.get("candidate_schema") == _CANDIDATE_SCHEMA
+            and isinstance(candidate_list, list)
+            and len(candidate_list) <= _MAX_CANDIDATES
+            and all(_check_candidate(item) for item in candidate_list)
+        )
+        has_replacement = valid and any(item["replacement_intent"] for item in candidate_list)
+        if has_replacement:
+            context = event.get("replacement_context")
+            valid = (
+                candidate_fields == _CANDIDATE_CONTEXT_FIELDS
+                and isinstance(context, str)
+                and 0 < len(context.strip()) <= 2048
+            )
+        else:
+            valid = valid and candidate_fields == _CANDIDATE_FIELDS
+    if valid:
+        try:
+            valid = len(json.dumps(event, ensure_ascii=False).encode("utf-8")) <= 131072
+        except UnicodeEncodeError:
+            valid = False
     if not valid:
         raise ValueError("Invalid lifecycle event")
 
@@ -134,7 +203,7 @@ class OwnerLifecycle:
 
                 raise SharedRecoveryRequiredError()
             if rt.extractor is None:
-                raise RuntimeError("Owner extraction provider must be explicitly configured")
+                raise RuntimeError("Owner relation-review provider must be explicitly configured")
             request_key = digest([authority, event["event_id"]])
             receipt = ledger.db.execute(
                 "SELECT * FROM owner_events_v1 WHERE collection=? AND request_key=?",
@@ -177,11 +246,18 @@ class OwnerLifecycle:
             "source": "owner_lifecycle",
             "scope": self.owner.scope(authority).as_dict(),
             "session_id": digest([authority, event["session_id"]]),
-            "user": event["user"],
-            "assistant": event["assistant"],
             "host_event_id": event["event_id"],
             "owner_authority": authority,
         }
+        if event.get("candidate_schema") == _CANDIDATE_SCHEMA:
+            value.update(
+                candidate_schema=event["candidate_schema"],
+                candidates=event["candidates"],
+            )
+            if "replacement_context" in event:
+                value["user"] = event["replacement_context"]
+        else:
+            value.update(user=event["user"], assistant=event["assistant"])
         event_key = digest([ledger.collection, value])
         with ledger.lock, ledger.db:
             ledger.db.execute(
