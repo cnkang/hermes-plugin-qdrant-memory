@@ -104,7 +104,9 @@ def test_ci_wheel_verifiers_target_their_distributions():
     ]
     assert len(wheel_steps) == 1
     verifier_calls = [
-        line.strip() for line in wheel_steps[0].splitlines() if "verify_ci_python.py" in line
+        line.strip()
+        for line in wheel_steps[0].splitlines()
+        if line.strip().startswith('python "$GITHUB_WORKSPACE/scripts/verify_ci_python.py" ')
     ]
     assert len(verifier_calls) == 2, verifier_calls
 
