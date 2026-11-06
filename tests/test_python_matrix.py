@@ -69,3 +69,24 @@ def test_matrix_builds_pin_the_setup_python_and_report_the_runtime_environment()
             assert any("verify_ci_python.py" in step.get("run", "") for step in steps), (
                 workflow_name
             )
+
+
+def test_behavior_workflows_require_the_plugin_distribution_in_the_test_environment():
+    """The three host behavior workflows must verify the installed plugin package."""
+    parser = YAML(typ="safe")
+    for workflow_name in ("ci.yml", "platform-compat.yml", "upstream-compat.yml"):
+        document = parser.load((WORKFLOWS / workflow_name).read_text(encoding="utf-8"))
+        verifier_calls = [
+            step.get("run", "")
+            for job in document["jobs"].values()
+            for step in job.get("steps", [])
+            if "verify_ci_python.py" in step.get("run", "")
+            and '--expected "${{ matrix.python }}"' in step.get("run", "")
+            and '--environment "$GITHUB_WORKSPACE/.test-env"' in step.get("run", "")
+            and "--distribution hermes-plugin-qdrant-memory" in step.get("run", "")
+        ]
+        assert len(verifier_calls) == 1, (workflow_name, verifier_calls)
+        assert "--require-distribution" in verifier_calls[0], (
+            workflow_name,
+            verifier_calls[0],
+        )

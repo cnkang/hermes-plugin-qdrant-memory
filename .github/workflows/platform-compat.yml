@@ -67,7 +67,7 @@ jobs:
             --requirements "$RUNNER_TEMP/host-test-requirements.txt"
       - name: Verify Python matrix interpreter and install target
         shell: bash
-        run: python scripts/verify_ci_python.py --expected "${{ matrix.python }}" --environment "$GITHUB_WORKSPACE/.test-env" --distribution hermes-plugin-qdrant-memory
+        run: python scripts/verify_ci_python.py --expected "${{ matrix.python }}" --environment "$GITHUB_WORKSPACE/.test-env" --distribution hermes-plugin-qdrant-memory --require-distribution
       - name: Run local behavior and host lifecycle contracts
         shell: bash
         env:

@@ -89,7 +89,7 @@ jobs:
             --requirements "$RUNNER_TEMP/upstream-host-requirements.txt" \
             --requirement "hermes-plugin-qdrant-memory @ file://$(find "$RUNNER_TEMP/plugin-wheel" -name 'hermes_plugin_qdrant_memory-*.whl' -print -quit)"
       - name: Verify Python matrix interpreter and install target
-        run: python scripts/verify_ci_python.py --expected "${{ matrix.python }}" --environment "$GITHUB_WORKSPACE/.test-env" --distribution hermes-plugin-qdrant-memory
+        run: python scripts/verify_ci_python.py --expected "${{ matrix.python }}" --environment "$GITHUB_WORKSPACE/.test-env" --distribution hermes-plugin-qdrant-memory --require-distribution
       - name: Install plugin distribution and verify its entry point
         working-directory: ${{ runner.temp }}
         run: |
