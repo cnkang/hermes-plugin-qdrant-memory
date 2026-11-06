@@ -115,7 +115,7 @@ jobs:
             --requirements "$RUNNER_TEMP/host-test-requirements.txt" \
             --requirement "hermes-plugin-qdrant-memory[mcp] @ file://$GITHUB_WORKSPACE"
       - name: Verify Python matrix interpreter and install target
-        run: python scripts/verify_ci_python.py --expected "${{ matrix.python }}" --environment "$GITHUB_WORKSPACE/.test-env" --distribution hermes-plugin-qdrant-memory
+        run: python scripts/verify_ci_python.py --expected "${{ matrix.python }}" --environment "$GITHUB_WORKSPACE/.test-env" --distribution hermes-plugin-qdrant-memory --require-distribution
       - name: Run canonical host test runner
         working-directory: .host
         env:
