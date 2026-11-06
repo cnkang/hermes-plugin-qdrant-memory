@@ -1,5 +1,7 @@
 """Guard the Python matrix against rebuilding environments with another interpreter."""
 
+import re
+import shlex
 from pathlib import Path
 
 from ruamel.yaml import YAML
@@ -9,6 +11,31 @@ from scripts.verify_ci_python import _expected_pair, _is_within, _version_pair
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 _PYTHON_TARGET = "$(python -c 'import sys; print(sys.executable)')"
+
+
+def _python_verifier_commands(steps):
+    commands = []
+    for step in steps:
+        for line in step.get("run", "").splitlines():
+            try:
+                argv = shlex.split(line, comments=True)
+            except ValueError:
+                continue
+            if len(argv) < 2:
+                continue
+
+            interpreter = argv[0].replace("\\", "/").rsplit("/", 1)[-1]
+            if interpreter.lower().endswith(".exe"):
+                interpreter = interpreter[:-4]
+            if re.fullmatch(r"python(?:3(?:\.\d+)?)?", interpreter.lower()) is None:
+                continue
+
+            script = argv[1].replace("\\", "/")
+            if script == "scripts/verify_ci_python.py" or script.endswith(
+                "/scripts/verify_ci_python.py"
+            ):
+                commands.append(line.strip())
+    return commands
 
 
 def test_python_matrix_version_comparison_uses_major_minor_values():
@@ -34,6 +61,26 @@ def test_distribution_install_location_must_belong_to_requested_environment(tmp_
     assert not _is_within(environment, outside)
 
 
+def test_python_verifier_provenance_only_counts_direct_python_commands():
+    """Echoes and comments must not satisfy runtime-verifier provenance checks."""
+    step = {
+        "run": "\n".join(
+            (
+                "echo python scripts/verify_ci_python.py --expected 3.11",
+                "  # python scripts/verify_ci_python.py --expected 3.11",
+                "echo 'python scripts/verify_ci_python.py --expected 3.11'",
+                "python scripts/verify_ci_python.py --expected 3.11",
+                'python3.11 "$GITHUB_WORKSPACE/scripts/verify_ci_python.py" --expected 3.11',
+            )
+        )
+    }
+
+    assert _python_verifier_commands([step]) == [
+        "python scripts/verify_ci_python.py --expected 3.11",
+        'python3.11 "$GITHUB_WORKSPACE/scripts/verify_ci_python.py" --expected 3.11',
+    ]
+
+
 def test_matrix_builds_pin_the_setup_python_and_report_the_runtime_environment():
     """Every matrix environment build must use and report the selected interpreter."""
     parser = YAML(typ="safe")
@@ -48,11 +95,7 @@ def test_matrix_builds_pin_the_setup_python_and_report_the_runtime_environment()
             steps = job.get("steps", [])
             matrix_python = job.get("strategy", {}).get("matrix", {}).get("python")
             if matrix_python is not None:
-                provenance = [
-                    step.get("run", "")
-                    for step in steps
-                    if "verify_ci_python.py" in step.get("run", "")
-                ]
+                provenance = _python_verifier_commands(steps)
                 assert any('"${{ matrix.python }}"' in run for run in provenance), (
                     workflow_name,
                     job.get("name", "unnamed job"),
@@ -66,9 +109,7 @@ def test_matrix_builds_pin_the_setup_python_and_report_the_runtime_environment()
             if not builds:
                 continue
             assert all(_PYTHON_TARGET in run for run in builds), workflow_name
-            assert any("verify_ci_python.py" in step.get("run", "") for step in steps), (
-                workflow_name
-            )
+            assert _python_verifier_commands(steps), workflow_name
 
 
 def test_behavior_workflows_require_the_plugin_distribution_in_the_test_environment():
