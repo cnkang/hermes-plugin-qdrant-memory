@@ -20,14 +20,14 @@ WorkBuddy 的默认行为保持私有且不变。本次工作不会重新配置�
 使用 Python 3.11+ 和隔离环境。Runtime 0.5.0 包含此功能。请安装 PyPI 发行版，或在开发
 时使用固定 commit 的已审核 checkout。
 
-安装包前，请检查 [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.0/)
-是否已提供 Runtime 0.6.0。
+安装包前，请检查 [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.1/)
+是否已提供 Runtime 0.6.1。
 若尚未发布，请使用[已发布指南](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/e1fafac7a86ad384813717d0a6b3204fcc242895/docs/shared-memory/README.zh-CN.md)
 或经审核的源码预览；下方包安装命令须等待版本公开。
 
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env
-/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.6.0'
+/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.6.1'
 /absolute/path/shared-runtime-env/bin/qdrant-memory setup \
   --profile /absolute/path/shared-owner --embedding-provider ollama \
   --model qwen3-embedding:0.6b --dimensions 1024 \

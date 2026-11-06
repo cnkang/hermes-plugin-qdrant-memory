@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1
+
+- Add an authenticated Owner lifecycle retry action that accepts an event ID
+  and re-enqueues the immutable plan already stored with its durable receipt.
+  The control response does not return candidate content, so native adapters
+  can recover an accepted turn without storing candidate text in the host log
+  or extracting it again.
+
 ## 0.6.0
 
 - Allow 15 minutes per model artifact within a 30-minute total network budget
