@@ -78,6 +78,181 @@ def test_private_lifecycle_idempotency_provenance_and_shared_rule(tmp_path):
         rt.store.close()
 
 
+def test_preextracted_turn_uses_runtime_writer_and_replays_without_reextracting(
+    tmp_path, monkeypatch
+):
+    """The DSH adapter supplies candidates while Owner keeps scope and write authority."""
+    token = "a" * 40
+    rt = runtime(tmp_path)
+    try:
+        owner = SharedOwner(rt, [grant(token, "mac")])
+        lifecycle = OwnerLifecycle(owner)
+        event = {
+            "event_id": "dsh-turn-one",
+            "session_id": "hashed-session-id",
+            "kind": "turn_completed",
+            "candidate_schema": "qdrant-memory/extraction-v1",
+            "candidates": [
+                {
+                    "text": "The DSH native adapter uses the existing Runtime writer.",
+                    "category": ["project"],
+                    "importance": 0.8,
+                    "replacement_intent": False,
+                }
+            ],
+        }
+        plans = []
+        run_plan = lifecycle._run_plan
+
+        def capture_plan(*args):
+            plans.append(args[3].copy())
+            return run_plan(*args)
+
+        monkeypatch.setattr(lifecycle, "_run_plan", capture_plan)
+        result = lifecycle.submit(token, event)
+        assert result["status"] == "COMMITTED"
+        assert lifecycle.submit(token, event) == result
+        assert len(plans) == 1
+        assert "user" not in plans[0] and "assistant" not in plans[0]
+        assert rt.extractor.llm.calls == []
+        rows = owner.call(token, "qdrant_memory_search", {"query": "DSH native adapter"})[
+            "memories"
+        ]
+        assert len(rows) == 1
+        assert rows[0]["text"] == event["candidates"][0]["text"]
+        assert rows[0]["created_by_device"] == "mac"
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_preextracted_replacement_keeps_only_exact_user_evidence(tmp_path):
+    """A minimal exact excerpt lets Runtime review corrections without assistant text."""
+    import json
+    from types import SimpleNamespace
+
+    token = "a" * 40
+    statement = "For Project Willow, replace the morning cat preference with evening."
+
+    class ReplacementLLM:
+        def __init__(self):
+            self.calls = []
+
+        def complete_structured(self, **kwargs):
+            self.calls.append(kwargs)
+            value = json.loads(kwargs["input"][0]["text"])
+            relation = "SUPERSEDES" if "user_statement" in value else "CONFLICT"
+            return SimpleNamespace(parsed={"relation": relation})
+
+    llm = ReplacementLLM()
+    rt = runtime(tmp_path, llm=llm)
+    try:
+        credential = grant(token, "mac")
+        owner = SharedOwner(rt, [credential])
+        scope = owner.scope(credential)
+        old = owner.call(
+            token,
+            "qdrant_memory_add",
+            {"text": "Project Willow prefers cats in the morning", "request_id": "seed-old"},
+        )
+        lifecycle = OwnerLifecycle(owner)
+        event = {
+            "event_id": "dsh-replacement",
+            "session_id": "hashed-session-id",
+            "kind": "turn_completed",
+            "candidate_schema": "qdrant-memory/extraction-v1",
+            "replacement_context": statement,
+            "candidates": [
+                {
+                    "text": "Project Willow prefers cats in the evening",
+                    "category": ["preference"],
+                    "importance": 0.8,
+                    "replacement_intent": True,
+                }
+            ],
+        }
+        assert lifecycle.submit(token, event)["status"] == "COMMITTED"
+        updated = rt.store.get(old["id"], scope)
+        assert updated.payload["text"] == "Project Willow prefers cats in the evening"
+        relation_inputs = [
+            json.loads(call["input"][0]["text"])
+            for call in llm.calls
+            if call["purpose"].endswith("relation")
+        ]
+        assert any(value.get("user_statement") == statement for value in relation_inputs)
+        assert all("assistant" not in call for call in relation_inputs)
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"candidate_schema": "qdrant-memory/extraction-v2"},
+        {"user": "raw transcript is not part of the candidate contract"},
+        {"replacement_context": "No candidate marked replacement."},
+        {
+            "candidates": [
+                {
+                    "text": "A corrected fact",
+                    "category": [],
+                    "importance": 0.5,
+                    "replacement_intent": True,
+                }
+            ]
+        },
+        {
+            "candidates": [
+                {
+                    "text": "A fact",
+                    "category": [],
+                    "importance": True,
+                    "replacement_intent": False,
+                }
+            ]
+        },
+        {
+            "candidates": [
+                {
+                    "text": "A fact",
+                    "category": [],
+                    "importance": 0.5,
+                    "replacement_intent": False,
+                    "scope": {"owner_id": "spoofed"},
+                }
+            ]
+        },
+    ],
+)
+def test_preextracted_turn_rejects_unknown_schema_or_fields(tmp_path, change):
+    """Candidate ingress is versioned, bounded, and cannot widen Owner authority."""
+    token = "a" * 40
+    rt = runtime(tmp_path)
+    try:
+        lifecycle = OwnerLifecycle(SharedOwner(rt, [grant(token, "mac")]))
+        event = {
+            "event_id": "dsh-invalid",
+            "session_id": "s",
+            "kind": "turn_completed",
+            "candidate_schema": "qdrant-memory/extraction-v1",
+            "candidates": [
+                {
+                    "text": "A fact",
+                    "category": [],
+                    "importance": 0.5,
+                    "replacement_intent": False,
+                }
+            ],
+        }
+        with pytest.raises(ValueError, match="Invalid lifecycle event"):
+            lifecycle.submit(token, {**event, **change})
+        assert rt.ledger.stats()["events"].get("PENDING", 0) == 0
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
 def test_lifecycle_outage_is_durable_and_recoverable(tmp_path, monkeypatch):
     """The accepted event survives extraction failure without a second runtime."""
     token = "a" * 40

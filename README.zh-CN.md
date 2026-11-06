@@ -112,7 +112,9 @@ CLI 调用方式为 `qdrant-memory --home PATH`。这些接口提供限定作用
 | 单 Agent 独立 MCP | Standalone MCP (`qdrant-memory-mcp`) | 仅显式工具，无自动提取 |
 | 多 Agent 共享记忆 | 认证 Shared Owner | 可选。每个目的地一个 writer |
 | 远程 / 多设备接入 | HTTPS MCP + Owner | 需 TLS、认证与网络保护 |
-| WorkBuddy / DSH | 宿主集成指南 | 复用同一 Runtime |
+| WorkBuddy | 宿主集成指南 | 复用同一 Runtime |
+| DSH 已发布的 MCP 路径 | MCP Bundle 或 Python overlay | 显式工具；不自动捕获或召回 |
+| DSH 原生适配器 | 需要候选事件 Runtime 支持的源码预览 | 可选生命周期路径；尚无真实模型或 GUI 验收 |
 | Codex 记忆迁移 | Runtime `codex` CLI 与候选插件 | 显式导入、通用交接；原生采纳需客户端确认 |
 | 迁移 Mem0 数据 | 迁移 CLI | 源 ID、可恢复 manifest、验证 |
 

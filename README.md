@@ -136,7 +136,9 @@ the workflow. See [validation](docs/validation.md) for the tested versions and l
 | Single agent, standalone MCP | Standalone MCP (`qdrant-memory-mcp`) | Explicit tools only, no auto-extraction |
 | Multiple agents sharing memory | Authenticated Shared Owner | Opt-in. One writer per destination |
 | Remote / multi-device access | HTTPS MCP + Owner | TLS, auth and network protection required |
-| WorkBuddy / DSH | Host integration guides | Reuse the same Runtime |
+| WorkBuddy | Host integration guides | Reuse the same Runtime |
+| DSH published MCP | MCP Bundle or Python overlay | Explicit tools; no automatic capture or recall |
+| DSH native adapter | Source preview with candidate-event Runtime support | Opt-in lifecycle path; no real-model or GUI acceptance |
 | Codex portability | Runtime `codex` CLI and candidate plugin | Explicit import and portable handoff; native adoption needs client confirmation |
 | Migrate Mem0 data | Migration CLI | Source IDs, resumable manifest, verification |
 

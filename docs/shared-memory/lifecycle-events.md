@@ -81,3 +81,43 @@ Standalone and SDK1/SDK2 tests cover authorization, forbidden scope overrides,
 prepared-write refusal, raw-body scrubbing, actual SQLite reopen, CLI dispatch,
 HTTP request/response handling and Pi outbox replay. These deterministic tests
 do not prove model accuracy or public deployment readiness.
+
+## Versioned host candidate ingestion
+
+`turn_completed` events may use the versioned
+`qdrant-memory/extraction-v1` candidate contract. The adapter sends extracted
+candidates only; it does not send the raw assistant answer or ask the Owner to
+extract a second time:
+
+```json
+{
+  "event_id": "dsh-native-<sha256>",
+  "session_id": "dsh-<sha256>",
+  "kind": "turn_completed",
+  "candidate_schema": "qdrant-memory/extraction-v1",
+  "candidates": [{
+    "text": "The project uses the existing Runtime.",
+    "category": ["project"],
+    "importance": 0.8,
+    "replacement_intent": false
+  }]
+}
+```
+
+Each candidate has exactly `text`, `category`, `importance`, and
+`replacement_intent`. A batch contains at most 32 candidates. Text is limited
+to 4,096 characters; there may be at most eight categories, each at most 64
+characters. Importance is finite and between 0 and 1. Unknown fields, invalid
+types, credential-shaped content and oversized payloads are rejected. A
+replacement candidate may include one exact `replacement_context` excerpt of
+up to 2,048 characters. The Owner keeps that excerpt only until relation review
+settles and does not persist it in the event plan.
+
+The Owner still authenticates the grant, derives the permitted scope, applies
+the existing relation adjudication and deduplication, persists the durable
+event/receipt, and performs the existing mutation and recovery flow. Host
+candidates are not trusted write instructions. The four public MCP tool
+schemas are unchanged. A stable event ID is required for retries; an accepted
+receipt is the boundary for reporting a completed capture. This source-preview
+contract is not available in the currently published Runtime until its
+companion release is published.
