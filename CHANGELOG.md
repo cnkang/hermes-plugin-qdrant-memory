@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Add an absolute request deadline to the Shared Owner listener so a partial
+  request cannot pin an admission permit or a handler thread; a body shorter
+  than its declared length is rejected before any Owner call. Make the Windows
+  loopback bind exclusive and partition the Owner lifecycle backlog budget by
+  capture authority (including Native Owner admission) while keeping a
+  collection-wide ceiling.
+- Translate a terminal remote tool failure into the documented
+  outcome-unknown/retryable envelope in the stdio bridge instead of returning a
+  non-retryable ExceptionGroup.
+
 ## 0.6.1
 
 - Add an authenticated Owner lifecycle retry action that accepts an event ID
