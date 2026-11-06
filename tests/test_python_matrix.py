@@ -90,3 +90,40 @@ def test_behavior_workflows_require_the_plugin_distribution_in_the_test_environm
             workflow_name,
             verifier_calls[0],
         )
+
+
+def test_ci_wheel_verifiers_target_their_distributions():
+    """The wheel build and install environments must check their intended packages."""
+    parser = YAML(typ="safe")
+    document = parser.load((WORKFLOWS / "ci.yml").read_text(encoding="utf-8"))
+    wheel_steps = [
+        step.get("run", "")
+        for job in document["jobs"].values()
+        for step in job.get("steps", [])
+        if "wheel-build-env" in step.get("run", "") and "wheel-env" in step.get("run", "")
+    ]
+    assert len(wheel_steps) == 1
+    verifier_calls = [
+        line.strip() for line in wheel_steps[0].splitlines() if "verify_ci_python.py" in line
+    ]
+    assert len(verifier_calls) == 2, verifier_calls
+
+    build_calls = [
+        call for call in verifier_calls if '--environment "$RUNNER_TEMP/wheel-build-env"' in call
+    ]
+    install_calls = [
+        call for call in verifier_calls if '--environment "$RUNNER_TEMP/wheel-env"' in call
+    ]
+    assert len(build_calls) == 1, verifier_calls
+    assert len(install_calls) == 1, verifier_calls
+
+    build_call = build_calls[0]
+    assert '--expected "${{ matrix.python }}"' in build_call
+    assert "--distribution setuptools" in build_call
+    assert "--require-distribution" in build_call
+
+    install_call = install_calls[0]
+    assert '--expected "${{ matrix.python }}"' in install_call
+    # The verifier's default distribution is the plugin package.
+    assert "--distribution" not in install_call
+    assert "--require-distribution" in install_call
