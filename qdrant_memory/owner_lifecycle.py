@@ -155,6 +155,22 @@ class OwnerLifecycle:
                 status = row["status"] if row is not None else "ACCEPTED"
             return {"event_id": event_id, "status": status}
 
+    def retry(self, token, event_id):
+        """Re-enqueue this device's durable immutable plan without returning its content."""
+        rt = self.owner.runtime
+        ledger = rt.ledger
+        with rt.lock:
+            receipt, _ = self._receipt(token, event_id)
+            if receipt is None:
+                return {"event_id": event_id, "status": "NOT_FOUND"}
+            value, event_key, status = self._replayed_plan(ledger, receipt, receipt["input_hash"])
+            if status is not None:
+                return {"event_id": event_id, "status": status}
+            if not isinstance(value, dict) or value.get("host_event_id") != event_id:
+                raise ValueError("Lifecycle event plan is unavailable")
+            status = self._run_plan(rt, ledger, receipt["request_key"], value, event_key)
+            return {"event_id": event_id, "status": status}
+
     def cancel(self, token, event_id):
         """Cancel only raw input; any prepared/uncertain write must still reconcile."""
         rt = self.owner.runtime

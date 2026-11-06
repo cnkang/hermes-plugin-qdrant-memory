@@ -81,7 +81,7 @@ def test_private_lifecycle_idempotency_provenance_and_shared_rule(tmp_path):
 def test_preextracted_turn_uses_runtime_writer_and_replays_without_reextracting(
     tmp_path, monkeypatch
 ):
-    """The DSH adapter supplies candidates while Owner keeps scope and write authority."""
+    """Owner retries its stored candidate plan without re-extracting or returning content."""
     token = "a" * 40
     rt = runtime(tmp_path)
     try:
@@ -106,13 +106,19 @@ def test_preextracted_turn_uses_runtime_writer_and_replays_without_reextracting(
 
         def capture_plan(*args):
             plans.append(args[3].copy())
+            if len(plans) == 1:
+                return "ACCEPTED"
             return run_plan(*args)
 
         monkeypatch.setattr(lifecycle, "_run_plan", capture_plan)
-        result = lifecycle.submit(token, event)
+        accepted = lifecycle.submit(token, event)
+        assert accepted["status"] == "ACCEPTED"
+        assert lifecycle.inspect(token, event["event_id"])["status"] == "ACCEPTED"
+        result = lifecycle.retry(token, event["event_id"])
         assert result["status"] == "COMMITTED"
         assert lifecycle.submit(token, event) == result
-        assert len(plans) == 1
+        assert len(plans) == 2
+        assert plans[0] == plans[1]
         assert "user" not in plans[0] and "assistant" not in plans[0]
         assert rt.extractor.llm.calls == []
         rows = owner.call(token, "qdrant_memory_search", {"query": "DSH native adapter"})[
