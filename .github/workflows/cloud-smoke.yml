@@ -18,6 +18,7 @@ permissions:
 jobs:
   owner-availability:
     name: Check scoped Cloud Owner input availability
+    if: github.repository == 'cnkang/hermes-plugin-qdrant-memory' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     environment: qdrant-cloud
@@ -45,7 +46,7 @@ jobs:
   owner:
     name: Scoped Cloud Owner devices and recovery
     needs: owner-availability
-    if: needs.owner-availability.outputs.available == 'true'
+    if: github.repository == 'cnkang/hermes-plugin-qdrant-memory' && github.ref == 'refs/heads/main' && needs.owner-availability.outputs.available == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: qdrant-cloud
@@ -136,6 +137,7 @@ jobs:
         run: rm -f "$RUNNER_TEMP/cloud-owner-config.json"
   cloud:
     name: Authenticated Cloud integration
+    if: github.repository == 'cnkang/hermes-plugin-qdrant-memory' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: qdrant-cloud
