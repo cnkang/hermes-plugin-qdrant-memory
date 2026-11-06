@@ -862,8 +862,19 @@ class QdrantMemoryProvider(MemoryProvider):
                     self.ledger.failure("events", key, exc, terminal=True)
                     self._native_owner.owner.blocked = True
                     raise
-            for captured in values:
-                self._enqueue_event(captured)
+            for index, captured in enumerate(values):
+                try:
+                    self._enqueue_event(captured)
+                except RuntimeError as exc:
+                    if "backlog is full" not in str(exc) or self._native_owner is None:
+                        raise
+                    if index == 0:
+                        # The private capture is the turn's primary path; do not
+                        # silently drop it as if a shared rule were denied.
+                        raise
+                    # Mirror the per-rule denial used for an unauthorized
+                    # shared capture instead of failing the host turn hook.
+                    self._native_owner._deny_capture(index)
 
     def _enqueue_event(self, value):
         """Queue an already-authorized durable event on the one existing worker."""
