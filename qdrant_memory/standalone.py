@@ -229,7 +229,7 @@ def parser():
             remote_request.add_argument("--tool", required=True)
         else:
             remote_request.add_argument(
-                "--action", choices=["submit", "status", "cancel"], default="submit"
+                "--action", choices=["submit", "status", "retry", "cancel"], default="submit"
             )
     shared_doctor = commands.add_parser(
         "shared-doctor", help="Inspect shared deployment safety without modifying memory"

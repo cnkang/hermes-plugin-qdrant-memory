@@ -63,10 +63,14 @@ async def _lifecycle_dispatch(lifecycle, token, scope, event):
             not isinstance(event, dict)
             or set(event) != {"action", "event_id"}
             or not isinstance(event["action"], str)
-            or event["action"] not in {"status", "cancel"}
+            or event["action"] not in {"status", "retry", "cancel"}
         ):
             raise ValueError("Invalid lifecycle control")
-        method = lifecycle.inspect if event["action"] == "status" else lifecycle.cancel
+        method = {
+            "status": lifecycle.inspect,
+            "retry": lifecycle.retry,
+            "cancel": lifecycle.cancel,
+        }[event["action"]]
         return await anyio.to_thread.run_sync(lambda: method(token, event["event_id"]))
     return await anyio.to_thread.run_sync(lambda: lifecycle.submit(token, event))
 

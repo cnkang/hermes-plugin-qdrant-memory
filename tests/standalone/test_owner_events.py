@@ -152,6 +152,10 @@ def test_event_management_http_reuses_auth_and_rejects_scope_parameters(tmp_path
                 assert (await http.post("/events/manage", headers=headers, json=body)).json()[
                     "status"
                 ] == "PENDING"
+                body["action"] = "retry"
+                assert (await http.post("/events/manage", headers=headers, json=body)).json()[
+                    "status"
+                ] == "PENDING"
                 assert (await http.post("/events/manage", json=body)).status_code == 403
                 assert (
                     await http.post(
@@ -199,6 +203,9 @@ def test_production_event_client_control_and_cancelled_replay(tmp_path, monkeypa
             assert (await control_event("https://memory.test/mcp", token, "one", "status"))[
                 "status"
             ] == "PENDING"
+            assert (await control_event("https://memory.test/mcp", token, "one", "retry"))[
+                "status"
+            ] == "PENDING"
             assert (await control_event("https://memory.test/mcp", token, "one", "cancel"))[
                 "status"
             ] == "CANCELLED"
@@ -224,7 +231,7 @@ def test_public_event_control_cli_requires_only_event_id(monkeypatch, capsys):
 
     async def control(url, token, event_id, action, **kwargs):
         seen.append((event_id, action))
-        return {"event_id": event_id, "status": "CANCELLED"}
+        return {"event_id": event_id, "status": "ACCEPTED"}
 
     monkeypatch.setattr("qdrant_memory.remote_client.control_event", control)
     monkeypatch.setenv("QM_EVENT_CONTROL", "a" * 40)
@@ -235,17 +242,17 @@ def test_public_event_control_cli_requires_only_event_id(monkeypatch, capsys):
         "--token-env",
         "QM_EVENT_CONTROL",
         "--action",
-        "cancel",
+        "retry",
     ]
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b'{"event_id":"one"}')))
     assert main(args) == 0
-    assert json.loads(capsys.readouterr().out)["status"] == "CANCELLED"
-    assert seen == [("one", "cancel")]
+    assert json.loads(capsys.readouterr().out)["status"] == "ACCEPTED"
+    assert seen == [("one", "retry")]
     monkeypatch.setattr(
         sys, "stdin", io.TextIOWrapper(io.BytesIO(b'{"event_id":"one","space_id":"spoof"}'))
     )
     assert main(args) == 1
-    assert seen == [("one", "cancel")]
+    assert seen == [("one", "retry")]
 
 
 def test_cancellation_detects_a_changed_ledger_plan(tmp_path, monkeypatch):

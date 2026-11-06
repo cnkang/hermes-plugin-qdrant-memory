@@ -247,9 +247,9 @@ async def send_event(url, token, event, *, ca_file=None):
 
 
 async def control_event(url, token, event_id, action, *, ca_file=None):
-    """Inspect/cancel a device's own event without widening its memory authority."""
+    """Inspect, retry or cancel a device's own event without widening its authority."""
     if (
-        action not in ("status", "cancel")
+        action not in ("status", "retry", "cancel")
         or not isinstance(event_id, str)
         or not 0 < len(event_id) <= 128
     ):
