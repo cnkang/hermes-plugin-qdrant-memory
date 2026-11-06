@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_VERSION = "0.6.0"
-IMPLEMENTATION_PREVIEW_COMMIT = "cd4634f52f56ba54aae886290dd59056108ffbfe"
+RUNTIME_VERSION = "0.6.1"
+RUNTIME_RELEASE_REF = f"v{RUNTIME_VERSION}"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
 ACTIVE_INSTALL_DOCS = {
@@ -123,12 +123,12 @@ def test_current_runtime_is_the_recommended_installation(recommended_installatio
     assert "Hermes CLI" in heading
 
 
-def test_recommended_install_pins_the_reviewed_source_preview(recommended_installation):
-    """Reject abbreviated SHAs, mutable refs, and catalog shortcuts."""
+def test_recommended_install_pins_the_published_release(recommended_installation):
+    """Keep the recommended Hermes install on the versioned Runtime release."""
     _, commands = recommended_installation
     installs = [command for command in commands if command[:3] == ["hermes", "plugins", "install"]]
     assert installs == [
-        ["hermes", "plugins", "install", REPOSITORY_URL, "--ref", IMPLEMENTATION_PREVIEW_COMMIT]
+        ["hermes", "plugins", "install", REPOSITORY_URL, "--ref", RUNTIME_RELEASE_REF]
     ]
 
 
@@ -141,7 +141,7 @@ def test_pinned_install_preserves_the_profile_and_guided_setup(recommended_insta
         "install",
         REPOSITORY_URL,
         "--ref",
-        IMPLEMENTATION_PREVIEW_COMMIT,
+        RUNTIME_RELEASE_REF,
     ]
     install_index = commands.index(install)
     assert ["export", "HERMES_HOME=/absolute/path/to/your/hermes-profile"] in commands[
@@ -155,17 +155,19 @@ def test_pinned_install_preserves_the_profile_and_guided_setup(recommended_insta
     ]
 
 
-def test_demo_script_pins_the_reviewed_implementation_preview():
-    """The demo pins the same reviewed Runtime source preview as the README."""
+def test_demo_and_remote_owner_pin_the_published_runtime():
+    """Keep the demo and source installation tied to the current release tag."""
     script = (ROOT / "scripts/demo.sh").read_text(encoding="utf-8")
-    match = re.search(r'^IMPLEMENTATION_PREVIEW_REF="([0-9a-f]{40})"', script, re.M)
-    assert match, "scripts/demo.sh must pin a full reviewed implementation SHA"
-    assert match.group(1) == IMPLEMENTATION_PREVIEW_COMMIT
+    match = re.search(r'^RUNTIME_RELEASE_REF="(v[0-9]+\.[0-9]+\.[0-9]+)"', script, re.M)
+    assert match, "scripts/demo.sh must pin a versioned Runtime release tag"
+    assert match.group(1) == RUNTIME_RELEASE_REF
 
     remote_owner = (ROOT / "docs/shared-memory/remote-owner.md").read_text(encoding="utf-8")
-    source_match = re.search(r"hermes-plugin-qdrant-memory\.git@([0-9a-f]{40})", remote_owner)
-    assert source_match, "remote-owner.md must pin a full source preview SHA"
-    assert source_match.group(1) == IMPLEMENTATION_PREVIEW_COMMIT
+    source_match = re.search(
+        r"hermes-plugin-qdrant-memory\.git@(v[0-9]+\.[0-9]+\.[0-9]+)", remote_owner
+    )
+    assert source_match, "remote-owner.md must pin a versioned Runtime source tag"
+    assert source_match.group(1) == RUNTIME_RELEASE_REF
 
 
 def test_pypi_description_installs_the_version_being_built():

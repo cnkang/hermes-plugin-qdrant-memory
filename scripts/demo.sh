@@ -2,7 +2,7 @@
 # Demo: durable memory with the qdrant-memory plugin, in embedded mode.
 #
 # The script uses a dedicated HERMES_HOME, so it does not touch an existing
-# Hermes profile. It installs the reviewed implementation preview, teaches a preference,
+# Hermes profile. It installs a versioned Runtime release, teaches a preference,
 # waits for the background extraction, recalls the preference in a new
 # session, and walks through export and scoped deletion.
 #
@@ -28,7 +28,7 @@
 #   Default DEMO_HOME: $HOME/.hermes-qdrant-demo
 #
 # The script drives Hermes non-interactively:
-#   hermes plugins install <url> --ref <sha> [--yes-deps]
+#   hermes plugins install <url> --ref <release-tag> [--yes-deps]
 #       --yes-deps consents to dependency preparation at install time and is
 #       passed only when the CLI supports it. Interactive shells can answer
 #       the prompt instead; the minimum supported Hermes prepares
@@ -39,7 +39,7 @@
 
 set -euo pipefail
 DEMO_HOME="${1:-$HOME/.hermes-qdrant-demo}"
-IMPLEMENTATION_PREVIEW_REF="cd4634f52f56ba54aae886290dd59056108ffbfe"   # Reviewed Runtime 0.6.0 implementation preview
+RUNTIME_RELEASE_REF="v0.6.1"   # Published Runtime release
 # Local CLI sessions attribute memory to the host's local session identity
 # (uid:<os-uid>). The inventory and deletion commands must use the same scope.
 SCOPE_USER="uid:$(id -u)"
@@ -101,7 +101,7 @@ memories_total() {
 }
 
 say "Install the reviewed implementation preview through the Hermes CLI"
-install_args=(https://github.com/cnkang/hermes-plugin-qdrant-memory --ref "$IMPLEMENTATION_PREVIEW_REF")
+install_args=(https://github.com/cnkang/hermes-plugin-qdrant-memory --ref "$RUNTIME_RELEASE_REF")
 install_help=$(hermes plugins install --help 2>/dev/null || true)
 # --yes-deps exists on newer Hermes; older releases prepare dependencies by
 # default and reject the unknown flag. --force reinstalls over an existing
