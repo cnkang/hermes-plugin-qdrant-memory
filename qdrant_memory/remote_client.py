@@ -65,6 +65,10 @@ def http_module():
     return httpx
 
 
+class RemoteRequestNotSent(ValueError):
+    """A local request check failed before anything reached the Owner."""
+
+
 class RemoteStatusError(RuntimeError):
     """A lifecycle response carried a rejection status and no usable result."""
 
@@ -325,10 +329,16 @@ async def call_remote(url, token, name, arguments, *, ca_file=None):
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
 
-    validate_endpoint(url)
-    validate_arguments(name, arguments, shared_schemas())
-    if not isinstance(token, str) or not 32 <= len(token) <= 1000 or not token.isascii():
-        raise ValueError("A provisioned service credential is required")
+    try:
+        validate_endpoint(url)
+        validate_arguments(name, arguments, shared_schemas())
+        if not isinstance(token, str) or not 32 <= len(token) <= 1000 or not token.isascii():
+            raise ValueError("A provisioned service credential is required")
+    except ValueError as exc:
+        # These checks run before the HTTP client exists, so the Owner never
+        # saw the request; the caller must not treat it as a replayable
+        # transport failure.
+        raise RemoteRequestNotSent(str(exc)) from exc
     http = http_module()
     context = ssl.create_default_context(cafile=ca_file)
 
@@ -548,6 +558,21 @@ def _invoke_remote(url, token, ca_file, name, arguments):
     try:
         return anyio.run(request)
     except Exception as exc:
+        local = next(
+            (leaf for leaf in _exception_leaves(exc) if isinstance(leaf, RemoteRequestNotSent)),
+            None,
+        )
+        if local is not None:
+            return {
+                "error": {
+                    "type": type(local).__name__,
+                    "reason": "request_not_sent",
+                    "retryable": False,
+                    "sent": False,
+                    "message": str(local),
+                    "hint": "Correct the tool arguments; the Owner did not receive this request.",
+                }
+            }
         # ExceptionGroup already subclasses Exception. Catching the wider
         # BaseExceptionGroup would swallow grouped KeyboardInterrupt/SystemExit.
         # The generic MCP tool wrapper would serialize an ExceptionGroup as
