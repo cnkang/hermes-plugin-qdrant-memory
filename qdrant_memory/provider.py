@@ -18,7 +18,7 @@ from .config import active_home, ledger_namespace, load_config
 from .config_schema import get_config_schema, save_config
 from .embedding import build_embedder
 from .extraction import Extractor
-from .ledger import Ledger
+from .ledger import Ledger, OwnerBacklogFull
 from .models import Scope
 from .ownership import WriterBusyError, WriterLease
 from .qdrant_store import QdrantStore, build_client
@@ -865,8 +865,8 @@ class QdrantMemoryProvider(MemoryProvider):
             for index, captured in enumerate(values):
                 try:
                     self._enqueue_event(captured)
-                except RuntimeError as exc:
-                    if "backlog is full" not in str(exc) or self._native_owner is None:
+                except OwnerBacklogFull:
+                    if self._native_owner is None:
                         raise
                     if index == 0:
                         # The private capture is the turn's primary path; do not

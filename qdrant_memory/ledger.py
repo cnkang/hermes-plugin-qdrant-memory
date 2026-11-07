@@ -20,6 +20,10 @@ OWNER_BACKLOG_TOTAL = 1024
 _OWNER_AUTHORITY_BACKFILL = "owner_authority_v1"
 
 
+class OwnerBacklogFull(RuntimeError):
+    """The durable Owner lifecycle backlog cannot accept another event."""
+
+
 def _manifest_record_keys(records):
     """Collect operation keys from one manifest record map, or None if malformed."""
     if not isinstance(records, dict):
@@ -351,7 +355,7 @@ class Ledger:
                     ] >= OWNER_BACKLOG_TOTAL:
                         # Covers direct Native Owner admission as well as the
                         # remote lifecycle _new_plan pre-check.
-                        raise RuntimeError("Owner lifecycle backlog is full")
+                        raise OwnerBacklogFull("Owner lifecycle backlog is full")
             self.db.execute(
                 "INSERT OR IGNORE INTO events(event_id,session_id,payload_json,created_at,collection,owner_authority) VALUES(?,?,?,?,?,?)",
                 (
