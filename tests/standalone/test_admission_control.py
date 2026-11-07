@@ -157,13 +157,19 @@ def test_incomplete_declared_body_never_reaches_the_owner(monkeypatch):
         peer = socket.create_connection(("127.0.0.1", server.server_port), timeout=5)
         header = (
             f"POST /v1/tool HTTP/1.1\r\nHost: 127.0.0.1:{server.server_port}\r\n"
-            "Authorization: *** " + "x" * 40 + "\r\n"
+            "Authorization: Bearer " + "x" * 40 + "\r\n"
             "Content-Type: application/json\r\n"
             f"Content-Length: {len(body) + 16}\r\nConnection: close\r\n\r\n"
         ).encode()
-        peer.sendall(header)
-        peer.sendall(body)
-        time.sleep(0.8)
+        peer.sendall(header + body)
+        peer.shutdown(socket.SHUT_WR)
+        response = b""
+        while True:
+            chunk = peer.recv(4096)
+            if not chunk:
+                break
+            response += chunk
+        assert b" 400 " in response.split(b"\r\n", 1)[0]
         assert calls == []
     finally:
         if peer is not None:

@@ -680,6 +680,20 @@ def test_stdio_bridge_keeps_the_replay_envelope_for_a_terminal_group(monkeypatch
     assert "replay" not in search["error"]
 
 
+def test_stdio_bridge_reports_a_local_validation_failure_as_not_sent():
+    """A rejected argument never reached the Owner and is not replayable."""
+    result = remote_client._invoke_remote(
+        "https://memory.test/mcp", TOKEN, None, "qdrant_memory_add", {}
+    )
+    error = result["error"]
+    assert isinstance(error, dict)
+    assert error["reason"] == "request_not_sent"
+    assert error["sent"] is False
+    assert error["retryable"] is False
+    assert "replay" not in error
+    assert "Missing memory tool arguments" in error["message"]
+
+
 def test_stdio_bridge_does_not_swallow_grouped_base_exceptions(monkeypatch):
     """A group carrying KeyboardInterrupt must keep propagating."""
 
