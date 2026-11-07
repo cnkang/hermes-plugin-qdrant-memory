@@ -8,7 +8,7 @@ import json
 import math
 
 from .event_quarantine import EventQuarantined
-from .ledger import OWNER_BACKLOG_PER_AUTHORITY, OWNER_BACKLOG_TOTAL
+from .ledger import OWNER_BACKLOG_PER_AUTHORITY, OWNER_BACKLOG_TOTAL, OwnerBacklogFull
 from .models import digest, now
 
 _TURN_FIELDS = {"event_id", "session_id", "kind", "user", "assistant"}
@@ -257,13 +257,13 @@ class OwnerLifecycle:
         row = ledger.backlog_counts(digest(authority))
         queued = row[0] or 0
         if queued >= OWNER_BACKLOG_PER_AUTHORITY:
-            raise RuntimeError("Owner lifecycle backlog is full")
+            raise OwnerBacklogFull("Owner lifecycle backlog is full")
         if row[1] >= OWNER_BACKLOG_TOTAL:
             # Keep a collection-wide ceiling so many authorities cannot grow
             # the durable backlog without bound. Native rejections with no
             # attributed authority are excluded: they stay recoverable without
             # consuming another authority's admission budget.
-            raise RuntimeError("Owner lifecycle backlog is full")
+            raise OwnerBacklogFull("Owner lifecycle backlog is full")
         value = {
             "kind": "turn",
             "source": "owner_lifecycle",
@@ -294,9 +294,7 @@ class OwnerLifecycle:
         # The receipt's immutable event plan closes the crash-before-enqueue gap.
         try:
             ledger.enqueue_event(value)
-        except RuntimeError as exc:
-            if "backlog is full" not in str(exc):
-                raise
+        except OwnerBacklogFull:
             if created:
                 # Do not leave a receipt for a turn that was just refused, but
                 # never delete a receipt accepted by an earlier attempt.
@@ -335,9 +333,7 @@ class OwnerLifecycle:
             for row in rows:
                 try:
                     rt.ledger.enqueue_event(json.loads(row["event_json"]))
-                except RuntimeError as exc:
-                    if "backlog is full" not in str(exc):
-                        raise
+                except OwnerBacklogFull:
                     # Keep the receipt for a later recovery instead of failing
                     # Owner construction while the budget is full.
                     deferred.append(row)
@@ -349,9 +345,7 @@ class OwnerLifecycle:
                 for row in deferred:
                     try:
                         event_key = rt.ledger.enqueue_event(json.loads(row["event_json"]))
-                    except RuntimeError as exc:
-                        if "backlog is full" not in str(exc):
-                            raise
+                    except OwnerBacklogFull:
                         continue
                     try:
                         rt.process_event(event_key)
