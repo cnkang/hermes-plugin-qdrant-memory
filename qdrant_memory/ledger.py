@@ -135,32 +135,34 @@ class Ledger:
     def _backfill_event_authority(self):
         """Attribute unsettled lifecycle events written before the column existed.
 
-        The scan is one-time per collection. The completion marker is committed
-        in the same transaction as the updates, so an interruption before that
-        commit leaves the marker absent and the next open retries the
-        idempotent scan.
+        The scan runs once per collection, under the ledger lock and in the same
+        transaction as the completion marker. An interruption before that commit
+        leaves the marker absent, so the next open retries the idempotent scan.
+        Rows whose payload is not a JSON object with a dict ``owner_authority``
+        are permanently unattributable: they stay empty and do not hold the
+        marker back.
         """
-        completed = self.db.execute(
-            "SELECT 1 FROM ledger_backfills WHERE name=? AND collection=?",
-            (_OWNER_AUTHORITY_BACKFILL, self.collection),
-        ).fetchone()
-        if completed:
-            return
-        rows = self.db.execute(
-            "SELECT event_id,payload_json FROM events WHERE collection=? "
-            "AND owner_authority='' AND status IN ('PENDING','FAILED','QUARANTINED')",
-            (self.collection,),
-        )
-        updates = []
-        for row in rows:
-            try:
-                value = json.loads(row["payload_json"])
-            except (TypeError, ValueError):
-                continue
-            authority = value.get("owner_authority") if isinstance(value, dict) else None
-            if isinstance(authority, dict):
-                updates.append((digest(authority), row["event_id"]))
         with self.lock, self.db:
+            completed = self.db.execute(
+                "SELECT 1 FROM ledger_backfills WHERE name=? AND collection=?",
+                (_OWNER_AUTHORITY_BACKFILL, self.collection),
+            ).fetchone()
+            if completed:
+                return
+            rows = self.db.execute(
+                "SELECT event_id,payload_json FROM events WHERE collection=? "
+                "AND owner_authority='' AND status IN ('PENDING','FAILED','QUARANTINED')",
+                (self.collection,),
+            )
+            updates = []
+            for row in rows:
+                try:
+                    value = json.loads(row["payload_json"])
+                except (TypeError, ValueError):
+                    continue
+                authority = value.get("owner_authority") if isinstance(value, dict) else None
+                if isinstance(authority, dict):
+                    updates.append((digest(authority), row["event_id"]))
             if updates:
                 self.db.executemany("UPDATE events SET owner_authority=? WHERE event_id=?", updates)
             self.db.execute(
@@ -319,14 +321,17 @@ class Ledger:
 
         Empty-authority rows are retained Native rejections: they stay
         recoverable but consume neither the shared total nor another
-        authority's per-authority budget.
+        authority's per-authority budget. The ledger lock is reentrant, so
+        callers already inside a transaction may call this safely; the count is
+        still only a pre-check because a later ``enqueue_event`` revalidates it.
         """
-        return self.db.execute(
-            "SELECT COALESCE(SUM(CASE WHEN owner_authority=? THEN 1 ELSE 0 END), 0), "
-            "COALESCE(SUM(CASE WHEN owner_authority!='' THEN 1 ELSE 0 END), 0) "
-            "FROM events WHERE collection=? AND status IN ('PENDING','FAILED','QUARANTINED')",
-            (authority, self.collection),
-        ).fetchone()
+        with self.lock:
+            return self.db.execute(
+                "SELECT COALESCE(SUM(CASE WHEN owner_authority=? THEN 1 ELSE 0 END), 0), "
+                "COALESCE(SUM(CASE WHEN owner_authority!='' THEN 1 ELSE 0 END), 0) "
+                "FROM events WHERE collection=? AND status IN ('PENDING','FAILED','QUARANTINED')",
+                (authority, self.collection),
+            ).fetchone()
 
     def enqueue_event(self, value):
         """Persist an immutable event once and return its deterministic key."""
