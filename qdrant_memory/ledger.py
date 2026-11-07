@@ -17,6 +17,7 @@ DELETE_FENCE_PREFIX = "hermes-qdrant-delete-fence-v1:"
 UNKNOWN_TABLE_MESSAGE = "Unknown ledger table"
 OWNER_BACKLOG_PER_AUTHORITY = 128
 OWNER_BACKLOG_TOTAL = 1024
+_OWNER_AUTHORITY_BACKFILL = "owner_authority_v1"
 
 
 def _manifest_record_keys(records):
@@ -104,6 +105,9 @@ class Ledger:
                     session_id TEXT, collection TEXT, authors_json TEXT NOT NULL,
                     explicit_author INTEGER NOT NULL, history_known INTEGER NOT NULL,
                     PRIMARY KEY(session_id,collection));
+                CREATE TABLE IF NOT EXISTS ledger_backfills (
+                    name TEXT NOT NULL, collection TEXT NOT NULL, completed_at TEXT NOT NULL,
+                    PRIMARY KEY(name,collection));
             """)
             columns = {row[1] for row in self.db.execute("PRAGMA table_info(events)")}
             if "owner_authority" not in columns:
@@ -129,7 +133,19 @@ class Ledger:
             raise
 
     def _backfill_event_authority(self):
-        """Attribute unsettled lifecycle events written before the column existed."""
+        """Attribute unsettled lifecycle events written before the column existed.
+
+        The scan is one-time per collection. The completion marker is committed
+        in the same transaction as the updates, so an interruption before that
+        commit leaves the marker absent and the next open retries the
+        idempotent scan.
+        """
+        completed = self.db.execute(
+            "SELECT 1 FROM ledger_backfills WHERE name=? AND collection=?",
+            (_OWNER_AUTHORITY_BACKFILL, self.collection),
+        ).fetchone()
+        if completed:
+            return
         rows = self.db.execute(
             "SELECT event_id,payload_json FROM events WHERE collection=? "
             "AND owner_authority='' AND status IN ('PENDING','FAILED','QUARANTINED')",
@@ -144,9 +160,13 @@ class Ledger:
             authority = value.get("owner_authority") if isinstance(value, dict) else None
             if isinstance(authority, dict):
                 updates.append((digest(authority), row["event_id"]))
-        if updates:
-            with self.lock, self.db:
+        with self.lock, self.db:
+            if updates:
                 self.db.executemany("UPDATE events SET owner_authority=? WHERE event_id=?", updates)
+            self.db.execute(
+                "INSERT OR REPLACE INTO ledger_backfills(name,collection,completed_at) VALUES(?,?,?)",
+                (_OWNER_AUTHORITY_BACKFILL, self.collection, now()),
+            )
 
     def clear_destination(self):
         """Forget every destination-scoped replay record so cleared memories cannot replay.
@@ -294,6 +314,20 @@ class Ledger:
                 )
             return self._save_session_provenance(session_id, value)
 
+    def backlog_counts(self, authority):
+        """Return queued work for one authority and for all attributed events.
+
+        Empty-authority rows are retained Native rejections: they stay
+        recoverable but consume neither the shared total nor another
+        authority's per-authority budget.
+        """
+        return self.db.execute(
+            "SELECT COALESCE(SUM(CASE WHEN owner_authority=? THEN 1 ELSE 0 END), 0), "
+            "COALESCE(SUM(CASE WHEN owner_authority!='' THEN 1 ELSE 0 END), 0) "
+            "FROM events WHERE collection=? AND status IN ('PENDING','FAILED','QUARANTINED')",
+            (authority, self.collection),
+        ).fetchone()
+
     def enqueue_event(self, value):
         """Persist an immutable event once and return its deterministic key."""
         key = digest([self.collection, value])
@@ -306,12 +340,7 @@ class Ledger:
             if authority:
                 exists = self.db.execute("SELECT 1 FROM events WHERE event_id=?", (key,)).fetchone()
                 if exists is None:
-                    row = self.db.execute(
-                        "SELECT SUM(CASE WHEN owner_authority=? THEN 1 ELSE 0 END), COUNT(*) "
-                        "FROM events WHERE collection=? AND status IN "
-                        "('PENDING','FAILED','QUARANTINED')",
-                        (authority, self.collection),
-                    ).fetchone()
+                    row = self.backlog_counts(authority)
                     if (row[0] or 0) >= OWNER_BACKLOG_PER_AUTHORITY or row[
                         1
                     ] >= OWNER_BACKLOG_TOTAL:
