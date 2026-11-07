@@ -546,9 +546,12 @@ def test_recover_keeps_a_still_full_receipt_without_spinning(tmp_path, monkeypat
         )
         rt.ledger.db.commit()
         recoveries = []
+        processed = []
+        monkeypatch.setattr(rt, "process_event", processed.append)
         monkeypatch.setattr(rt, "recover", lambda: recoveries.append(1) or 0)
         assert lifecycle.recover() == 0
         assert len(recoveries) == 1
+        assert processed == []
         assert rt.ledger.row("events", deferred_key) is None
         receipt = rt.ledger.db.execute(
             "SELECT event_json FROM owner_events_v1 WHERE collection=? AND request_key='receipt'",
