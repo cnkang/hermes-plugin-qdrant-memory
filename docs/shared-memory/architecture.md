@@ -154,7 +154,7 @@ assumption. External direct writes invalidate these guarantees.
 The service is an authenticated **private local JSON API**, not Streamable HTTP
 MCP or an OAuth resource server. It binds literal IPv4 loopback only. It validates
 Host/Origin, rejects browser origins, transfer encoding and oversized requests,
-bounds idle sockets and worker count, and disables request logging. Clients
+bounds idle sockets, an absolute request deadline and worker count, and disables request logging. Clients
 reject non-loopback URLs, environment proxies and redirects. Secrets are supplied
 through environment variables. Policy stores only the SHA256 of high-entropy tokens
 and requires owner-only POSIX permissions. Windows requires operator-managed ACLs.

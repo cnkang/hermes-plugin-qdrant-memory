@@ -7,12 +7,13 @@ import logging
 import math
 import os
 import re
+import socket
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from socketserver import TCPServer
-from threading import BoundedSemaphore, Thread
+from threading import BoundedSemaphore, Lock, Thread, Timer
 from typing import cast
 
 from .models import (
@@ -31,6 +32,11 @@ from .shared_state import SharedRecoveryRequiredError
 from .tools import schemas, validate_arguments
 
 LOG = logging.getLogger(__name__)
+
+# A read timeout bounds one blocked receive; the absolute deadline bounds the
+# whole request so a peer cannot restart the timeout with one byte at a time.
+REQUEST_READ_TIMEOUT_SECONDS = 10
+REQUEST_DEADLINE_SECONDS = 15
 
 
 class SharedConflictError(RuntimeError):
@@ -581,13 +587,68 @@ def _error_status(exc):
     return 400
 
 
+def _set_listener_reuse_option(sock):
+    """Keep restart reuse on POSIX and refuse live-port sharing on Windows."""
+    if os.name == "nt":
+        if not hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            raise RuntimeError("Windows listener cannot disable live-port sharing")
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    else:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+
 class _SharedRequestHandler(BaseHTTPRequestHandler):
     """Accept authenticated JSON POSTs and reject browser/cross-origin access."""
 
     def setup(self):
-        """Bound idle connection lifetime before parsing any request."""
+        """Bound the time spent reading one request before any handler work."""
         super().setup()
-        self.connection.settimeout(10)
+        self.connection.settimeout(REQUEST_READ_TIMEOUT_SECONDS)
+        self._request_state = Lock()
+        self._request_read_complete = False
+        # The per-read timeout is restarted by every arriving byte. Arm one
+        # absolute deadline for the read phase so a partial request cannot keep
+        # its admission permit (or its handler thread) alive indefinitely.
+        self._request_deadline = Timer(REQUEST_DEADLINE_SECONDS, self._expire_request)
+        self._request_deadline.daemon = True
+        self._request_deadline.start()
+
+    def _expire_request(self):
+        """Force a blocked handler out of a partial read at its deadline."""
+        state = getattr(self, "_request_state", None)
+        if state is None:
+            return
+        with state:
+            if self._request_read_complete:
+                return
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    def handle_one_request(self):
+        """Release the permit even when the deadline closes the socket mid-read."""
+        try:
+            super().handle_one_request()
+        except OSError:
+            self.close_connection = True
+
+    def _cancel_request_deadline(self):
+        """Stop bounding a request once its bytes are fully read."""
+        state = getattr(self, "_request_state", None)
+        if state is None:
+            return
+        with state:
+            self._request_read_complete = True
+            deadline = getattr(self, "_request_deadline", None)
+            self._request_deadline = None
+        if deadline is not None:
+            deadline.cancel()
+
+    def finish(self):
+        """Cancel the deadline before the handler releases its admission permit."""
+        self._cancel_request_deadline()
+        super().finish()
 
     def log_message(self, *args):
         """Never log HTTP headers, credentials, paths or request bodies."""
@@ -657,7 +718,15 @@ class _SharedRequestHandler(BaseHTTPRequestHandler):
             if not 0 < size <= 131072:
                 raise ValueError("Invalid request size")
             body_read = True
-            data = json.loads(self.rfile.read(size))
+            raw = self.rfile.read(size)
+            # The bytes are in memory; backend work is no longer a slow-read
+            # risk and must keep its own service latency budget.
+            self._cancel_request_deadline()
+            if len(raw) != size:
+                # A deadline or peer close can leave a valid JSON prefix. Never
+                # execute a request whose declared body was not fully read.
+                raise ValueError("Incomplete request body")
+            data = json.loads(raw)
             if not isinstance(data, dict) or set(data) != {"name", "arguments"}:
                 raise ValueError("Invalid request envelope")
             result = owner.call(auth[7:], data["name"], data["arguments"])
@@ -667,14 +736,15 @@ class _SharedRequestHandler(BaseHTTPRequestHandler):
             status = _error_status(exc)
             result = {"error": safe_error(exc)}
         body = json.dumps(result, ensure_ascii=False).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Connection", "close")
-        self.end_headers()
         try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
             self.wfile.write(body)
         except OSError:
+            # The peer may already have been shut down at its read deadline.
             pass  # Durable admission is independent of the response connection.
 
 
@@ -683,6 +753,10 @@ class _BoundedServer(ThreadingHTTPServer):
 
     daemon_threads = False
     block_on_close = True
+    # HTTPServer defaults this to True. On Windows SO_REUSEADDR lets another
+    # local socket bind a live port, so the option is applied explicitly below
+    # and Windows uses SO_EXCLUSIVEADDRUSE instead.
+    allow_reuse_address = False
 
     def __init__(self, address, handler, owner):
         """Bind the Owner to this listener before the base class accepts."""
@@ -693,6 +767,7 @@ class _BoundedServer(ThreadingHTTPServer):
 
     def server_bind(self):
         """Bind the literal loopback without HTTPServer's reverse DNS lookup."""
+        _set_listener_reuse_option(self.socket)
         TCPServer.server_bind(self)
         self.server_name = "127.0.0.1"
         self.server_port = self.server_address[1]

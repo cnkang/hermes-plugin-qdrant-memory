@@ -1,8 +1,17 @@
 """Owner lifecycle reuses extraction, durable events, dedupe and the mutation engine."""
 
+import json
+import sqlite3
+
 import pytest
 
-from qdrant_memory.owner_lifecycle import OwnerLifecycle
+from qdrant_memory.ledger import Ledger, OwnerBacklogFull
+from qdrant_memory.models import digest
+from qdrant_memory.owner_lifecycle import (
+    OWNER_BACKLOG_PER_AUTHORITY,
+    OWNER_BACKLOG_TOTAL,
+    OwnerLifecycle,
+)
 from qdrant_memory.shared_service import SharedOwner
 
 from ..helpers import runtime
@@ -104,11 +113,11 @@ def test_preextracted_turn_uses_runtime_writer_and_replays_without_reextracting(
         plans = []
         run_plan = lifecycle._run_plan
 
-        def capture_plan(*args):
+        def capture_plan(*args, **kwargs):
             plans.append(args[3].copy())
             if len(plans) == 1:
                 return "ACCEPTED"
-            return run_plan(*args)
+            return run_plan(*args, **kwargs)
 
         monkeypatch.setattr(lifecycle, "_run_plan", capture_plan)
         accepted = lifecycle.submit(token, event)
@@ -293,3 +302,460 @@ def test_lifecycle_outage_is_durable_and_recoverable(tmp_path, monkeypatch):
     finally:
         rt.ledger.close()
         rt.store.close()
+
+
+def test_backlog_budget_is_partitioned_by_authority(tmp_path):
+    """One capture principal cannot spend another principal's backlog budget."""
+    token_a, token_b = "a" * 40, "b" * 40
+    grant_a = grant(token_a, "mac", visibility="project", capture_rule_id="approved")
+    grant_b = grant(token_b, "linux", visibility="project", capture_rule_id="approved")
+    rt = runtime(tmp_path)
+    try:
+        owner = SharedOwner(rt, [grant_a, grant_b])
+        lifecycle = OwnerLifecycle(owner)
+        authority_a = lifecycle._authority(token_a)
+        authority_b = lifecycle._authority(token_b)
+        assert authority_a != authority_b
+        for index in range(128):
+            rt.ledger.db.execute(
+                "INSERT INTO events(event_id,session_id,payload_json,status,collection,owner_authority) "
+                "VALUES(?,?,?,?,?,?)",
+                (
+                    f"quarantined-{index}",
+                    "session",
+                    "{}",
+                    "QUARANTINED",
+                    rt.ledger.collection,
+                    digest(authority_a),
+                ),
+            )
+        rt.ledger.db.commit()
+        event = {
+            "event_id": "turn",
+            "session_id": "session",
+            "kind": "turn_completed",
+            "user": "cats",
+            "assistant": "ack",
+        }
+        value, _ = lifecycle._new_plan(rt.ledger, "request-b", "hash", authority_b, event)
+        assert value["owner_authority"] == authority_b
+        with pytest.raises(OwnerBacklogFull, match="backlog is full"):
+            lifecycle._new_plan(rt.ledger, "request-a", "hash", authority_a, event)
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_ledger_enforces_backlog_for_direct_native_admission(tmp_path):
+    """Native admission goes through enqueue_event and must hit the same budget."""
+    rt = runtime(tmp_path)
+    authority = {
+        "principal": "mac",
+        "owner_id": "alice",
+        "space_id": "hermes-private",
+        "visibility": "project",
+        "logical_agent_id": "hermes",
+        "device_id": "mac",
+        "capture_rule_id": "approved",
+    }
+    try:
+        for index in range(128):
+            rt.ledger.db.execute(
+                "INSERT INTO events(event_id,session_id,payload_json,status,collection,owner_authority) "
+                "VALUES(?,?,?,?,?,?)",
+                (
+                    f"native-{index}",
+                    "session",
+                    "{}",
+                    "QUARANTINED",
+                    rt.ledger.collection,
+                    digest(authority),
+                ),
+            )
+        rt.ledger.db.commit()
+        with pytest.raises(OwnerBacklogFull, match="backlog is full"):
+            rt.ledger.enqueue_event({"session_id": "session", "owner_authority": authority})
+        other = {**authority, "principal": "linux", "device_id": "linux"}
+        rt.ledger.enqueue_event({"session_id": "session", "owner_authority": other})
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_collection_backlog_ceiling_bounds_all_authorities(tmp_path):
+    """A collection-wide ceiling still bounds the sum of per-authority budgets."""
+    token = "a" * 40
+    credential = grant(token, "mac", visibility="project", capture_rule_id="approved")
+    rt = runtime(tmp_path)
+    try:
+        owner = SharedOwner(rt, [credential])
+        lifecycle = OwnerLifecycle(owner)
+        for index in range(OWNER_BACKLOG_TOTAL):
+            rt.ledger.db.execute(
+                "INSERT INTO events(event_id,session_id,payload_json,status,collection,owner_authority) "
+                "VALUES(?,?,?,?,?,?)",
+                (
+                    f"other-{index}",
+                    "session",
+                    "{}",
+                    "PENDING",
+                    rt.ledger.collection,
+                    digest({"principal": "other"}),
+                ),
+            )
+        rt.ledger.db.commit()
+        event = {
+            "event_id": "turn",
+            "session_id": "session",
+            "kind": "turn_completed",
+            "user": "cats",
+            "assistant": "ack",
+        }
+        with pytest.raises(OwnerBacklogFull, match="backlog is full"):
+            lifecycle._new_plan(rt.ledger, "request-a", "hash", lifecycle._authority(token), event)
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_unattributed_native_rejections_do_not_consume_other_authority_budget(tmp_path):
+    """Retained Native rejections stay recoverable without charging a grant."""
+    rt = runtime(tmp_path)
+    authority = {
+        "principal": "mac",
+        "owner_id": "alice",
+        "space_id": "hermes-private",
+        "visibility": "project",
+        "logical_agent_id": "hermes",
+        "device_id": "mac",
+        "capture_rule_id": "approved",
+    }
+    try:
+        for index in range(OWNER_BACKLOG_TOTAL):
+            rt.ledger.db.execute(
+                "INSERT INTO events(event_id,session_id,payload_json,status,collection,owner_authority) "
+                "VALUES(?,?,?,?,?,?)",
+                (f"unadmitted-{index}", "session", "{}", "FAILED", rt.ledger.collection, ""),
+            )
+        rt.ledger.db.commit()
+        assert rt.ledger.backlog_counts(digest(authority))[1] == 0
+        rt.ledger.enqueue_event({"session_id": "session", "owner_authority": authority})
+        assert rt.ledger.backlog_counts(digest(authority))[0] == 1
+        rejected = rt.ledger.enqueue_event(
+            {"session_id": "session", "source": "native_owner_unadmitted"}
+        )
+        row = rt.ledger.row("events", rejected)
+        assert row is not None and row["status"] == "PENDING"
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_recover_retries_deferred_receipts_after_capacity_is_freed(tmp_path, monkeypatch):
+    """A receipt refused for a full backlog is retried once recovery frees space."""
+    token = "a" * 40
+    credential = grant(token, "mac", visibility="project", capture_rule_id="approved")
+    rt = runtime(tmp_path)
+    try:
+        owner = SharedOwner(rt, [credential])
+        lifecycle = OwnerLifecycle(owner)
+        authority = lifecycle._authority(token)
+        for index in range(OWNER_BACKLOG_PER_AUTHORITY):
+            rt.ledger.db.execute(
+                "INSERT INTO events(event_id,session_id,payload_json,status,collection,owner_authority) "
+                "VALUES(?,?,?,?,?,?)",
+                (
+                    f"queued-{index}",
+                    "session",
+                    "{}",
+                    "PENDING",
+                    rt.ledger.collection,
+                    digest(authority),
+                ),
+            )
+        deferred_value = {"session_id": "session", "owner_authority": authority}
+        deferred_key = digest([rt.ledger.collection, deferred_value])
+        rt.ledger.db.execute(
+            "INSERT INTO owner_events_v1 VALUES(?,?,?,?,?)",
+            (
+                rt.ledger.collection,
+                "receipt",
+                "hash",
+                deferred_key,
+                json.dumps(deferred_value),
+            ),
+        )
+        rt.ledger.db.commit()
+
+        processed = []
+        monkeypatch.setattr(rt, "process_event", processed.append)
+        recoveries = []
+
+        def recover():
+            if not recoveries:
+                rt.ledger.db.execute(
+                    "UPDATE events SET status='COMMITTED' WHERE event_id LIKE 'queued-%'"
+                )
+                rt.ledger.db.commit()
+            recoveries.append(1)
+            return 0
+
+        monkeypatch.setattr(rt, "recover", recover)
+        assert lifecycle.recover() == 0
+        assert len(recoveries) == 1
+        assert rt.ledger.row("events", deferred_key) is not None
+        assert deferred_key in processed
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_recover_keeps_a_still_full_receipt_without_spinning(tmp_path, monkeypatch):
+    """A still-full budget leaves the receipt for the next start, not a retry loop."""
+    token = "a" * 40
+    credential = grant(token, "mac", visibility="project", capture_rule_id="approved")
+    rt = runtime(tmp_path)
+    try:
+        owner = SharedOwner(rt, [credential])
+        lifecycle = OwnerLifecycle(owner)
+        authority = lifecycle._authority(token)
+        for index in range(OWNER_BACKLOG_PER_AUTHORITY):
+            rt.ledger.db.execute(
+                "INSERT INTO events(event_id,session_id,payload_json,status,collection,owner_authority) "
+                "VALUES(?,?,?,?,?,?)",
+                (
+                    f"queued-{index}",
+                    "session",
+                    "{}",
+                    "PENDING",
+                    rt.ledger.collection,
+                    digest(authority),
+                ),
+            )
+        deferred_value = {"session_id": "session", "owner_authority": authority}
+        deferred_key = digest([rt.ledger.collection, deferred_value])
+        rt.ledger.db.execute(
+            "INSERT INTO owner_events_v1 VALUES(?,?,?,?,?)",
+            (
+                rt.ledger.collection,
+                "receipt",
+                "hash",
+                deferred_key,
+                json.dumps(deferred_value),
+            ),
+        )
+        rt.ledger.db.commit()
+        recoveries = []
+        processed = []
+        monkeypatch.setattr(rt, "process_event", processed.append)
+        monkeypatch.setattr(rt, "recover", lambda: recoveries.append(1) or 0)
+        assert lifecycle.recover() == 0
+        assert len(recoveries) == 1
+        assert processed == []
+        assert rt.ledger.row("events", deferred_key) is None
+        receipt = rt.ledger.db.execute(
+            "SELECT event_json FROM owner_events_v1 WHERE collection=? AND request_key='receipt'",
+            (rt.ledger.collection,),
+        ).fetchone()
+        assert receipt is not None and receipt["event_json"] != "{}"
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_backlog_refusal_keeps_an_existing_receipt_and_drops_a_new_one(tmp_path, monkeypatch):
+    """Only a freshly created plan may lose its receipt on a budget refusal."""
+    rt = runtime(tmp_path)
+    try:
+        ledger = rt.ledger
+        ledger.db.execute(
+            "CREATE TABLE IF NOT EXISTS owner_events_v1 (collection TEXT NOT NULL, "
+            "request_key TEXT NOT NULL, input_hash TEXT NOT NULL, event_key TEXT NOT NULL, "
+            "event_json TEXT NOT NULL, PRIMARY KEY(collection, request_key))"
+        )
+        for request_key in ("existing", "fresh"):
+            ledger.db.execute(
+                "INSERT INTO owner_events_v1 VALUES(?,?,?,?,?)",
+                (ledger.collection, request_key, "hash", "event", "{}"),
+            )
+        ledger.db.commit()
+
+        def refuse(_value):
+            raise OwnerBacklogFull("Owner lifecycle backlog is full")
+
+        monkeypatch.setattr(ledger, "enqueue_event", refuse)
+        with pytest.raises(OwnerBacklogFull, match="backlog is full"):
+            OwnerLifecycle._run_plan(None, None, ledger, "existing", {}, "event", created=False)
+        kept = ledger.db.execute(
+            "SELECT 1 FROM owner_events_v1 WHERE collection=? AND request_key='existing'",
+            (ledger.collection,),
+        ).fetchone()
+        assert kept is not None
+        with pytest.raises(OwnerBacklogFull, match="backlog is full"):
+            OwnerLifecycle._run_plan(None, None, ledger, "fresh", {}, "event", created=True)
+        dropped = ledger.db.execute(
+            "SELECT 1 FROM owner_events_v1 WHERE collection=? AND request_key='fresh'",
+            (ledger.collection,),
+        ).fetchone()
+        assert dropped is None
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_run_plan_propagates_other_runtime_errors(tmp_path, monkeypatch):
+    """Only the typed backlog refusal is handled as a budget outcome."""
+    rt = runtime(tmp_path)
+    try:
+        ledger = rt.ledger
+
+        def unavailable(_value):
+            raise RuntimeError("ledger unavailable")
+
+        monkeypatch.setattr(ledger, "enqueue_event", unavailable)
+        lifecycle = object.__new__(OwnerLifecycle)
+        with pytest.raises(RuntimeError, match="ledger unavailable"):
+            lifecycle._run_plan(None, ledger, "request", {}, "event", created=False)
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_ledger_adds_owner_authority_to_an_older_events_table(tmp_path):
+    """An existing profile keeps its events and gains the partition column."""
+    home = tmp_path / "profile"
+    directory = home / "qdrant-memory"
+    directory.mkdir(parents=True)
+    database = sqlite3.connect(directory / "state.db")
+    database.execute(
+        "CREATE TABLE events (event_id TEXT PRIMARY KEY, session_id TEXT, "
+        "payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING', "
+        "attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at TEXT, "
+        "committed_at TEXT, collection TEXT NOT NULL)"
+    )
+    database.execute(
+        "INSERT INTO events(event_id,session_id,payload_json,collection) "
+        "VALUES('old','session','{}','hermes_qdrant_memory')"
+    )
+    authority = {
+        "principal": "mac",
+        "owner_id": "alice",
+        "space_id": "hermes-private",
+        "visibility": "project",
+        "logical_agent_id": "hermes",
+        "device_id": "mac",
+        "capture_rule_id": "approved",
+    }
+    database.execute(
+        "INSERT INTO events(event_id,session_id,payload_json,collection) VALUES(?,?,?,?)",
+        (
+            "old-lifecycle",
+            "session",
+            json.dumps({"owner_authority": authority}),
+            "hermes_qdrant_memory",
+        ),
+    )
+    database.execute(
+        "INSERT INTO events(event_id,session_id,payload_json,collection) VALUES(?,?,?,?)",
+        (
+            "other-collection",
+            "session",
+            json.dumps({"owner_authority": authority}),
+            "other_collection",
+        ),
+    )
+    for event_id, status, payload in (
+        ("failed-lifecycle", "FAILED", json.dumps({"owner_authority": authority})),
+        ("quarantined-lifecycle", "QUARANTINED", json.dumps({"owner_authority": authority})),
+        ("invalid-json", "FAILED", "{not-json"),
+        ("non-dict-authority", "QUARANTINED", json.dumps({"owner_authority": "scalar"})),
+    ):
+        database.execute(
+            "INSERT INTO events(event_id,session_id,payload_json,status,collection) "
+            "VALUES(?,?,?,?,?)",
+            (event_id, "session", payload, status, "hermes_qdrant_memory"),
+        )
+    database.commit()
+    database.close()
+    ledger = Ledger(home)
+    try:
+        columns = {row[1] for row in ledger.db.execute("PRAGMA table_info(events)")}
+        assert "owner_authority" in columns
+        row = ledger.db.execute(
+            "SELECT owner_authority FROM events WHERE event_id='old'"
+        ).fetchone()
+        assert row[0] == ""
+        migrated = ledger.db.execute(
+            "SELECT owner_authority FROM events WHERE event_id='old-lifecycle'"
+        ).fetchone()
+        assert migrated[0] == digest(authority)
+        other = ledger.db.execute(
+            "SELECT owner_authority FROM events WHERE event_id='other-collection'"
+        ).fetchone()
+        assert other[0] == ""
+        for event_id in ("failed-lifecycle", "quarantined-lifecycle"):
+            row = ledger.db.execute(
+                "SELECT owner_authority,status,payload_json FROM events WHERE event_id=?",
+                (event_id,),
+            ).fetchone()
+            assert row["owner_authority"] == digest(authority)
+            assert row["status"] in {"FAILED", "QUARANTINED"}
+            assert row["payload_json"] != "{}"
+        for event_id in ("invalid-json", "non-dict-authority"):
+            row = ledger.db.execute(
+                "SELECT owner_authority,payload_json FROM events WHERE event_id=?",
+                (event_id,),
+            ).fetchone()
+            assert row["owner_authority"] == ""
+            assert row["payload_json"] != "{}"
+        marker = ledger.db.execute(
+            "SELECT completed_at FROM ledger_backfills WHERE collection=?",
+            (ledger.collection,),
+        ).fetchone()
+        assert marker is not None and marker["completed_at"]
+    finally:
+        ledger.close()
+
+    database = sqlite3.connect(directory / "state.db")
+    try:
+        database.execute(
+            "INSERT INTO events(event_id,session_id,payload_json,status,collection,owner_authority) "
+            "VALUES(?,?,?,?,?,?)",
+            (
+                "post-marker",
+                "session",
+                json.dumps({"owner_authority": authority}),
+                "PENDING",
+                "hermes_qdrant_memory",
+                "",
+            ),
+        )
+        database.commit()
+    finally:
+        database.close()
+
+    reopened = Ledger(home)
+    try:
+        assert (
+            reopened.db.execute(
+                "SELECT owner_authority FROM events WHERE event_id='post-marker'"
+            ).fetchone()[0]
+            == ""
+        )
+        assert reopened.db.execute(
+            "SELECT owner_authority FROM events WHERE event_id='old-lifecycle'"
+        ).fetchone()[0] == digest(authority)
+        assert (
+            reopened.db.execute(
+                "SELECT owner_authority FROM events WHERE event_id='invalid-json'"
+            ).fetchone()[0]
+            == ""
+        )
+        assert (
+            reopened.db.execute(
+                "SELECT payload_json FROM events WHERE event_id='non-dict-authority'"
+            ).fetchone()[0]
+            != "{}"
+        )
+    finally:
+        reopened.close()

@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
+from qdrant_memory import remote_client
 from qdrant_memory.remote_client import (
     RemoteStatusError,
     call_remote,
@@ -654,3 +655,54 @@ def test_exhausted_control_retry_names_the_event_to_replay(monkeypatch):
     assert result["error"]["reason"] == "temporarily_unavailable"
     assert result["error"]["retryable"] is True
     assert result["error"]["replay"] == "event_id"
+
+
+def test_stdio_bridge_keeps_the_replay_envelope_for_a_terminal_group(monkeypatch):
+    """A lost response must not reach the host as a non-retryable ExceptionGroup."""
+
+    def lost(*_args, **_kwargs):
+        """Raise the same terminal group anyio produces for a dropped response."""
+        raise ExceptionGroup("lost response", [httpx.ReadError("peer reset")])
+
+    monkeypatch.setattr(remote_client, "call_remote", lost)
+    mutation = remote_client._invoke_remote(
+        "https://memory.test/mcp", TOKEN, None, "qdrant_memory_add", {"text": "cats"}
+    )
+    assert mutation["error"]["reason"] == "outcome_unknown"
+    assert mutation["error"]["retryable"] is True
+    assert mutation["error"]["replay"] == "request_id"
+
+    search = remote_client._invoke_remote(
+        "https://memory.test/mcp", TOKEN, None, "qdrant_memory_search", {"query": "cats"}
+    )
+    assert search["error"]["reason"] == "outcome_unknown"
+    assert search["error"]["retryable"] is True
+    assert "replay" not in search["error"]
+
+
+def test_stdio_bridge_reports_a_local_validation_failure_as_not_sent():
+    """A rejected argument never reached the Owner and is not replayable."""
+    result = remote_client._invoke_remote(
+        "https://memory.test/mcp", TOKEN, None, "qdrant_memory_add", {}
+    )
+    error = result["error"]
+    assert isinstance(error, dict)
+    assert error["reason"] == "request_not_sent"
+    assert error["sent"] is False
+    assert error["retryable"] is False
+    assert "replay" not in error
+    assert "Missing memory tool arguments" in error["message"]
+
+
+def test_stdio_bridge_does_not_swallow_grouped_base_exceptions(monkeypatch):
+    """A group carrying KeyboardInterrupt must keep propagating."""
+
+    def interrupted(*_args, **_kwargs):
+        """Raise the base-exception group anyio can produce during shutdown."""
+        raise BaseExceptionGroup("shutdown", [KeyboardInterrupt()])
+
+    monkeypatch.setattr(remote_client, "call_remote", interrupted)
+    with pytest.raises(BaseExceptionGroup):
+        remote_client._invoke_remote(
+            "https://memory.test/mcp", TOKEN, None, "qdrant_memory_add", {"text": "cats"}
+        )

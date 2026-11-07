@@ -65,6 +65,10 @@ def http_module():
     return httpx
 
 
+class RemoteRequestNotSent(ValueError):
+    """A local request check failed before anything reached the Owner."""
+
+
 class RemoteStatusError(RuntimeError):
     """A lifecycle response carried a rejection status and no usable result."""
 
@@ -325,10 +329,16 @@ async def call_remote(url, token, name, arguments, *, ca_file=None):
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
 
-    validate_endpoint(url)
-    validate_arguments(name, arguments, shared_schemas())
-    if not isinstance(token, str) or not 32 <= len(token) <= 1000 or not token.isascii():
-        raise ValueError("A provisioned service credential is required")
+    try:
+        validate_endpoint(url)
+        validate_arguments(name, arguments, shared_schemas())
+        if not isinstance(token, str) or not 32 <= len(token) <= 1000 or not token.isascii():
+            raise ValueError("A provisioned service credential is required")
+    except ValueError as exc:
+        # These checks run before the HTTP client exists, so the Owner never
+        # saw the request; the caller must not treat it as a replayable
+        # transport failure.
+        raise RemoteRequestNotSent(str(exc)) from exc
     http = http_module()
     context = ssl.create_default_context(cafile=ca_file)
 
@@ -538,6 +548,40 @@ def _stream_closed(exc):
         return code == -32000
 
 
+def _invoke_remote(url, token, ca_file, name, arguments):
+    """Run one tool call and translate a terminal failure into the replay envelope."""
+    import anyio
+
+    async def request():
+        return await call_remote(url, token, name, arguments, ca_file=ca_file)
+
+    try:
+        return anyio.run(request)
+    except Exception as exc:
+        local = next(
+            (leaf for leaf in _exception_leaves(exc) if isinstance(leaf, RemoteRequestNotSent)),
+            None,
+        )
+        if local is not None:
+            return {
+                "error": {
+                    "type": type(local).__name__,
+                    "reason": "request_not_sent",
+                    "retryable": False,
+                    "sent": False,
+                    "message": str(local),
+                    "hint": "Correct the tool arguments; the Owner did not receive this request.",
+                }
+            }
+        # ExceptionGroup already subclasses Exception. Catching the wider
+        # BaseExceptionGroup would swallow grouped KeyboardInterrupt/SystemExit.
+        # The generic MCP tool wrapper would serialize an ExceptionGroup as
+        # retryable=false. Keep the same envelope the CLI path returns so a
+        # committed mutation whose response was lost can be replayed.
+        replay = None if name == "qdrant_memory_search" else "request_id"
+        return {"error": remote_error(exc, replay=replay)}
+
+
 def serve_mcp(url, token_env, *, ca_file=None):
     """Bridge local stdio MCP to HTTPS MCP without storage or database credentials."""
     import anyio
@@ -549,10 +593,7 @@ def serve_mcp(url, token_env, *, ca_file=None):
         raise ValueError("Remote service credential environment variable is missing")
 
     def invoke(name, arguments):
-        async def request():
-            return await call_remote(url, token, name, arguments, ca_file=ca_file)
-
-        return anyio.run(request)
+        return _invoke_remote(url, token, ca_file, name, arguments)
 
     server = create_tool_server(shared_schemas, invoke)
 

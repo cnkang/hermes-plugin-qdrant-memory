@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+- Add an absolute request deadline to the Shared Owner listener so a partial
+  request cannot pin an admission permit or a handler thread; a body shorter
+  than its declared length is rejected before any Owner call. Make the Windows
+  loopback bind exclusive and partition the Owner lifecycle backlog budget by
+  capture authority (including Native Owner admission) while keeping a
+  collection-wide ceiling.
+- Translate a terminal remote tool failure into the documented
+  outcome-unknown/retryable envelope in the stdio bridge instead of returning a
+  non-retryable ExceptionGroup.
+- Backfill legacy event authorities once per collection and persist a completion
+  marker in the same transaction, so startup no longer rescans settled history.
+- Keep unattributed Native admission rejections out of the collection-wide
+  backlog total while retaining them for authorized retry or discard. Raise a
+  dedicated `OwnerBacklogFull` error so only budget refusals take the retry or
+  continue paths and other ledger failures still propagate. Count an authorized
+  shared capture dropped by a full backlog as
+  `native_shared_capture_backlog_full`, not as a policy denial.
+- Retry a lifecycle receipt deferred by a full backlog after Runtime recovery
+  frees capacity, then leave it for the next start if the budget is still full.
+- Report a local remote-call validation failure as `request_not_sent`
+  (non-retryable, no replay) instead of a transport error.
+
 ## 0.6.1
 
 - Add an authenticated Owner lifecycle retry action that accepts an event ID

@@ -18,7 +18,7 @@ from .config import active_home, ledger_namespace, load_config
 from .config_schema import get_config_schema, save_config
 from .embedding import build_embedder
 from .extraction import Extractor
-from .ledger import Ledger
+from .ledger import Ledger, OwnerBacklogFull
 from .models import Scope
 from .ownership import WriterBusyError, WriterLease
 from .qdrant_store import QdrantStore, build_client
@@ -862,8 +862,20 @@ class QdrantMemoryProvider(MemoryProvider):
                     self.ledger.failure("events", key, exc, terminal=True)
                     self._native_owner.owner.blocked = True
                     raise
-            for captured in values:
-                self._enqueue_event(captured)
+            for index, captured in enumerate(values):
+                try:
+                    self._enqueue_event(captured)
+                except OwnerBacklogFull:
+                    if self._native_owner is None:
+                        raise
+                    if index == 0:
+                        # The private capture is the turn's primary path; do not
+                        # silently drop it as if a shared rule were denied.
+                        raise
+                    # The rule was authorized; only the durable backlog refused
+                    # it. Count that separately from a policy denial and leave
+                    # the capture out of the ledger, as before.
+                    self._native_owner._defer_capture(index)
 
     def _enqueue_event(self, value):
         """Queue an already-authorized durable event on the one existing worker."""

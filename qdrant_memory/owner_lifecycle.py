@@ -8,6 +8,7 @@ import json
 import math
 
 from .event_quarantine import EventQuarantined
+from .ledger import OWNER_BACKLOG_PER_AUTHORITY, OWNER_BACKLOG_TOTAL, OwnerBacklogFull
 from .models import digest, now
 
 _TURN_FIELDS = {"event_id", "session_id", "kind", "user", "assistant"}
@@ -168,7 +169,9 @@ class OwnerLifecycle:
                 return {"event_id": event_id, "status": status}
             if not isinstance(value, dict) or value.get("host_event_id") != event_id:
                 raise ValueError("Lifecycle event plan is unavailable")
-            status = self._run_plan(rt, ledger, receipt["request_key"], value, event_key)
+            status = self._run_plan(
+                rt, ledger, receipt["request_key"], value, event_key, created=False
+            )
             return {"event_id": event_id, "status": status}
 
     def cancel(self, token, event_id):
@@ -229,11 +232,13 @@ class OwnerLifecycle:
                 value, event_key, status = self._replayed_plan(ledger, receipt, digest(event))
                 if status is not None:
                     return {"event_id": event["event_id"], "status": status}
+                created = False
             else:
                 value, event_key = self._new_plan(
                     ledger, request_key, digest(event), authority, event
                 )
-            status = self._run_plan(rt, ledger, request_key, value, event_key)
+                created = True
+            status = self._run_plan(rt, ledger, request_key, value, event_key, created=created)
             return {"event_id": event["event_id"], "status": status}
 
     def _replayed_plan(self, ledger, receipt, input_hash):
@@ -249,14 +254,16 @@ class OwnerLifecycle:
 
     def _new_plan(self, ledger, request_key, input_hash, authority, event):
         """Refuse a full backlog, then durably receipt the plan a new turn runs."""
-        queued = sum(
-            ledger.db.execute(
-                "SELECT COUNT(*) FROM events WHERE collection=? AND status IN ('PENDING','FAILED','QUARANTINED')",
-                (ledger.collection,),
-            ).fetchone()
-        )
-        if queued >= 128:
-            raise RuntimeError("Owner lifecycle backlog is full")
+        row = ledger.backlog_counts(digest(authority))
+        queued = row[0] or 0
+        if queued >= OWNER_BACKLOG_PER_AUTHORITY:
+            raise OwnerBacklogFull("Owner lifecycle backlog is full")
+        if row[1] >= OWNER_BACKLOG_TOTAL:
+            # Keep a collection-wide ceiling so many authorities cannot grow
+            # the durable backlog without bound. Native rejections with no
+            # attributed authority are excluded: they stay recoverable without
+            # consuming another authority's admission budget.
+            raise OwnerBacklogFull("Owner lifecycle backlog is full")
         value = {
             "kind": "turn",
             "source": "owner_lifecycle",
@@ -282,10 +289,21 @@ class OwnerLifecycle:
             )
         return value, event_key
 
-    def _run_plan(self, rt, ledger, request_key, value, event_key):
+    def _run_plan(self, rt, ledger, request_key, value, event_key, *, created):
         """Enqueue one accepted plan and return its settled event status."""
         # The receipt's immutable event plan closes the crash-before-enqueue gap.
-        ledger.enqueue_event(value)
+        try:
+            ledger.enqueue_event(value)
+        except OwnerBacklogFull:
+            if created:
+                # Do not leave a receipt for a turn that was just refused, but
+                # never delete a receipt accepted by an earlier attempt.
+                with ledger.lock, ledger.db:
+                    ledger.db.execute(
+                        "DELETE FROM owner_events_v1 WHERE collection=? AND request_key=?",
+                        (ledger.collection, request_key),
+                    )
+            raise
         try:
             rt.process_event(event_key)
         except EventQuarantined:
@@ -307,12 +325,34 @@ class OwnerLifecycle:
         """Re-enqueue accepted immutable plans after an Owner crash; use Runtime recovery."""
         rt = self.owner.runtime
         with rt.lock:
-            for row in rt.ledger.db.execute(
+            rows = rt.ledger.db.execute(
                 "SELECT * FROM owner_events_v1 WHERE collection=? AND event_json!='{}'",
                 (rt.ledger.collection,),
-            ).fetchall():
-                rt.ledger.enqueue_event(json.loads(row["event_json"]))
+            ).fetchall()
+            deferred = []
+            for row in rows:
+                try:
+                    rt.ledger.enqueue_event(json.loads(row["event_json"]))
+                except OwnerBacklogFull:
+                    # Keep the receipt for a later recovery instead of failing
+                    # Owner construction while the budget is full.
+                    deferred.append(row)
             failures = rt.recover()
+            if deferred:
+                # Recovery may have committed queued work and released budget.
+                # Retry each deferred receipt exactly once; if the budget is
+                # still full, retain it for the next startup rather than spin.
+                for row in deferred:
+                    try:
+                        event_key = rt.ledger.enqueue_event(json.loads(row["event_json"]))
+                    except OwnerBacklogFull:
+                        continue
+                    try:
+                        rt.process_event(event_key)
+                    except EventQuarantined:
+                        continue
+                    except Exception:
+                        failures += 1
             if failures:
                 self.owner.blocked = True
             with rt.ledger.lock, rt.ledger.db:
