@@ -872,9 +872,10 @@ class QdrantMemoryProvider(MemoryProvider):
                         # The private capture is the turn's primary path; do not
                         # silently drop it as if a shared rule were denied.
                         raise
-                    # Mirror the per-rule denial used for an unauthorized
-                    # shared capture instead of failing the host turn hook.
-                    self._native_owner._deny_capture(index)
+                    # The rule was authorized; only the durable backlog refused
+                    # it. Count that separately from a policy denial and leave
+                    # the capture out of the ledger, as before.
+                    self._native_owner._defer_capture(index)
 
     def _enqueue_event(self, value):
         """Queue an already-authorized durable event on the one existing worker."""

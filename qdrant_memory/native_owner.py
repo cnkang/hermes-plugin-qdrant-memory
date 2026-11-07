@@ -296,6 +296,11 @@ class NativeOwner:
         self.owner.runtime.ledger.increment("native_shared_capture_denied")
         LOG.info("native_shared_capture decision=deny rule_index=%d", index)
 
+    def _defer_capture(self, index):
+        """Count one authorized shared rule dropped because the backlog is full."""
+        self.owner.runtime.ledger.increment("native_shared_capture_backlog_full")
+        LOG.info("native_shared_capture decision=backlog_full rule_index=%d", index)
+
     def reauthorize_pending(self):
         """Recover same-scope input, cancelling foreign unadmitted input after retry."""
         import json
