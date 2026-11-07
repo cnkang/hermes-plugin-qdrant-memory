@@ -576,3 +576,86 @@ def test_extraction_failure_gates_owner_before_any_operation(tmp_path, monkeypat
         assert p.store.count() == 0
     finally:
         p.shutdown()
+
+
+def test_shared_capture_backlog_drop_keeps_the_private_event(tmp_path, monkeypatch):
+    """A full shared backlog drops only that shared capture, not the private one."""
+    from qdrant_memory.models import digest
+
+    tokens = {name: name[0] * 40 for name in ("native", "project")}
+    clients = []
+    for name, token in tokens.items():
+        clients.append(
+            {
+                "token_sha256": hashlib.sha256(token.encode()).hexdigest(),
+                "principal": name,
+                "owner_id": "hermes-user",
+                "device_id": name,
+                "logical_agent_id": "hermes",
+                "space_id": "hermes-private" if name == "native" else "alpha",
+                "visibility": "private" if name == "native" else "project",
+                "permission": "write",
+            }
+        )
+    clients[1]["capture_rule_id"] = "explicit-user-approved-alpha"
+    policy = tmp_path / "grants.json"
+    policy.write_text(json.dumps({"clients": clients}))
+    policy.chmod(0o600)
+    for name, token in tokens.items():
+        monkeypatch.setenv("QM_" + name.upper(), token)
+    cfg = config(
+        native_owner={
+            "enabled": True,
+            "policy": str(policy),
+            "port": 0,
+            "private_token_env": "QM_NATIVE",
+            "shared_capture_token_envs": ["QM_PROJECT"],
+        }
+    )
+    p = QdrantMemoryProvider(
+        plugin_context=SimpleNamespace(llm=LLM()), embedder=Embedder(), overrides=cfg
+    )
+    p.initialize("first", hermes_home=str(tmp_path))
+    try:
+        assert p.wait_idle()
+        native_owner = p._native_owner
+        assert native_owner is not None
+        private_authority = native_owner._capture_authority(
+            native_owner.owner.authenticate(tokens["native"])
+        )
+        shared_authority = native_owner._capture_authority(
+            native_owner.owner.authenticate(tokens["project"])
+        )
+        shared_digest = digest(shared_authority)
+        for index in range(128):
+            p.ledger.db.execute(
+                "INSERT INTO events(event_id,session_id,payload_json,status,collection,owner_authority) "
+                "VALUES(?,?,?,?,?,?)",
+                (
+                    f"shared-backlog-{index}",
+                    "session",
+                    "{}",
+                    "QUARANTINED",
+                    p.ledger.collection,
+                    shared_digest,
+                ),
+            )
+        p.ledger.db.commit()
+        denied_before = native_owner.denied_captures
+        p.on_turn_start(1, "Shared capture backlog fixture.")
+        p.sync_turn("Shared capture backlog fixture.", "ack")
+        assert p.wait_idle()
+        rows = p.ledger.db.execute(
+            "SELECT owner_authority FROM events WHERE event_id NOT LIKE 'shared-backlog-%'"
+        ).fetchall()
+        authorities = {row[0] for row in rows}
+        assert digest(private_authority) in authorities
+        assert shared_digest not in authorities
+        counter = p.ledger.db.execute(
+            "SELECT value FROM counters WHERE name=? AND collection=?",
+            ("native_shared_capture_backlog_full", p.ledger.collection),
+        ).fetchone()
+        assert counter is not None and counter[0] == 1
+        assert native_owner.denied_captures == denied_before
+    finally:
+        p.shutdown()
