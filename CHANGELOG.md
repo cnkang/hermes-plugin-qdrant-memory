@@ -11,6 +11,14 @@
 - Translate a terminal remote tool failure into the documented
   outcome-unknown/retryable envelope in the stdio bridge instead of returning a
   non-retryable ExceptionGroup.
+- Backfill legacy event authorities once per collection and persist a completion
+  marker in the same transaction, so startup no longer rescans settled history.
+- Keep unattributed Native admission rejections out of the collection-wide
+  backlog total while retaining them for authorized retry or discard.
+- Retry a lifecycle receipt deferred by a full backlog after Runtime recovery
+  frees capacity, then leave it for the next start if the budget is still full.
+- Report a local remote-call validation failure as `request_not_sent`
+  (non-retryable, no replay) instead of a transport error.
 
 ## 0.6.1
 
