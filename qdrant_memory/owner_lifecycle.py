@@ -254,17 +254,15 @@ class OwnerLifecycle:
 
     def _new_plan(self, ledger, request_key, input_hash, authority, event):
         """Refuse a full backlog, then durably receipt the plan a new turn runs."""
-        row = ledger.db.execute(
-            "SELECT SUM(CASE WHEN owner_authority=? THEN 1 ELSE 0 END), COUNT(*) "
-            "FROM events WHERE collection=? AND status IN ('PENDING','FAILED','QUARANTINED')",
-            (digest(authority), ledger.collection),
-        ).fetchone()
+        row = ledger.backlog_counts(digest(authority))
         queued = row[0] or 0
         if queued >= OWNER_BACKLOG_PER_AUTHORITY:
             raise RuntimeError("Owner lifecycle backlog is full")
         if row[1] >= OWNER_BACKLOG_TOTAL:
             # Keep a collection-wide ceiling so many authorities cannot grow
-            # the durable backlog without bound.
+            # the durable backlog without bound. Native rejections with no
+            # attributed authority are excluded: they stay recoverable without
+            # consuming another authority's admission budget.
             raise RuntimeError("Owner lifecycle backlog is full")
         value = {
             "kind": "turn",
@@ -329,10 +327,12 @@ class OwnerLifecycle:
         """Re-enqueue accepted immutable plans after an Owner crash; use Runtime recovery."""
         rt = self.owner.runtime
         with rt.lock:
-            for row in rt.ledger.db.execute(
+            rows = rt.ledger.db.execute(
                 "SELECT * FROM owner_events_v1 WHERE collection=? AND event_json!='{}'",
                 (rt.ledger.collection,),
-            ).fetchall():
+            ).fetchall()
+            deferred = []
+            for row in rows:
                 try:
                     rt.ledger.enqueue_event(json.loads(row["event_json"]))
                 except RuntimeError as exc:
@@ -340,8 +340,25 @@ class OwnerLifecycle:
                         raise
                     # Keep the receipt for a later recovery instead of failing
                     # Owner construction while the budget is full.
-                    continue
+                    deferred.append(row)
             failures = rt.recover()
+            if deferred:
+                # Recovery may have committed queued work and released budget.
+                # Retry each deferred receipt exactly once; if the budget is
+                # still full, retain it for the next startup rather than spin.
+                for row in deferred:
+                    try:
+                        event_key = rt.ledger.enqueue_event(json.loads(row["event_json"]))
+                    except RuntimeError as exc:
+                        if "backlog is full" not in str(exc):
+                            raise
+                        continue
+                    try:
+                        rt.process_event(event_key)
+                    except EventQuarantined:
+                        continue
+                    except Exception:
+                        failures += 1
             if failures:
                 self.owner.blocked = True
             with rt.ledger.lock, rt.ledger.db:
