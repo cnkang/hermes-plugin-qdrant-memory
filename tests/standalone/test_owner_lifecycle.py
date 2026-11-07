@@ -5,7 +5,7 @@ import sqlite3
 
 import pytest
 
-from qdrant_memory.ledger import Ledger
+from qdrant_memory.ledger import Ledger, OwnerBacklogFull
 from qdrant_memory.models import digest
 from qdrant_memory.owner_lifecycle import (
     OWNER_BACKLOG_PER_AUTHORITY,
@@ -339,7 +339,7 @@ def test_backlog_budget_is_partitioned_by_authority(tmp_path):
         }
         value, _ = lifecycle._new_plan(rt.ledger, "request-b", "hash", authority_b, event)
         assert value["owner_authority"] == authority_b
-        with pytest.raises(RuntimeError, match="backlog is full"):
+        with pytest.raises(OwnerBacklogFull, match="backlog is full"):
             lifecycle._new_plan(rt.ledger, "request-a", "hash", authority_a, event)
     finally:
         rt.ledger.close()
@@ -373,7 +373,7 @@ def test_ledger_enforces_backlog_for_direct_native_admission(tmp_path):
                 ),
             )
         rt.ledger.db.commit()
-        with pytest.raises(RuntimeError, match="backlog is full"):
+        with pytest.raises(OwnerBacklogFull, match="backlog is full"):
             rt.ledger.enqueue_event({"session_id": "session", "owner_authority": authority})
         other = {**authority, "principal": "linux", "device_id": "linux"}
         rt.ledger.enqueue_event({"session_id": "session", "owner_authority": other})
@@ -411,7 +411,7 @@ def test_collection_backlog_ceiling_bounds_all_authorities(tmp_path):
             "user": "cats",
             "assistant": "ack",
         }
-        with pytest.raises(RuntimeError, match="backlog is full"):
+        with pytest.raises(OwnerBacklogFull, match="backlog is full"):
             lifecycle._new_plan(rt.ledger, "request-a", "hash", lifecycle._authority(token), event)
     finally:
         rt.ledger.close()
@@ -581,23 +581,41 @@ def test_backlog_refusal_keeps_an_existing_receipt_and_drops_a_new_one(tmp_path,
         ledger.db.commit()
 
         def refuse(_value):
-            raise RuntimeError("Owner lifecycle backlog is full")
+            raise OwnerBacklogFull("Owner lifecycle backlog is full")
 
         monkeypatch.setattr(ledger, "enqueue_event", refuse)
-        with pytest.raises(RuntimeError, match="backlog is full"):
+        with pytest.raises(OwnerBacklogFull, match="backlog is full"):
             OwnerLifecycle._run_plan(None, None, ledger, "existing", {}, "event", created=False)
         kept = ledger.db.execute(
             "SELECT 1 FROM owner_events_v1 WHERE collection=? AND request_key='existing'",
             (ledger.collection,),
         ).fetchone()
         assert kept is not None
-        with pytest.raises(RuntimeError, match="backlog is full"):
+        with pytest.raises(OwnerBacklogFull, match="backlog is full"):
             OwnerLifecycle._run_plan(None, None, ledger, "fresh", {}, "event", created=True)
         dropped = ledger.db.execute(
             "SELECT 1 FROM owner_events_v1 WHERE collection=? AND request_key='fresh'",
             (ledger.collection,),
         ).fetchone()
         assert dropped is None
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_run_plan_propagates_other_runtime_errors(tmp_path, monkeypatch):
+    """Only the typed backlog refusal is handled as a budget outcome."""
+    rt = runtime(tmp_path)
+    try:
+        ledger = rt.ledger
+
+        def unavailable(_value):
+            raise RuntimeError("ledger unavailable")
+
+        monkeypatch.setattr(ledger, "enqueue_event", unavailable)
+        lifecycle = object.__new__(OwnerLifecycle)
+        with pytest.raises(RuntimeError, match="ledger unavailable"):
+            lifecycle._run_plan(None, ledger, "request", {}, "event", created=False)
     finally:
         rt.ledger.close()
         rt.store.close()
@@ -698,8 +716,32 @@ def test_ledger_adds_owner_authority_to_an_older_events_table(tmp_path):
     finally:
         ledger.close()
 
+    database = sqlite3.connect(directory / "state.db")
+    try:
+        database.execute(
+            "INSERT INTO events(event_id,session_id,payload_json,status,collection,owner_authority) "
+            "VALUES(?,?,?,?,?,?)",
+            (
+                "post-marker",
+                "session",
+                json.dumps({"owner_authority": authority}),
+                "PENDING",
+                "hermes_qdrant_memory",
+                "",
+            ),
+        )
+        database.commit()
+    finally:
+        database.close()
+
     reopened = Ledger(home)
     try:
+        assert (
+            reopened.db.execute(
+                "SELECT owner_authority FROM events WHERE event_id='post-marker'"
+            ).fetchone()[0]
+            == ""
+        )
         assert reopened.db.execute(
             "SELECT owner_authority FROM events WHERE event_id='old-lifecycle'"
         ).fetchone()[0] == digest(authority)
