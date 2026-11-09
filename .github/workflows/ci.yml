@@ -57,7 +57,7 @@ jobs:
           - name: latest-main
     services:
       qdrant:
-        image: qdrant/qdrant@sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863
+        image: qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2
         ports: ['6333:6333', '6334:6334']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -113,6 +113,7 @@ jobs:
             --python "$(python -c 'import sys; print(sys.executable)')" \
             --lock "$GITHUB_WORKSPACE/.host/uv.lock" \
             --requirements "$RUNNER_TEMP/host-test-requirements.txt" \
+            --requirement 'qdrant-client==1.20.0' \
             --requirement "hermes-plugin-qdrant-memory[mcp] @ file://$GITHUB_WORKSPACE"
       - name: Verify Python matrix interpreter and install target
         run: python scripts/verify_ci_python.py --expected "${{ matrix.python }}" --environment "$GITHUB_WORKSPACE/.test-env" --distribution hermes-plugin-qdrant-memory --require-distribution
