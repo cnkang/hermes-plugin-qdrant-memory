@@ -39,7 +39,11 @@ def token(secret, collection, access):
 
 def main():
     """Create only ephemeral container storage, credentials and fixture collections."""
-    image = sys.argv[1] if len(sys.argv) > 1 else "qdrant/qdrant:v1.15.5"
+    image = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else "qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2"
+    )
     collection = "qm_security_" + secrets.token_hex(8)
     secret = secrets.token_urlsafe(48)
     container = None

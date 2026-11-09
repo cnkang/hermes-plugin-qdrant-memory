@@ -24,7 +24,7 @@ from pathlib import Path
 from .common import SECRETS, free_port, wait_until, write_json
 
 QDRANT_IMAGE = (
-    "qdrant/qdrant@sha256:0fb8897412abc81d1c0430a899b9a81eb8328aa634e7242d1bc804c1fe8fe863"
+    "qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2"
 )
 # Published multi-architecture manifest list (amd64 and arm64).
 TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e"
