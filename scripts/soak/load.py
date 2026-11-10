@@ -59,6 +59,12 @@ class Outcome:
 class SoakClient:
     """Call the Owner through the production remote client with a durable outbox."""
 
+    # Reserve about 176 POSTs per minute per principal, below the gateway's
+    # 240-request window with room for retries and lifecycle traffic.
+    POST_INTERVAL_SECONDS = 0.34
+    TOOL_POST_WEIGHT = 3
+    EVENT_POST_WEIGHT = 1
+
     def __init__(
         self,
         *,
@@ -70,6 +76,7 @@ class SoakClient:
         backoff_cap=5.0,
         clock=time.monotonic,
         sleep=asyncio.sleep,
+        post_interval_seconds=POST_INTERVAL_SECONDS,
     ):
         """Bind one endpoint, the credential set and the evidence stream."""
         self.endpoint = endpoint
@@ -80,12 +87,28 @@ class SoakClient:
         self.backoff_cap = backoff_cap
         self.clock = clock
         self.sleep = sleep
+        self.post_interval_seconds = post_interval_seconds
+        self._request_locks = {}
+        self._next_request_at = {}
         # The Runner pins the end of the window so a Retry-After wait cannot
         # stretch the measured duration far past the requested window.
         self.deadline = None
         # The Runner reports whether a declared client-path fault is open. A
         # handshake cut then never reached the Owner, so the caller may retry it.
         self.path_fault = None
+
+    async def _pace(self, identity, *, weight):
+        """Reserve Owner POST budget for one principal before opening its MCP session."""
+        lock = self._request_locks.setdefault(identity, asyncio.Lock())
+        async with lock:
+            now = self.clock()
+            ready_at = self._next_request_at.get(identity, now)
+            if ready_at > now:
+                await self.sleep(ready_at - now)
+            # call_remote creates and initializes a new MCP session for each
+            # tool call: initialize, initialized notification, then tools/call.
+            # The gateway counts every POST, so reserve those slots together.
+            self._next_request_at[identity] = self.clock() + weight * self.post_interval_seconds
 
     async def _attempt(self, identity, coroutine):
         """Run one attempt, keeping a stable machine failure description."""
@@ -128,6 +151,7 @@ class SoakClient:
         replay=True,
         outbox=None,
         seq=None,
+        pace_requests=True,
     ):
         """Run one idempotent tool operation, replaying only retryable failures."""
         from qdrant_memory.remote_client import call_remote
@@ -145,6 +169,8 @@ class SoakClient:
         started = self.clock()
         while True:
             attempts += 1
+            if pace_requests:
+                await self._pace(identity, weight=self.TOOL_POST_WEIGHT)
             value, failure, elapsed = await self._attempt(
                 identity,
                 call_remote(self.endpoint, token, name, arguments, ca_file=self.ca_file),
@@ -181,7 +207,11 @@ class SoakClient:
                 # A throttled Owner asked for a real delay; honouring it keeps
                 # the caller from turning one window into a retry storm.
                 delay = max(delay, retry_after)
-            await self.sleep(min(delay, max(remaining, 0)))
+            if delay >= remaining:
+                # Keep the operation in the durable outbox; do not shorten an
+                # Owner-provided Retry-After to fit the measured window.
+                break
+            await self.sleep(delay)
         duration = round((self.clock() - started) * 1000, 3)
         outcome = Outcome(
             ok=failure is None,
@@ -226,6 +256,7 @@ class SoakClient:
         started = self.clock()
         while True:
             attempts += 1
+            await self._pace(identity, weight=self.EVENT_POST_WEIGHT)
             value, failure, elapsed = await self._attempt(
                 identity,
                 send_event(self.endpoint, token, event, ca_file=self.ca_file),
@@ -251,7 +282,9 @@ class SoakClient:
             retry_after = failure.get("retry_after")
             if isinstance(retry_after, (int, float)):
                 delay = max(delay, retry_after)
-            await self.sleep(min(delay, max(deadline - self.clock(), 0)))
+            if delay >= remaining:
+                break
+            await self.sleep(delay)
         duration = round((self.clock() - started) * 1000, 3)
         status = (value or {}).get("status")
         # A non-committed status is a terminal outcome of its own, never a
@@ -825,6 +858,7 @@ async def probe_rate_limit(client, journal, *, rounds=320):
             op="probe",
             request_id=f"probe-rate-{index}",
             replay=False,
+            pace_requests=False,
         )
         if not outcome.ok:
             rejected.append(outcome.error)
