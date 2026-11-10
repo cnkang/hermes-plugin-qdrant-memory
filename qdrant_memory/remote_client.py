@@ -74,7 +74,19 @@ class RemoteStatusError(RuntimeError):
 
     def __init__(self, status, *, error_type=None, retryable=None, retry_after=None):
         """Keep the status code and one machine type, never the remote body."""
-        super().__init__("Owner lifecycle request was rejected")
+        if retryable is None and status is not None:
+            retryable = status in RETRYABLE_STATUSES
+        details = []
+        if status is not None:
+            details.append(f"HTTP {status}")
+        if retryable is not None:
+            details.append(f"retryable={str(retryable).lower()}")
+        if retry_after is not None:
+            details.append(f"retry_after={retry_after}s")
+        message = "Owner lifecycle request was rejected"
+        if details:
+            message += f" ({', '.join(details)})"
+        super().__init__(message)
         self.status_code = status
         self.error_type = error_type
         self.retryable = retryable
@@ -289,7 +301,11 @@ async def _reject_unsafe_response(response):
     transient, so it keeps its own delay for the caller's outbox.
     """
     if 300 <= response.status_code < 400:
-        raise PermissionError("Remote MCP redirects are forbidden")
+        error = PermissionError(
+            f"Remote MCP redirects are forbidden (HTTP {response.status_code}, retryable=false)"
+        )
+        error.status_code = response.status_code
+        raise error
     if response.status_code in (401, 403):
         raise RemoteStatusError(response.status_code)
     if response.status_code in RETRYABLE_STATUSES:
@@ -513,6 +529,8 @@ def remote_error(exc, replay=None):
         "retryable": reason in RETRYABLE_REASONS,
         "hint": HINTS.get(reason, "Inspect the Owner log with the correlation identifier."),
     }
+    if status is not None:
+        result["status_code"] = status
     if result["retryable"]:
         if replay is not None:
             result["replay"] = replay
