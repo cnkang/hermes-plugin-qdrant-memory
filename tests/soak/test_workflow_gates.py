@@ -148,9 +148,12 @@ def test_admission_gate_blocks_the_extended_soak_until_smoke_passes():
     assert '"$CLOUD_RESULT" != "success"' in script
     assert "ready=$ready" in script
     soak = workflow()["jobs"]["soak"]
-    # A skipped cloud-smoke ancestor must not skip the admitted extended soak:
-    # the condition needs an explicit status function, not implicit success().
-    assert soak["if"] == "${{ !cancelled() && needs.admission-gate.outputs.ready == 'true' }}"
+    # A skipped cloud-smoke ancestor must not skip the admitted extended soak,
+    # and the gate job must finish successfully after publishing its output.
+    assert soak["if"] == (
+        "${{ !cancelled() && needs.admission-gate.result == 'success' && "
+        "needs.admission-gate.outputs.ready == 'true' }}"
+    )
     assert set(needs_of(soak)) == {"preflight", "admission-gate"}
 
 
