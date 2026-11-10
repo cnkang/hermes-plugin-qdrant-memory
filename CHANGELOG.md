@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.1
+
 - Add an absolute request deadline to the Shared Owner listener so a partial
   request cannot pin an admission permit or a handler thread; a body shorter
   than its declared length is rejected before any Owner call. Make the Windows
@@ -23,8 +25,6 @@
   frees capacity, then leave it for the next start if the budget is still full.
 - Report a local remote-call validation failure as `request_not_sent`
   (non-retryable, no replay) instead of a transport error.
-
-## 0.6.1
 
 - Add an authenticated Owner lifecycle retry action that accepts an event ID
   and re-enqueues the immutable plan already stored with its durable receipt.
