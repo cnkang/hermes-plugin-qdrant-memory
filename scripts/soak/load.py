@@ -105,6 +105,13 @@ class SoakClient:
             }
             if error.get("retry_after") is not None:
                 failure["retry_after"] = error["retry_after"]
+            status_code = error.get("status_code")
+            if (
+                isinstance(status_code, int)
+                and not isinstance(status_code, bool)
+                and 100 <= status_code < 600
+            ):
+                failure["status_code"] = status_code
             return None, failure, self.clock() - started
         return value, None, self.clock() - started
 

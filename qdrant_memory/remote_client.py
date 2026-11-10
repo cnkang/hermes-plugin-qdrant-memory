@@ -74,6 +74,8 @@ class RemoteStatusError(RuntimeError):
 
     def __init__(self, status, *, error_type=None, retryable=None, retry_after=None):
         """Keep the status code and one machine type, never the remote body."""
+        if retryable is None and status is not None:
+            retryable = status in RETRYABLE_STATUSES
         details = []
         if status is not None:
             details.append(f"HTTP {status}")
@@ -299,7 +301,11 @@ async def _reject_unsafe_response(response):
     transient, so it keeps its own delay for the caller's outbox.
     """
     if 300 <= response.status_code < 400:
-        raise PermissionError("Remote MCP redirects are forbidden")
+        error = PermissionError(
+            f"Remote MCP redirects are forbidden (HTTP {response.status_code}, retryable=false)"
+        )
+        error.status_code = response.status_code
+        raise error
     if response.status_code in (401, 403):
         raise RemoteStatusError(response.status_code)
     if response.status_code in RETRYABLE_STATUSES:
