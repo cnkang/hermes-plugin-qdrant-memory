@@ -74,7 +74,17 @@ class RemoteStatusError(RuntimeError):
 
     def __init__(self, status, *, error_type=None, retryable=None, retry_after=None):
         """Keep the status code and one machine type, never the remote body."""
-        super().__init__("Owner lifecycle request was rejected")
+        details = []
+        if status is not None:
+            details.append(f"HTTP {status}")
+        if retryable is not None:
+            details.append(f"retryable={str(retryable).lower()}")
+        if retry_after is not None:
+            details.append(f"retry_after={retry_after}s")
+        message = "Owner lifecycle request was rejected"
+        if details:
+            message += f" ({', '.join(details)})"
+        super().__init__(message)
         self.status_code = status
         self.error_type = error_type
         self.retryable = retryable
@@ -513,6 +523,8 @@ def remote_error(exc, replay=None):
         "retryable": reason in RETRYABLE_REASONS,
         "hint": HINTS.get(reason, "Inspect the Owner log with the correlation identifier."),
     }
+    if status is not None:
+        result["status_code"] = status
     if result["retryable"]:
         if replay is not None:
             result["replay"] = replay
