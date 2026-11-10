@@ -64,6 +64,7 @@ class SoakClient:
     POST_INTERVAL_SECONDS = 0.34
     TOOL_POST_WEIGHT = 3
     EVENT_POST_WEIGHT = 1
+    MAX_IN_FLIGHT_PER_IDENTITY = 4
 
     def __init__(
         self,
@@ -75,6 +76,7 @@ class SoakClient:
         outbox_seconds=150.0,
         backoff_cap=5.0,
         clock=time.monotonic,
+        wall_clock=time.time,
         sleep=asyncio.sleep,
         post_interval_seconds=POST_INTERVAL_SECONDS,
     ):
@@ -86,9 +88,11 @@ class SoakClient:
         self.outbox_seconds = outbox_seconds
         self.backoff_cap = backoff_cap
         self.clock = clock
+        self.wall_clock = wall_clock
         self.sleep = sleep
         self.post_interval_seconds = post_interval_seconds
         self._request_locks = {}
+        self._request_slots = {}
         self._next_request_at = {}
         # The Runner pins the end of the window so a Retry-After wait cannot
         # stretch the measured duration far past the requested window.
@@ -97,18 +101,43 @@ class SoakClient:
         # handshake cut then never reached the Owner, so the caller may retry it.
         self.path_fault = None
 
-    async def _pace(self, identity, *, weight):
+    async def _pace(self, identity, *, weight, deadline=None):
         """Reserve Owner POST budget for one principal before opening its MCP session."""
         lock = self._request_locks.setdefault(identity, asyncio.Lock())
         async with lock:
             now = self.clock()
             ready_at = self._next_request_at.get(identity, now)
+            if deadline is not None and ready_at >= deadline:
+                return False
             if ready_at > now:
                 await self.sleep(ready_at - now)
+            now = self.clock()
+            if deadline is not None and now >= deadline:
+                return False
             # call_remote creates and initializes a new MCP session for each
             # tool call: initialize, initialized notification, then tools/call.
             # The gateway counts every POST, so reserve those slots together.
-            self._next_request_at[identity] = self.clock() + weight * self.post_interval_seconds
+            self._next_request_at[identity] = now + weight * self.post_interval_seconds
+            return True
+
+    async def _guarded_attempt(self, identity, request, *, deadline):
+        """Bound concurrent Owner sessions and recheck the deadline before I/O."""
+        slots = self._request_slots.setdefault(
+            identity, asyncio.Semaphore(self.MAX_IN_FLIGHT_PER_IDENTITY)
+        )
+        slot_started = self.clock()
+        async with slots:
+            slot_wait = self.clock() - slot_started
+            if deadline is not None and self.clock() >= deadline:
+                return (
+                    None,
+                    {"type": "SoakDeadline", "reason": "deadline_elapsed", "retryable": True},
+                    0.0,
+                    False,
+                    slot_wait,
+                )
+            value, failure, elapsed = await self._attempt(identity, request())
+            return value, failure, elapsed, True, slot_wait
 
     async def _attempt(self, identity, coroutine):
         """Run one attempt, keeping a stable machine failure description."""
@@ -167,14 +196,70 @@ class SoakClient:
         attempts = 0
         replay_count = 0
         started = self.clock()
+        value = None
+        failure = None
+        retry_not_before = None
         while True:
-            attempts += 1
-            if pace_requests:
-                await self._pace(identity, weight=self.TOOL_POST_WEIGHT)
-            value, failure, elapsed = await self._attempt(
-                identity,
-                call_remote(self.endpoint, token, name, arguments, ca_file=self.ca_file),
+            pacing_started = self.clock()
+            paced = not pace_requests or await self._pace(
+                identity, weight=self.TOOL_POST_WEIGHT, deadline=deadline
             )
+            pacing_wait_ms = round((self.clock() - pacing_started) * 1000, 3)
+            if not paced:
+                if attempts == 0:
+                    failure = {
+                        "type": "SoakDeadline",
+                        "reason": "deadline_elapsed",
+                        "retryable": True,
+                    }
+                self.journal.record(
+                    "deferred",
+                    op=op,
+                    tool=tool,
+                    identity=identity,
+                    request_id=request_id,
+                    phase=phase,
+                    reason="soak_deadline",
+                    post_budget_weight=self.TOOL_POST_WEIGHT,
+                    paced=pace_requests,
+                    pacing_wait_ms=pacing_wait_ms,
+                    error=failure,
+                )
+                break
+            prior_failure = failure
+            value, failure, elapsed, attempted, slot_wait = await self._guarded_attempt(
+                identity,
+                lambda: call_remote(
+                    self.endpoint,
+                    token,
+                    name,
+                    arguments,
+                    ca_file=self.ca_file,
+                    retry=False,
+                ),
+                deadline=deadline,
+            )
+            if not attempted:
+                if attempts > 0:
+                    failure = prior_failure
+                self.journal.record(
+                    "deferred",
+                    op=op,
+                    tool=tool,
+                    identity=identity,
+                    request_id=request_id,
+                    phase=phase,
+                    reason="soak_deadline",
+                    post_budget_weight=self.TOOL_POST_WEIGHT,
+                    paced=pace_requests,
+                    pacing_wait_ms=pacing_wait_ms,
+                    slot_wait_ms=round(slot_wait * 1000, 3),
+                    error=failure,
+                )
+                break
+            attempts += 1
+            if attempts > 1:
+                replay_count += 1
             self.journal.record(
                 "attempt",
                 op=op,
@@ -184,6 +269,10 @@ class SoakClient:
                 attempt=attempts,
                 phase=phase,
                 duration_ms=round(elapsed * 1000, 3),
+                post_budget_weight=self.TOOL_POST_WEIGHT,
+                paced=pace_requests,
+                pacing_wait_ms=pacing_wait_ms,
+                slot_wait_ms=round(slot_wait * 1000, 3),
                 error=failure,
             )
             if failure is None:
@@ -197,19 +286,20 @@ class SoakClient:
                 # The path is deliberately cut, so this attempt never reached the
                 # Owner. Hold the identifier and try again while the cut lasts.
                 failure = {**failure, "retryable": True, "path_outage": True}
-            remaining = deadline - self.clock()
-            if not replay or failure.get("retryable") is not True or remaining <= 0:
+            if not replay or failure.get("retryable") is not True:
                 break
-            replay_count += 1
-            delay = min(self.backoff_cap, 0.1 * 2 ** min(replay_count, 6))
+            next_replay = replay_count + 1
+            delay = min(self.backoff_cap, 0.1 * 2 ** min(next_replay, 6))
             retry_after = failure.get("retry_after")
             if isinstance(retry_after, (int, float)):
                 # A throttled Owner asked for a real delay; honouring it keeps
                 # the caller from turning one window into a retry storm.
                 delay = max(delay, retry_after)
-            if delay >= remaining:
+            remaining = deadline - self.clock()
+            if remaining <= 0 or delay >= remaining:
                 # Keep the operation in the durable outbox; do not shorten an
                 # Owner-provided Retry-After to fit the measured window.
+                retry_not_before = self.wall_clock() + delay
                 break
             await self.sleep(delay)
         duration = round((self.clock() - started) * 1000, 3)
@@ -230,9 +320,12 @@ class SoakClient:
             "phase": phase,
             "attempts": attempts,
             "replays": replay_count,
+            "post_budget_weight": self.TOOL_POST_WEIGHT,
+            "paced": pace_requests,
             "duration_ms": duration,
             "result": "ok" if outcome.ok else "error",
             "error": failure,
+            "retry_not_before": retry_not_before,
             "action": outcome.action,
             "record_id": outcome.value.get("id") if isinstance(outcome.value, dict) else None,
             "version": outcome.value.get("version") if isinstance(outcome.value, dict) else None,
@@ -254,13 +347,67 @@ class SoakClient:
             deadline = min(deadline, self.deadline)
         attempts = replay_count = 0
         started = self.clock()
+        value = None
+        failure = None
+        retry_not_before = None
         while True:
-            attempts += 1
-            await self._pace(identity, weight=self.EVENT_POST_WEIGHT)
-            value, failure, elapsed = await self._attempt(
+            pacing_started = self.clock()
+            paced = await self._pace(identity, weight=self.EVENT_POST_WEIGHT, deadline=deadline)
+            pacing_wait_ms = round((self.clock() - pacing_started) * 1000, 3)
+            if not paced:
+                if attempts == 0:
+                    failure = {
+                        "type": "SoakDeadline",
+                        "reason": "deadline_elapsed",
+                        "retryable": True,
+                    }
+                self.journal.record(
+                    "deferred",
+                    op="event",
+                    tool="event",
+                    identity=identity,
+                    event_id=event["event_id"],
+                    phase=phase,
+                    reason="soak_deadline",
+                    post_budget_weight=self.EVENT_POST_WEIGHT,
+                    paced=True,
+                    pacing_wait_ms=pacing_wait_ms,
+                    error=failure,
+                )
+                break
+            prior_failure = failure
+            value, failure, elapsed, attempted, slot_wait = await self._guarded_attempt(
                 identity,
-                send_event(self.endpoint, token, event, ca_file=self.ca_file),
+                lambda: send_event(
+                    self.endpoint,
+                    token,
+                    event,
+                    ca_file=self.ca_file,
+                    retry=False,
+                ),
+                deadline=deadline,
             )
+            if not attempted:
+                if attempts > 0:
+                    failure = prior_failure
+                self.journal.record(
+                    "deferred",
+                    op="event",
+                    tool="event",
+                    identity=identity,
+                    event_id=event["event_id"],
+                    phase=phase,
+                    reason="soak_deadline",
+                    post_budget_weight=self.EVENT_POST_WEIGHT,
+                    paced=True,
+                    pacing_wait_ms=pacing_wait_ms,
+                    slot_wait_ms=round(slot_wait * 1000, 3),
+                    error=failure,
+                )
+                break
+            attempts += 1
+            if attempts > 1:
+                replay_count += 1
             self.journal.record(
                 "attempt",
                 op="event",
@@ -270,19 +417,24 @@ class SoakClient:
                 attempt=attempts,
                 phase=phase,
                 duration_ms=round(elapsed * 1000, 3),
+                post_budget_weight=self.EVENT_POST_WEIGHT,
+                paced=True,
+                pacing_wait_ms=pacing_wait_ms,
+                slot_wait_ms=round(slot_wait * 1000, 3),
                 error=failure,
             )
             if failure is None:
                 break
-            remaining = deadline - self.clock()
-            if failure.get("retryable") is not True or remaining <= 0:
+            if failure.get("retryable") is not True:
                 break
-            replay_count += 1
-            delay = min(self.backoff_cap, 0.1 * 2 ** min(replay_count, 6))
+            next_replay = replay_count + 1
+            delay = min(self.backoff_cap, 0.1 * 2 ** min(next_replay, 6))
             retry_after = failure.get("retry_after")
             if isinstance(retry_after, (int, float)):
                 delay = max(delay, retry_after)
-            if delay >= remaining:
+            remaining = deadline - self.clock()
+            if remaining <= 0 or delay >= remaining:
+                retry_not_before = self.wall_clock() + delay
                 break
             await self.sleep(delay)
         duration = round((self.clock() - started) * 1000, 3)
@@ -311,10 +463,13 @@ class SoakClient:
             phase=phase,
             attempts=attempts,
             replays=replay_count,
+            post_budget_weight=self.EVENT_POST_WEIGHT,
+            paced=True,
             duration_ms=duration,
             result="ok" if outcome.ok else "error",
             status=status,
             error=error,
+            retry_not_before=retry_not_before,
             seq=seq,
         )
         return outcome
@@ -325,6 +480,25 @@ class SoakClient:
         The Owner commits, then the client loses the answer. The replay with the
         same identifier must return the stored receipt instead of a second row.
         """
+        pacing_started = self.clock()
+        if not await self._pace(identity, weight=1, deadline=self.deadline):
+            pacing_wait_ms = round((self.clock() - pacing_started) * 1000, 3)
+            self.journal.record(
+                "lost_response",
+                tool=tool,
+                identity=identity,
+                request_id=request_id,
+                status=None,
+                content_type="",
+                phase="network",
+                deferred=True,
+                post_budget_weight=1,
+                paced=True,
+                pacing_wait_ms=pacing_wait_ms,
+            )
+            return {"status": None, "content_type": "", "deferred": True}
+        pacing_wait_ms = round((self.clock() - pacing_started) * 1000, 3)
+
         import ssl
 
         import httpx
@@ -332,26 +506,38 @@ class SoakClient:
         name = tool if tool.startswith("qdrant_memory_") else "qdrant_memory_" + tool
         # httpx treats a bare path as an SSL context, so build the context here.
         context = ssl.create_default_context(cafile=str(self.ca_file))
-        async with httpx.AsyncClient(
-            verify=context, trust_env=False, timeout=30, follow_redirects=False
-        ) as http:
-            async with http.stream(
-                "POST",
-                self.endpoint,
-                headers={
-                    "Authorization": "Bearer " + self.tokens[identity],
-                    "Accept": "application/json, text/event-stream",
-                    "MCP-Protocol-Version": "2025-11-25",
-                },
-                json={
-                    "jsonrpc": "2.0",
-                    "id": 101,
-                    "method": "tools/call",
-                    "params": {"name": name, "arguments": {**args, "request_id": request_id}},
-                },
-            ) as response:
-                status = response.status_code
-                content_type = response.headers.get("content-type", "")
+        status = None
+        content_type = ""
+        slots = self._request_slots.setdefault(
+            identity, asyncio.Semaphore(self.MAX_IN_FLIGHT_PER_IDENTITY)
+        )
+        slot_started = self.clock()
+        async with slots:
+            slot_wait_ms = round((self.clock() - slot_started) * 1000, 3)
+            if self.deadline is None or self.clock() < self.deadline:
+                async with httpx.AsyncClient(
+                    verify=context, trust_env=False, timeout=30, follow_redirects=False
+                ) as http:
+                    async with http.stream(
+                        "POST",
+                        self.endpoint,
+                        headers={
+                            "Authorization": "Bearer " + self.tokens[identity],
+                            "Accept": "application/json, text/event-stream",
+                            "MCP-Protocol-Version": "2025-11-25",
+                        },
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 101,
+                            "method": "tools/call",
+                            "params": {
+                                "name": name,
+                                "arguments": {**args, "request_id": request_id},
+                            },
+                        },
+                    ) as response:
+                        status = response.status_code
+                        content_type = response.headers.get("content-type", "")
         self.journal.record(
             "lost_response",
             tool=tool,
@@ -360,8 +546,14 @@ class SoakClient:
             status=status,
             content_type=content_type,
             phase="network",
+            deferred=status is None,
+            post_count=0 if status is None else 1,
+            post_budget_weight=1,
+            paced=True,
+            pacing_wait_ms=pacing_wait_ms,
+            slot_wait_ms=slot_wait_ms,
         )
-        return {"status": status, "content_type": content_type}
+        return {"status": status, "content_type": content_type, "deferred": status is None}
 
 
 def record_text(marker, topic, detail):
@@ -627,7 +819,7 @@ class Workload:
     def pending_writes(self, rows):
         """Return the logical operations that never reached an acknowledgement."""
         acknowledged = {
-            row.get("request_id")
+            row.get("request_id") or row.get("event_id")
             for row in rows
             if row.get("kind") == "op" and row.get("result") == "ok"
         }
@@ -656,6 +848,18 @@ class Workload:
         pending = self.pending_writes(journal.rows())
         results = {"attempted": len(pending), "recovered": 0, "failed": 0}
         for request_id, row in pending.items():
+            retry_not_before = row.get("retry_not_before")
+            if isinstance(retry_not_before, (int, float)):
+                delay = max(0.0, retry_not_before - client.wall_clock())
+                if delay:
+                    journal.record(
+                        "outbox_wait",
+                        identity=row.get("identity", "hermes-a"),
+                        request_id=request_id,
+                        delay_seconds=round(delay, 3),
+                        phase="recovery",
+                    )
+                    await client.sleep(delay)
             if row.get("tool") == "event":
                 event = {
                     "event_id": request_id,

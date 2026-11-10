@@ -244,15 +244,20 @@ async def _replay(send, *, sleep=None, clock=None):
             await sleep(delay)
 
 
-async def send_event(url, token, event, *, ca_file=None):
+async def send_event(url, token, event, *, ca_file=None, retry=True):
     """Acknowledge only a committed write or an explicitly cancelled raw event.
 
     A retry replays the same event ID, so a lost response cannot add a second
     event or a second memory.
+
+    Set ``retry=False`` when the caller owns retry pacing and deadlines.
     """
-    result = await _replay(
-        lambda: _event_request(url, token, event, ca_file=ca_file, path="/events")
-    )
+    if retry:
+        result = await _replay(
+            lambda: _event_request(url, token, event, ca_file=ca_file, path="/events")
+        )
+    else:
+        result = await _event_request(url, token, event, ca_file=ca_file, path="/events")
     if not isinstance(result, dict) or result.get("status") not in (
         "COMMITTED",
         "CANCELLED",
@@ -335,12 +340,14 @@ def _tool_value(result):
     return value
 
 
-async def call_remote(url, token, name, arguments, *, ca_file=None):
+async def call_remote(url, token, name, arguments, *, ca_file=None, retry=True):
     """Use official protocol negotiation and preserve Owner receipt/error semantics.
 
     A retry replays the same arguments. Every shared mutation carries a
     ``request_id``, and the Owner returns the stored receipt for a repeat, so an
     interrupted response cannot duplicate a memory.
+
+    Set ``retry=False`` when the caller owns retry pacing and deadlines.
     """
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
@@ -374,7 +381,7 @@ async def call_remote(url, token, name, arguments, *, ca_file=None):
             await session.initialize()
             return _tool_value(await session.call_tool(name, arguments))
 
-    return await _replay(request)
+    return await _replay(request) if retry else await request()
 
 
 HINTS = {
