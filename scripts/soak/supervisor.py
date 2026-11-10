@@ -273,11 +273,13 @@ class OwnerSupervisor:
         )
         return process.returncode
 
-    def restart(self, *, force=False):
-        """Stop the Owner and start it again on the same profile."""
+    def restart(self, *, force=False, before_start=None):
+        """Stop the Owner, run optional maintenance, and start the same profile."""
         self.stop(force=force)
         self.restarts += 1
         self._record("owner_restart", force=force, restarts=self.restarts)
+        if before_start is not None:
+            before_start()
         result = self.start()
         return {"restart": self.restarts, "force": force, **result}
 

@@ -6,7 +6,13 @@ from types import SimpleNamespace
 import pytest
 
 from qdrant_memory.remote_client import RemoteStatusError
-from scripts.soak.load import SoakClient, Workload, probe_rate_limit
+from scripts.soak.load import (
+    SoakClient,
+    Workload,
+    probe_authorization,
+    probe_cas,
+    probe_rate_limit,
+)
 
 
 class _Journal:
@@ -435,7 +441,7 @@ def test_remote_client_can_disable_internal_replay(monkeypatch):
 
 
 def test_rate_limit_probe_bypasses_normal_load_pacing():
-    """Keep the dedicated burst identity able to exercise the gateway limiter."""
+    """Keep the dedicated burst probe unpaced and stop at its first backoff."""
 
     class _Client:
         def __init__(self):
@@ -454,5 +460,220 @@ def test_rate_limit_probe_bypasses_normal_load_pacing():
     result = asyncio.run(probe_rate_limit(client, journal))
 
     assert result["status"] == "PASS"
-    assert len(client.calls) == 3
+    assert len(client.calls) == 1
     assert all(call["pace_requests"] is False for call in client.calls)
+
+
+@pytest.mark.parametrize("operation", ["tool", "event"])
+def test_recovery_required_is_returned_before_an_explicit_same_id_retry(operation, monkeypatch):
+    """The caller sees recovery_required; only a later user retry reuses its ID."""
+    import qdrant_memory.remote_client as remote_client
+
+    requests = []
+    generation = [0]
+    recovery_requests = []
+
+    async def request_owner_recovery(previous_generation, identity, request_id):
+        """Capture one recovery trigger without restarting an Owner in the test."""
+        recovery_requests.append((previous_generation, identity, request_id))
+        return True
+
+    async def request(*args, **kwargs):
+        """Return a recovery gate once, then acknowledge the original request."""
+        requests.append((args, kwargs))
+        if len(requests) == 1:
+            raise RemoteStatusError(
+                503,
+                error_type="SharedRecoveryRequiredError",
+                retryable=False,
+            )
+        return (
+            {"action": "ADD", "id": "record-1"} if operation == "tool" else {"status": "COMMITTED"}
+        )
+
+    monkeypatch.setattr(remote_client, "call_remote", request)
+    monkeypatch.setattr(remote_client, "send_event", request)
+    now = [0.0]
+
+    async def sleep(_delay):
+        """Skip backoff because the mocked request resolves immediately."""
+        pass
+
+    journal = _Journal()
+    client = _client(clock=lambda: now[0], sleep=sleep, journal=journal)
+    client.owner_recovery_generation = lambda: generation[0]
+    client.owner_recovery_handler = request_owner_recovery
+
+    async def submit():
+        """Submit either the tool or event used by this parametrized test."""
+        if operation == "tool":
+            return await client.call(
+                "writer",
+                "add",
+                {"text": "recover me"},
+                op="add",
+                request_id="request-1",
+                pace_requests=False,
+            )
+        return await client.submit_event(
+            "writer",
+            {"event_id": "event-1", "user": "recover me"},
+        )
+
+    failed = asyncio.run(submit())
+
+    assert not failed.ok
+    assert failed.error["reason"] == "recovery_required"
+    assert failed.error["retryable"] is False
+    assert not failed.resolved
+    assert failed.attempts == 1
+    assert failed.replay_count == 0
+    assert len(requests) == 1
+    assert recovery_requests == [(0, "writer", "request-1" if operation == "tool" else "event-1")]
+    first = next(fields for kind, fields in journal.entries if kind == "op")
+    assert first["result"] == "error"
+    assert first["error"]["retryable"] is False
+    assert first["owner_recovery_generation"] == 0
+    assert first["operator_recovery_requested"] is True
+
+    # Simulate the separately logged operator restart completing. The caller
+    # explicitly submits its saved operation again under the original ID.
+    generation[0] = 1
+    recovered = asyncio.run(submit())
+
+    assert recovered.ok
+    assert recovered.attempts == 1
+    assert recovered.replay_count == 0
+    assert len(requests) == 2
+    if operation == "tool":
+        assert requests[0][0][3]["request_id"] == requests[1][0][3]["request_id"] == "request-1"
+    else:
+        assert requests[0][0][2]["event_id"] == requests[1][0][2]["event_id"] == "event-1"
+
+
+def test_pending_writes_include_only_recovery_gated_requests_queued_for_operator_replay():
+    """A non-retryable Owner gate enters the drain only after recovery was queued."""
+    from scripts.soak.load import Workload
+
+    workload = Workload.__new__(Workload)
+    row = {
+        "kind": "op",
+        "op": "add",
+        "tool": "add",
+        "request_id": "write-1",
+        "result": "error",
+        "error": {"reason": "recovery_required", "retryable": False},
+        "operator_recovery_requested": True,
+    }
+
+    assert workload.pending_writes([row]) == {"write-1": row}
+    row["operator_recovery_requested"] = False
+    assert workload.pending_writes([row]) == {}
+
+
+def test_nonretryable_lifecycle_failure_is_resolved_as_terminal():
+    """Lifecycle and tool outcomes share the terminal-failure classification."""
+    now = [0.0]
+
+    async def sleep(_delay):
+        """Skip backoff for the synthetic lifecycle rejection."""
+        pass
+
+    client = _client(clock=lambda: now[0], sleep=sleep)
+
+    async def rejected(_identity, _request, *, deadline):
+        """Return one permanent permission-style rejection."""
+        return (
+            None,
+            {"type": "OwnerError", "reason": "forbidden", "retryable": False},
+            0.01,
+            True,
+            0.0,
+        )
+
+    client._guarded_attempt = rejected
+    outcome = asyncio.run(
+        client.submit_event("writer", {"event_id": "event-1", "user": "not authorized"})
+    )
+
+    assert not outcome.ok
+    assert outcome.error["reason"] == "forbidden"
+    assert outcome.resolved
+
+
+def test_authorization_probe_retries_same_marker_after_owner_recovery():
+    """A fail-closed recovery gate defers the probe without reporting a false failure."""
+    journal = _Journal()
+    responses = [
+        SimpleNamespace(
+            ok=False,
+            value={},
+            error={
+                "type": "SharedRecoveryRequiredError",
+                "reason": "business_error",
+                "retryable": False,
+            },
+        ),
+        SimpleNamespace(ok=True, value={"id": "private-1"}, error={}),
+        SimpleNamespace(ok=False, value={}, error={"type": "PermissionError"}),
+        SimpleNamespace(ok=True, value={"memories": []}, error={}),
+        SimpleNamespace(ok=True, value={"memories": []}, error={}),
+    ]
+    calls = []
+
+    class Client:
+        async def call(self, identity, tool, arguments, **kwargs):
+            """Return the next scripted authorization outcome."""
+            calls.append((identity, tool, kwargs.get("request_id")))
+            return responses.pop(0)
+
+    client = Client()
+    first = asyncio.run(probe_authorization(client, journal))
+    assert first["status"] == "DEFERRED"
+    assert journal.entries[0][0] == "probe_deferred"
+
+    second = asyncio.run(probe_authorization(client, journal, marker=first["marker"]))
+
+    assert second["status"] == "PASS"
+    assert calls[0][2] == calls[1][2]
+    assert [kind for kind, _ in journal.entries] == ["probe_deferred", "probe"]
+
+
+def test_cas_probe_retries_same_request_ids_after_owner_recovery():
+    """An interrupted CAS probe resumes its original add and competing writes."""
+    journal = _Journal()
+    blocked = SimpleNamespace(
+        ok=False,
+        value={},
+        error={"type": "SharedRecoveryRequiredError", "reason": "recovery_required"},
+    )
+    added = SimpleNamespace(ok=True, value={"id": "record-1", "version": "v1"}, error={})
+    updated = SimpleNamespace(
+        ok=True,
+        value={"id": "record-1", "version": "v2", "action": "UPDATE"},
+        error={},
+        action="UPDATE",
+    )
+    conflict = SimpleNamespace(
+        ok=False,
+        value={},
+        error={"type": "SharedConflictError", "reason": "conflict"},
+    )
+    responses = [added, blocked, updated, added, conflict, updated]
+    calls = []
+
+    class Client:
+        async def call(self, identity, tool, arguments, **kwargs):
+            """Return the next scripted CAS outcome."""
+            calls.append((identity, tool, kwargs["request_id"]))
+            return responses.pop(0)
+
+    client = Client()
+    first = asyncio.run(probe_cas(client, journal))
+    assert first["status"] == "DEFERRED"
+
+    second = asyncio.run(probe_cas(client, journal, marker=first["marker"]))
+
+    assert second["status"] == "PASS"
+    assert calls[:3] == calls[3:]
+    assert [kind for kind, _ in journal.entries] == ["probe_deferred", "probe"]

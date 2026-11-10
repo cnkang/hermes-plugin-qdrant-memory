@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import random
+import subprocess
 import sys
 import time
 import traceback
@@ -240,6 +241,15 @@ class Runner:
         self.start_failures = 0
         self.client_fault_open = False
         self.client.path_fault = lambda: self.client_fault_open
+        self._owner_recovery_generation = 0
+        self._owner_recovery_lock = asyncio.Lock()
+        self._owner_recovery_tasks = {}
+        self._active_network_fault_cleared = asyncio.Event()
+        self._active_network_fault_cleared.set()
+        self._active_network_fault_abort = asyncio.Event()
+        if args.scenario == "network":
+            self.client.owner_recovery_generation = lambda: self._owner_recovery_generation
+            self.client.owner_recovery_handler = self.request_owner_recovery_after_shared_gate
         self.faults = []
         self.stop_at = None
 
@@ -250,6 +260,211 @@ class Runner:
         entry = self.journal.record("fault", phase=phase, fault=fault, **extra)
         self.faults.append({"phase": phase, "fault": fault, **extra})
         return entry
+
+    async def request_owner_recovery_after_shared_gate(self, generation, identity, request_id):
+        """Schedule a separate operator recovery; never retry the user's request here."""
+        if generation is None or self.fatal:
+            return False
+        task = self._owner_recovery_tasks.get(generation)
+        if task is None:
+            self.journal.record(
+                "control",
+                event="operator_recovery_requested",
+                identity=identity,
+                request_id=request_id,
+                trigger_generation=generation,
+            )
+            task = asyncio.create_task(
+                self._restart_owner_after_shared_gate(generation, identity, request_id)
+            )
+            self._owner_recovery_tasks[generation] = task
+        else:
+            self.journal.record(
+                "control",
+                event="operator_recovery_coalesced",
+                identity=identity,
+                request_id=request_id,
+                trigger_generation=generation,
+            )
+        return True
+
+    async def _restart_owner_after_shared_gate(self, generation, identity, request_id):
+        """Retry failed durable work, then restart after the network recovers."""
+        if not await self._wait_for_network_fault_resolution():
+            self.journal.record(
+                "control",
+                event="operator_recovery_aborted",
+                trigger_generation=generation,
+                identity=identity,
+                request_id=request_id,
+                reason=self.fatal or "network_fault_cleanup_failed",
+            )
+            return False
+        async with self._owner_recovery_lock:
+            if self.fatal:
+                return False
+            if generation != self._owner_recovery_generation:
+                # Another request already restarted the Owner for this gate.
+                return True
+            self.journal.record(
+                "control",
+                event="operator_recovery_started",
+                identity=identity,
+                request_id=request_id,
+                trigger_generation=generation,
+            )
+
+            def retry_failed_work():
+                """Use the documented stopped-Owner recovery command."""
+                self.journal.record(
+                    "control",
+                    event="operator_retry_started",
+                    trigger_generation=generation,
+                    identity=identity,
+                    request_id=request_id,
+                )
+                started = time.monotonic()
+                try:
+                    completed = subprocess.run(
+                        [
+                            sys.executable,
+                            "-m",
+                            "qdrant_memory.standalone",
+                            "--home",
+                            str(self.env.home),
+                            "retry",
+                            "--policy",
+                            "./policy.json",
+                        ],
+                        cwd=self.env.home,
+                        env=owner_environment(self.env),
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                        check=False,
+                    )
+                    if completed.returncode:
+                        detail = (completed.stderr or completed.stdout or "").strip()[-300:]
+                        raise RuntimeError(
+                            f"qdrant-memory retry exited {completed.returncode}"
+                            + (f": {detail}" if detail else "")
+                        )
+                    result = json.loads(completed.stdout)
+                except subprocess.TimeoutExpired as exc:
+                    self.journal.record(
+                        "control",
+                        event="operator_retry_failed",
+                        trigger_generation=generation,
+                        identity=identity,
+                        request_id=request_id,
+                        detail="qdrant-memory retry timed out after 300s",
+                    )
+                    raise RuntimeError("qdrant-memory retry timed out after 300s") from exc
+                except Exception as exc:
+                    self.journal.record(
+                        "control",
+                        event="operator_retry_failed",
+                        trigger_generation=generation,
+                        identity=identity,
+                        request_id=request_id,
+                        detail=f"{type(exc).__name__}: {str(exc)[:300]}",
+                    )
+                    raise
+                self.journal.record(
+                    "control",
+                    event="operator_retry_completed",
+                    trigger_generation=generation,
+                    identity=identity,
+                    request_id=request_id,
+                    elapsed_seconds=round(time.monotonic() - started, 3),
+                    ledger=result.get("ledger", {}),
+                )
+
+            try:
+                result = await asyncio.to_thread(
+                    self.supervisor.restart, force=False, before_start=retry_failed_work
+                )
+            except Exception as exc:  # noqa: BLE001 - failed recovery invalidates the window
+                self.start_failures += 1
+                self.fatal = "owner_recovery_failed"
+                self.journal.record(
+                    "control",
+                    event="operator_recovery_failed",
+                    trigger_generation=generation,
+                    identity=identity,
+                    request_id=request_id,
+                    detail=f"{type(exc).__name__}: {str(exc)[:300]}",
+                )
+                return False
+            self._owner_recovery_generation += 1
+            self.journal.record(
+                "control",
+                event="operator_recovery_completed",
+                reason="shared_recovery_required",
+                trigger_generation=generation,
+                generation=self._owner_recovery_generation,
+                identity=identity,
+                request_id=request_id,
+                ready_seconds=result["ready_seconds"],
+            )
+            return True
+
+    async def _wait_for_network_fault_resolution(self):
+        """Wait for confirmed proxy cleanup, or stop if cleanup cannot be confirmed."""
+        if self._active_network_fault_abort.is_set():
+            return False
+        if self._active_network_fault_cleared.is_set():
+            return True
+
+        cleared = asyncio.create_task(self._active_network_fault_cleared.wait())
+        aborted = asyncio.create_task(self._active_network_fault_abort.wait())
+        waits = (cleared, aborted)
+        try:
+            done, _ = await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+            return (
+                cleared in done
+                and self._active_network_fault_cleared.is_set()
+                and not self._active_network_fault_abort.is_set()
+            )
+        finally:
+            for task in waits:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*waits, return_exceptions=True)
+
+    async def _clear_network_faults(self, toxic):
+        """Remove toxics and enable both proxies, retaining every cleanup error."""
+        from .prepare import CLIENT_PROXY, QDRANT_PROXY
+
+        errors = []
+        for proxy in (QDRANT_PROXY, CLIENT_PROXY):
+            for operation, action in (
+                ("clear_toxics", lambda proxy=proxy: toxic.clear(proxy)),
+                ("enable_proxy", lambda proxy=proxy: self._set_proxy(toxic, proxy, True)),
+            ):
+                try:
+                    await asyncio.to_thread(action)
+                except Exception as exc:  # noqa: BLE001 - cleanup status controls recovery
+                    errors.append(
+                        {"proxy": proxy, "operation": operation, "error": _fault_detail(exc)}
+                    )
+        return errors
+
+    def _record_fault_cleanup_failure(self, fault, errors):
+        """Fail closed and release waiting recovery tasks without restarting Owner."""
+        self.fatal = self.fatal or "network_fault_cleanup_failed"
+        self.journal.record("harness", event="fault_cleanup_failed", fault=fault, errors=errors)
+        self._active_network_fault_abort.set()
+
+    async def _complete_fault_cleanup(self, toxic, fault):
+        """Signal a healthy network only after both proxies are confirmed clear."""
+        errors = await self._clear_network_faults(toxic)
+        if errors:
+            self._record_fault_cleanup_failure(fault, errors)
+            return False
+        self.record_fault("end", fault)
+        self._active_network_fault_cleared.set()
+        return True
 
     async def metrics_task(self, clock=time.monotonic):
         """Sample process and storage resources for the whole window."""
@@ -270,19 +485,60 @@ class Runner:
     async def probe_task(self, clock=time.monotonic):
         """Run the authorization and CAS probes at a bounded cadence."""
         await asyncio.sleep(min(10.0, self.args.target_seconds / 6))
+        pending_authorization_marker = None
+        pending_authorization_retry_at = 0.0
+        pending_cas_marker = None
+        pending_cas_retry_at = 0.0
         while clock() < (self.stop_at or clock()) and not self.fatal:
             try:
-                await probe_authorization(self.client, self.journal)
-                await probe_cas(self.client, self.journal)
-                if self.args.scenario == "network":
-                    await probe_retry_contract(
-                        self.client,
-                        self.journal,
-                        tokens=self.env.tokens,
-                        endpoint=self.env.owner_endpoint,
-                        ca_file=self.env.ca_file,
-                        untrusted_ca=self.env.untrusted_ca,
+                authorization_waiting = (
+                    pending_authorization_marker is not None
+                    and pending_authorization_retry_at
+                    and clock() < pending_authorization_retry_at
+                )
+                if authorization_waiting:
+                    authorization = {
+                        "status": "DEFERRED",
+                        "marker": pending_authorization_marker,
+                    }
+                else:
+                    authorization = await probe_authorization(
+                        self.client, self.journal, marker=pending_authorization_marker
                     )
+                    pending_authorization_marker = (
+                        authorization.get("marker")
+                        if authorization.get("status") == "DEFERRED"
+                        else None
+                    )
+                    retry_after = authorization.get("retry_after", 0)
+                    pending_authorization_retry_at = (
+                        clock() + retry_after
+                        if pending_authorization_marker and retry_after > 0
+                        else 0.0
+                    )
+                if pending_authorization_marker is None:
+                    if (
+                        pending_cas_marker is None
+                        or not pending_cas_retry_at
+                        or clock() >= pending_cas_retry_at
+                    ):
+                        cas = await probe_cas(self.client, self.journal, marker=pending_cas_marker)
+                        pending_cas_marker = (
+                            cas.get("marker") if cas.get("status") == "DEFERRED" else None
+                        )
+                        retry_after = cas.get("retry_after", 0)
+                        pending_cas_retry_at = (
+                            clock() + retry_after if pending_cas_marker and retry_after > 0 else 0.0
+                        )
+                    if self.args.scenario == "network":
+                        await probe_retry_contract(
+                            self.client,
+                            self.journal,
+                            tokens=self.env.tokens,
+                            endpoint=self.env.owner_endpoint,
+                            ca_file=self.env.ca_file,
+                            untrusted_ca=self.env.untrusted_ca,
+                        )
             except Exception as exc:  # noqa: BLE001 - probes must not end the run
                 self.journal.record(
                     "harness", event="probe_error", error={"type": type(exc).__name__}
@@ -328,14 +584,18 @@ class Runner:
             (CLIENT_PROXY, "disconnect", {}, 4.0),
             (CLIENT_PROXY, "reset_peer", {"timeout": 0}, 5.0),
         )
-        await asyncio.sleep(min(15.0, self.args.target_seconds / 5))
         try:
+            await asyncio.sleep(min(15.0, self.args.target_seconds / 5))
             await self._fault_cycle(toxic, plan, interval, clock)
         finally:
-            # A window never ends with a fault still applied.
-            for proxy in (QDRANT_PROXY, CLIENT_PROXY):
-                with contextlib_suppress():
-                    toxic.clear(proxy)
+            # Recovery must not proceed until shutdown cleanup also confirms
+            # that both proxies are enabled and have no remaining toxics.
+            self._active_network_fault_cleared.clear()
+            errors = await self._clear_network_faults(toxic)
+            if errors:
+                self._record_fault_cleanup_failure("network_shutdown", errors)
+            else:
+                self._active_network_fault_cleared.set()
 
     async def _fault_cycle(self, toxic, plan, interval, clock):
         """Apply each planned fault for a bounded hold and clear it again."""
@@ -343,31 +603,39 @@ class Runner:
         while clock() < (self.stop_at or clock()) - interval and not self.fatal:
             proxy, kind, attributes, hold = plan[index % len(plan)]
             index += 1
-            self.record_fault("begin", f"{proxy}_{kind}")
+            pending_recoveries = [
+                task for task in self._owner_recovery_tasks.values() if not task.done()
+            ]
+            if pending_recoveries:
+                await asyncio.gather(*(asyncio.shield(task) for task in pending_recoveries))
+            self._active_network_fault_cleared.clear()
+            fault = f"{proxy}_{kind}"
+            self.record_fault("begin", fault)
             try:
                 if kind == "disconnect":
                     await asyncio.to_thread(self._set_proxy, toxic, proxy, False)
                 else:
                     toxic.add(proxy, kind, attributes)
                 await asyncio.sleep(min(hold, max(1.0, self.args.target_seconds / 40)))
-                if kind == "disconnect":
-                    await asyncio.to_thread(self._set_proxy, toxic, proxy, True)
-                else:
-                    toxic.clear(proxy)
+                errors = await self._clear_network_faults(toxic)
+                if errors:
+                    self._record_fault_cleanup_failure(fault, errors)
+                    return
                 await asyncio.sleep(min(8.0, max(2.0, self.args.target_seconds / 200)))
+            except asyncio.CancelledError:
+                await self._complete_fault_cleanup(toxic, fault)
+                raise
             except Exception as exc:  # noqa: BLE001 - a failed fault is evidence, not a crash
                 self.journal.record(
                     "harness",
                     event="fault_error",
-                    fault=f"{proxy}_{kind}",
+                    fault=fault,
                     error=_fault_detail(exc),
                 )
-                with contextlib_suppress():
-                    toxic.clear(proxy)
-                with contextlib_suppress():
-                    await asyncio.to_thread(self._set_proxy, toxic, proxy, True)
-            finally:
-                self.record_fault("end", f"{proxy}_{kind}")
+                await self._complete_fault_cleanup(toxic, fault)
+            else:
+                self.record_fault("end", fault)
+                self._active_network_fault_cleared.set()
             await asyncio.sleep(max(0.0, interval / 4))
 
     @staticmethod
@@ -469,7 +737,21 @@ class Runner:
                         event="background_error",
                         error={"type": type(result).__name__, "detail": str(result)[:300]},
                     )
+            recovery_tasks = list(self._owner_recovery_tasks.values())
+            if recovery_tasks:
+                recovery_results = await asyncio.gather(*recovery_tasks, return_exceptions=True)
+                for result in recovery_results:
+                    if isinstance(result, BaseException):
+                        self.journal.record(
+                            "harness",
+                            event="background_error",
+                            task="operator_recovery",
+                            error={"type": type(result).__name__, "detail": str(result)[:300]},
+                        )
         if self.args.scenario == "network" and not self.fatal:
+            # This probe runs after the measured workload and recovery drain.
+            # It needs its own pacing window even if operator recovery was slow.
+            self.client.deadline = None
             await probe_rate_limit(self.client, self.journal)
         return {"fatal": self.fatal}
 
@@ -642,6 +924,10 @@ def main(argv=None):
         supervisor.start()
         runner = Runner(args, identity, env, journal, supervisor)
         asyncio.run(runner.run())
+        # The runner has joined every operator recovery task. A later outbox
+        # replay must report failure if recovery did not clear the gate; it
+        # must not schedule work on the event loop that has already closed.
+        runner.client.owner_recovery_handler = None
         # The measured window ends with the workload, not with the recovery drain.
         duration = stopwatch.stop()
         if runner.fatal:

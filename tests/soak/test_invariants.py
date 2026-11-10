@@ -517,6 +517,115 @@ def test_a_replayed_event_that_later_commits_is_not_unresolved():
     assert summary["recovery_required"] == 0
 
 
+def test_recovery_required_without_same_id_ack_after_operator_restart_is_unexpected():
+    """A completed restart alone must not excuse an unacknowledged request."""
+    rows, evidence = _healthy()
+    rows.append(
+        {
+            "kind": "op",
+            "op": "event",
+            "tool": "event",
+            "identity": "hermes-a",
+            "event_id": "operator-recovery-event-1",
+            "event_text": "Fact SOAK-recovery-1: recover only after operator action.",
+            "result": "error",
+            "error": {
+                "type": "RemoteStatusError",
+                "reason": "recovery_required",
+                "retryable": False,
+            },
+            "owner_recovery_generation": 0,
+            "operator_recovery_requested": True,
+        }
+    )
+    rows.append(
+        {
+            "kind": "control",
+            "event": "operator_recovery_completed",
+            "trigger_generation": 0,
+            "generation": 1,
+        }
+    )
+
+    invariants, summary, state = _verify(rows, evidence)
+
+    assert len(state["unexpected"]) == 1
+    assert summary["operator_recovered_failures"] == 0
+    assert _status(invariants, "no_unexplained_loss") == "FAIL"
+
+
+def test_recovery_required_is_excused_only_after_operator_restart_and_same_id_ack():
+    """The response is resolved only by a recorded restart and later same-ID ack."""
+    rows, evidence = _healthy()
+    grants, _ = build_grants()
+    grant = next(item for item in grants if item["principal"] == "hermes-a")
+    event_id = "operator-recovery-event-1"
+    event_text = "Fact SOAK-recovery-1: recover only after operator action."
+    rows.extend(
+        [
+            {
+                "kind": "op",
+                "op": "event",
+                "tool": "event",
+                "identity": "hermes-a",
+                "event_id": event_id,
+                "event_text": event_text,
+                "result": "error",
+                "error": {
+                    "type": "RemoteStatusError",
+                    "reason": "recovery_required",
+                    "retryable": False,
+                },
+                "owner_recovery_generation": 0,
+                "operator_recovery_requested": True,
+            },
+            {
+                "kind": "control",
+                "event": "operator_recovery_completed",
+                "trigger_generation": 0,
+                "generation": 1,
+            },
+            {
+                "kind": "op",
+                "op": "event",
+                "tool": "event",
+                "identity": "hermes-a",
+                "event_id": event_id,
+                "event_text": event_text,
+                "phase": "recovery",
+                "status": "COMMITTED",
+                "result": "ok",
+            },
+        ]
+    )
+    evidence.ledger["events"].append({"key": event_id, "status": "COMMITTED"})
+    evidence.ledger["owner_events"].append(
+        {
+            "request_key": event_receipt_key(grant, event_id),
+            "event_key": event_id,
+            "event_json": "{}",
+        }
+    )
+    evidence.points.append(
+        {
+            "id": "55555555-5555-5555-8555-555555555555",
+            "payload": {
+                "text": event_text,
+                "version": "e1",
+                "content_hash": content_hash(event_text),
+            },
+        }
+    )
+
+    invariants, summary, state = _verify(rows, evidence)
+
+    assert state["unexpected"] == []
+    assert state["unresolved"] == []
+    assert summary["recovery_required"] == 1
+    assert summary["operator_recovered_failures"] == 1
+    assert _status(invariants, "no_unexplained_loss") == "PASS"
+
+
 def test_a_handshake_reset_inside_a_client_fault_window_is_an_expected_outage():
     """A reset before the request reaches the Owner is an outage, not a lost write."""
     rows, evidence = _healthy()
@@ -588,6 +697,168 @@ def test_a_non_retryable_product_failure_is_unexpected():
     invariants, summary, _ = _verify(rows, evidence)
     assert summary["unexpected_failures"] == 1
     assert _status(invariants, "no_unexplained_loss") == "FAIL"
+
+
+def test_recovery_gate_rejection_is_explained_only_by_a_completed_operator_recovery():
+    """Fail-closed requests during one completed recovery window are not lost writes."""
+    rows, evidence = _healthy()
+    rows.extend(
+        [
+            {"kind": "control", "event": "operator_recovery_requested", "trigger_generation": 0},
+            {
+                "kind": "op",
+                "op": "add",
+                "tool": "add",
+                "identity": "hermes-a",
+                "request_id": "rejected-during-recovery",
+                "result": "error",
+                "error": {
+                    "type": "SharedRecoveryRequiredError",
+                    "reason": "business_error",
+                    "retryable": False,
+                },
+            },
+            {
+                "kind": "control",
+                "event": "operator_recovery_completed",
+                "trigger_generation": 0,
+                "generation": 1,
+            },
+        ]
+    )
+
+    invariants, summary, state = _verify(rows, evidence)
+
+    assert state["unexpected"] == []
+    assert summary["expected_recovery_gate_rejections"] == 1
+    assert _status(invariants, "no_unexplained_loss") == "PASS"
+
+
+def test_recovery_required_during_operator_recovery_needs_same_id_ack():
+    """A recovery_required failure needs a later acknowledgement for its ID."""
+    rows, evidence = _healthy()
+    rows.extend(
+        [
+            {"kind": "control", "event": "operator_recovery_requested", "trigger_generation": 0},
+            {
+                "kind": "op",
+                "op": "add",
+                "tool": "add",
+                "identity": "hermes-a",
+                "request_id": "unacknowledged-recovery-required",
+                "result": "error",
+                "error": {
+                    "type": "SharedRecoveryRequiredError",
+                    "reason": "recovery_required",
+                    "retryable": False,
+                },
+                "owner_recovery_generation": 0,
+                "operator_recovery_requested": True,
+            },
+            {
+                "kind": "control",
+                "event": "operator_recovery_completed",
+                "trigger_generation": 0,
+                "generation": 1,
+            },
+        ]
+    )
+
+    invariants, summary, state = _verify(rows, evidence)
+
+    assert len(state["unexpected"]) == 1
+    assert summary["expected_recovery_gate_rejections"] == 0
+    assert _status(invariants, "no_unexplained_loss") == "FAIL"
+
+
+def test_recovery_gate_rejection_without_completed_recovery_stays_unexpected():
+    """A recovery request without a successful restart cannot excuse rejected work."""
+    rows, evidence = _healthy()
+    rows.extend(
+        [
+            {"kind": "control", "event": "operator_recovery_requested", "trigger_generation": 0},
+            {
+                "kind": "op",
+                "op": "add",
+                "tool": "add",
+                "identity": "hermes-a",
+                "request_id": "rejected-during-failed-recovery",
+                "result": "error",
+                "error": {"type": "SharedRecoveryRequiredError", "retryable": False},
+            },
+        ]
+    )
+
+    invariants, summary, state = _verify(rows, evidence)
+
+    assert len(state["unexpected"]) == 1
+    assert summary["expected_recovery_gate_rejections"] == 0
+    assert _status(invariants, "no_unexplained_loss") == "FAIL"
+
+
+def test_unfinished_authorization_probe_deferred_by_recovery_stays_incomplete():
+    """A probe blocked mid-gate is not counted as a passing auth check."""
+    rows, evidence = _healthy()
+    rows.append(
+        {
+            "kind": "probe_deferred",
+            "probe": "authorization",
+            "marker": "pending-auth-marker",
+            "check": "private_add",
+        }
+    )
+
+    invariants, summary, state = _verify(rows, evidence)
+    assert len(state["probe_deferred"]) == 1
+    assert summary["pending_deferred_probes"] == 1
+    assert _status(invariants, "authorization") == "INCOMPLETE"
+    assert _status(invariants, "probe_results") == "INCOMPLETE"
+
+    rows.append(
+        {
+            "kind": "probe",
+            "probe": "authorization",
+            "status": "PASS",
+            "marker": "pending-auth-marker",
+            "private_write": True,
+            "readonly_denied": True,
+            "cross_scope_hidden": True,
+        }
+    )
+    invariants, summary, _ = _verify(rows, evidence)
+    assert summary["pending_deferred_probes"] == 0
+    assert _status(invariants, "authorization") == "PASS"
+
+
+def test_unfinished_cas_probe_deferred_by_recovery_stays_incomplete():
+    """A temporarily blocked CAS check must pass later with its original marker."""
+    rows, evidence = _healthy()
+    rows.append(
+        {
+            "kind": "probe_deferred",
+            "probe": "cas",
+            "marker": "pending-cas-marker",
+            "check": "cas_a",
+        }
+    )
+
+    invariants, summary, _ = _verify(rows, evidence)
+    assert summary["pending_deferred_probes"] == 1
+    assert _status(invariants, "probe_results") == "INCOMPLETE"
+
+    rows.append(
+        {
+            "kind": "probe",
+            "probe": "cas",
+            "status": "PASS",
+            "marker": "pending-cas-marker",
+            "updates": 1,
+            "conflicts": 1,
+        }
+    )
+    invariants, summary, _ = _verify(rows, evidence)
+    assert summary["pending_deferred_probes"] == 0
+    assert _status(invariants, "probe_results") == "PASS"
 
 
 def test_a_missing_receipt_row_fails_idempotency():
