@@ -343,9 +343,12 @@ jobs:
     name: Soak (${{ matrix.runner }}, ${{ matrix.scenario }})
     needs: [preflight, admission-gate]
     # cloud-smoke is an ancestor through admission-gate and is skipped for
-    # local-only runs. Keep that intentional skip from suppressing an admitted
-    # extended soak through GitHub's implicit success() condition.
-    if: ${{ !cancelled() && needs.admission-gate.outputs.ready == 'true' }}
+    # local-only runs. Require the gate job itself to succeed because its
+    # output may be written before its summary step fails.
+    if: >-
+      ${{ !cancelled() &&
+      needs.admission-gate.result == 'success' &&
+      needs.admission-gate.outputs.ready == 'true' }}
     runs-on: ${{ matrix.runner }}
     environment:
       name: soak-local
