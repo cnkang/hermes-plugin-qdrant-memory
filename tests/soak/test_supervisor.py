@@ -54,13 +54,15 @@ def test_restart_counts_and_reuses_the_same_profile(tmp_path):
     )
     supervisor.start()
     first = supervisor.process.pid if supervisor.process else None
-    supervisor.restart(force=False)
+    before_start = []
+    supervisor.restart(force=False, before_start=lambda: before_start.append(supervisor.alive()))
     second = supervisor.process.pid if supervisor.process else None
     assert first is not None
     assert second is not None
     assert first != second
     assert supervisor.restarts == 1
     assert supervisor.starts == 2
+    assert before_start == [False]
     supervisor.restart(force=True)
     assert supervisor.restarts == 2
     supervisor.close()

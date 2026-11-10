@@ -201,10 +201,11 @@ def acknowledged_state(rows):
     an expected path outage rather than an unexplained product failure. The same
     answer outside a fault window stays a failure.
     """
-    records, writes, events, probes = {}, {}, {}, []
+    records, writes, events, probes, probe_deferred = {}, {}, {}, [], []
     attempts = successes = 0
     failures = []
-    for row in rows:
+    failure_indexes = []
+    for row_index, row in enumerate(rows):
         kind = row.get("kind")
         if kind == "attempt":
             attempts += 1
@@ -212,12 +213,16 @@ def acknowledged_state(rows):
         if kind == "probe":
             probes.append(row)
             continue
+        if kind == "probe_deferred":
+            probe_deferred.append(row)
+            continue
         if kind != "op":
             continue
         operation = row.get("op")
         if row.get("result") != "ok":
             if operation != "probe":
                 failures.append(row)
+                failure_indexes.append(row_index)
             continue
         successes += 1
         request_id = row.get("request_id")
@@ -245,6 +250,63 @@ def acknowledged_state(rows):
                 )
         elif operation == "event":
             events[row.get("event_id")] = row
+
+    def operation_key(row):
+        """Identify the caller-owned idempotency key for a write or event."""
+        if row.get("op") == "event":
+            return ("event", row.get("event_id"))
+        return ("write", row.get("request_id"))
+
+    recovery_completion_indexes = {}
+    recovery_request_indexes = {}
+    successful_operation_indexes = {}
+    for row_index, row in enumerate(rows):
+        if row.get("kind") == "control" and row.get("event") == "operator_recovery_completed":
+            recovery_completion_indexes.setdefault(row.get("trigger_generation"), row_index)
+        if row.get("kind") == "control" and row.get("event") == "operator_recovery_requested":
+            recovery_request_indexes.setdefault(row.get("trigger_generation"), row_index)
+        if row.get("kind") == "op" and row.get("result") == "ok":
+            successful_operation_indexes.setdefault(operation_key(row), []).append(row_index)
+
+    operator_recovered_failures = set()
+    for row_index, row in zip(failure_indexes, failures, strict=True):
+        error = row.get("error") or {}
+        if (
+            error.get("reason") != "recovery_required"
+            or row.get("operator_recovery_requested") is not True
+        ):
+            continue
+        completed_index = recovery_completion_indexes.get(row.get("owner_recovery_generation"))
+        if completed_index is None:
+            continue
+        if any(
+            success_index > completed_index
+            for success_index in successful_operation_indexes.get(operation_key(row), ())
+        ):
+            # A recovery_required response is excused only when the harness
+            # recorded an operator restart and the caller later got an
+            # acknowledgement for the same idempotency key.
+            operator_recovered_failures.add(row_index)
+
+    recovery_gate_windows = []
+    for generation, completed_index in recovery_completion_indexes.items():
+        requested_index = recovery_request_indexes.get(generation)
+        if requested_index is None or requested_index >= completed_index:
+            continue
+        previous_completions = [
+            index
+            for other_generation, index in recovery_completion_indexes.items()
+            if other_generation != generation and index < completed_index
+        ]
+        recovery_gate_windows.append((max(previous_completions, default=-1), completed_index))
+    expected_recovery_gate_failures = {
+        row_index
+        for row_index, row in zip(failure_indexes, failures, strict=True)
+        if (row.get("error") or {}).get("type") == "SharedRecoveryRequiredError"
+        and (row.get("error") or {}).get("reason") != "recovery_required"
+        and any(start < row_index < end for start, end in recovery_gate_windows)
+    }
+
     unresolved = []
     for row in failures:
         if (row.get("error") or {}).get("retryable") is not True:
@@ -258,7 +320,9 @@ def acknowledged_state(rows):
                 unresolved.append(row)
     windows = fault_windows(rows)
     unexpected, path_outages = [], []
-    for row in failures:
+    for row_index, row in zip(failure_indexes, failures, strict=True):
+        if row_index in operator_recovered_failures or row_index in expected_recovery_gate_failures:
+            continue
         if (row.get("error") or {}).get("retryable") is True:
             continue
         reason = (row.get("error") or {}).get("reason")
@@ -283,12 +347,15 @@ def acknowledged_state(rows):
         "writes": writes,
         "events": events,
         "probes": probes,
+        "probe_deferred": probe_deferred,
         "attempts": attempts,
         "successes": successes,
         "failures": failures,
         "unresolved": unresolved,
         "unexpected": unexpected,
         "path_outages": path_outages,
+        "operator_recovered_failures": len(operator_recovered_failures),
+        "expected_recovery_gate_rejections": len(expected_recovery_gate_failures),
         "fault_windows": windows,
         "expected_hashes": expected_hashes,
     }
@@ -389,21 +456,40 @@ def verify(
     )
 
     authorization = [probe for probe in state["probes"] if probe.get("probe") == "authorization"]
+    deferred_probe_markers = {
+        (probe.get("probe"), probe.get("marker"))
+        for probe in state["probe_deferred"]
+        if probe.get("probe") and probe.get("marker")
+    }
+    completed_probe_markers = {
+        (probe.get("probe"), probe.get("marker"))
+        for probe in state["probes"]
+        if probe.get("status") == "PASS" and probe.get("marker")
+    }
+    pending_probe_markers = deferred_probe_markers - completed_probe_markers
+    deferred_authorization_markers = {
+        marker for probe, marker in deferred_probe_markers if probe == "authorization"
+    }
+    pending_authorization_markers = {
+        marker for probe, marker in pending_probe_markers if probe == "authorization"
+    }
     add(
         "authorization",
         "PASS"
-        if authorization and all(item.get("status") == "PASS" for item in authorization)
+        if authorization
+        and all(item.get("status") == "PASS" for item in authorization)
+        and not pending_authorization_markers
         else "INCOMPLETE",
         "Read-only writes are refused and private rows stay in their partition.",
         probes=len(authorization),
+        deferred=len(deferred_authorization_markers),
+        pending_deferred=len(pending_authorization_markers),
     )
 
     statuses = {str(probe.get("status")) for probe in state["probes"]}
-    if not statuses:
-        probe_status = "INCOMPLETE"
-    elif "FAIL" in statuses:
+    if "FAIL" in statuses:
         probe_status = "FAIL"
-    elif statuses - {"PASS"}:
+    elif not statuses or pending_probe_markers or statuses - {"PASS"}:
         probe_status = "INCOMPLETE"
     else:
         probe_status = "PASS"
@@ -413,12 +499,16 @@ def verify(
         "Every injected probe reported a verified result.",
         probes=len(state["probes"]),
         statuses=sorted(statuses),
+        deferred=len(state["probe_deferred"]),
+        pending_deferred=len(pending_probe_markers),
     )
 
     leaks = sum(1 for probe in authorization if not probe.get("cross_scope_hidden", False))
     add(
         "scope_isolation",
-        "PASS" if authorization and leaks == 0 else ("FAIL" if leaks else "INCOMPLETE"),
+        "PASS"
+        if authorization and leaks == 0 and not pending_authorization_markers
+        else ("FAIL" if leaks else "INCOMPLETE"),
         "No private record was visible to another credential.",
         leaks=leaks,
     )
@@ -554,7 +644,9 @@ def verify(
         "successful_requests": state["successes"],
         "expected_transient_failures": len(state["failures"])
         - len(state["unexpected"])
-        - len(state["unresolved"]),
+        - len(state["unresolved"])
+        - state["operator_recovered_failures"],
+        "operator_recovered_failures": state["operator_recovered_failures"],
         "transient_attempts": sum(
             1
             for row in rows
@@ -573,6 +665,9 @@ def verify(
             if (row.get("error") or {}).get("reason") == "recovery_required"
             or (row.get("error") or {}).get("type") == "SharedRecoveryRequiredError"
         ),
+        "expected_recovery_gate_rejections": state["expected_recovery_gate_rejections"],
+        "deferred_probes": len(state["probe_deferred"]),
+        "pending_deferred_probes": len(pending_probe_markers),
         "acknowledged_writes": len(state["writes"]),
         "acknowledged_events": len(state["events"]),
         "ledger_status": {

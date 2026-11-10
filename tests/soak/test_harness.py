@@ -332,3 +332,348 @@ def test_module_entry_points_exist():
     module_file = sys.modules["scripts.soak.run"].__file__
     assert module_file is not None
     assert Path(module_file).name == "run.py"
+
+
+def test_network_operator_recovery_waits_for_active_fault_and_coalesces_graceful_restart(
+    monkeypatch,
+):
+    """Recovery waits until proxies are healthy and shares one graceful restart."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from scripts.soak.run import Runner
+
+    runner = Runner.__new__(Runner)
+    runner._owner_recovery_generation = 0
+    runner._owner_recovery_lock = asyncio.Lock()
+    runner._owner_recovery_tasks = {}
+    runner._active_network_fault_cleared = asyncio.Event()
+    runner._active_network_fault_abort = asyncio.Event()
+    runner.start_failures = 0
+    runner.fatal = ""
+    from pathlib import Path
+
+    runner.env = SimpleNamespace(
+        home=Path("/tmp/soak-profile"), cloud=False, ca_file="/tmp/ca.pem", llm_key=""
+    )
+    restart_calls = []
+    journal_rows = []
+
+    def restart(*, force, before_start=None):
+        """Record the simulated Owner restart and run its maintenance callback."""
+        restart_calls.append(force)
+        before_start()
+        return {"ready_seconds": 0.25}
+
+    runner.supervisor = SimpleNamespace(restart=restart)
+    runner.journal = SimpleNamespace(
+        record=lambda kind, **fields: journal_rows.append((kind, fields))
+    )
+
+    import scripts.soak.run as run_module
+
+    retry_commands = []
+    monkeypatch.setattr(
+        run_module.subprocess,
+        "run",
+        lambda command, **kwargs: (
+            retry_commands.append((command, kwargs))
+            or SimpleNamespace(
+                returncode=0, stdout='{"ledger": {"events": {"PENDING": 1}}}', stderr=""
+            )
+        ),
+    )
+
+    async def run():
+        """Exercise recovery waiting for proxy health before restarting."""
+        scheduled = await asyncio.gather(
+            *(
+                runner.request_owner_recovery_after_shared_gate(
+                    0, f"hermes-{number}", f"request-{number}"
+                )
+                for number in range(3)
+            )
+        )
+        await asyncio.sleep(0)
+        assert restart_calls == []
+        assert scheduled == [True, True, True]
+        runner._active_network_fault_cleared.set()
+        return await asyncio.gather(*runner._owner_recovery_tasks.values())
+
+    assert asyncio.run(run()) == [True]
+    assert restart_calls == [False]
+    assert retry_commands[0][0][2:7] == [
+        "qdrant_memory.standalone",
+        "--home",
+        str(runner.env.home),
+        "retry",
+        "--policy",
+    ]
+    assert retry_commands[0][0][-1] == "./policy.json"
+    assert retry_commands[0][1]["cwd"] == Path("/tmp/soak-profile")
+    assert [fields["event"] for kind, fields in journal_rows][-4:] == [
+        "operator_recovery_started",
+        "operator_retry_started",
+        "operator_retry_completed",
+        "operator_recovery_completed",
+    ]
+    assert runner._owner_recovery_generation == 1
+    assert [fields["event"] for kind, fields in journal_rows] == [
+        "operator_recovery_requested",
+        "operator_recovery_coalesced",
+        "operator_recovery_coalesced",
+        "operator_recovery_started",
+        "operator_retry_started",
+        "operator_retry_completed",
+        "operator_recovery_completed",
+    ]
+
+
+def test_probe_task_retries_deferred_authorization_with_the_same_marker(monkeypatch):
+    """A temporary gate leaves the auth probe queued and postpones other probes."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import scripts.soak.run as run_module
+
+    runner = run_module.Runner.__new__(run_module.Runner)
+    runner.args = SimpleNamespace(target_seconds=60, scenario="network", profile="quick")
+    runner.stop_at = 1.0
+    runner.fatal = ""
+    runner.client = object()
+    runner.journal = object()
+    runner.env = SimpleNamespace(tokens={}, owner_endpoint="", ca_file="", untrusted_ca="")
+    markers = []
+    calls = {"cas": 0, "retry": 0}
+    ticks = iter((0.0, 0.0, 2.0))
+
+    async def no_sleep(_delay):
+        """Skip probe cadence sleeps in this focused unit test."""
+        return None
+
+    async def authorization(_client, _journal, *, marker=None):
+        """Return one deferred authorization probe followed by a pass."""
+        markers.append(marker)
+        return (
+            {"status": "DEFERRED", "marker": "same-marker"}
+            if len(markers) == 1
+            else {"status": "PASS"}
+        )
+
+    async def cas(_client, _journal, *, marker=None):
+        """Record that the CAS probe was allowed to run."""
+        calls["cas"] += 1
+        return {"status": "PASS", "marker": marker}
+
+    async def retry_contract(*_args, **_kwargs):
+        """Record that the retry-contract probe was allowed to run."""
+        calls["retry"] += 1
+
+    monkeypatch.setattr(run_module.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(run_module, "probe_authorization", authorization)
+    monkeypatch.setattr(run_module, "probe_cas", cas)
+    monkeypatch.setattr(run_module, "probe_retry_contract", retry_contract)
+
+    asyncio.run(runner.probe_task(clock=lambda: next(ticks)))
+
+    assert markers == [None, "same-marker"]
+    assert calls == {"cas": 1, "retry": 1}
+
+
+def test_probe_task_waits_for_probe_retry_after(monkeypatch):
+    """A deferred CAS probe does not violate the Owner's Retry-After."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import scripts.soak.run as run_module
+
+    runner = run_module.Runner.__new__(run_module.Runner)
+    runner.args = SimpleNamespace(target_seconds=60, scenario="network", profile="quick")
+    runner.stop_at = 110.0
+    runner.fatal = ""
+    runner.client = object()
+    runner.journal = object()
+    runner.env = SimpleNamespace(tokens={}, owner_endpoint="", ca_file="", untrusted_ca="")
+    now = [0.0]
+    cas_calls = []
+
+    async def advance(delay):
+        """Advance the fake clock without waiting in real time."""
+        now[0] += delay
+
+    async def authorization(_client, _journal, *, marker=None):
+        """Return a successful authorization probe."""
+        return {"status": "PASS", "marker": marker}
+
+    async def cas(_client, _journal, *, marker=None):
+        """Defer once, then complete the CAS probe after Retry-After."""
+        cas_calls.append((marker, now[0]))
+        if len(cas_calls) == 1:
+            return {"status": "DEFERRED", "marker": "same-cas", "retry_after": 90}
+        return {"status": "PASS", "marker": marker}
+
+    async def retry_contract(*_args, **_kwargs):
+        """Stub the unrelated retry-contract probe."""
+        return None
+
+    monkeypatch.setattr(run_module.asyncio, "sleep", advance)
+    monkeypatch.setattr(run_module, "probe_authorization", authorization)
+    monkeypatch.setattr(run_module, "probe_cas", cas)
+    monkeypatch.setattr(run_module, "probe_retry_contract", retry_contract)
+
+    asyncio.run(runner.probe_task(clock=lambda: now[0]))
+
+    assert cas_calls == [(None, 10.0), ("same-cas", 100.0)]
+
+
+def test_cancelling_fault_cycle_does_not_cancel_operator_recovery():
+    """Window shutdown must leave the separate operator restart alive to join."""
+    import asyncio
+    import time
+    from types import SimpleNamespace
+
+    from scripts.soak.run import Runner
+
+    runner = Runner.__new__(Runner)
+    runner.args = SimpleNamespace(target_seconds=1000)
+    runner.stop_at = time.monotonic() + 1000
+    runner.fatal = ""
+    runner._owner_recovery_tasks = {}
+    runner._active_network_fault_cleared = asyncio.Event()
+    runner._active_network_fault_cleared.set()
+    runner._active_network_fault_abort = asyncio.Event()
+    recovery_started = asyncio.Event()
+    finish_recovery = asyncio.Event()
+
+    async def recover():
+        """Hold recovery open until the test allows it to finish."""
+        recovery_started.set()
+        await finish_recovery.wait()
+
+    async def run():
+        """Cancel the network driver while recovery is still pending."""
+        recovery = asyncio.create_task(recover())
+        runner._owner_recovery_tasks[0] = recovery
+        plan = (("client", "latency", {}, 1.0),)
+        fault_cycle = asyncio.create_task(runner._fault_cycle(None, plan, 1, time.monotonic))
+        await recovery_started.wait()
+        await asyncio.sleep(0)
+        fault_cycle.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await fault_cycle
+        assert not recovery.cancelled()
+        finish_recovery.set()
+        await recovery
+
+    asyncio.run(run())
+
+
+def test_failed_proxy_cleanup_aborts_recovery_without_signalling_healthy():
+    """An unconfirmed proxy state cannot release the waiting Owner restart."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from scripts.soak.run import Runner
+
+    runner = Runner.__new__(Runner)
+    runner._active_network_fault_cleared = asyncio.Event()
+    runner._active_network_fault_abort = asyncio.Event()
+    runner.fatal = ""
+    journal_rows = []
+    runner.journal = SimpleNamespace(
+        record=lambda kind, **fields: journal_rows.append((kind, fields))
+    )
+
+    async def cleanup_failed(_toxic):
+        """Simulate a proxy cleanup operation that cannot be confirmed."""
+        return [{"proxy": "qdrant", "operation": "clear_toxics", "error": {"type": "OSError"}}]
+
+    runner._clear_network_faults = cleanup_failed
+
+    async def run():
+        """Check that failed cleanup leaves recovery blocked and aborted."""
+        assert not await runner._complete_fault_cleanup(None, "client_disconnect")
+        assert not runner._active_network_fault_cleared.is_set()
+        assert runner._active_network_fault_abort.is_set()
+        return await runner._wait_for_network_fault_resolution()
+
+    assert asyncio.run(run()) is False
+    assert runner.fatal == "network_fault_cleanup_failed"
+    assert journal_rows[0][1]["event"] == "fault_cleanup_failed"
+
+
+def test_aborted_proxy_recovery_does_not_restart_owner():
+    """A cleanup failure releases recovery as failed, never as a healthy restart."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from scripts.soak.run import Runner
+
+    runner = Runner.__new__(Runner)
+    runner._active_network_fault_cleared = asyncio.Event()
+    runner._active_network_fault_abort = asyncio.Event()
+    runner._owner_recovery_lock = asyncio.Lock()
+    runner._owner_recovery_generation = 0
+    runner.fatal = "network_fault_cleanup_failed"
+    restart_calls = []
+    journal_rows = []
+    runner.supervisor = SimpleNamespace(restart=lambda **kwargs: restart_calls.append(kwargs))
+    runner.journal = SimpleNamespace(
+        record=lambda kind, **fields: journal_rows.append((kind, fields))
+    )
+
+    async def run():
+        """Verify cleanup failure aborts recovery before an Owner restart."""
+        recovery = asyncio.create_task(
+            runner._restart_owner_after_shared_gate(0, "hermes-a", "id-1")
+        )
+        await asyncio.sleep(0)
+        runner._active_network_fault_abort.set()
+        return await recovery
+
+    assert asyncio.run(run()) is False
+    assert restart_calls == []
+    assert journal_rows[0][1]["event"] == "operator_recovery_aborted"
+
+
+def test_network_rate_limit_probe_uses_post_window_deadline(monkeypatch):
+    """A slow operator restart cannot defer the independent rate-limit probe."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import scripts.soak.run as run_module
+    from scripts.soak.run import Runner
+
+    runner = Runner.__new__(Runner)
+    runner.args = SimpleNamespace(scenario="network", target_seconds=0, workers=1)
+    runner.client = SimpleNamespace(deadline=None)
+    runner.workload = SimpleNamespace(run=lambda **kwargs: None)
+    runner.stop_at = None
+    runner.fatal = ""
+    runner._owner_recovery_tasks = {}
+    runner.journal = SimpleNamespace(record=lambda *_args, **_kwargs: None)
+
+    async def no_op_task():
+        """Wait until the Runner cancels its background task."""
+        await asyncio.Event().wait()
+
+    runner.metrics_task = no_op_task
+    runner.probe_task = no_op_task
+    runner.network_task = no_op_task
+    runner.lost_response_task = no_op_task
+    observed_deadlines = []
+
+    async def rate_limit_probe(client, _journal):
+        """Capture the deadline visible to the post-window probe."""
+        observed_deadlines.append(client.deadline)
+
+    async def workload_run(**_kwargs):
+        """Finish the fake workload without issuing network calls."""
+        return None
+
+    runner.workload.run = workload_run
+    monkeypatch.setattr(run_module, "probe_rate_limit", rate_limit_probe)
+
+    asyncio.run(runner.run())
+
+    assert observed_deadlines == [None]

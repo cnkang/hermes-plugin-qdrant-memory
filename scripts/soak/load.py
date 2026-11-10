@@ -97,6 +97,11 @@ class SoakClient:
         # The Runner pins the end of the window so a Retry-After wait cannot
         # stretch the measured duration far past the requested window.
         self.deadline = None
+        # Network soaks may explicitly restart the Owner to finish its durable
+        # recovery gate. Keep this hook in the harness; production clients must
+        # not replay a recovery_required response without operator recovery.
+        self.owner_recovery_generation = None
+        self.owner_recovery_handler = None
         # The Runner reports whether a declared client-path fault is open. A
         # handshake cut then never reached the Owner, so the caller may retry it.
         self.path_fault = None
@@ -138,6 +143,12 @@ class SoakClient:
                 )
             value, failure, elapsed = await self._attempt(identity, request())
             return value, failure, elapsed, True, slot_wait
+
+    async def _request_owner_recovery(self, failure, generation, identity, request_id):
+        """Ask the harness to start operator recovery without changing the response."""
+        if failure.get("reason") != "recovery_required" or self.owner_recovery_handler is None:
+            return False
+        return bool(await self.owner_recovery_handler(generation, identity, request_id))
 
     async def _attempt(self, identity, coroutine):
         """Run one attempt, keeping a stable machine failure description."""
@@ -199,6 +210,8 @@ class SoakClient:
         value = None
         failure = None
         retry_not_before = None
+        operator_recovery_requested = False
+        recovery_generation = None
         while True:
             pacing_started = self.clock()
             paced = not pace_requests or await self._pace(
@@ -227,17 +240,25 @@ class SoakClient:
                 )
                 break
             prior_failure = failure
-            value, failure, elapsed, attempted, slot_wait = await self._guarded_attempt(
-                identity,
-                lambda: call_remote(
+
+            attempt_generation = None
+
+            async def request():
+                """Send the tool call while capturing its recovery generation."""
+                nonlocal attempt_generation
+                if self.owner_recovery_generation is not None:
+                    attempt_generation = self.owner_recovery_generation()
+                return await call_remote(
                     self.endpoint,
                     token,
                     name,
                     arguments,
                     ca_file=self.ca_file,
                     retry=False,
-                ),
-                deadline=deadline,
+                )
+
+            value, failure, elapsed, attempted, slot_wait = await self._guarded_attempt(
+                identity, request, deadline=deadline
             )
             if not attempted:
                 if attempts > 0:
@@ -286,6 +307,11 @@ class SoakClient:
                 # The path is deliberately cut, so this attempt never reached the
                 # Owner. Hold the identifier and try again while the cut lasts.
                 failure = {**failure, "retryable": True, "path_outage": True}
+            if failure.get("reason") == "recovery_required":
+                recovery_generation = attempt_generation
+                operator_recovery_requested = await self._request_owner_recovery(
+                    failure, attempt_generation, identity, request_id
+                )
             if not replay or failure.get("retryable") is not True:
                 break
             next_replay = replay_count + 1
@@ -310,7 +336,11 @@ class SoakClient:
             attempts=attempts,
             replay_count=replay_count,
             duration_ms=duration,
-            resolved=failure is None or failure.get("retryable") is not True,
+            resolved=failure is None
+            or (
+                failure.get("retryable") is not True
+                and failure.get("reason") != "recovery_required"
+            ),
         )
         record = {
             "op": op,
@@ -326,6 +356,8 @@ class SoakClient:
             "result": "ok" if outcome.ok else "error",
             "error": failure,
             "retry_not_before": retry_not_before,
+            "owner_recovery_generation": recovery_generation,
+            "operator_recovery_requested": operator_recovery_requested,
             "action": outcome.action,
             "record_id": outcome.value.get("id") if isinstance(outcome.value, dict) else None,
             "version": outcome.value.get("version") if isinstance(outcome.value, dict) else None,
@@ -350,6 +382,8 @@ class SoakClient:
         value = None
         failure = None
         retry_not_before = None
+        operator_recovery_requested = False
+        recovery_generation = None
         while True:
             pacing_started = self.clock()
             paced = await self._pace(identity, weight=self.EVENT_POST_WEIGHT, deadline=deadline)
@@ -376,16 +410,24 @@ class SoakClient:
                 )
                 break
             prior_failure = failure
-            value, failure, elapsed, attempted, slot_wait = await self._guarded_attempt(
-                identity,
-                lambda: send_event(
+
+            attempt_generation = None
+
+            async def request():
+                """Send the lifecycle event while capturing its recovery generation."""
+                nonlocal attempt_generation
+                if self.owner_recovery_generation is not None:
+                    attempt_generation = self.owner_recovery_generation()
+                return await send_event(
                     self.endpoint,
                     token,
                     event,
                     ca_file=self.ca_file,
                     retry=False,
-                ),
-                deadline=deadline,
+                )
+
+            value, failure, elapsed, attempted, slot_wait = await self._guarded_attempt(
+                identity, request, deadline=deadline
             )
             if not attempted:
                 if attempts > 0:
@@ -425,6 +467,11 @@ class SoakClient:
             )
             if failure is None:
                 break
+            if failure.get("reason") == "recovery_required":
+                recovery_generation = attempt_generation
+                operator_recovery_requested = await self._request_owner_recovery(
+                    failure, attempt_generation, identity, event["event_id"]
+                )
             if failure.get("retryable") is not True:
                 break
             next_replay = replay_count + 1
@@ -451,7 +498,11 @@ class SoakClient:
             attempts=attempts,
             replay_count=replay_count,
             duration_ms=duration,
-            resolved=failure is None,
+            resolved=failure is None
+            or (
+                failure.get("retryable") is not True
+                and failure.get("reason") != "recovery_required"
+            ),
         )
         self.journal.record(
             "op",
@@ -470,6 +521,8 @@ class SoakClient:
             status=status,
             error=error,
             retry_not_before=retry_not_before,
+            owner_recovery_generation=recovery_generation,
+            operator_recovery_requested=operator_recovery_requested,
             seq=seq,
         )
         return outcome
@@ -833,7 +886,11 @@ class Workload:
             if request_id in acknowledged:
                 continue
             if (row.get("error") or {}).get("retryable") is not True:
-                continue
+                if not (
+                    (row.get("error") or {}).get("reason") == "recovery_required"
+                    and row.get("operator_recovery_requested") is True
+                ):
+                    continue
             pending[request_id] = row
         return pending
 
@@ -894,10 +951,41 @@ class Workload:
         return results
 
 
-async def probe_authorization(client, journal):
+def _probe_temporarily_blocked(outcome):
+    """Recognize an Owner or transport outage that leaves a probe unverified."""
+    error = outcome.error if isinstance(outcome.error, dict) else {}
+    return (
+        error.get("retryable") is True
+        or error.get("reason") == "recovery_required"
+        or error.get("type") == "SharedRecoveryRequiredError"
+    )
+
+
+async def probe_authorization(client, journal, *, marker=None):
     """Prove that a read-only credential cannot write and that spaces stay apart."""
-    marker = f"SOAK-probe-{utc_now().replace(':', '').replace('.', '')}"
+    marker = marker or f"SOAK-probe-{utc_now().replace(':', '').replace('.', '')}"
     private_text = f"Fact {marker}-private: the private partition keeps its own rows."
+
+    def defer(check, outcome):
+        """Keep the probe ID for an idempotent retry after a temporary outage."""
+        error = outcome.error if isinstance(outcome.error, dict) else {}
+        retry_after = error.get("retry_after")
+        journal.record(
+            "probe_deferred",
+            probe="authorization",
+            marker=marker,
+            check=check,
+            error={
+                key: error[key]
+                for key in ("type", "reason", "status_code", "retryable", "retry_after")
+                if key in error
+            },
+        )
+        result = {"status": "DEFERRED", "marker": marker}
+        if isinstance(retry_after, (int, float)) and not isinstance(retry_after, bool):
+            result["retry_after"] = max(0.0, retry_after)
+        return result
+
     private = await client.call(
         "hermes-private",
         "add",
@@ -906,6 +994,8 @@ async def probe_authorization(client, journal):
         request_id=f"probe-private-add-{marker}",
         text=private_text,
     )
+    if _probe_temporarily_blocked(private):
+        return defer("private_add", private)
     denied = await client.call(
         "reader",
         "add",
@@ -913,6 +1003,8 @@ async def probe_authorization(client, journal):
         op="probe",
         request_id=f"probe-readonly-add-{marker}",
     )
+    if _probe_temporarily_blocked(denied):
+        return defer("readonly_add", denied)
     foreign = await client.call(
         "codex-private",
         "search",
@@ -920,6 +1012,8 @@ async def probe_authorization(client, journal):
         op="probe",
         request_id=f"probe-private-search-{marker}",
     )
+    if _probe_temporarily_blocked(foreign):
+        return defer("foreign_search", foreign)
     project = await client.call(
         "codex",
         "search",
@@ -927,6 +1021,8 @@ async def probe_authorization(client, journal):
         op="probe",
         request_id=f"probe-project-search-{marker}",
     )
+    if _probe_temporarily_blocked(project):
+        return defer("project_search", project)
     leaked_ids = set()
     for outcome in (foreign, project):
         for item in outcome.value.get("memories", []) if outcome.ok else []:
@@ -944,30 +1040,51 @@ async def probe_authorization(client, journal):
     return {"status": status, **results}
 
 
-async def probe_cas(client, journal):
+async def probe_cas(client, journal, *, marker=None):
     """Prove that two concurrent revisions cannot both win.
 
     The probe owns two dedicated devices (``cas-a`` and ``cas-b``), so workload
-    traffic can never consume their request budget mid-race. A round that is
-    throttled says nothing about compare-and-swap, so it is retried with a new
-    record instead of being reported as a product failure.
+    traffic can never consume their request budget mid-race. A temporary Owner
+    or transport failure defers the probe with the same request IDs so a later
+    retry can finish the CAS check without duplicating either revision.
     """
-    marker = text = ""
-    for _ in range(3):
-        marker = utc_now().replace(":", "").replace(".", "")
-        text = f"Fact SOAK-cas-{marker}: the ledger accepts one revision."
-        saved = await client.call(
-            "cas-a",
-            "add",
-            {"text": text},
-            op="probe",
-            request_id=f"probe-cas-add-{marker}",
-            text=text,
+    marker = marker or utc_now().replace(":", "").replace(".", "")
+    text = f"Fact SOAK-cas-{marker}: the ledger accepts one revision."
+
+    def defer(check, outcome):
+        """Retain the marker so every operation is replayed under its original ID."""
+        error = outcome.error if isinstance(outcome.error, dict) else {}
+        retry_after = error.get("retry_after")
+        journal.record(
+            "probe_deferred",
+            probe="cas",
+            marker=marker,
+            check=check,
+            error={
+                key: error[key]
+                for key in ("type", "reason", "status_code", "retryable", "retry_after")
+                if key in error
+            },
         )
-        if saved.ok:
-            break
-    else:
-        journal.record("probe", probe="cas", status="INCOMPLETE", detail="add failed three times")
+        result = {"status": "DEFERRED", "marker": marker}
+        if isinstance(retry_after, (int, float)) and not isinstance(retry_after, bool):
+            result["retry_after"] = max(0.0, retry_after)
+        return result
+
+    saved = await client.call(
+        "cas-a",
+        "add",
+        {"text": text},
+        op="probe",
+        request_id=f"probe-cas-add-{marker}",
+        text=text,
+    )
+    if _probe_temporarily_blocked(saved):
+        return defer("add", saved)
+    if not saved.ok:
+        journal.record(
+            "probe", probe="cas", status="INCOMPLETE", marker=marker, detail="add failed"
+        )
         return {"status": "INCOMPLETE"}
     base = {
         "id": saved.value["id"],
@@ -978,21 +1095,21 @@ async def probe_cas(client, journal):
         client.call("cas-a", "update", {**base}, op="probe", request_id=f"probe-cas-a-{marker}"),
         client.call("cas-b", "update", {**base}, op="probe", request_id=f"probe-cas-b-{marker}"),
     )
+    for check, outcome in (("cas_a", first), ("cas_b", second)):
+        if _probe_temporarily_blocked(outcome):
+            return defer(check, outcome)
     updates = sum(1 for outcome in (first, second) if outcome.ok and outcome.action == "UPDATE")
     conflicts = sum(
         1
         for outcome in (first, second)
         if not outcome.ok and outcome.error.get("type") == "SharedConflictError"
     )
-    throttled = any(outcome.error.get("retryable") is True for outcome in (first, second))
-    if throttled and (updates, conflicts) != (1, 1):
-        journal.record("probe", probe="cas", status="INCOMPLETE", detail="throttled round")
-        return {"status": "INCOMPLETE"}
     status = "PASS" if (updates, conflicts) == (1, 1) else "FAIL"
     journal.record(
         "probe",
         probe="cas",
         status=status,
+        marker=marker,
         updates=updates,
         conflicts=conflicts,
         record_id=saved.value.get("id"),
@@ -1066,6 +1183,13 @@ async def probe_rate_limit(client, journal, *, rounds=320):
         )
         if not outcome.ok:
             rejected.append(outcome.error)
+            if (
+                outcome.error.get("retryable") is True
+                and (outcome.error.get("retry_after") or 0) >= 1
+            ):
+                # The probe has its answer. Sending more after Retry-After only
+                # creates extra 429s and noisy post_writer exception groups.
+                break
         if len(rejected) >= 3:
             break
     retryable = [item for item in rejected if item.get("retryable") is True]
