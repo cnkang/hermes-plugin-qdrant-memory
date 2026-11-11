@@ -46,6 +46,7 @@ def test_extraction_failure_quarantines_the_event_and_keeps_other_writes_availab
     try:
         assert lifecycle.submit(writer, event())["status"] == "QUARANTINED"
         assert lifecycle.inspect(writer, "turn-1")["status"] == "QUARANTINED"
+        assert lifecycle.retry(writer, "turn-1")["status"] == "QUARANTINED"
         assert owner.blocked is False
         added = owner.call(
             other, "qdrant_memory_add", {"text": "synthetic unrelated fact", "request_id": "req-1"}

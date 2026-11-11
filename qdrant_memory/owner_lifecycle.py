@@ -169,6 +169,12 @@ class OwnerLifecycle:
                 return {"event_id": event_id, "status": status}
             if not isinstance(value, dict) or value.get("host_event_id") != event_id:
                 raise ValueError("Lifecycle event plan is unavailable")
+            event_row = ledger.row("events", event_key)
+            if event_row is not None and event_row["status"] == "QUARANTINED":
+                # Deterministic extraction failures remain an operator decision.
+                return {"event_id": event_id, "status": "QUARANTINED"}
+            if event_row is not None and event_row["status"] == "FAILED":
+                ledger.retry_failed_event(event_key)
             status = self._run_plan(
                 rt, ledger, receipt["request_key"], value, event_key, created=False
             )

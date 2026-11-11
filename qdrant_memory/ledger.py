@@ -688,6 +688,66 @@ class Ledger:
                     (self.collection,),
                 )
 
+    def retry_failed_event(self, key):
+        """Requeue one failed event and only its explicitly prepared operations.
+
+        Remote Owner retry is receipt-scoped and must not use the broad operator
+        recovery operation above. Validate the persisted plan before changing any
+        status so malformed or cross-collection references fail closed.
+        """
+        with self.lock, self.db:
+            event = self.db.execute(
+                "SELECT payload_json FROM events "
+                "WHERE event_id=? AND collection=? AND status='FAILED'",
+                (key, self.collection),
+            ).fetchone()
+            if event is None:
+                return False
+            try:
+                value = json.loads(event["payload_json"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Failed event plan is unavailable") from exc
+            if not isinstance(value, dict):
+                raise ValueError("Failed event plan is unavailable")
+            operation_keys = value.get("operation_keys", [])
+            if (
+                not isinstance(operation_keys, list)
+                or any(not isinstance(item, str) or not item for item in operation_keys)
+                or len(set(operation_keys)) != len(operation_keys)
+            ):
+                raise ValueError("Failed event operation plan is invalid")
+
+            operation_statuses = []
+            for operation_key in operation_keys:
+                operation = self.db.execute(
+                    "SELECT status FROM operations WHERE idempotency_key=? AND collection=?",
+                    (operation_key, self.collection),
+                ).fetchone()
+                if operation is None:
+                    raise ValueError("Failed event references an unavailable operation")
+                status = operation["status"]
+                if status not in {"PENDING", "FAILED", "COMMITTED", "SUPERSEDED"}:
+                    raise ValueError("Failed event references an invalid operation state")
+                operation_statuses.append((operation_key, status))
+
+            for operation_key, status in operation_statuses:
+                if status == "FAILED":
+                    updated = self.db.execute(
+                        "UPDATE operations SET status='PENDING' "
+                        "WHERE idempotency_key=? AND collection=? AND status='FAILED'",
+                        (operation_key, self.collection),
+                    ).rowcount
+                    if updated != 1:
+                        raise ValueError("Failed event operation changed during retry")
+            updated = self.db.execute(
+                "UPDATE events SET status='PENDING' "
+                "WHERE event_id=? AND collection=? AND status='FAILED'",
+                (key, self.collection),
+            ).rowcount
+            if updated != 1:
+                raise ValueError("Failed event changed during retry")
+        return True
+
     def reset_operation(self, key):
         """Requeue one failed operation without touching other migration work."""
         with self.lock, self.db:
