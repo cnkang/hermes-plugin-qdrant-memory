@@ -304,6 +304,126 @@ def test_lifecycle_outage_is_durable_and_recoverable(tmp_path, monkeypatch):
         rt.store.close()
 
 
+def test_failed_owner_retry_requeues_only_its_prepared_event_and_operations(tmp_path, monkeypatch):
+    """An authorized Owner retry resumes its exact plan without global recovery."""
+    token, other_token = "a" * 40, "b" * 40
+    rt = runtime(tmp_path)
+    owner = SharedOwner(rt, [grant(token, "mac"), grant(other_token, "linux")])
+    lifecycle = OwnerLifecycle(owner)
+    original_commit = rt.commit
+    attempts = 0
+
+    def fail_first_commit(keys):
+        nonlocal attempts
+        attempts += 1
+        keys = list(keys)
+        if attempts == 1:
+            for key in keys:
+                rt.ledger.failure(
+                    "operations", key, TimeoutError("synthetic write outage"), terminal=True
+                )
+            raise TimeoutError("synthetic write outage")
+        return original_commit(keys)
+
+    monkeypatch.setattr(rt, "commit", fail_first_commit)
+    monkeypatch.setattr(
+        rt.ledger,
+        "retry_failed",
+        lambda: pytest.fail("Owner retry must not run global Ledger recovery"),
+    )
+    event = {
+        "event_id": "retry-only-this-event",
+        "session_id": "session",
+        "kind": "turn_completed",
+        "user": "cats authorized retry",
+        "assistant": "ack",
+    }
+    try:
+        with pytest.raises(TimeoutError, match="synthetic write outage"):
+            lifecycle.submit(token, event)
+        receipt = rt.ledger.db.execute(
+            "SELECT event_key FROM owner_events_v1 WHERE collection=?",
+            (rt.ledger.collection,),
+        ).fetchone()
+        event_key = receipt["event_key"]
+        failed = rt.ledger.row("events", event_key)
+        operation_keys = json.loads(failed["payload_json"])["operation_keys"]
+        assert failed["status"] == "FAILED"
+        assert operation_keys
+        assert all(rt.ledger.row("operations", key)["status"] == "FAILED" for key in operation_keys)
+
+        unrelated_event = rt.ledger.enqueue_event({"event_id": "unrelated", "session_id": "other"})
+        rt.ledger.failure("events", unrelated_event, TimeoutError("unrelated"), terminal=True)
+        unrelated_operation = rt.ledger.enqueue_operation(
+            "unrelated-point", "UPSERT", {"text": "unrelated"}
+        )
+        rt.ledger.failure(
+            "operations", unrelated_operation, TimeoutError("unrelated"), terminal=True
+        )
+        quarantined_event = rt.ledger.enqueue_event(
+            {"event_id": "quarantined", "session_id": "other"}
+        )
+        rt.ledger.quarantine("events", quarantined_event, ValueError("operator review"))
+
+        assert lifecycle.retry(other_token, event["event_id"]) == {
+            "event_id": event["event_id"],
+            "status": "NOT_FOUND",
+        }
+        assert rt.ledger.row("events", event_key)["status"] == "FAILED"
+
+        assert lifecycle.retry(token, event["event_id"])["status"] == "COMMITTED"
+        assert all(
+            rt.ledger.row("operations", key)["status"] == "COMMITTED" for key in operation_keys
+        )
+        assert rt.ledger.row("events", unrelated_event)["status"] == "FAILED"
+        assert rt.ledger.row("operations", unrelated_operation)["status"] == "FAILED"
+        assert rt.ledger.row("events", quarantined_event)["status"] == "QUARANTINED"
+        assert owner.blocked is True
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_failed_owner_retry_reextracts_unprepared_transient_event(tmp_path, monkeypatch):
+    """A transient pre-plan extraction failure can be retried by its receipt owner."""
+    token = "a" * 40
+    rt = runtime(tmp_path)
+    owner = SharedOwner(rt, [grant(token, "mac")])
+    lifecycle = OwnerLifecycle(owner)
+    rt.cfg["write"]["max_attempts"] = 1
+    extract = rt.extractor.extract
+    attempts = 0
+
+    def fail_once(value):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise TimeoutError("synthetic extraction outage")
+        return extract(value)
+
+    monkeypatch.setattr(rt.extractor, "extract", fail_once)
+    event = {
+        "event_id": "retry-transient-extraction",
+        "session_id": "session",
+        "kind": "turn_completed",
+        "user": "cats explicit retry",
+        "assistant": "ack",
+    }
+    try:
+        with pytest.raises(TimeoutError, match="synthetic extraction outage"):
+            lifecycle.submit(token, event)
+        row = rt.ledger.db.execute("SELECT event_id,status,payload_json FROM events").fetchone()
+        assert row["status"] == "FAILED"
+        assert "operation_keys" not in json.loads(row["payload_json"])
+
+        assert lifecycle.retry(token, event["event_id"])["status"] == "COMMITTED"
+        assert attempts == 2
+        assert owner.blocked is True
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
 def test_backlog_budget_is_partitioned_by_authority(tmp_path):
     """One capture principal cannot spend another principal's backlog budget."""
     token_a, token_b = "a" * 40, "b" * 40
