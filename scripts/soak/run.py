@@ -675,8 +675,8 @@ class Runner:
         await asyncio.sleep(self.args.target_seconds / 3)
         request_id = "network-lost-response-1"
         text = "Fact SOAK-lost-response-1: the Owner answers a replay from its receipt."
-        dropped = None
         for attempt in range(1, 4):
+            dropped = None
             if clock() >= (self.stop_at or clock()) - 30:
                 self.journal.record(
                     "probe",

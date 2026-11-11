@@ -598,6 +598,51 @@ def test_lost_response_transport_retry_reuses_the_same_request_id(monkeypatch):
     assert entries[-1][1]["status"] == "PASS"
 
 
+def test_lost_response_does_not_reuse_http_error_after_transport_retries(monkeypatch):
+    """A prior HTTP error cannot mask later attempts with no response."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import scripts.soak.run as run_module
+
+    runner = run_module.Runner.__new__(run_module.Runner)
+    runner.args = SimpleNamespace(target_seconds=3)
+    runner.stop_at = 1000.0
+    runner._owner_recovery_generation = 0
+    request_ids = []
+    replay_calls = []
+    entries = []
+
+    class Journal:
+        def record(self, kind, **fields):
+            entries.append((kind, fields))
+
+    class Client:
+        async def abandon_response(self, _identity, _tool, _arguments, *, request_id):
+            request_ids.append(request_id)
+            if len(request_ids) == 1:
+                return {"status": 503, "deferred": False}
+            raise ConnectionError("synthetic reset")
+
+        async def call(self, *args, **kwargs):
+            replay_calls.append((args, kwargs))
+            return SimpleNamespace(ok=True, value={"id": "record-1"}, action="ADD")
+
+    async def no_sleep(_delay):
+        return None
+
+    runner.client = Client()
+    runner.journal = Journal()
+    monkeypatch.setattr(run_module.asyncio, "sleep", no_sleep)
+
+    asyncio.run(runner.lost_response_task(clock=lambda: 0.0))
+
+    assert request_ids == ["network-lost-response-1"] * 3
+    assert replay_calls == []
+    assert entries[-1][1]["status"] == "INCOMPLETE"
+    assert "http_status" not in entries[-1][1]
+
+
 def test_probe_task_retries_deferred_authorization_with_the_same_marker(monkeypatch):
     """A temporary gate leaves the auth probe queued and postpones other probes."""
     import asyncio
