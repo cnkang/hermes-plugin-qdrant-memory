@@ -27,6 +27,29 @@ def test_explicit_https_mcp_endpoint():
     assert validate_endpoint("https://memory.example.com/mcp") == "https://memory.example.com/mcp"
 
 
+def test_legacy_owner_recovery_error_is_normalized_without_replay():
+    """A 0.6.0 Owner's typed gate remains terminal and actionable to new clients."""
+    import json
+    from types import SimpleNamespace
+
+    from qdrant_memory.remote_client import _tool_value
+
+    result = SimpleNamespace(
+        content=[
+            SimpleNamespace(
+                text=json.dumps(
+                    {"error": {"type": "SharedRecoveryRequiredError", "retryable": False}}
+                )
+            )
+        ]
+    )
+
+    value = _tool_value(result)
+
+    assert value["error"]["reason"] == "recovery_required"
+    assert value["error"]["retryable"] is False
+
+
 def test_production_remote_client_roundtrip_and_fixed_scope(tmp_path, monkeypatch):
     """Real SDK client/server negotiation exercises the adapter's production path."""
     import asyncio
@@ -81,6 +104,16 @@ def test_production_remote_client_roundtrip_and_fixed_scope(tmp_path, monkeypatc
                     "qdrant_memory_search",
                     {"query": "cats", "owner_id": "alice"},
                 )
+            owner.blocked = True
+            blocked = await call_remote(
+                "https://memory.test/mcp",
+                token,
+                "qdrant_memory_add",
+                {"text": "blocked", "request_id": "recovery-gate"},
+            )
+            assert blocked["error"]["type"] == "SharedRecoveryRequiredError"
+            assert blocked["error"]["reason"] == "recovery_required"
+            assert blocked["error"]["retryable"] is False
 
     try:
         asyncio.run(check())

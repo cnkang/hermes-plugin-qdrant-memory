@@ -30,7 +30,11 @@ def retryable(exc):
 
 def safe_error(exc):
     """Return exception type and retryability without response text or credentials."""
-    return {"type": type(exc).__name__, "retryable": retryable(exc)}
+    error_type = type(exc).__name__
+    result = {"type": error_type, "retryable": retryable(exc)}
+    if error_type == "SharedRecoveryRequiredError":
+        result["reason"] = "recovery_required"
+    return result
 
 
 def run_with_retry(fn, cfg, on_failure=None, sleeper=time.sleep):

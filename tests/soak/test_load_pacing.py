@@ -467,6 +467,8 @@ def test_rate_limit_probe_bypasses_normal_load_pacing():
 @pytest.mark.parametrize("operation", ["tool", "event"])
 def test_recovery_required_is_returned_before_an_explicit_same_id_retry(operation, monkeypatch):
     """The caller sees recovery_required; only a later user retry reuses its ID."""
+    from types import SimpleNamespace
+
     import qdrant_memory.remote_client as remote_client
 
     requests = []
@@ -482,6 +484,17 @@ def test_recovery_required_is_returned_before_an_explicit_same_id_retry(operatio
         """Return a recovery gate once, then acknowledge the original request."""
         requests.append((args, kwargs))
         if len(requests) == 1:
+            if operation == "tool":
+                # Exercise the actual MCP tool error envelope returned by an Owner.
+                return remote_client._tool_value(
+                    SimpleNamespace(
+                        content=[
+                            SimpleNamespace(
+                                text='{"error":{"type":"SharedRecoveryRequiredError","retryable":false}}'
+                            )
+                        ]
+                    )
+                )
             raise RemoteStatusError(
                 503,
                 error_type="SharedRecoveryRequiredError",
@@ -610,7 +623,7 @@ def test_authorization_probe_retries_same_marker_after_owner_recovery():
             value={},
             error={
                 "type": "SharedRecoveryRequiredError",
-                "reason": "business_error",
+                "reason": "recovery_required",
                 "retryable": False,
             },
         ),

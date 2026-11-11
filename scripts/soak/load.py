@@ -49,6 +49,7 @@ class Outcome:
     replay_count: int
     duration_ms: float
     resolved: bool
+    owner_recovery_generation: int | None = None
 
     @property
     def action(self):
@@ -341,6 +342,7 @@ class SoakClient:
                 failure.get("retryable") is not True
                 and failure.get("reason") != "recovery_required"
             ),
+            owner_recovery_generation=recovery_generation,
         )
         record = {
             "op": op,

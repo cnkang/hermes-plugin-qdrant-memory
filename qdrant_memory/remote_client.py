@@ -329,6 +329,12 @@ def _tool_value(result):
     if not isinstance(value, dict):
         raise ValueError("Invalid remote MCP result")
     error = value.get("error")
+    if isinstance(error, dict) and error.get("type") == "SharedRecoveryRequiredError":
+        # Runtime 0.6.0 Owners do not include a reason in tool error envelopes.
+        # Treat the typed recovery gate as terminal and actionable without
+        # replaying a mutation before operator recovery.
+        error = {**error, "reason": "recovery_required", "retryable": False}
+        value = {**value, "error": error}
     if isinstance(error, dict) and error.get("retryable") is True:
         # The Owner itself reported a transient failure, so this
         # request may not have reached its ledger entry yet.
