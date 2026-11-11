@@ -7,8 +7,20 @@ import pytest
 from qdrant_memory.config import DEFAULTS, merge, validate_llm
 from qdrant_memory.extraction import Extractor
 from qdrant_memory.remote_client import remote_error, send_event
+from qdrant_memory.retry import safe_error
 
 from ..helpers import LLM
+
+
+def test_shared_recovery_error_is_terminal_and_machine_actionable():
+    """The Owner tells callers when a write needs operator recovery first."""
+    from qdrant_memory.shared_state import SharedRecoveryRequiredError
+
+    assert safe_error(SharedRecoveryRequiredError()) == {
+        "type": "SharedRecoveryRequiredError",
+        "retryable": False,
+        "reason": "recovery_required",
+    }
 
 
 def test_remote_error_unwraps_groups_and_names_the_cause():

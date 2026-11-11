@@ -429,6 +429,220 @@ def test_network_operator_recovery_waits_for_active_fault_and_coalesces_graceful
     ]
 
 
+@pytest.mark.parametrize("recovery_succeeds", [True, False])
+def test_lost_response_waits_for_owner_recovery_then_replays_same_id(
+    monkeypatch, recovery_succeeds
+):
+    """The probe must finish operator recovery before replaying the committed ID."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import scripts.soak.run as run_module
+
+    runner = run_module.Runner.__new__(run_module.Runner)
+    runner.args = SimpleNamespace(target_seconds=3)
+    runner.stop_at = 1000.0
+    runner._owner_recovery_generation = 0
+    runner._owner_recovery_tasks = {}
+    calls = []
+    entries = []
+
+    class Journal:
+        def record(self, kind, **fields):
+            entries.append((kind, fields))
+
+    async def recover_owner():
+        if recovery_succeeds:
+            runner._owner_recovery_generation = 2
+        return recovery_succeeds
+
+    class Client:
+        async def abandon_response(self, identity, tool, arguments, *, request_id):
+            return {"status": 200}
+
+        async def call(self, identity, tool, arguments, **kwargs):
+            calls.append((identity, tool, dict(arguments), kwargs["request_id"]))
+            if len(calls) == 1:
+                # A concurrent recovery advanced the generation after the
+                # probe snapshot but before this call reached the Owner.
+                runner._owner_recovery_generation = 1
+                runner._owner_recovery_tasks[1] = asyncio.create_task(recover_owner())
+                return SimpleNamespace(
+                    ok=False,
+                    value={},
+                    error={"reason": "recovery_required", "retryable": False},
+                    action="",
+                    owner_recovery_generation=1,
+                )
+            return SimpleNamespace(
+                ok=True,
+                value={"id": "record-1"},
+                error={},
+                action="ADD",
+            )
+
+    async def no_sleep(_delay):
+        return None
+
+    runner.client = Client()
+    runner.journal = Journal()
+    monkeypatch.setattr(run_module.asyncio, "sleep", no_sleep)
+
+    asyncio.run(runner.lost_response_task(clock=lambda: 0.0))
+
+    assert len(calls) == (2 if recovery_succeeds else 1)
+    if not recovery_succeeds:
+        assert entries[-1][1]["status"] == "FAIL"
+        assert entries[-1][1]["reason"] == "recovery_required"
+        return
+
+    assert calls[0] == calls[1]
+    assert entries[-1] == (
+        "probe",
+        {
+            "probe": "lost_response",
+            "status": "PASS",
+            "http_status": 200,
+            "request_id": "network-lost-response-1",
+            "action": "ADD",
+            "record_id": "record-1",
+            "operator_recovery_waited": True,
+            "text": "Fact SOAK-lost-response-1: the Owner answers a replay from its receipt.",
+        },
+    )
+
+
+def test_lost_response_does_not_replay_a_write_that_was_deferred(monkeypatch):
+    """A pacing defer is not a lost response and must not send the write later."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import scripts.soak.run as run_module
+
+    runner = run_module.Runner.__new__(run_module.Runner)
+    runner.args = SimpleNamespace(target_seconds=3)
+    runner.stop_at = 1000.0
+    runner._owner_recovery_generation = 0
+    calls = []
+    entries = []
+
+    class Journal:
+        def record(self, kind, **fields):
+            entries.append((kind, fields))
+
+    class Client:
+        async def abandon_response(self, *_args, **_kwargs):
+            return {"status": None, "deferred": True}
+
+        async def call(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            return SimpleNamespace(ok=True, value={"id": "unexpected"}, error={}, action="ADD")
+
+    async def no_sleep(_delay):
+        return None
+
+    runner.client = Client()
+    runner.journal = Journal()
+    monkeypatch.setattr(run_module.asyncio, "sleep", no_sleep)
+
+    asyncio.run(runner.lost_response_task(clock=lambda: 0.0))
+
+    assert calls == []
+    assert entries[-1][1]["status"] == "INCOMPLETE"
+    assert entries[-1][1]["request_id"] == "network-lost-response-1"
+
+
+def test_lost_response_transport_retry_reuses_the_same_request_id(monkeypatch):
+    """Ambiguous transport failures must not mint a second mutation ID."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import scripts.soak.run as run_module
+
+    runner = run_module.Runner.__new__(run_module.Runner)
+    runner.args = SimpleNamespace(target_seconds=3)
+    runner.stop_at = 1000.0
+    runner._owner_recovery_generation = 0
+    request_ids = []
+    entries = []
+
+    class Journal:
+        def record(self, kind, **fields):
+            entries.append((kind, fields))
+
+    class Client:
+        async def abandon_response(self, _identity, _tool, _arguments, *, request_id):
+            request_ids.append(request_id)
+            if len(request_ids) == 1:
+                raise ConnectionError("synthetic reset")
+            return {"status": 200, "deferred": False}
+
+        async def call(self, _identity, _tool, _arguments, **kwargs):
+            request_ids.append(kwargs["request_id"])
+            return SimpleNamespace(ok=True, value={"id": "record-1"}, error={}, action="ADD")
+
+    async def no_sleep(_delay):
+        return None
+
+    runner.client = Client()
+    runner.journal = Journal()
+    monkeypatch.setattr(run_module.asyncio, "sleep", no_sleep)
+
+    asyncio.run(runner.lost_response_task(clock=lambda: 0.0))
+
+    assert request_ids == [
+        "network-lost-response-1",
+        "network-lost-response-1",
+        "network-lost-response-1",
+    ]
+    assert entries[-1][1]["status"] == "PASS"
+
+
+def test_lost_response_does_not_reuse_http_error_after_transport_retries(monkeypatch):
+    """A prior HTTP error cannot mask later attempts with no response."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import scripts.soak.run as run_module
+
+    runner = run_module.Runner.__new__(run_module.Runner)
+    runner.args = SimpleNamespace(target_seconds=3)
+    runner.stop_at = 1000.0
+    runner._owner_recovery_generation = 0
+    request_ids = []
+    replay_calls = []
+    entries = []
+
+    class Journal:
+        def record(self, kind, **fields):
+            entries.append((kind, fields))
+
+    class Client:
+        async def abandon_response(self, _identity, _tool, _arguments, *, request_id):
+            request_ids.append(request_id)
+            if len(request_ids) == 1:
+                return {"status": 503, "deferred": False}
+            raise ConnectionError("synthetic reset")
+
+        async def call(self, *args, **kwargs):
+            replay_calls.append((args, kwargs))
+            return SimpleNamespace(ok=True, value={"id": "record-1"}, action="ADD")
+
+    async def no_sleep(_delay):
+        return None
+
+    runner.client = Client()
+    runner.journal = Journal()
+    monkeypatch.setattr(run_module.asyncio, "sleep", no_sleep)
+
+    asyncio.run(runner.lost_response_task(clock=lambda: 0.0))
+
+    assert request_ids == ["network-lost-response-1"] * 3
+    assert replay_calls == []
+    assert entries[-1][1]["status"] == "INCOMPLETE"
+    assert "http_status" not in entries[-1][1]
+
+
 def test_probe_task_retries_deferred_authorization_with_the_same_marker(monkeypatch):
     """A temporary gate leaves the auth probe queued and postpones other probes."""
     import asyncio
@@ -442,9 +656,16 @@ def test_probe_task_retries_deferred_authorization_with_the_same_marker(monkeypa
     runner.fatal = ""
     runner.client = object()
     runner.journal = object()
-    runner.env = SimpleNamespace(tokens={}, owner_endpoint="", ca_file="", untrusted_ca="")
+    runner.env = SimpleNamespace(
+        tokens={},
+        owner_endpoint="https://client-proxy.test/mcp",
+        owner_internal="https://owner.test/mcp",
+        ca_file="",
+        untrusted_ca="",
+    )
     markers = []
     calls = {"cas": 0, "retry": 0}
+    retry_endpoints = []
     ticks = iter((0.0, 0.0, 2.0))
 
     async def no_sleep(_delay):
@@ -465,9 +686,10 @@ def test_probe_task_retries_deferred_authorization_with_the_same_marker(monkeypa
         calls["cas"] += 1
         return {"status": "PASS", "marker": marker}
 
-    async def retry_contract(*_args, **_kwargs):
+    async def retry_contract(*_args, **kwargs):
         """Record that the retry-contract probe was allowed to run."""
         calls["retry"] += 1
+        retry_endpoints.append(kwargs["endpoint"])
 
     monkeypatch.setattr(run_module.asyncio, "sleep", no_sleep)
     monkeypatch.setattr(run_module, "probe_authorization", authorization)
@@ -478,6 +700,7 @@ def test_probe_task_retries_deferred_authorization_with_the_same_marker(monkeypa
 
     assert markers == [None, "same-marker"]
     assert calls == {"cas": 1, "retry": 1}
+    assert retry_endpoints == ["https://owner.test/mcp"]
 
 
 def test_probe_task_waits_for_probe_retry_after(monkeypatch):
@@ -493,7 +716,9 @@ def test_probe_task_waits_for_probe_retry_after(monkeypatch):
     runner.fatal = ""
     runner.client = object()
     runner.journal = object()
-    runner.env = SimpleNamespace(tokens={}, owner_endpoint="", ca_file="", untrusted_ca="")
+    runner.env = SimpleNamespace(
+        tokens={}, owner_endpoint="", owner_internal="", ca_file="", untrusted_ca=""
+    )
     now = [0.0]
     cas_calls = []
 

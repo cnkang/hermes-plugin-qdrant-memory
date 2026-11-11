@@ -409,6 +409,24 @@ class Runner:
             )
             return True
 
+    async def _wait_for_owner_recovery(self, generation, *, clock=time.monotonic):
+        """Wait for the matching operator recovery without cancelling it on timeout."""
+        task = self._owner_recovery_tasks.get(generation)
+        if task is None:
+            return "FAIL", "operator recovery task was not scheduled"
+        remaining = min(300.0, (self.stop_at or clock()) - clock() - 30.0)
+        if remaining <= 0:
+            return "INCOMPLETE", "insufficient run window to verify operator recovery"
+        try:
+            recovered = await asyncio.wait_for(asyncio.shield(task), timeout=remaining)
+        except TimeoutError:
+            return "INCOMPLETE", "operator recovery did not finish before the probe deadline"
+        except Exception as exc:  # noqa: BLE001 - failed recovery invalidates the probe
+            return "FAIL", f"operator recovery raised {type(exc).__name__}"
+        if not recovered or self._owner_recovery_generation <= generation:
+            return "FAIL", "operator recovery did not advance the Owner generation"
+        return "PASS", ""
+
     async def _wait_for_network_fault_resolution(self):
         """Wait for confirmed proxy cleanup, or stop if cleanup cannot be confirmed."""
         if self._active_network_fault_abort.is_set():
@@ -535,7 +553,7 @@ class Runner:
                             self.client,
                             self.journal,
                             tokens=self.env.tokens,
-                            endpoint=self.env.owner_endpoint,
+                            endpoint=self.env.owner_internal,
                             ca_file=self.env.ca_file,
                             untrusted_ca=self.env.untrusted_ca,
                         )
@@ -655,15 +673,19 @@ class Runner:
     async def lost_response_task(self, clock=time.monotonic):
         """Commit a write and drop its response, then replay the same identifier."""
         await asyncio.sleep(self.args.target_seconds / 3)
+        request_id = "network-lost-response-1"
+        text = "Fact SOAK-lost-response-1: the Owner answers a replay from its receipt."
         for attempt in range(1, 4):
+            dropped = None
             if clock() >= (self.stop_at or clock()) - 30:
+                self.journal.record(
+                    "probe",
+                    probe="lost_response",
+                    status="INCOMPLETE",
+                    request_id=request_id,
+                    detail="insufficient run window to send the lost-response request",
+                )
                 return
-            request_id = f"network-lost-response-{attempt}"
-            text = (
-                "Fact SOAK-lost-response-"
-                + str(attempt)
-                + ": the Owner answers a replay from its receipt."
-            )
             try:
                 dropped = await self.client.abandon_response(
                     "hermes-a", "add", {"text": text}, request_id=request_id
@@ -673,10 +695,79 @@ class Runner:
                     "harness",
                     event="lost_response_retry",
                     attempt=attempt,
+                    request_id=request_id,
                     error={"type": type(exc).__name__},
                 )
-                await asyncio.sleep(3.0)
+                if attempt < 3:
+                    await asyncio.sleep(3.0)
                 continue
+
+            if dropped.get("deferred") or dropped.get("status") is None:
+                self.journal.record(
+                    "probe",
+                    probe="lost_response",
+                    status="INCOMPLETE",
+                    request_id=request_id,
+                    detail="the lost-response request was deferred before an HTTP response",
+                )
+                return
+            if dropped.get("status") == 200:
+                break
+            if dropped.get("status") not in {429, 502, 503, 504} or attempt == 3:
+                # Reconcile this same identifier below. A server or proxy error
+                # can leave the write outcome unknown, so never mint another ID.
+                break
+            self.journal.record(
+                "harness",
+                event="lost_response_retry",
+                attempt=attempt,
+                request_id=request_id,
+                http_status=dropped.get("status"),
+            )
+            await asyncio.sleep(3.0)
+
+        if dropped is None:
+            self.journal.record(
+                "probe",
+                probe="lost_response",
+                status="INCOMPLETE",
+                request_id=request_id,
+                detail="no HTTP response was observed after bounded same-ID retries",
+            )
+            return
+
+        recovery_generation = self._owner_recovery_generation
+        replay = await self.client.call(
+            "hermes-a",
+            "add",
+            {"text": text},
+            op="add",
+            request_id=request_id,
+            text=text,
+            phase="network",
+        )
+        recovered = False
+        if not replay.ok and replay.error.get("reason") == "recovery_required":
+            failed_generation = getattr(replay, "owner_recovery_generation", None)
+            if failed_generation is not None:
+                recovery_generation = failed_generation
+            recovery_status, recovery_detail = await self._wait_for_owner_recovery(
+                recovery_generation, clock=clock
+            )
+            if recovery_status != "PASS":
+                self.journal.record(
+                    "probe",
+                    probe="lost_response",
+                    status=recovery_status,
+                    http_status=dropped.get("status"),
+                    request_id=request_id,
+                    reason=replay.error.get("reason"),
+                    detail=recovery_detail,
+                )
+                return
+            recovered = True
+            # Operator recovery is a separate step. Only now replay the
+            # original request ID to retrieve its durable receipt.
             replay = await self.client.call(
                 "hermes-a",
                 "add",
@@ -686,24 +777,23 @@ class Runner:
                 text=text,
                 phase="network",
             )
-            self.journal.record(
-                "probe",
-                probe="lost_response",
-                status="PASS"
-                if dropped.get("status") == 200 and replay.ok and replay.action == "ADD"
-                else "FAIL",
-                http_status=dropped.get("status"),
-                action=replay.action,
-                record_id=replay.value.get("id"),
-                text=text,
-            )
-            return
         self.journal.record(
             "probe",
             probe="lost_response",
-            status="INCOMPLETE",
-            detail="no connection survived the fault windows",
+            status="PASS"
+            if dropped.get("status") == 200
+            and replay.ok
+            and replay.action == "ADD"
+            and replay.value.get("id")
+            else "FAIL",
+            http_status=dropped.get("status"),
+            request_id=request_id,
+            action=replay.action,
+            record_id=replay.value.get("id"),
+            operator_recovery_waited=recovered,
+            text=text,
         )
+        return
 
     async def run(self):
         """Run the workload with its scenario driver until the window closes."""
