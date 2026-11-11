@@ -307,6 +307,67 @@ def acknowledged_state(rows):
         and any(start < row_index < end for start, end in recovery_gate_windows)
     }
 
+    # A deferred compare-and-swap can be superseded while recovery is pending.
+    # If its exact same-ID replay then conflicts against the older expected
+    # version, excuse both failures only when a newer update to that record was
+    # acknowledged after the matching operator recovery and before the replay.
+    superseded_update_failure_indexes = set()
+    superseded_update_conflict_indexes = set()
+    for conflict_index, conflict in zip(failure_indexes, failures, strict=True):
+        conflict_error = conflict.get("error") or {}
+        conflict_args = conflict.get("args") or {}
+        record_id = conflict_args.get("id")
+        expected_version = conflict_args.get("expected_version")
+        request_key = operation_key(conflict)
+        if (
+            conflict.get("op") != "update"
+            or conflict_error.get("type") != "SharedConflictError"
+            or not record_id
+            or expected_version is None
+        ):
+            continue
+
+        for prior_index, prior in zip(failure_indexes, failures, strict=True):
+            if prior_index >= conflict_index:
+                break
+            prior_error = prior.get("error") or {}
+            if (
+                prior.get("op") != "update"
+                or operation_key(prior) != request_key
+                or prior.get("args") != conflict.get("args")
+                or prior_error.get("reason") != "recovery_required"
+                or prior.get("operator_recovery_requested") is not True
+            ):
+                continue
+
+            generation = prior.get("owner_recovery_generation")
+            requested_index = recovery_request_indexes.get(generation)
+            completed_index = recovery_completion_indexes.get(generation)
+            if (
+                requested_index is None
+                or completed_index is None
+                or not requested_index < completed_index
+                or not prior_index < completed_index < conflict_index
+            ):
+                continue
+
+            superseded = any(
+                success_index > completed_index
+                and success_index < conflict_index
+                and success.get("kind") == "op"
+                and success.get("op") == "update"
+                and success.get("result") == "ok"
+                and operation_key(success) != request_key
+                and success.get("record_id") == record_id
+                and (success.get("args") or {}).get("id") == record_id
+                and success.get("version") not in (None, expected_version)
+                for success_index, success in enumerate(rows)
+            )
+            if superseded:
+                superseded_update_failure_indexes.update((prior_index, conflict_index))
+                superseded_update_conflict_indexes.add(conflict_index)
+                break
+
     unresolved = []
     for row in failures:
         if (row.get("error") or {}).get("retryable") is not True:
@@ -321,7 +382,11 @@ def acknowledged_state(rows):
     windows = fault_windows(rows)
     unexpected, path_outages = [], []
     for row_index, row in zip(failure_indexes, failures, strict=True):
-        if row_index in operator_recovered_failures or row_index in expected_recovery_gate_failures:
+        if (
+            row_index in operator_recovered_failures
+            or row_index in expected_recovery_gate_failures
+            or row_index in superseded_update_failure_indexes
+        ):
             continue
         if (row.get("error") or {}).get("retryable") is True:
             continue
@@ -356,6 +421,8 @@ def acknowledged_state(rows):
         "path_outages": path_outages,
         "operator_recovered_failures": len(operator_recovered_failures),
         "expected_recovery_gate_rejections": len(expected_recovery_gate_failures),
+        "expected_superseded_update_failures": len(superseded_update_failure_indexes),
+        "expected_superseded_update_conflicts": len(superseded_update_conflict_indexes),
         "fault_windows": windows,
         "expected_hashes": expected_hashes,
     }
@@ -544,6 +611,7 @@ def verify(
         else "FAIL",
         "No acknowledged write is missing and no failure is unexplained.",
         unexpected_failures=len(state["unexpected"]),
+        expected_superseded_update_conflicts=state["expected_superseded_update_conflicts"],
         quarantined=len(quarantined),
         unresolved=len(state["unresolved"]),
     )
@@ -645,8 +713,10 @@ def verify(
         "expected_transient_failures": len(state["failures"])
         - len(state["unexpected"])
         - len(state["unresolved"])
-        - state["operator_recovered_failures"],
+        - state["operator_recovered_failures"]
+        - state["expected_superseded_update_failures"],
         "operator_recovered_failures": state["operator_recovered_failures"],
+        "expected_superseded_update_conflicts": state["expected_superseded_update_conflicts"],
         "transient_attempts": sum(
             1
             for row in rows

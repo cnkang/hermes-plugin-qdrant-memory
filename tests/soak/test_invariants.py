@@ -699,6 +699,122 @@ def test_a_non_retryable_product_failure_is_unexpected():
     assert _status(invariants, "no_unexplained_loss") == "FAIL"
 
 
+def test_recovery_replay_conflict_after_newer_update_is_expected():
+    """A stale CAS replay is explained by a newer acknowledged update."""
+    rows, evidence = _healthy()
+    superseding_update = next(row for row in rows if row.get("request_id") == "w0-update-9")
+    rows.remove(superseding_update)
+    request_id = "w0-update-pending"
+    args = {
+        "id": RECORD_ID,
+        "text": "Fact SOAK-pending-update: retain the original update request.",
+        "expected_version": "v1",
+        "request_id": request_id,
+    }
+    recovery_failure = {
+        "kind": "op",
+        "op": "update",
+        "tool": "update",
+        "identity": "hermes-a",
+        "request_id": request_id,
+        "result": "error",
+        "error": {
+            "type": "SharedRecoveryRequiredError",
+            "reason": "recovery_required",
+            "retryable": False,
+        },
+        "owner_recovery_generation": 0,
+        "operator_recovery_requested": True,
+        "args": args,
+    }
+    rows.extend(
+        [
+            {"kind": "control", "event": "operator_recovery_requested", "trigger_generation": 0},
+            recovery_failure,
+            {
+                "kind": "control",
+                "event": "operator_recovery_completed",
+                "trigger_generation": 0,
+                "generation": 1,
+            },
+            superseding_update,
+            {
+                **recovery_failure,
+                "phase": "recovery",
+                "operator_recovery_requested": False,
+                "error": {
+                    "type": "SharedConflictError",
+                    "reason": "business_error",
+                    "retryable": False,
+                },
+            },
+        ]
+    )
+
+    invariants, summary, _ = _verify(rows, evidence)
+
+    assert summary["unexpected_failures"] == 0
+    assert summary["expected_superseded_update_conflicts"] == 1
+    assert summary["expected_transient_failures"] == 0
+    assert _status(invariants, "no_unexplained_loss") == "PASS"
+
+
+def test_recovery_replay_conflict_without_newer_update_is_unexpected():
+    """A recovery conflict stays blocking without an acknowledged superseding write."""
+    rows, evidence = _healthy()
+    request_id = "w0-update-pending"
+    args = {
+        "id": RECORD_ID,
+        "text": "Fact SOAK-pending-update: retain the original update request.",
+        "expected_version": "v2",
+        "request_id": request_id,
+    }
+    recovery_failure = {
+        "kind": "op",
+        "op": "update",
+        "tool": "update",
+        "identity": "hermes-a",
+        "request_id": request_id,
+        "result": "error",
+        "error": {
+            "type": "SharedRecoveryRequiredError",
+            "reason": "recovery_required",
+            "retryable": False,
+        },
+        "owner_recovery_generation": 0,
+        "operator_recovery_requested": True,
+        "args": args,
+    }
+    rows.extend(
+        [
+            {"kind": "control", "event": "operator_recovery_requested", "trigger_generation": 0},
+            recovery_failure,
+            {
+                "kind": "control",
+                "event": "operator_recovery_completed",
+                "trigger_generation": 0,
+                "generation": 1,
+            },
+            {
+                **recovery_failure,
+                "phase": "recovery",
+                "operator_recovery_requested": False,
+                "error": {
+                    "type": "SharedConflictError",
+                    "reason": "business_error",
+                    "retryable": False,
+                },
+            },
+        ]
+    )
+
+    invariants, summary, _ = _verify(rows, evidence)
+
+    assert summary["unexpected_failures"] == 2
+    assert summary["expected_superseded_update_conflicts"] == 0
+    assert _status(invariants, "no_unexplained_loss") == "FAIL"
+
+
 def test_recovery_gate_rejection_is_explained_only_by_a_completed_operator_recovery():
     """Fail-closed requests during one completed recovery window are not lost writes."""
     rows, evidence = _healthy()
