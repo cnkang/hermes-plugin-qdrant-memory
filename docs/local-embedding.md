@@ -35,14 +35,14 @@ python -m pip install '.[mcp,local]'
 
 For a published package, install the same extras with the release version:
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.1/) for
-Runtime 0.6.1 availability before running this command.
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.2/) for
+Runtime 0.6.2 availability before running this command.
 If unavailable, use the
 [published guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/e1fafac7a86ad384813717d0a6b3204fcc242895/docs/local-embedding.md)
 or a reviewed source preview; the package command below requires publication.
 
 ```sh
-python -m pip install 'hermes-plugin-qdrant-memory[mcp,local]==0.6.1'
+python -m pip install 'hermes-plugin-qdrant-memory[mcp,local]==0.6.2'
 ```
 
 Choose **one** setup command and replace the profile path with a new absolute

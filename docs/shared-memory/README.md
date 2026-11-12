@@ -23,15 +23,15 @@ Use Python 3.11+ and an isolated environment. Runtime 0.5.0 includes this
 feature. Install the PyPI release, or use a reviewed checkout at an immutable
 commit for development.
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.1/)
-for Runtime 0.6.1 availability before package installation.
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.2/)
+for Runtime 0.6.2 availability before package installation.
 If unavailable, use the
 [published guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/e1fafac7a86ad384813717d0a6b3204fcc242895/docs/shared-memory/README.md)
 or a reviewed source preview; the package command below requires publication.
 
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env
-/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.6.1'
+/absolute/path/shared-runtime-env/bin/pip install 'hermes-plugin-qdrant-memory[mcp]==0.6.2'
 /absolute/path/shared-runtime-env/bin/qdrant-memory setup \
   --profile /absolute/path/shared-owner --embedding-provider ollama \
   --model qwen3-embedding:0.6b --dimensions 1024 \
