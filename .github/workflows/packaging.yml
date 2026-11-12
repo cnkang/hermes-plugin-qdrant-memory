@@ -29,10 +29,10 @@ jobs:
           python -m venv .sdist-env
           .sdist-env/bin/python -m pip install "$(find dist -name '*.tar.gz')[mcp]" 'pytest>=8,<10'
           .sdist-env/bin/python -I -m pytest --import-mode=importlib -q tests/standalone
-      - name: Preserve real 0.6.0 data through wheel upgrade
+      - name: Preserve real 0.6.1 data through wheel upgrade
         run: |
           python -m venv "$RUNNER_TEMP/runtime-upgrade"
-          "$RUNNER_TEMP/runtime-upgrade/bin/python" -m pip install 'hermes-plugin-qdrant-memory[mcp]==0.6.0'
+          "$RUNNER_TEMP/runtime-upgrade/bin/python" -m pip install 'hermes-plugin-qdrant-memory[mcp]==0.6.1'
           "$RUNNER_TEMP/runtime-upgrade/bin/python" -I tests/standalone/upgrade_fixture.py prepare "$RUNNER_TEMP/runtime-upgrade-data"
           "$RUNNER_TEMP/runtime-upgrade/bin/python" -m pip install "$(find dist -name '*.whl')[mcp]"
           "$RUNNER_TEMP/runtime-upgrade/bin/python" -I tests/standalone/upgrade_fixture.py verify "$RUNNER_TEMP/runtime-upgrade-data"
