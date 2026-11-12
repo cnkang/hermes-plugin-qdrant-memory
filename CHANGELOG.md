@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.6.2
+
+- Retry durably failed Owner events by validating the persisted operation plan
+  and requeueing only that event's failed operations. Quarantined events remain
+  operator-controlled.
+- Preserve the ledger format, Qdrant collection schema, embedding fingerprints
+  and existing writer-lease behavior.
+
 ## 0.6.1
 
 - Add an absolute request deadline to the Shared Owner listener so a partial

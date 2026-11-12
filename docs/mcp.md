@@ -42,8 +42,8 @@ The older v0.1.0 release and its
 Hermes catalog installation do not supply this new entrypoint. Install the
 versioned Runtime with the optional `mcp` extra:
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.1/)
-for Runtime 0.6.1 availability before package installation.
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.2/)
+for Runtime 0.6.2 availability before package installation.
 If unavailable, use the
 [published guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/e1fafac7a86ad384813717d0a6b3204fcc242895/docs/mcp.md)
 or a reviewed source preview; the package command below requires publication.
@@ -51,7 +51,7 @@ or a reviewed source preview; the package command below requires publication.
 ```bash
 python3 -m venv /private/path/qdrant-env
 /private/path/qdrant-env/bin/python -m pip install \
-  'hermes-plugin-qdrant-memory[mcp]==0.6.1'
+  'hermes-plugin-qdrant-memory[mcp]==0.6.2'
 ```
 
 Use Python 3.11+. On Windows, use the environment's `Scripts` executables.

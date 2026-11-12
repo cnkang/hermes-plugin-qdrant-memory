@@ -39,7 +39,7 @@
 
 set -euo pipefail
 DEMO_HOME="${1:-$HOME/.hermes-qdrant-demo}"
-RUNTIME_RELEASE_REF="v0.6.1"   # Published Runtime release
+RUNTIME_RELEASE_REF="v0.6.2"   # Published Runtime release
 # Local CLI sessions attribute memory to the host's local session identity
 # (uid:<os-uid>). The inventory and deletion commands must use the same scope.
 SCOPE_USER="uid:$(id -u)"
