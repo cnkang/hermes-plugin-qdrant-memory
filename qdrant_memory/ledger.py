@@ -703,50 +703,69 @@ class Ledger:
             ).fetchone()
             if event is None:
                 return False
-            try:
-                value = json.loads(event["payload_json"])
-            except (TypeError, ValueError) as exc:
-                raise ValueError("Failed event plan is unavailable") from exc
-            if not isinstance(value, dict):
-                raise ValueError("Failed event plan is unavailable")
-            operation_keys = value.get("operation_keys", [])
-            if (
-                not isinstance(operation_keys, list)
-                or any(not isinstance(item, str) or not item for item in operation_keys)
-                or len(set(operation_keys)) != len(operation_keys)
-            ):
-                raise ValueError("Failed event operation plan is invalid")
+            operation_keys = self._failed_event_operation_keys(event["payload_json"])
+            operation_statuses = self._failed_event_operation_statuses(operation_keys)
+            self._requeue_failed_event_operations(operation_statuses)
+            self._mark_failed_event_pending(key)
+        return True
 
-            operation_statuses = []
-            for operation_key in operation_keys:
-                operation = self.db.execute(
-                    "SELECT status FROM operations WHERE idempotency_key=? AND collection=?",
-                    (operation_key, self.collection),
-                ).fetchone()
-                if operation is None:
-                    raise ValueError("Failed event references an unavailable operation")
-                status = operation["status"]
-                if status not in {"PENDING", "FAILED", "COMMITTED", "SUPERSEDED"}:
-                    raise ValueError("Failed event references an invalid operation state")
-                operation_statuses.append((operation_key, status))
+    @staticmethod
+    def _failed_event_operation_keys(payload_json):
+        """Validate the operation IDs persisted with one failed event."""
+        try:
+            value = json.loads(payload_json)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Failed event plan is unavailable") from exc
+        if not isinstance(value, dict):
+            raise ValueError("Failed event plan is unavailable")
 
-            for operation_key, status in operation_statuses:
-                if status == "FAILED":
-                    updated = self.db.execute(
-                        "UPDATE operations SET status='PENDING' "
-                        "WHERE idempotency_key=? AND collection=? AND status='FAILED'",
-                        (operation_key, self.collection),
-                    ).rowcount
-                    if updated != 1:
-                        raise ValueError("Failed event operation changed during retry")
+        operation_keys = value.get("operation_keys", [])
+        if not isinstance(operation_keys, list):
+            raise ValueError("Failed event operation plan is invalid")
+        if any(not isinstance(item, str) or not item for item in operation_keys):
+            raise ValueError("Failed event operation plan is invalid")
+        if len(set(operation_keys)) != len(operation_keys):
+            raise ValueError("Failed event operation plan is invalid")
+        return operation_keys
+
+    def _failed_event_operation_statuses(self, operation_keys):
+        """Read and validate every operation before changing any status."""
+        operation_statuses = []
+        for operation_key in operation_keys:
+            operation = self.db.execute(
+                "SELECT status FROM operations WHERE idempotency_key=? AND collection=?",
+                (operation_key, self.collection),
+            ).fetchone()
+            if operation is None:
+                raise ValueError("Failed event references an unavailable operation")
+            status = operation["status"]
+            if status not in {"PENDING", "FAILED", "COMMITTED", "SUPERSEDED"}:
+                raise ValueError("Failed event references an invalid operation state")
+            operation_statuses.append((operation_key, status))
+        return operation_statuses
+
+    def _requeue_failed_event_operations(self, operation_statuses):
+        """Requeue only failed operations from a validated event plan."""
+        for operation_key, status in operation_statuses:
+            if status != "FAILED":
+                continue
             updated = self.db.execute(
-                "UPDATE events SET status='PENDING' "
-                "WHERE event_id=? AND collection=? AND status='FAILED'",
-                (key, self.collection),
+                "UPDATE operations SET status='PENDING' "
+                "WHERE idempotency_key=? AND collection=? AND status='FAILED'",
+                (operation_key, self.collection),
             ).rowcount
             if updated != 1:
-                raise ValueError("Failed event changed during retry")
-        return True
+                raise ValueError("Failed event operation changed during retry")
+
+    def _mark_failed_event_pending(self, key):
+        """Move the failed event to pending after its plan is safely queued."""
+        updated = self.db.execute(
+            "UPDATE events SET status='PENDING' "
+            "WHERE event_id=? AND collection=? AND status='FAILED'",
+            (key, self.collection),
+        ).rowcount
+        if updated != 1:
+            raise ValueError("Failed event changed during retry")
 
     def reset_operation(self, key):
         """Requeue one failed operation without touching other migration work."""

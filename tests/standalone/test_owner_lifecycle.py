@@ -384,6 +384,163 @@ def test_failed_owner_retry_requeues_only_its_prepared_event_and_operations(tmp_
         rt.store.close()
 
 
+def test_failed_owner_retry_returns_false_for_an_unknown_event(tmp_path):
+    """An unknown event cannot cause a wider Ledger retry."""
+    rt = runtime(tmp_path)
+    try:
+        assert rt.ledger.retry_failed_event("missing-event") is False
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+@pytest.mark.parametrize(
+    ("payload_json", "message"),
+    [
+        ("not-json", "Failed event plan is unavailable"),
+        ("[]", "Failed event plan is unavailable"),
+        ('{"operation_keys":"not-a-list"}', "Failed event operation plan is invalid"),
+        ('{"operation_keys":[""]}', "Failed event operation plan is invalid"),
+        ('{"operation_keys":["same","same"]}', "Failed event operation plan is invalid"),
+        (
+            '{"operation_keys":["missing-operation"]}',
+            "Failed event references an unavailable operation",
+        ),
+    ],
+)
+def test_failed_owner_retry_rejects_invalid_persisted_plans(tmp_path, payload_json, message):
+    """Malformed or stale operation plans leave the event failed."""
+    rt = runtime(tmp_path)
+    event_key = rt.ledger.enqueue_event({"event_id": "invalid-plan", "session_id": "s"})
+    try:
+        rt.ledger.failure("events", event_key, TimeoutError("synthetic"), terminal=True)
+        rt.ledger.db.execute(
+            "UPDATE events SET payload_json=? WHERE event_id=? AND collection=?",
+            (payload_json, event_key, rt.ledger.collection),
+        )
+
+        with pytest.raises(ValueError, match=message):
+            rt.ledger.retry_failed_event(event_key)
+
+        assert rt.ledger.row("events", event_key)["status"] == "FAILED"
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_failed_owner_retry_rejects_quarantined_operation_state(tmp_path):
+    """A quarantined operation remains outside the retry state machine."""
+    rt = runtime(tmp_path)
+    operation_key = rt.ledger.enqueue_operation(
+        "retry-invalid-state", "UPSERT", {"text": "synthetic"}
+    )
+    event_key = rt.ledger.enqueue_event(
+        {
+            "event_id": "invalid-operation-state",
+            "session_id": "s",
+            "operation_keys": [operation_key],
+        }
+    )
+    try:
+        rt.ledger.failure("events", event_key, TimeoutError("synthetic"), terminal=True)
+        rt.ledger.db.execute(
+            "UPDATE operations SET status='QUARANTINED' WHERE idempotency_key=? AND collection=?",
+            (operation_key, rt.ledger.collection),
+        )
+        rt.ledger.db.commit()
+
+        with pytest.raises(ValueError, match="Failed event references an invalid operation state"):
+            rt.ledger.retry_failed_event(event_key)
+
+        assert rt.ledger.row("events", event_key)["status"] == "FAILED"
+        assert rt.ledger.row("operations", operation_key)["status"] == "QUARANTINED"
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_failed_owner_retry_skips_pending_operation_in_a_valid_plan(tmp_path):
+    """Retry changes failed operations while preserving already pending ones."""
+    rt = runtime(tmp_path)
+    pending_key = rt.ledger.enqueue_operation(
+        "retry-already-pending", "UPSERT", {"text": "pending"}
+    )
+    failed_key = rt.ledger.enqueue_operation("retry-failed-operation", "UPSERT", {"text": "failed"})
+    event_key = rt.ledger.enqueue_event(
+        {
+            "event_id": "retry-mixed-plan",
+            "session_id": "s",
+            "operation_keys": [pending_key, failed_key],
+        }
+    )
+    try:
+        rt.ledger.failure("operations", failed_key, TimeoutError("synthetic"), terminal=True)
+        rt.ledger.failure("events", event_key, TimeoutError("synthetic"), terminal=True)
+
+        assert rt.ledger.retry_failed_event(event_key) is True
+        assert rt.ledger.row("operations", pending_key)["status"] == "PENDING"
+        assert rt.ledger.row("operations", failed_key)["status"] == "PENDING"
+        assert rt.ledger.row("events", event_key)["status"] == "PENDING"
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_failed_owner_retry_rolls_back_if_operation_update_is_ignored(tmp_path):
+    """An ignored operation update rolls back the event retry atomically."""
+    rt = runtime(tmp_path)
+    operation_key = rt.ledger.enqueue_operation(
+        "retry-ignored-operation", "UPSERT", {"text": "synthetic"}
+    )
+    event_key = rt.ledger.enqueue_event(
+        {
+            "event_id": "retry-ignored-operation-event",
+            "session_id": "s",
+            "operation_keys": [operation_key],
+        }
+    )
+    try:
+        rt.ledger.failure("operations", operation_key, TimeoutError("synthetic"), terminal=True)
+        rt.ledger.failure("events", event_key, TimeoutError("synthetic"), terminal=True)
+        rt.ledger.db.execute(
+            "CREATE TRIGGER ignore_failed_operation_retry "
+            "BEFORE UPDATE OF status ON operations "
+            f"WHEN OLD.idempotency_key='{operation_key}' "
+            "BEGIN SELECT RAISE(IGNORE); END"
+        )
+
+        with pytest.raises(ValueError, match="Failed event operation changed during retry"):
+            rt.ledger.retry_failed_event(event_key)
+
+        assert rt.ledger.row("operations", operation_key)["status"] == "FAILED"
+        assert rt.ledger.row("events", event_key)["status"] == "FAILED"
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
+def test_failed_owner_retry_rolls_back_if_event_update_is_ignored(tmp_path):
+    """An ignored event update does not commit a partial retry."""
+    rt = runtime(tmp_path)
+    event_key = rt.ledger.enqueue_event({"event_id": "retry-ignored-event", "session_id": "s"})
+    try:
+        rt.ledger.failure("events", event_key, TimeoutError("synthetic"), terminal=True)
+        rt.ledger.db.execute(
+            "CREATE TRIGGER ignore_failed_event_retry "
+            "BEFORE UPDATE OF status ON events "
+            f"WHEN OLD.event_id='{event_key}' "
+            "BEGIN SELECT RAISE(IGNORE); END"
+        )
+
+        with pytest.raises(ValueError, match="Failed event changed during retry"):
+            rt.ledger.retry_failed_event(event_key)
+
+        assert rt.ledger.row("events", event_key)["status"] == "FAILED"
+    finally:
+        rt.ledger.close()
+        rt.store.close()
+
+
 def test_failed_owner_retry_reextracts_unprepared_transient_event(tmp_path, monkeypatch):
     """A transient pre-plan extraction failure can be retried by its receipt owner."""
     token = "a" * 40
