@@ -4,8 +4,10 @@ Install Runtime 0.6.2 with the `[remote]` extra in a private environment:
 
 Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.2/)
 for Runtime 0.6.2 availability before running the package command.
-If unavailable, the package command cannot run yet. Use the reviewed source
-preview below; source availability is separate from PyPI publication.
+If PyPI is unavailable, use the source preview below only after the `v0.6.2`
+Git tag has been pushed. The command cannot resolve before that tag exists;
+before tag creation, validate from a clean checkout pinned to the final main SHA
+instead.
 
 ```sh
 python -m pip install 'hermes-plugin-qdrant-memory[remote]==0.6.2'

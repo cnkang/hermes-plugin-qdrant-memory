@@ -10,6 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_VERSION = "0.6.2"
 RUNTIME_RELEASE_REF = f"v{RUNTIME_VERSION}"
+LATEST_PUBLISHED_RUNTIME_REF = "v0.6.1"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
 ACTIVE_INSTALL_DOCS = {
@@ -155,12 +156,12 @@ def test_pinned_install_preserves_the_profile_and_guided_setup(recommended_insta
     ]
 
 
-def test_demo_and_remote_owner_pin_the_published_runtime():
-    """Keep the demo and source installation tied to the current release tag."""
+def test_demo_defaults_to_published_runtime_and_source_ref_waits_for_tag():
+    """Keep the demo installable before release and document source tag timing."""
     script = (ROOT / "scripts/demo.sh").read_text(encoding="utf-8")
-    match = re.search(r'^RUNTIME_RELEASE_REF="(v[0-9]+\.[0-9]+\.[0-9]+)"', script, re.M)
-    assert match, "scripts/demo.sh must pin a versioned Runtime release tag"
-    assert match.group(1) == RUNTIME_RELEASE_REF
+    match = re.search(r'^RUNTIME_RELEASE_REF="\$\{RUNTIME_RELEASE_REF:-([^}]+)\}"', script, re.M)
+    assert match, "scripts/demo.sh must default to a versioned Runtime release tag"
+    assert match.group(1) == LATEST_PUBLISHED_RUNTIME_REF
 
     remote_owner = (ROOT / "docs/shared-memory/remote-owner.md").read_text(encoding="utf-8")
     source_match = re.search(
@@ -168,6 +169,12 @@ def test_demo_and_remote_owner_pin_the_published_runtime():
     )
     assert source_match, "remote-owner.md must pin a versioned Runtime source tag"
     assert source_match.group(1) == RUNTIME_RELEASE_REF
+    normalized = " ".join(remote_owner.split())
+    assert "only after the `v0.6.2` Git tag has been pushed" in normalized
+    assert (
+        "before tag creation, validate from a clean checkout pinned to the final main SHA"
+        in normalized
+    )
 
 
 def test_pypi_description_installs_the_version_being_built():
