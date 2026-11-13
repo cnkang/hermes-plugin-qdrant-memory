@@ -260,6 +260,37 @@ def test_scheduled_security_has_no_pull_request_trigger():
     assert workflow["jobs"]["snyk-code"]["if"] == "github.ref == 'refs/heads/main'"
 
 
+def test_ci_lint_python_probe_keeps_the_required_behavior_matrix():
+    """Manual lint version selection must not replace required Python coverage."""
+    workflow = _workflow("ci.yml")
+    version_input = workflow["on"]["workflow_dispatch"]["inputs"]["lint_python_version"]
+    assert version_input["required"] is False
+    assert version_input["default"] == "3.11"
+    assert version_input["type"] == "choice"
+    assert version_input["options"] == ["3.11", "3.14"]
+    assert workflow["env"]["CI_LINT_PYTHON_VERSION"] == (
+        "${{ github.event.inputs.lint_python_version || vars.CI_LINT_PYTHON_VERSION || '3.11' }}"
+    )
+
+    lint_steps = workflow["jobs"]["lint"]["steps"]
+    validation = next(
+        step for step in lint_steps if step.get("name") == "Validate selected lint Python version"
+    )
+    assert validation["shell"] == "bash"
+    assert "3.11|3.14" in validation["run"]
+    setup = next(
+        step for step in lint_steps if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    assert setup["with"]["python-version"] == "${{ env.CI_LINT_PYTHON_VERSION }}"
+    verify = next(
+        step
+        for step in lint_steps
+        if step.get("name") == "Verify Ruff environment interpreter and install target"
+    )
+    assert '--expected "$CI_LINT_PYTHON_VERSION"' in verify["run"]
+    assert workflow["jobs"]["tests"]["strategy"]["matrix"]["python"] == ["3.11", "3.14"]
+
+
 def test_snyk_code_pipelines_propagate_failures_through_tee():
     """A successful tee must not hide a failed or timed-out Snyk command."""
     for name in ("ci.yml", "scheduled-security.yml"):
