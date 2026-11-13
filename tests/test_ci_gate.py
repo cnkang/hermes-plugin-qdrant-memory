@@ -268,26 +268,42 @@ def test_ci_lint_python_probe_keeps_the_required_behavior_matrix():
     assert version_input["default"] == "3.11"
     assert version_input["type"] == "choice"
     assert version_input["options"] == ["3.11", "3.14"]
-    assert workflow["env"]["CI_LINT_PYTHON_VERSION"] == (
-        "${{ github.event.inputs.lint_python_version || '3.11' }}"
-    )
-
     lint_steps = workflow["jobs"]["lint"]["steps"]
-    validation = next(
-        step for step in lint_steps if step.get("name") == "Validate selected lint Python version"
-    )
-    assert validation["shell"] == "bash"
-    assert "3.11|3.14" in validation["run"]
     setup = next(
         step for step in lint_steps if step.get("uses", "").startswith("actions/setup-python@")
     )
-    assert setup["with"]["python-version"] == "${{ env.CI_LINT_PYTHON_VERSION }}"
+    assert setup["with"]["python-version"] == "3.11"
     verify = next(
         step
         for step in lint_steps
         if step.get("name") == "Verify Ruff environment interpreter and install target"
     )
-    assert '--expected "$CI_LINT_PYTHON_VERSION"' in verify["run"]
+    assert "--expected '3.11'" in verify["run"]
+
+    probe = workflow["jobs"]["lint-compatibility-probe"]
+    assert probe["if"] == (
+        "${{ github.event_name == 'workflow_dispatch' && inputs.lint_python_version != '3.11' }}"
+    )
+    assert probe["env"]["CI_LINT_PYTHON_VERSION"] == ("${{ inputs.lint_python_version || '3.11' }}")
+    probe_steps = probe["steps"]
+    validation = next(
+        step for step in probe_steps if step.get("name") == "Validate selected lint Python version"
+    )
+    assert validation["shell"] == "bash"
+    assert "3.14" in validation["run"]
+    probe_setup = next(
+        step for step in probe_steps if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    assert probe_setup["with"]["python-version"] == "${{ env.CI_LINT_PYTHON_VERSION }}"
+    probe_verify = next(
+        step
+        for step in probe_steps
+        if step.get("name") == "Verify Ruff environment interpreter and install target"
+    )
+    assert '--expected "$CI_LINT_PYTHON_VERSION"' in probe_verify["run"]
+
+    gate = workflow["jobs"]["scan-gate"]
+    assert "lint-compatibility-probe" not in gate["needs"]
     assert workflow["jobs"]["tests"]["strategy"]["matrix"]["python"] == ["3.11", "3.14"]
 
 
