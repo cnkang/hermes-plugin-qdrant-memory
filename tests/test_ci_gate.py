@@ -269,7 +269,7 @@ def test_ci_lint_python_probe_keeps_the_required_behavior_matrix():
     assert version_input["type"] == "choice"
     assert version_input["options"] == ["3.11", "3.14"]
     assert workflow["env"]["CI_LINT_PYTHON_VERSION"] == (
-        "${{ github.event.inputs.lint_python_version || vars.CI_LINT_PYTHON_VERSION || '3.11' }}"
+        "${{ github.event.inputs.lint_python_version || '3.11' }}"
     )
 
     lint_steps = workflow["jobs"]["lint"]["steps"]
