@@ -6,6 +6,34 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
+## Runtime 0.7.0 candidate checks (2026-11-14)
+
+Local validation for the policy upgrade release:
+
+- Python 3.14.7 on macOS arm64: 1,508 passed, 52 environment-gated skips, 0
+  failed across 110 test files, run serially (281 s) against the current Hermes
+  `main` checkout and a real Qdrant Server container at the reviewed 1.20.1
+  digest.
+- Ruff lint and Ruff format check passed across the repository.
+- Markdown link check passed for 95 files with no missing local links.
+- Qdrant patch upgrade rehearsal: one volume moved from the 1.20.0 image to the
+  1.20.1 image and back through a copy restore. Points, payloads, vectors and
+  payload indexes were identical before, after and after restore.
+- The embedded adoption tests open a real on-disk store, close it, upgrade it,
+  and compare every point with a destination initialized directly at the target
+  version. Interruption tests cover a crash after a step succeeded but before
+  its record was written.
+- Published-wheel upgrades in isolated environments: public 0.6.1 and public
+  0.6.3 profiles kept their Qdrant point, ledger event, shared credential and
+  profile sentinel after installing the built 0.7.0 wheel. Both runs reported
+  `verify` PASS with one stored record.
+
+The 52 skips are the same environment gates as earlier releases: authenticated
+Cloud, a prepared local model cache, Windows-only paths, the Pi quality driver
+and the shared-security device server. GitHub's minimum/latest Hermes matrix,
+the Linux/macOS/Windows contracts and the security jobs run on the release
+commit and are recorded in the release pull request.
+
 ## Runtime 0.5.4 pre-release candidate checks (2026-11-02)
 
 Local validation for the maintainability release:

@@ -42,7 +42,7 @@ def main():
     image = (
         sys.argv[1]
         if len(sys.argv) > 1
-        else "qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2"
+        else "qdrant/qdrant@sha256:d18c8e5061be3eaea2f53fbee1f0bf0382dc59cbb9b7112e41ffcc937ec14220"
     )
     collection = "qm_security_" + secrets.token_hex(8)
     secret = secrets.token_urlsafe(48)

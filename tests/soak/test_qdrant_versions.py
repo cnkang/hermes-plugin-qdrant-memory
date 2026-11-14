@@ -1,6 +1,9 @@
 """Keep the Docker test server and installed client on the reviewed release pair."""
 
 import shlex
+import sys
+import tomllib
+from importlib.metadata import version as installed_version
 from pathlib import Path
 
 import pytest
@@ -10,6 +13,11 @@ from scripts.soak.prepare import QDRANT_IMAGE
 
 ROOT = Path(__file__).resolve().parents[2]
 CLIENT_PIN = "qdrant-client==1.20.0"
+CONTROLLED_CLIENT = "1.20.0"
+SERVER_VERSION = "1.20.1"
+PREVIOUS_SERVER_IMAGE = (
+    "qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2"
+)
 LANES = (
     (
         "ci",
@@ -72,11 +80,50 @@ def test_server_lanes_use_one_reviewed_qdrant_pair():
     """Version drift must fail CI instead of producing an ignored warning."""
     assert (
         QDRANT_IMAGE
-        == "qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2"
+        == "qdrant/qdrant@sha256:d18c8e5061be3eaea2f53fbee1f0bf0382dc59cbb9b7112e41ffcc937ec14220"
     )
     documents = workflows()
     assert_lane_versions(documents)
     assert documents["soak"]["env"]["PYTHONWARNINGS"] == "error:Qdrant client version:UserWarning"
+
+
+def test_controlled_lock_resolves_and_the_lane_installed_it():
+    """The controlled lock, the resolved lock and the installed client must agree."""
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+    assert CLIENT_PIN in requirements
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    resolved = {
+        package["version"] for package in lock["package"] if package["name"] == "qdrant-client"
+    }
+    assert resolved == {CONTROLLED_CLIENT}
+    assert installed_version("qdrant-client") == CONTROLLED_CLIENT
+
+
+def test_public_declarations_share_one_runtime_range():
+    """The package and both manifests must declare the same client boundary."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    declared = [
+        item for item in project["project"]["dependencies"] if item.startswith("qdrant-client")
+    ]
+    assert declared == ["qdrant-client>=1.15,<2"]
+    for name in ("plugin.yaml", "qdrant_memory/plugin.yaml"):
+        manifest = YAML(typ="safe").load((ROOT / name).read_text(encoding="utf-8"))
+        assert [
+            item for item in manifest["python_dependencies"] if item.startswith("qdrant-client")
+        ] == declared
+
+
+def test_upgrade_rehearsal_pins_both_server_versions():
+    """The patch-upgrade rehearsal keeps the previous image as a real fixture."""
+    sys.path.insert(0, str(ROOT))
+    try:
+        from scripts import qdrant_upgrade_rehearsal as rehearsal
+    finally:
+        sys.path.pop(0)
+    assert rehearsal.CURRENT_IMAGE == QDRANT_IMAGE
+    assert rehearsal.PREVIOUS_IMAGE == PREVIOUS_SERVER_IMAGE
+    assert rehearsal.PREVIOUS_IMAGE != rehearsal.CURRENT_IMAGE
+    assert (rehearsal.PREVIOUS_VERSION, rehearsal.CURRENT_VERSION) == ("1.20.0", SERVER_VERSION)
 
 
 @pytest.mark.parametrize(

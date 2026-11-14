@@ -39,7 +39,6 @@ from .ownership import WriterBusyError, WriterLease
 from .progress import MigrationProgress, report
 from .qdrant_store import (
     IDENTITY_ID,
-    INDEXES,
     CollectionCompatibilityError,
     CollectionNotInitializedError,
     QdrantStore,
@@ -67,6 +66,12 @@ from .reset import (
 )
 from .retry import safe_error
 from .runtime import Runtime
+from .upgrade import (
+    UpgradeBlockedError,
+    UpgradePlanStaleError,
+    UpgradeRefusedError,
+    UpgradeStateError,
+)
 
 
 class InitializationChoiceRequiredError(ValueError):
@@ -187,7 +192,52 @@ def register_cli(subparser):
         "--dry-run", action="store_true", help="Report the scope count without deleting"
     )
     parser.set_defaults(func=main)
+    register_upgrade(commands)
     return commands
+
+
+def register_upgrade(commands):
+    """Register the operator-only policy upgrade routes shared by both entries.
+
+    The MCP server never exposes these: they take locks, write a recovery point
+    and commit an effective policy, which belongs to an operator maintenance
+    window rather than to a memory tool call.
+    """
+    parser = commands.add_parser("upgrade", help="Plan, apply, resume or inspect a policy upgrade")
+    actions = parser.add_subparsers(dest="upgrade_action", required=True)
+    planning = actions.add_parser("plan", help="Inspect a destination and save a plan")
+    planning.add_argument("--collection")
+    planning.add_argument(
+        "--dry-run", action="store_true", help="Report the plan without saving it"
+    )
+    planning.add_argument(
+        "--policy",
+        type=Path,
+        help="Protected destination policy for an enrolled destination",
+    )
+    for name in ("apply", "resume"):
+        action_parser = actions.add_parser(name, help=f"{name.capitalize()} a saved plan")
+        action_parser.add_argument("--collection")
+        action_parser.add_argument("--plan", required=True, help="Saved plan identifier")
+        action_parser.add_argument(
+            "--confirm-writers-isolated",
+            action="store_true",
+            help="Confirm every other writer of this remote destination is stopped",
+        )
+        action_parser.add_argument(
+            "--accept-operator-backup",
+            action="store_true",
+            help="Confirm you hold a provider-side snapshot for this remote destination",
+        )
+        action_parser.add_argument(
+            "--policy",
+            type=Path,
+            help="Protected destination policy for an enrolled destination",
+        )
+    status = actions.add_parser("status", help="Read the saved plan without opening storage")
+    status.add_argument("--collection")
+    for action in actions.choices.values():
+        action.set_defaults(func=main)
 
 
 def scope_arguments(parser):
@@ -207,6 +257,11 @@ def summary(manifest):
 
 def local_status(cfg, home):
     """Describe local configuration without contacting external services."""
+    from . import strategy
+
+    namespace = ledger_namespace(cfg)
+    policy = strategy.effective_summary(home, namespace, cfg)
+    record = strategy.read(home, namespace) or {}
     return {
         "provider": "qdrant-memory",
         "mode": cfg["qdrant"]["mode"],
@@ -214,6 +269,12 @@ def local_status(cfg, home):
         "llm_mode": cfg["llm"]["mode"],
         "embedding": {k: embedding_config(cfg)[k] for k in ("provider", "model", "dimensions")},
         "ledger_exists": (home / "qdrant-memory" / "state.db").exists(),
+        "policy": {
+            "status": policy["status"],
+            "generation": record.get("generation"),
+            "index_policy_version": (policy["effective"] or {}).get("index_policy_version"),
+            "recall_policy_version": (policy["effective"] or {}).get("recall_policy_version"),
+        },
     }
 
 
@@ -264,18 +325,26 @@ def diagnostic_status(store, ledger, cfg, command):
         "embedding_fingerprint": store.embedder.fingerprint,
     }
     if command in {"doctor", "init"}:
-        info = store.client.get_collection(store.collection)
-        index_ok = cfg["qdrant"]["mode"] == "embedded" or set(INDEXES) <= set(info.payload_schema)
-        result.update(
-            hermes_contract="MemoryProvider + scoped threads + ctx.llm",
-            embedding_probe="OK",
-            payload_indexes="not applicable to embedded"
-            if cfg["qdrant"]["mode"] == "embedded"
-            else index_ok,
-            llm_mode=cfg["llm"]["mode"],
-            ok=index_ok,
-        )
+        result.update(_readiness(store, ledger, cfg))
     return result
+
+
+def _readiness(store, ledger, cfg):
+    """Report the observed policy state without changing the collection."""
+    from . import strategy
+
+    mode = cfg["qdrant"]["mode"]
+    observation = strategy.observe(store.client, store.collection, mode)
+    index_ok = observation["status"] in {strategy.EQUIVALENT, strategy.NOT_APPLICABLE}
+    home = Path(ledger.path).parent.parent
+    return {
+        "hermes_contract": "MemoryProvider + scoped threads + ctx.llm",
+        "embedding_probe": "OK",
+        "payload_indexes": observation,
+        "policy": strategy.effective_summary(home, ledger_namespace(cfg), cfg)["status"],
+        "llm_mode": cfg["llm"]["mode"],
+        "ok": index_ok,
+    }
 
 
 def execute_command(args, runtime, source, progress=None):
@@ -720,11 +789,10 @@ def _command_config(args, home, config_loader, progress):
     if getattr(args, "oversize", None):
         overrides["limits"] = {"oversize_policy": args.oversize}
     report(progress, "Loading configuration")
-    return (config_loader or load_config)(
-        home,
-        overrides,
-        resolve_secrets=args.qdrant_command not in {"status", "discard-unadmitted-event"},
+    read_only = args.qdrant_command in {"status", "discard-unadmitted-event"} or (
+        args.qdrant_command == "upgrade" and args.upgrade_action == "status"
     )
+    return (config_loader or load_config)(home, overrides, resolve_secrets=not read_only)
 
 
 def _migration_input(args, cfg, home, progress):
@@ -875,6 +943,10 @@ def _run(args, home=None, progress=None, *, config_loader=None, secret_reader=No
     cfg = _command_config(args, home, config_loader, progress)
     if command == "status":
         return local_status(cfg, home)
+    if command == "upgrade":
+        from .upgrade import describe
+
+        return describe(home, cfg, args)
     source = _migration_input(args, cfg, home, progress)
     if command == "migrate" and args.dry_run:
         return _migration_preview(source[0], cfg, progress)
@@ -1032,6 +1104,10 @@ _ERROR_DETAILS = (
         "Choose a different collection, or explicitly clear and rebuild with "
         "hermes qdrant-memory init --existing clear (deletes all collection data).",
     ),
+    (UpgradeStateError, "upgrade_state", _EXCEPTION_TEXT),
+    (UpgradePlanStaleError, "upgrade_plan_stale", _EXCEPTION_TEXT),
+    (UpgradeRefusedError, "upgrade_refused", _EXCEPTION_TEXT),
+    (UpgradeBlockedError, "upgrade_blocked", _EXCEPTION_TEXT),
 )
 
 
