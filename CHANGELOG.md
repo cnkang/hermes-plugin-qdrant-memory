@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 0.7.0
+
+- Add a Runtime policy record per profile destination with the target policy,
+  the accepted effective policy and the observed payload indexes. Point
+  payloads, `schema_version=1` and the embedding identity sentinel are
+  unchanged.
+- Add shared operator routes `upgrade plan|apply|resume|status` to
+  `hermes qdrant-memory` and `qdrant-memory --home`. `plan` and `status` never
+  initialize, write the Ledger, run recovery, create an index or change
+  configuration.
+- Stop backfilling payload indexes on an existing collection during startup, a
+  plain `init` or an MCP connection. `upgrade apply` creates only missing
+  managed indexes, reports conflicting ones as blockers and never removes an
+  extra index.
+- Take an embedded recovery point at the stopped-writer boundary, reopen the
+  copy and compare the point count before continuing. A remote apply requires
+  explicit writer isolation and an operator-owned snapshot.
+- Record `planned`, `applying`, `verifying`, `ready` and `failed` with
+  per-step checkpoints, so a crash between an action and its record is detected
+  on resume instead of repeated.
+- Recommend and rehearse Qdrant Server 1.20.1 as the self-hosted baseline while
+  the controlled environment keeps `qdrant-client==1.20.0`. The published
+  dependency range is unchanged.
+- Add a patch-upgrade rehearsal that keeps one volume across the 1.20.0 and
+  1.20.1 images, copies the stopped volume and restores it into a fresh one.
+
 ## 0.6.3
 
 - Declare the existing Hermes compatibility floor (`>=0.21.5`) in both native
