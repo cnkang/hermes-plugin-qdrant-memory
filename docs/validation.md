@@ -23,6 +23,10 @@ Local validation for the policy upgrade release:
   and compare every point with a destination initialized directly at the target
   version. Interruption tests cover a crash after a step succeeded but before
   its record was written.
+- Published-wheel upgrades in isolated environments: public 0.6.1 and public
+  0.6.3 profiles kept their Qdrant point, ledger event, shared credential and
+  profile sentinel after installing the built 0.7.0 wheel. Both runs reported
+  `verify` PASS with one stored record.
 
 The 52 skips are the same environment gates as earlier releases: authenticated
 Cloud, a prepared local model cache, Windows-only paths, the Pi quality driver

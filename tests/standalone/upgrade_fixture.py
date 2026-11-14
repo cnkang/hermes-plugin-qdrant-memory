@@ -1,7 +1,9 @@
-"""Two-process public-0.6.1 to built-0.6.3 storage acceptance helper.
+"""Two-process published-to-built storage acceptance helper.
 
 Invoke with an installed Runtime interpreter in isolated mode, first with
-``prepare HOME`` on 0.6.1, then ``verify HOME`` on 0.6.3. HOME must be disposable.
+``prepare HOME VERSION`` on a published release, then ``verify HOME VERSION``
+on the built wheel. HOME must be disposable. The version is explicit so the
+acceptance fails when the rebuilt wheel is not the one under test.
 """
 
 import hashlib
@@ -21,7 +23,8 @@ from qdrant_memory.shared_service import SharedOwner
 
 def main():
     """Keep the same Qdrant data, ledger, profile and credential through upgrade."""
-    phase, directory = sys.argv[1:]
+    phase, directory = sys.argv[1:3]
+    expected = sys.argv[3] if len(sys.argv) > 3 else "0.6.1"
     home = Path(directory).resolve()
     home.mkdir(parents=True, exist_ok=True)
     os.environ["HOME"] = str(home)
@@ -52,16 +55,16 @@ def main():
             "assistant": "ack",
         }
         if phase == "prepare":
-            assert version("hermes-plugin-qdrant-memory") == "0.6.1"
+            assert version("hermes-plugin-qdrant-memory") == expected
             assert lifecycle.submit(token, event)["status"] == "COMMITTED"
             rows = owner.call(token, "qdrant_memory_search", {"query": "Iris"})["memories"]
             (home / "expected.json").write_text(json.dumps(rows))
             (home / "profile-sentinel").write_text("preserve this synthetic profile")
         elif phase == "verify":
-            assert version("hermes-plugin-qdrant-memory") == "0.6.3"
-            expected = json.loads((home / "expected.json").read_text())
+            assert version("hermes-plugin-qdrant-memory") == expected
+            expected_rows = json.loads((home / "expected.json").read_text())
             rows = owner.call(token, "qdrant_memory_search", {"query": "Iris"})["memories"]
-            assert rows == expected
+            assert rows == expected_rows
             assert lifecycle.inspect(token, "upgrade-turn")["status"] == "COMMITTED"
             assert lifecycle.retry(token, "upgrade-turn")["status"] == "COMMITTED"
             assert (home / "profile-sentinel").read_text() == "preserve this synthetic profile"
