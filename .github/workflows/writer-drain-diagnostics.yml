@@ -9,28 +9,14 @@ permissions:
 
 jobs:
   probe:
-    name: Probe (${{ matrix.os }}, Python ${{ matrix.python }})
-    runs-on: ${{ matrix.os }}
+    name: Windows Python ${{ matrix.python }} shard ${{ matrix.shard }} (20 runs)
+    runs-on: windows-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            python: '3.14'
-            repeats: 10
-            pytest_runs: 2
-            suite_runs: 1
-          - os: windows-latest
-            python: '3.11'
-            repeats: 10
-            pytest_runs: 2
-            suite_runs: 1
-          - os: ubuntu-24.04
-            python: '3.14'
-            repeats: 3
-            pytest_runs: 1
-            suite_runs: 0
+        python: ['3.11', '3.14']
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -74,28 +60,33 @@ jobs:
       - name: Verify actual test interpreter
         shell: bash
         run: python scripts/verify_ci_python.py --expected "${{ matrix.python }}" --environment "$GITHUB_WORKSPACE/.test-env" --distribution hermes-plugin-qdrant-memory --require-distribution
-      - name: Run repeated writer probes
+      - name: Run 20 independent durability tests without retries
         shell: bash
         env:
           PYTHONPATH: ${{ github.workspace }}/.host
         run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            TEST_PYTHON="$GITHUB_WORKSPACE/.test-env/Scripts/python.exe"
-          else
-            TEST_PYTHON="$GITHUB_WORKSPACE/.test-env/bin/python"
-          fi
+          TEST_PYTHON="$GITHUB_WORKSPACE/.test-env/Scripts/python.exe"
           echo "runner=$RUNNER_OS python=$($TEST_PYTHON -V)"
-          for index in $(seq 1 ${{ matrix.repeats }}); do
-            echo "=== probe $index"
-            "$TEST_PYTHON" -m scripts.diagnose_writer_drain
+          mkdir -p writer-results
+          failed=0
+          for index in $(seq 1 20); do
+            echo "=== shard ${{ matrix.shard }} iteration $index of 20"
+            if "$TEST_PYTHON" -m pytest \
+              tests/test_provider.py::test_100_fast_turns_no_loss_and_replay \
+              -q --durations=0 --junitxml="writer-results/results-$index.xml"; then
+              echo "ITERATION_RESULT shard=${{ matrix.shard }} iteration=$index exit=0"
+            else
+              code=$?
+              echo "ITERATION_RESULT shard=${{ matrix.shard }} iteration=$index exit=$code"
+              failed=$((failed + 1))
+            fi
           done
-          for index in $(seq 1 ${{ matrix.pytest_runs }}); do
-            echo "=== pytest $index"
-            "$TEST_PYTHON" -m pytest tests/test_provider.py \
-              -k test_100_fast_turns_no_loss_and_replay -q --durations=0
-          done
-          for index in $(seq 1 ${{ matrix.suite_runs }}); do
-            echo "=== full suite $index"
-            HERMES_QDRANT_REQUIRE_HOST_SYNC=1 "$TEST_PYTHON" -m pytest -q tests \
-              --ignore=tests/test_remote_qdrant.py
-          done
+          echo "SHARD_RESULT python=${{ matrix.python }} shard=${{ matrix.shard }} runs=20 failed=$failed"
+          test "$failed" -eq 0
+      - name: Preserve every iteration result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: writer-python-${{ matrix.python }}-shard-${{ matrix.shard }}
+          path: writer-results/*.xml
+          if-no-files-found: error
