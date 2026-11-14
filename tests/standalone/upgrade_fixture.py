@@ -1,7 +1,7 @@
-"""Two-process public-0.6.1 to built-0.6.2 storage acceptance helper.
+"""Two-process public-0.6.1 to built-0.6.3 storage acceptance helper.
 
 Invoke with an installed Runtime interpreter in isolated mode, first with
-``prepare HOME`` on 0.6.1, then ``verify HOME`` on 0.6.2. HOME must be disposable.
+``prepare HOME`` on 0.6.1, then ``verify HOME`` on 0.6.3. HOME must be disposable.
 """
 
 import hashlib
@@ -58,7 +58,7 @@ def main():
             (home / "expected.json").write_text(json.dumps(rows))
             (home / "profile-sentinel").write_text("preserve this synthetic profile")
         elif phase == "verify":
-            assert version("hermes-plugin-qdrant-memory") == "0.6.2"
+            assert version("hermes-plugin-qdrant-memory") == "0.6.3"
             expected = json.loads((home / "expected.json").read_text())
             rows = owner.call(token, "qdrant_memory_search", {"query": "Iris"})["memories"]
             assert rows == expected

@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_VERSION = "0.6.2"
+RUNTIME_VERSION = "0.6.3"
 RUNTIME_RELEASE_REF = f"v{RUNTIME_VERSION}"
-LATEST_PUBLISHED_RUNTIME_REF = "v0.6.1"
+LATEST_PUBLISHED_RUNTIME_REF = "v0.6.2"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
 ACTIVE_INSTALL_DOCS = {
@@ -127,10 +127,13 @@ def test_current_runtime_is_the_recommended_installation(recommended_installatio
 def test_recommended_install_pins_the_published_release(recommended_installation):
     """Keep the recommended Hermes install on the versioned Runtime release."""
     _, commands = recommended_installation
+    assert any(
+        f"'refs/tags/{RUNTIME_RELEASE_REF}^{{}}'" in command[0]
+        for command in commands
+        if command and command[0].startswith("RUNTIME_SHA=")
+    )
     installs = [command for command in commands if command[:3] == ["hermes", "plugins", "install"]]
-    assert installs == [
-        ["hermes", "plugins", "install", REPOSITORY_URL, "--ref", RUNTIME_RELEASE_REF]
-    ]
+    assert installs == [["hermes", "plugins", "install", REPOSITORY_URL, "--ref", "$RUNTIME_SHA"]]
 
 
 def test_pinned_install_preserves_the_profile_and_guided_setup(recommended_installation):
@@ -142,9 +145,10 @@ def test_pinned_install_preserves_the_profile_and_guided_setup(recommended_insta
         "install",
         REPOSITORY_URL,
         "--ref",
-        RUNTIME_RELEASE_REF,
+        "$RUNTIME_SHA",
     ]
     install_index = commands.index(install)
+    assert ["test", "${#RUNTIME_SHA}", "-eq", "40"] in commands[:install_index]
     assert ["export", "HERMES_HOME=/absolute/path/to/your/hermes-profile"] in commands[
         :install_index
     ]
@@ -170,7 +174,7 @@ def test_demo_defaults_to_published_runtime_and_source_ref_waits_for_tag():
     assert source_match, "remote-owner.md must pin a versioned Runtime source tag"
     assert source_match.group(1) == RUNTIME_RELEASE_REF
     normalized = " ".join(remote_owner.split())
-    assert "only after the `v0.6.2` Git tag has been pushed" in normalized
+    assert "only after the `v0.6.3` Git tag has been pushed" in normalized
     assert (
         "before tag creation, validate from a clean checkout pinned to the final main SHA"
         in normalized

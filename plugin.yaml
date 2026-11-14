@@ -1,7 +1,8 @@
 name: qdrant-memory
-version: 0.6.2
+version: 0.6.3
 description: Durable native memory with Qdrant and Hermes LLM extraction
 manifest_version: 2
+requires_hermes: ">=0.21.5"
 author: Kang Liu
 license: MIT
 homepage: https://github.com/cnkang/hermes-plugin-qdrant-memory
