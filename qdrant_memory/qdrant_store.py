@@ -92,6 +92,15 @@ def scope_filter(scope, extra=None):
     return m.Filter(must=conditions)
 
 
+def is_local_client(client):
+    """Report whether this client owns a local Qdrant engine instead of a server."""
+    from qdrant_client.local.qdrant_local import QdrantLocal
+
+    return isinstance(client, QdrantLocal) or isinstance(
+        getattr(client, "_client", None), QdrantLocal
+    )
+
+
 class QdrantStore:
     """Store named dense vectors with strict pipeline identity and scope boundaries."""
 
@@ -101,7 +110,13 @@ class QdrantStore:
         self.collection = cfg["qdrant"]["collection"]
 
     def initialize(self, create=True, reset=False):
-        """Probe embeddings and create or validate the named dense collection contract."""
+        """Probe embeddings and create or validate the named dense collection contract.
+
+        Payload indexes are created only for a collection this call creates.
+        An existing collection keeps exactly the indexes it already has: normal
+        startup, a plain ``init`` and MCP connection must never backfill indexes
+        behind an operator's back. ``upgrade apply`` owns that reconciliation.
+        """
         from qdrant_client import models as m
 
         vectors = self.embedder.embed_documents(["embedding dimension probe"])
@@ -111,11 +126,25 @@ class QdrantStore:
             if not create:
                 raise ValueError("Reset requires collection creation")
             self._reset_collection()
+        created = not self.client.collection_exists(self.collection)
         self._ensure_collection(create, distance)
         self._validate_schema(distance)
         self._validate_identity(vectors[0], create)
-        if create and self.cfg["qdrant"]["mode"] != "embedded":
+        if created and create and not is_local_client(self.client):
             self._create_indexes()
+            self._validate_indexes()
+
+    def _validate_indexes(self):
+        """Re-read the payload schema and refuse an index that did not land."""
+        from . import strategy
+
+        observation = strategy.observe(self.client, self.collection, "remote")
+        drift = strategy.managed_drift(observation)
+        if drift:
+            fields = ", ".join(entry["field"] for entry in drift)
+            raise CollectionCompatibilityError(
+                f"Payload index creation did not take effect for: {fields}"
+            )
 
     def _reset_collection(self):
         """Delete and reopen the target collection so a reset starts empty."""
