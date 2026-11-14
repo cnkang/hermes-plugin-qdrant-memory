@@ -21,6 +21,7 @@ def test_manifests_declare_v2_metadata_and_match_runtime_dependencies():
 
     assert str(manifest["version"]) == project["version"] == VERSION
     assert manifest["manifest_version"] == 2
+    assert manifest["requires_hermes"] == ">=0.21.5"
     assert manifest["author"] == "Kang Liu"
     assert manifest["license"] == "MIT"
     assert manifest["homepage"] == "https://github.com/cnkang/hermes-plugin-qdrant-memory"
@@ -42,6 +43,7 @@ def test_hermes_manifest_parser_surfaces_v2_metadata():
 
     assert parsed is not None
     assert parsed.manifest_version == 2
+    assert parsed.requires_hermes == ">=0.21.5"
     assert parsed.author == "Kang Liu"
     assert parsed.license == "MIT"
     assert parsed.homepage == "https://github.com/cnkang/hermes-plugin-qdrant-memory"

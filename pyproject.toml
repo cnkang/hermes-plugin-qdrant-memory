@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-plugin-qdrant-memory"
-version = "0.6.2"
+version = "0.6.3"
 description = "Durable Qdrant memory for Hermes, standalone CLI and local MCP"
-readme = "docs/releases/0.6.2.md"
+readme = "docs/releases/0.6.3.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"

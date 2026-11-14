@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_VERSION = "0.6.2"
+RUNTIME_VERSION = "0.6.3"
 RUNTIME_RELEASE_REF = f"v{RUNTIME_VERSION}"
-LATEST_PUBLISHED_RUNTIME_REF = "v0.6.1"
+LATEST_PUBLISHED_RUNTIME_REF = "v0.6.2"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
 ACTIVE_INSTALL_DOCS = {
@@ -170,7 +170,7 @@ def test_demo_defaults_to_published_runtime_and_source_ref_waits_for_tag():
     assert source_match, "remote-owner.md must pin a versioned Runtime source tag"
     assert source_match.group(1) == RUNTIME_RELEASE_REF
     normalized = " ".join(remote_owner.split())
-    assert "only after the `v0.6.2` Git tag has been pushed" in normalized
+    assert "only after the `v0.6.3` Git tag has been pushed" in normalized
     assert (
         "before tag creation, validate from a clean checkout pinned to the final main SHA"
         in normalized

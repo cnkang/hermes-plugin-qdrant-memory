@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.6.3
+
+- Declare the existing Hermes compatibility floor (`>=0.21.5`) in both native
+  plugin manifests so directory and packaged installations enforce it as well
+  as the Catalog. Runtime behavior and storage formats are unchanged.
+
 ## 0.6.2
 
 - Retry durably failed Owner events by validating the persisted operation plan

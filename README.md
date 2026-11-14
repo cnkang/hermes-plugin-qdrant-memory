@@ -18,21 +18,21 @@ Keep one writer per destination. See [shared setup](docs/shared-memory/README.md
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.6.2** adds receipt-scoped retries for durably failed lifecycle events. The Owner validates the saved event plan and requeues only its failed operations; quarantined events stay operator-controlled.
+> **Runtime 0.6.3** explicitly declares the existing Hermes compatibility floor (`>=0.21.5`) in both native manifests. It retains 0.6.2 receipt-scoped retries: the optional Owner validates the saved event plan and requeues only its failed operations; quarantined events stay operator-controlled.
 > Secure file handling supports macOS, Linux and supported Windows local volumes.
 > Handoff stays `HANDOFF_PENDING` with `native_verified=false` until the native client confirms adoption.
 > Scoped deletion also supersedes quarantined events before later retries.
-> It retains official FastEmbed 0.9.1. This guide selects Runtime 0.6.2.
+> It retains official FastEmbed 0.9.1. This guide selects Runtime 0.6.3.
 > Check its availability on
-> [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.2/) before installation.
+> [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.6.3/) before installation.
 > If a package mirror has not indexed the release yet, use the
-> [published 0.6.1 guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.6.1/README.md)
+> [published 0.6.2 guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.6.2/README.md)
 > or install the versioned source tag below.
 > The generic MCP distribution and managed launcher select their own exact Runtime
 > dependency and are released independently.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.
-> See [release notes](docs/releases/0.6.2.md) and [validation](docs/validation.md).
+> See [release notes](docs/releases/0.6.3.md) and [validation](docs/validation.md).
 
 Keep readable exports and original
 harness data when switching tools. Prefer supported harness import/export APIs.
@@ -58,7 +58,7 @@ as a community-maintained plugin.
 ## How it works
 
 For non-Hermes users, install in a private Python 3.11+
-environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.6.2'` (omit `[mcp]`
+environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.6.3'` (omit `[mcp]`
 for CLI only). `qdrant-memory` is the CLI and `mcp` is its server subcommand.
 Standalone does not require Hermes. See [setup and quick start](docs/standalone.md).
 MCP-focused agents may instead use the [metadata-only distribution](https://github.com/cnkang/qdrant-memory-mcp).
@@ -157,7 +157,7 @@ to serve `qwen3-embedding:4b`.
 
 Choose the **active profile's** home explicitly. Do not reuse another profile's data.
 
-**Recommended: install the version-locked Runtime 0.6.2 source through the Hermes CLI.**
+**Recommended: install the version-locked Runtime 0.6.3 source through the Hermes CLI.**
 
 This immutable source revision includes opt-in shared memory. It does not depend
 on a PyPI release or a catalog update.
@@ -167,7 +167,7 @@ export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # Start Ollama if it is not running. Keep its service available.
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref v0.6.2   # Runtime 0.6.2 release
+  --ref v0.6.3   # Runtime 0.6.3 release
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
@@ -184,7 +184,7 @@ environment. Omit `--ref` to track `main`, the development line.
 **Catalog option: install the version reviewed by the official Hermes Plugin Catalog.**
 
 The Catalog selects its own fixed revision, which may be older than Runtime
-0.6.2. To use the current release, including opt-in shared memory, follow the
+0.6.3. To use the current release, including opt-in shared memory, follow the
 recommended version-locked installation above.
 
 ```bash
@@ -215,7 +215,7 @@ import and registration. For development installs, see
 [development setup](docs/development.md).
 
 The release notes, supported Hermes/Python versions and the current
-limitations are in the [0.6.2 release notes](docs/releases/0.6.2.md)
+limitations are in the [0.6.3 release notes](docs/releases/0.6.3.md)
 and [CI guide](docs/ci.md).
 
 Restart the conversation after configuration changes. Existing system prompts
