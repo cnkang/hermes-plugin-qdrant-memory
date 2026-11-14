@@ -408,7 +408,7 @@ def test_plan_is_stale_when_only_the_embedding_identity_moves(tmp_path):
         upgrade.describe(tmp_path, moved, plan_args(upgrade_action="apply", plan=state["plan_id"]))
 
 
-def test_unreadable_policy_record_is_corrupt_not_missing(tmp_path):
+def test_unreadable_policy_record_is_corrupt_not_missing(tmp_path, monkeypatch):
     """A record that exists but cannot be read must block, not look like a fresh install."""
     cfg = embedded_cfg(tmp_path)
     store = legacy_store(tmp_path, cfg)
@@ -417,24 +417,36 @@ def test_unreadable_policy_record_is_corrupt_not_missing(tmp_path):
     path = strategy.record_path(tmp_path, namespace)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{}")
-    path.chmod(0)
-    try:
-        assert strategy.read(tmp_path, namespace) == {"corrupt": True}
-        result, _ = run_plan(tmp_path, cfg, dry_run=True)
-        assert "policy_corrupt" in {item["code"] for item in result["blockers"]}
-    finally:
-        path.chmod(0o600)
+    original = Path.read_text
+
+    def unreadable(self, *args, **kwargs):
+        """Simulate a permission failure without relying on POSIX mode bits."""
+        if self == path:
+            raise PermissionError("denied")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", unreadable)
+    assert strategy.read(tmp_path, namespace) == {"corrupt": True}
+    result, _ = run_plan(tmp_path, cfg, dry_run=True)
+    assert "policy_corrupt" in {item["code"] for item in result["blockers"]}
 
 
-def test_symlinked_strategy_directory_is_refused(tmp_path):
+def test_symlinked_strategy_directory_is_refused(tmp_path, monkeypatch):
     """A substituted policy directory must not receive control-plane records."""
     cfg = embedded_cfg(tmp_path)
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    (tmp_path / "qdrant-memory").mkdir()
-    (tmp_path / "qdrant-memory" / "strategy").symlink_to(elsewhere)
+    target = tmp_path / "qdrant-memory" / "strategy"
+    target.mkdir(parents=True)
+    (target / "sentinel").write_text("untouched")
+    original = Path.is_symlink
+
+    def substituted(self):
+        """Report the managed directory as a substituted path on every platform."""
+        return True if self == target else original(self)
+
+    monkeypatch.setattr(Path, "is_symlink", substituted)
     with pytest.raises(ValueError, match="symlink"):
         strategy.write(tmp_path, ledger_namespace(cfg), {"schema": 1})
+    assert (target / "sentinel").read_text() == "untouched"
 
 
 def test_activation_reverifies_before_committing(tmp_path, monkeypatch):
