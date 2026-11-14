@@ -358,28 +358,29 @@ def plan_destination(home, cfg, *, persist=True, destination_policy=None):
             version = {"version": None, "source": "unavailable"}
         else:
             observed, version = _probe(cfg, target)
+        plan = _plan_body(cfg, namespace, target, observed, source)
+        state = {
+            "schema": 1,
+            "plan_id": digest(plan),
+            "created_at": now(),
+            "updated_at": now(),
+            "phase": PHASE_PLANNED,
+            "plan": plan,
+            "observed": observed,
+            "ledger": snapshot,
+            "backend_version": version,
+            "blockers": [],
+            "steps": {name: {"status": "pending"} for name in STEPS},
+            "warnings": _warnings(cfg, source, observed),
+        }
+        state["blockers"] = _blockers(observed, snapshot, plan)
+        if persist:
+            # Publish before the next writer can start, so a plan can never
+            # overwrite progress another pass recorded after the lease.
+            strategy.write_state(home, namespace, STATE_SUFFIX, state)
+        return state
     finally:
         lease.close()
-    plan = _plan_body(cfg, namespace, target, observed, source)
-    plan_id = digest(plan)
-    state = {
-        "schema": 1,
-        "plan_id": plan_id,
-        "created_at": now(),
-        "updated_at": now(),
-        "phase": PHASE_PLANNED,
-        "plan": plan,
-        "observed": observed,
-        "ledger": snapshot,
-        "backend_version": version,
-        "blockers": [],
-        "steps": {name: {"status": "pending"} for name in STEPS},
-        "warnings": _warnings(cfg, source, observed),
-    }
-    state["blockers"] = _blockers(observed, snapshot, plan)
-    if persist:
-        strategy.write_state(home, namespace, STATE_SUFFIX, state)
-    return state
 
 
 def _warnings(cfg, source, observed):
@@ -650,6 +651,9 @@ def _verify(ctx):
 
 def _activate(ctx):
     """Commit the effective policy at a new generation after verification."""
+    # A resume can reach activation after verify was recorded done. Re-prove the
+    # indexes, identity, checkpoint and filters before committing the policy.
+    _verify(ctx)
     previous = strategy.read(ctx.home, ctx.namespace) or {}
     generation = int(previous.get("generation") or 0) + 1
     record = {
@@ -751,7 +755,11 @@ def _guarded_apply(args, home, cfg, namespace):
             context = _Context(home, cfg, namespace, state, client, args)
             context.state["phase"] = PHASE_APPLYING
             context.save()
-            _run_steps(context)
+            try:
+                _run_steps(context)
+            except Exception as exc:
+                _record_failure(home, namespace, exc)
+                raise
             return _result(context)
         finally:
             # An embedded backup closes and reopens the store, so close the
@@ -818,11 +826,7 @@ def apply_plan(args, home, cfg):
     from .config import ledger_namespace
 
     namespace = ledger_namespace(cfg)
-    try:
-        return _guarded_apply(args, home, cfg, namespace)
-    except Exception as exc:
-        _record_failure(home, namespace, exc)
-        raise
+    return _guarded_apply(args, home, cfg, namespace)
 
 
 def _record_failure(home, namespace, exc):
@@ -847,13 +851,37 @@ def _retryable(exc):
     return retryable(exc)
 
 
-def status(home, cfg):
-    """Report the saved plan and checkpoint without opening the destination."""
+def _saved_state(home, cfg):
+    """Locate the saved plan for this destination, even without a resolved endpoint."""
     from .config import ledger_namespace
 
-    namespace = ledger_namespace(cfg)
-    state = strategy.read_state(home, namespace, STATE_SUFFIX)
-    effective = strategy.effective_summary(home, namespace, cfg)
+    try:
+        namespace = ledger_namespace(cfg)
+    except Exception:
+        namespace = None
+    if namespace:
+        state = strategy.read_state(home, namespace, STATE_SUFFIX)
+        if state:
+            return state, namespace
+    matches = [
+        record
+        for record in strategy.saved_upgrades(home)
+        if record.get("plan", {}).get("collection") == cfg["qdrant"]["collection"]
+        and record.get("plan", {}).get("backend") == cfg["qdrant"]["mode"]
+    ]
+    if len(matches) == 1:
+        return matches[0], matches[0].get("plan", {}).get("namespace")
+    return None, namespace
+
+
+def status(home, cfg):
+    """Report the saved plan and checkpoint without opening the destination."""
+    state, namespace = _saved_state(home, cfg)
+    effective = (
+        strategy.effective_summary(home, namespace, cfg)
+        if namespace
+        else {"status": "unknown", "target": strategy.desired_policy(cfg)}
+    )
     if not state:
         return {
             "phase": "unplanned",

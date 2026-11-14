@@ -789,11 +789,10 @@ def _command_config(args, home, config_loader, progress):
     if getattr(args, "oversize", None):
         overrides["limits"] = {"oversize_policy": args.oversize}
     report(progress, "Loading configuration")
-    return (config_loader or load_config)(
-        home,
-        overrides,
-        resolve_secrets=args.qdrant_command not in {"status", "discard-unadmitted-event"},
+    read_only = args.qdrant_command in {"status", "discard-unadmitted-event"} or (
+        args.qdrant_command == "upgrade" and args.upgrade_action == "status"
     )
+    return (config_loader or load_config)(home, overrides, resolve_secrets=not read_only)
 
 
 def _migration_input(args, cfg, home, progress):

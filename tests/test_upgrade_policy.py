@@ -9,6 +9,7 @@ from qdrant_client import QdrantClient
 
 from qdrant_memory import strategy, upgrade
 from qdrant_memory.config import ledger_namespace
+from qdrant_memory.ownership import WriterBusyError
 from qdrant_memory.qdrant_store import IDENTITY_ID, QdrantStore
 
 from .helpers import Embedder, config
@@ -364,6 +365,119 @@ def test_plan_accepts_a_protected_destination_policy(tmp_path, monkeypatch):
     args.policy = Path("policy.json")
     upgrade.describe(tmp_path, cfg, args)
     assert seen["policy"] == {"marker": True}
+
+
+def test_status_reads_the_saved_plan_without_cloud_credentials(tmp_path):
+    """A cloud status call must not need the API key it never uses."""
+    cfg = config(
+        qdrant={
+            "mode": "cloud",
+            "url": "https://fixture.cloud.qdrant.io",
+            "collection": "fixture_cloud",
+        }
+    )
+    namespace = ledger_namespace(cfg)
+    state = {
+        "schema": 1,
+        "plan_id": "b" * 64,
+        "phase": upgrade.PHASE_PLANNED,
+        "plan": {
+            "namespace": namespace,
+            "collection": "fixture_cloud",
+            "backend": "cloud",
+        },
+        "blockers": [],
+        "steps": {},
+    }
+    strategy.write_state(tmp_path, namespace, upgrade.STATE_SUFFIX, state)
+    unresolved = dict(cfg)
+    unresolved["qdrant"] = dict(cfg["qdrant"], url=None)
+    result = upgrade.status(tmp_path, unresolved)
+    assert result["phase"] == upgrade.PHASE_PLANNED
+    assert result["plan_id"] == "b" * 64
+
+
+def test_plan_is_stale_when_only_the_embedding_identity_moves(tmp_path):
+    """Instruction and normalization changes also invalidate a saved plan."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    moved = embedded_cfg(tmp_path, embedding={"send_dimensions": True})
+    with pytest.raises(upgrade.UpgradePlanStaleError):
+        upgrade.describe(tmp_path, moved, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+
+
+def test_unreadable_policy_record_is_corrupt_not_missing(tmp_path):
+    """A record that exists but cannot be read must block, not look like a fresh install."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    namespace = ledger_namespace(cfg)
+    path = strategy.record_path(tmp_path, namespace)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{}")
+    path.chmod(0)
+    try:
+        assert strategy.read(tmp_path, namespace) == {"corrupt": True}
+        result, _ = run_plan(tmp_path, cfg, dry_run=True)
+        assert "policy_corrupt" in {item["code"] for item in result["blockers"]}
+    finally:
+        path.chmod(0o600)
+
+
+def test_symlinked_strategy_directory_is_refused(tmp_path):
+    """A substituted policy directory must not receive control-plane records."""
+    cfg = embedded_cfg(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (tmp_path / "qdrant-memory").mkdir()
+    (tmp_path / "qdrant-memory" / "strategy").symlink_to(elsewhere)
+    with pytest.raises(ValueError, match="symlink"):
+        strategy.write(tmp_path, ledger_namespace(cfg), {"schema": 1})
+
+
+def test_activation_reverifies_before_committing(tmp_path, monkeypatch):
+    """Activation re-proves the post-conditions instead of trusting a saved marker.
+
+    The verify step calls the action captured in the step table, so the patched
+    module function is reached only by the extra activation check.
+    """
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    calls = []
+    original = upgrade._verify
+
+    def counting(ctx):
+        """Count verification passes and delegate to the real check."""
+        calls.append(1)
+        return original(ctx)
+
+    monkeypatch.setattr(upgrade, "_verify", counting)
+    upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    assert len(calls) == 1
+
+
+def test_failed_acquire_does_not_rewrite_the_checkpoint(tmp_path, monkeypatch):
+    """A second apply that cannot take the lease leaves the owner's state alone."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    before = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+
+    def busy(*args, **kwargs):
+        """Refuse the lease like a concurrent writer."""
+        raise WriterBusyError("busy")
+
+    monkeypatch.setattr(upgrade.WriterLease, "for_config", busy)
+    with pytest.raises(WriterBusyError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    after = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    assert after == before
 
 
 def test_status_is_read_only_and_reports_the_saved_plan(tmp_path):

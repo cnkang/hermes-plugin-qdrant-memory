@@ -156,11 +156,20 @@ def read(url):
 
 
 def backup(name, target):
-    """Stop one container and copy its volume to a host directory."""
+    """Stop one container and copy its volume to a host directory.
+
+    A stop that fails means the write boundary was never established, so the
+    rehearsal must stop instead of copying a possibly live volume.
+    """
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True)
-    run("docker", "stop", name, check=False)
+    running = run("docker", "inspect", "-f", "{{.State.Running}}", name).strip()
+    if running == "true":
+        run("docker", "stop", name)
+    state = run("docker", "inspect", "-f", "{{.State.Running}}", name).strip()
+    if state != "false":
+        raise RehearsalError("Cannot copy a volume while its container is running")
     run("docker", "cp", f"{name}:/qdrant/storage/.", str(target))
 
 

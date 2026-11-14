@@ -102,6 +102,7 @@ def config_digest(cfg):
             key: emb.get(key)
             for key in ("mode", "provider", "model", "dimensions", "distance", "base_url")
         },
+        "embedding_fingerprint": fingerprint(emb),
         "search": cfg["search"],
         "dedupe": cfg["dedupe"],
         "limits": cfg["limits"],
@@ -132,12 +133,16 @@ def read(home, namespace):
     of treating the destination as freshly installed.
     """
     path = record_path(home, namespace)
+    if path.is_symlink():
+        return {"corrupt": True}
     try:
-        if path.is_symlink() or not path.is_file():
+        if not path.is_file():
             return None
         raw = path.read_text(encoding="utf-8")
-    except OSError:
+    except FileNotFoundError:
         return None
+    except OSError:
+        return {"corrupt": True}
     try:
         value = json.loads(raw)
     except ValueError:
@@ -150,8 +155,10 @@ def read(home, namespace):
 def _publish(path, value):
     """Atomically publish one private JSON record under the profile directory."""
     directory_path = path.parent
-    checked_absolute_path(directory_path.parent)
+    checked_absolute_path(directory_path)
     directory_path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if directory_path.is_symlink() or not directory_path.is_dir():
+        raise ValueError("Managed paths cannot contain symlinks")
     descriptor, temporary = tempfile.mkstemp(prefix=".policy-", dir=directory_path)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
@@ -173,6 +180,24 @@ def write(home, namespace, record):
 def write_state(home, namespace, suffix, record):
     """Atomically publish one control-plane record such as an upgrade plan."""
     return _publish(state_path(home, namespace, suffix), record)
+
+
+def saved_upgrades(home):
+    """Return every saved upgrade record without creating a directory."""
+    directory_path = directory(home)
+    if not directory_path.is_dir() or directory_path.is_symlink():
+        return []
+    records = []
+    for path in sorted(directory_path.glob("*.upgrade.json")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(value, dict):
+            records.append(value)
+    return records
 
 
 def read_state(home, namespace, suffix):
