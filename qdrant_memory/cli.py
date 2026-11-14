@@ -210,6 +210,11 @@ def register_upgrade(commands):
     planning.add_argument(
         "--dry-run", action="store_true", help="Report the plan without saving it"
     )
+    planning.add_argument(
+        "--policy",
+        type=Path,
+        help="Protected destination policy for an enrolled destination",
+    )
     for name in ("apply", "resume"):
         action_parser = actions.add_parser(name, help=f"{name.capitalize()} a saved plan")
         action_parser.add_argument("--collection")

@@ -299,6 +299,73 @@ def test_embedded_backup_copies_the_ledger_and_profile_config(tmp_path):
     assert (backup / "qdrant" / "meta.json").is_file()
 
 
+def test_apply_rechecks_the_ledger_under_the_lease(tmp_path):
+    """Work that appears after planning blocks the apply instead of being ignored."""
+    from qdrant_memory.ledger import Ledger
+    from qdrant_memory.reset import begin_scope_delete, scope_delete_intent
+
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    try:
+        begin_scope_delete(ledger, scope_delete_intent("alice", None))
+    finally:
+        ledger.close()
+    with pytest.raises(upgrade.UpgradeBlockedError) as blocked:
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    assert "scope_delete_intent" in {item["code"] for item in blocked.value.blockers}
+    assert strategy.read(tmp_path, ledger_namespace(cfg)) is None
+
+
+def test_backup_verification_uses_the_collection_under_upgrade(tmp_path):
+    """A recovery copy is checked against the upgraded collection, not the first one."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    other = embedded_cfg(tmp_path)
+    other["qdrant"]["collection"] = "another_collection"
+    extra = QdrantStore(QdrantClient(path=cfg["qdrant"]["path"]), other, Embedder())
+    extra.initialize()
+    extra.close()
+    _, state = run_plan(tmp_path, cfg)
+    result = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"])
+    )
+    assert result["steps"]["backup"]["points"] == 3
+    assert result["steps"]["backup"]["verified"] is True
+
+
+def test_plan_accepts_a_protected_destination_policy(tmp_path, monkeypatch):
+    """An enrolled destination can be planned with its protected policy file."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    seen = {}
+
+    class Lease:
+        """Record the destination policy handed to the writer lease."""
+
+        @classmethod
+        def for_config(cls, home, cfg_value, *, destination_policy=None):
+            """Capture the binding and return a no-op lease."""
+            seen["policy"] = destination_policy
+            return cls()
+
+        def close(self):
+            """Release nothing."""
+
+    monkeypatch.setattr(upgrade, "WriterLease", Lease)
+    monkeypatch.setattr("qdrant_memory.cli._destination_policy", lambda args: {"marker": True})
+    args = plan_args(dry_run=True)
+    args.policy = Path("policy.json")
+    upgrade.describe(tmp_path, cfg, args)
+    assert seen["policy"] == {"marker": True}
+
+
 def test_status_is_read_only_and_reports_the_saved_plan(tmp_path):
     """Status never opens the destination or writes a control-plane file."""
     cfg = embedded_cfg(tmp_path)

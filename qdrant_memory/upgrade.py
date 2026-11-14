@@ -342,7 +342,7 @@ def _unreachable(cfg, exc):
     }
 
 
-def plan_destination(home, cfg, *, persist=True):
+def plan_destination(home, cfg, *, persist=True, destination_policy=None):
     """Inspect one destination and save the plan that ``apply`` must reference."""
     from .config import ledger_namespace
 
@@ -350,7 +350,7 @@ def plan_destination(home, cfg, *, persist=True):
     target = strategy.desired_policy(cfg)
     snapshot = _ledger_snapshot(home, namespace)
     source = strategy.effective_summary(home, namespace, cfg)
-    lease = WriterLease.for_config(home, cfg)
+    lease = WriterLease.for_config(home, cfg, destination_policy=destination_policy)
     try:
         if cfg["qdrant"]["mode"] == "embedded" and not Path(cfg["qdrant"]["path"]).is_dir():
             # Opening the local client would create the directory; a plan must not.
@@ -526,7 +526,7 @@ def _backup_embedded(ctx):
                 shutil.copy2(source, target / name)
     finally:
         ctx.client = build_client(ctx.cfg)
-    reopened = _reopen_backup(target / "qdrant")
+    reopened = _reopen_backup(target / "qdrant", ctx.collection)
     if reopened != checkpoint.get("points"):
         raise UpgradeRefusedError(
             "The recovery point does not reopen with the planned point count; "
@@ -540,14 +540,15 @@ def _backup_embedded(ctx):
     }
 
 
-def _reopen_backup(path):
-    """Open a copied embedded store and return its point count."""
+def _reopen_backup(path, collection):
+    """Open a copied embedded store and count the collection under upgrade."""
     client = build_client({"qdrant": {"mode": "embedded", "path": str(path)}})
     try:
-        names = [item.name for item in client.get_collections().collections]
-        if not names:
-            return 0
-        return _memory_count(client, names[0])
+        if not client.collection_exists(collection):
+            raise UpgradeRefusedError(
+                "The recovery point does not contain the collection under upgrade."
+            )
+        return _memory_count(client, collection)
     finally:
         client.close()
 
@@ -739,6 +740,9 @@ def _guarded_apply(args, home, cfg, namespace):
         raise UpgradeBlockedError(state["blockers"])
     lease = WriterLease.for_config(home, cfg, destination_policy=_destination_policy(args))
     try:
+        current = _unresolved_work(_ledger_snapshot(home, namespace))
+        if current:
+            raise UpgradeBlockedError(current)
         client = build_client(cfg)
         context = None
         try:
@@ -884,7 +888,12 @@ def describe(home, cfg, args):
     if action == "status":
         return status(home, cfg)
     if action == "plan":
-        state = plan_destination(home, cfg, persist=not getattr(args, "dry_run", False))
+        state = plan_destination(
+            home,
+            cfg,
+            persist=not getattr(args, "dry_run", False),
+            destination_policy=_destination_policy(args),
+        )
         return {
             "ok": not state["blockers"],
             "phase": state["phase"],
