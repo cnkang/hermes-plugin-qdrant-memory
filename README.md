@@ -166,8 +166,10 @@ on a PyPI release or a catalog update.
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # Start Ollama if it is not running. Keep its service available.
+RUNTIME_SHA="$(git ls-remote https://github.com/cnkang/hermes-plugin-qdrant-memory 'refs/tags/v0.6.3^{}' | cut -f1)"
+test "${#RUNTIME_SHA}" -eq 40
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref v0.6.3   # Runtime 0.6.3 release
+  --ref "$RUNTIME_SHA"
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
@@ -175,7 +177,8 @@ hermes qdrant-memory init
 ```
 
 For this version-locked form, `hermes plugins install` checks out the versioned
-release ref, and `hermes plugins enable` prepares the declared dependencies
+release's full commit SHA (current Hermes rejects tags in `--ref`), and
+`hermes plugins enable` prepares the declared dependencies
 through Hermes PM. The
 [releases page](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)
 lists the release commits. Do not pip-install into a managed Hermes

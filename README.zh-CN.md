@@ -138,15 +138,18 @@ Hermes 版本为 v0.21.5（v2026.9.24）。[CI 服务](docs/ci.md)页面记录�
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # 如果 Ollama 尚未运行，先启动服务并保持其可用。
+RUNTIME_SHA="$(git ls-remote https://github.com/cnkang/hermes-plugin-qdrant-memory 'refs/tags/v0.6.3^{}' | cut -f1)"
+test "${#RUNTIME_SHA}" -eq 40
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref v0.6.3   # Runtime 0.6.3 release
+  --ref "$RUNTIME_SHA"
 hermes plugins enable qdrant-memory
 hermes memory setup
 hermes config set memory.provider qdrant-memory
 hermes qdrant-memory init
 ```
 
-对于这种固定版本形式，`hermes plugins install` 会检出版本化 release ref，
+对于这种固定版本形式，`hermes plugins install` 会检出发布版的完整提交 SHA
+（当前 Hermes 的 `--ref` 不接受 tag），
 `hermes plugins enable` 通过 Hermes PM 准备声明的依赖。
 [releases 页面](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)
 列出各发布提交。不要向受管理的 Hermes 环境执行 pip install。省略 `--ref` 即跟踪

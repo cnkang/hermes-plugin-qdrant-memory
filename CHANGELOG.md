@@ -7,6 +7,8 @@
 - Declare the existing Hermes compatibility floor (`>=0.21.5`) in both native
   plugin manifests so directory and packaged installations enforce it as well
   as the Catalog. Runtime behavior and storage formats are unchanged.
+- Resolve release tags to full commit SHAs in the Hermes installation examples
+  and demo, matching the current CLI's immutable `--ref` contract.
 
 ## 0.6.2
 

@@ -28,7 +28,7 @@
 #   Default DEMO_HOME: $HOME/.hermes-qdrant-demo
 #
 # The script drives Hermes non-interactively:
-#   hermes plugins install <url> --ref <release-tag> [--yes-deps]
+#   hermes plugins install <url> --ref <full-commit-sha> [--yes-deps]
 #       --yes-deps consents to dependency preparation at install time and is
 #       passed only when the CLI supports it. Interactive shells can answer
 #       the prompt instead; the minimum supported Hermes prepares
@@ -39,7 +39,7 @@
 
 set -euo pipefail
 DEMO_HOME="${1:-$HOME/.hermes-qdrant-demo}"
-# Default to the latest published Runtime; override only with an existing ref.
+# Default to the latest published Runtime; override with a release tag or full SHA.
 RUNTIME_RELEASE_REF="${RUNTIME_RELEASE_REF:-v0.6.2}"
 # Local CLI sessions attribute memory to the host's local session identity
 # (uid:<os-uid>). The inventory and deletion commands must use the same scope.
@@ -102,7 +102,16 @@ memories_total() {
 }
 
 say "Install the reviewed implementation preview through the Hermes CLI"
-install_args=(https://github.com/cnkang/hermes-plugin-qdrant-memory --ref "$RUNTIME_RELEASE_REF")
+runtime_repo=https://github.com/cnkang/hermes-plugin-qdrant-memory
+if [[ "$RUNTIME_RELEASE_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  runtime_sha="$RUNTIME_RELEASE_REF"
+else
+  runtime_sha=$(git ls-remote --exit-code "$runtime_repo" \
+    "refs/tags/$RUNTIME_RELEASE_REF" "refs/tags/$RUNTIME_RELEASE_REF^{}" \
+    | awk 'NR == 1 {sha = $1} /\^\{\}$/ {sha = $1} END {print sha}')
+fi
+[[ "$runtime_sha" =~ ^[0-9a-fA-F]{40}$ ]] || fail "release tag did not resolve to a full SHA"
+install_args=("$runtime_repo" --ref "$runtime_sha")
 install_help=$(hermes plugins install --help 2>/dev/null || true)
 # --yes-deps exists on newer Hermes; older releases prepare dependencies by
 # default and reject the unknown flag. --force reinstalls over an existing
