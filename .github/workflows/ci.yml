@@ -107,7 +107,7 @@ jobs:
           - name: latest-main
     services:
       qdrant:
-        image: qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2
+        image: qdrant/qdrant@sha256:d18c8e5061be3eaea2f53fbee1f0bf0382dc59cbb9b7112e41ffcc937ec14220
         ports: ['6333:6333', '6334:6334']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -185,6 +185,12 @@ jobs:
             scripts/run_tests.sh "$GITHUB_WORKSPACE/tests" -j 1 --file-retries 0 -- --tb=short \
               --qdrant-test-url=http://127.0.0.1:6333 --qdrant-test-container="$QDRANT_CONTAINER"
           fi
+      - name: Rehearse Qdrant patch upgrade on one volume
+        if: matrix.host.name == 'minimum' && matrix.python == '3.11'
+        run: |
+          "$GITHUB_WORKSPACE/.test-env/bin/python" scripts/qdrant_upgrade_rehearsal.py \
+            --workdir "$RUNNER_TEMP/qdrant-upgrade" \
+            --report "$RUNNER_TEMP/qdrant-upgrade/report.json"
       - name: Build and install wheel through PM
         if: matrix.host.name != 'latest-main'
         working-directory: .pm-host
