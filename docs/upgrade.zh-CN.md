@@ -1,3 +1,7 @@
+> **版本边界：**本页描述加入本地 Ledger 写入水位后的 main 分支。已发布的
+> Runtime 0.7.1 wheel 不包含该护栏。使用 0.7.1 时请遵循
+> [已发布 0.7.1 升级指南](upgrade-0.7.1.zh-CN.md)。
+
 # 用 upgrade 命令纳管 Qdrant 策略
 
 Runtime 0.7.1 把过去隐含的三件事分开：

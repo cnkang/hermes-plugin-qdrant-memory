@@ -29,6 +29,7 @@
 > 通用 MCP 发行包和托管启动器各自选择精确的 Runtime 依赖，分别发布。
 > Hermes Plugin Catalog 使用独立审核的固定版本（不可变），PyPI 发布不会自动升级目录中的版本。
 > 每个目的地仍只允许一个写入者。
+> 该版本早于 main 分支的本地 Ledger 写入水位。若备份后有 writer 恢复写入，请遵循[已发布 0.7.1 升级指南](docs/upgrade-0.7.1.zh-CN.md)并替换计划，不要 resume。
 > 参见[发布说明](docs/releases/0.7.1.zh-CN.md)和[验证记录](docs/validation.md)。
 
 切换工具时保留可阅读的导出和原始 harness 数据。优先使用各 harness 支持的导入导出
