@@ -32,6 +32,7 @@ Keep one writer per destination. See [shared setup](docs/shared-memory/README.md
 > dependency and are released independently.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.
+> This release predates the main-branch local Ledger write watermark. If any writer resumed after the backup, follow the [published 0.7.1 upgrade guide](docs/upgrade-0.7.1.md) and replace the plan; do not resume.
 > See [release notes](docs/releases/0.7.1.md) and [validation](docs/validation.md).
 
 Keep readable exports and original

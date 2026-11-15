@@ -186,3 +186,23 @@ def test_pypi_description_installs_the_version_being_built():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     description = (ROOT / project["readme"]).read_text(encoding="utf-8")
     assert f"hermes-plugin-qdrant-memory[mcp]=={project['version']}" in description
+
+
+def test_published_071_guide_separates_the_unreleased_write_watermark():
+    """Do not attribute the main-branch watermark to the 0.7.1 wheel."""
+    english = (ROOT / "docs/upgrade-0.7.1.md").read_text(encoding="utf-8")
+    chinese = (ROOT / "docs/upgrade-0.7.1.zh-CN.md").read_text(encoding="utf-8")
+    assert "published Runtime 0.7.1 wheel" in english
+    assert "does **not**\nrecord a local Ledger write watermark" in english
+    assert "upgrade plan --replace" in english
+    assert "已发布的 Runtime 0.7.1 wheel" in chinese
+    assert "**不会**记录本地 Ledger 写入水位" in chinese
+    assert "upgrade plan --replace" in chinese
+
+    for name in ("README.md", "README.zh-CN.md"):
+        contents = (ROOT / name).read_text(encoding="utf-8")
+        assert "docs/upgrade-0.7.1" in contents, name
+    for name in ("docs/upgrade.md", "docs/upgrade.zh-CN.md"):
+        contents = (ROOT / name).read_text(encoding="utf-8")
+        assert "Version boundary" in contents or "版本边界" in contents, name
+        assert "upgrade-0.7.1" in contents, name
