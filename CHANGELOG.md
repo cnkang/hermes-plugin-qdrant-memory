@@ -17,7 +17,7 @@
   record was saved. Verify its point count before reuse, and do not create a
   second recovery point or a second policy generation.
 - Block `upgrade plan`, `apply` and `resume` on an admitted Shared Owner
-  receipt with no queued event. Reuse the existing read-only interlock,
+  receipt whose event is not terminal. Reuse the existing read-only interlock,
   preserve terminal-event handling, and keep the existing reset, scoped-delete,
   failed-event and quarantined-event blockers.
 - Recheck the Shared Owner state after taking the lease. After the existing

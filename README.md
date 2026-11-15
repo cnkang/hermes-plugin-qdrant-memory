@@ -18,7 +18,7 @@ Keep one writer per destination. See [shared setup](docs/shared-memory/README.md
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.7.1** preserves the recovery record of an interrupted upgrade and blocks a policy apply while the Shared Owner still has an admitted receipt without a queued event. Run `upgrade plan`, review the blockers and the index status, then `upgrade apply` inside a short maintenance window. The default stays dense with float32 vectors: no collection move, no re-embedding and no memory identity change.
+> **Runtime 0.7.1** preserves the recovery record of an interrupted upgrade and blocks a policy apply while the Shared Owner still has an admitted receipt whose event is not terminal. Run `upgrade plan`, review the blockers and the index status, then `upgrade apply` inside a short maintenance window. The default stays dense with float32 vectors: no collection move, no re-embedding and no memory identity change.
 > Secure file handling supports macOS, Linux and supported Windows local volumes.
 > Handoff stays `HANDOFF_PENDING` with `native_verified=false` until the native client confirms adoption.
 > Scoped deletion also supersedes quarantined events before later retries.

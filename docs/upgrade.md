@@ -112,12 +112,13 @@ against the live profile. A changed configuration, collection, destination or
 point count is a stale plan. Use `upgrade plan --replace` to keep the old
 recovery record and plan again. Do not force the old plan.
 
-Before and after the lease, `apply` and `resume` read the Shared Owner state.
-An admitted lifecycle receipt with no queued event blocks the pass. So does an
-incomplete shared request. Complete the existing Owner recovery flow first.
-Maintenance commands never clear receipts, re-extract a turn or replay a pending
-event for you. After recovery, resume the plan when it is still valid, or use
-`upgrade plan --replace` when it is stale.
+After taking the lease, `apply` and `resume` read the Shared Owner state.
+An admitted lifecycle receipt whose event has not reached a terminal state
+blocks the pass. So does an incomplete shared request. Complete the existing
+Owner recovery flow first: stop the Owner, run the operator `retry` against its
+profile, then restart it. Maintenance commands never clear receipts, re-extract
+a turn or replay a pending event for you. After recovery, resume the plan when
+it is still valid, or use `upgrade plan --replace` when it is stale.
 
 ## Status
 
@@ -144,7 +145,7 @@ profile. `next` distinguishes apply, resume and `plan --replace`.
 | `index_conflict` | Inspect the field type. Runtime never deletes or rebuilds a conflicting index |
 | `pending_operations`, `failed_events`, `quarantined_events` | Clear the work with the existing recovery path first |
 | `reset_intent`, `scope_delete_intent`, `shared_pending` | Resume or resolve the destructive intent first |
-| `shared_owner_receipt` | Complete the existing Owner recovery flow. Do not clear the receipt or replay the event by hand |
+| `shared_owner_receipt` | Stop the Owner, run the operator `retry` against its profile, then restart it. Do not clear the receipt or replay the event by hand |
 | `backend_unreachable` | Fix connectivity and permissions, then plan again |
 | `policy_corrupt` | The saved policy record is unreadable. Inspect it before any apply |
 

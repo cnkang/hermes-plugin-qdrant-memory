@@ -98,10 +98,11 @@ qdrant-memory --home /path/to/profile upgrade resume --plan PLAN_ID
 配置、集合、destination 或点数变化都视为过期 plan。使用 `upgrade plan --replace`
 保留旧恢复记录后重新 plan，不要强行沿用。
 
-`apply` 与 `resume` 在取锁前后都会读取 Shared Owner 状态。已落盘、但关联事件尚未
-入队的生命周期回执会阻止该轮操作；未完成的 shared request 同样阻止。先完成既有
-Owner 恢复流程。维护命令不会自动清理回执、重新提取或重放待处理事件。恢复完成后，
-原 plan 仍有效则 resume；已过期则使用 `upgrade plan --replace`。
+取得 lease 后，`apply` 与 `resume` 会读取 Shared Owner 状态。已落盘、但关联事件
+尚未到达终态的生命周期回执会阻止该轮操作；未完成的 shared request 同样阻止。
+先完成既有 Owner 恢复流程：停止 Owner，对其 profile 运行运维 `retry`，再重启。
+维护命令不会自动清理回执、重新提取或重放待处理事件。恢复完成后，原 plan 仍有效
+则 resume；已过期则使用 `upgrade plan --replace`。
 
 ## Status
 
@@ -126,7 +127,7 @@ resume 与 `plan --replace`。
 | `index_conflict` | 核对字段类型。Runtime 从不删除或重建冲突索引 |
 | `pending_operations`、`failed_events`、`quarantined_events` | 先用既有恢复路径处理 |
 | `reset_intent`、`scope_delete_intent`、`shared_pending` | 先恢复或解除这些破坏性意图 |
-| `shared_owner_receipt` | 完成既有 Owner 恢复流程。不要手动清理回执或重放事件 |
+| `shared_owner_receipt` | 停止 Owner，对其 profile 运行运维 `retry`，再重启。不要手动清理回执或重放事件 |
 | `backend_unreachable` | 修好连通性与权限后重新 plan |
 | `policy_corrupt` | 策略记录不可读，先人工检查再 apply |
 
