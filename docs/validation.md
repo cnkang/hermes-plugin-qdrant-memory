@@ -49,6 +49,11 @@ Local validation for the upgrade-recovery and Shared Owner receipt fixes:
   same workflow and passed on the candidate commit.
 
 Packaging run: https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/43671470086
+- Public PyPI wheel revalidation: after `v0.7.1` was visible, a fresh
+  environment installed `hermes-plugin-qdrant-memory[mcp]==0.7.1` from PyPI.
+  It upgraded the same published MCP 0.3.3 / Runtime 0.6.2 profile and kept the
+  original IDs, payloads, scope and fingerprint. The deleted memory stayed
+  absent, a new write was visible, and `pip check` passed.
 
 The 52 skips are the same environment gates as earlier releases. They cover
 authenticated Cloud, a prepared local model cache, Windows-only paths, the Pi
