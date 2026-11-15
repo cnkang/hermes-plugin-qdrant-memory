@@ -682,6 +682,47 @@ def test_failed_operation_is_unresolved_work_not_a_watermark_advance(tmp_path):
     assert "failed_operations" in {item["code"] for item in blocked.value.blockers}
 
 
+def test_reused_plan_merges_current_failed_operations_without_duplicates(tmp_path):
+    """A failed write found while reusing a plan replaces the older saved entry."""
+    from qdrant_memory.ledger import Ledger
+    from qdrant_memory.models import Scope, point_id
+    from qdrant_memory.runtime import Runtime
+
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    scope = Scope("alice", None)
+    identifier = point_id(scope, "fixture", "alicecats preferred")
+    store = QdrantStore(QdrantClient(path=cfg["qdrant"]["path"]), cfg, Embedder())
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    rt = Runtime(cfg, store, ledger)
+    try:
+        old = store.get(identifier, scope)
+        key = rt.operation(identifier, "UPSERT", dict(old.payload))
+        ledger.failure("operations", key, RuntimeError("simulated write failure"), terminal=True)
+    finally:
+        ledger.close()
+        store.close()
+    state["phase"] = upgrade.PHASE_FAILED
+    state["blockers"] = [
+        {"code": "failed_operations", "detail": "stale saved detail"},
+        {"code": "policy_corrupt", "detail": "keep this saved blocker"},
+    ]
+    strategy.write_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX, state)
+    result = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan"))
+    assert result["reused_existing_plan"] is True
+    assert result["ok"] is False
+    codes = [item["code"] for item in result["blockers"]]
+    assert codes.count("failed_operations") == 1
+    assert "policy_corrupt" in codes
+    detail = next(
+        item["detail"] for item in result["blockers"] if item["code"] == "failed_operations"
+    )
+    assert "may have reached the destination" in detail
+
+
 def test_completed_destination_reset_invalidates_the_saved_boundary(tmp_path):
     """A cleared Ledger starts a new epoch even before new writes land."""
     from qdrant_memory.ledger import Ledger
@@ -702,6 +743,37 @@ def test_completed_destination_reset_invalidates_the_saved_boundary(tmp_path):
     assert (
         status["write_watermark"]["reset_epoch"] > state["ledger"]["write_watermark"]["reset_epoch"]
     )
+
+
+def test_destination_reset_epoch_is_scoped_to_the_namespace(tmp_path):
+    """Resetting another destination must not expire this plan."""
+    from qdrant_memory.ledger import Ledger
+
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    namespace = ledger_namespace(cfg)
+    other = Ledger(tmp_path, "another-destination")
+    try:
+        other.clear_destination()
+    finally:
+        other.close()
+    status = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="status"))
+    assert status["plan_stale"] is False
+    assert status["write_watermark"]["reset_epoch"] == 0
+
+    own = Ledger(tmp_path, namespace)
+    try:
+        own.clear_destination()
+    finally:
+        own.close()
+    status = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="status"))
+    assert status["plan_stale"] is True
+    assert status["plan_stale_reason"] == "write_since_plan"
+    assert status["write_watermark"]["reset_epoch"] == 1
+    assert state["ledger"]["write_watermark"]["reset_epoch"] == 0
 
 
 def test_old_plan_without_a_watermark_requires_replacement(tmp_path):
