@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 0.7.1
+
+- Keep an interrupted upgrade's phase, failure, step records and recovery-point
+  reference when an operator runs `upgrade plan` again. Return the existing
+  plan identifier with resume guidance instead of silently replanning.
+- Add `upgrade plan --replace`. It archives the old plan and its backup
+  reference before a new plan is saved, so a stale plan never requires deleting
+  a control-plane file by hand.
+- Re-read and revalidate the saved plan under the writer lease for `apply` and
+  `resume`. A plan replaced while the lock was acquired is refused instead of
+  overwritten.
+- Adopt an embedded backup that exists on disk after a crash before its step
+  record was saved. Verify its point count before reuse, and do not create a
+  second recovery point or a second policy generation.
+- Block `upgrade plan`, `apply` and `resume` on an admitted Shared Owner
+  receipt with no queued event. Reuse the existing read-only interlock,
+  preserve terminal-event handling, and keep the existing reset, scoped-delete,
+  failed-event and quarantined-event blockers.
+- Recheck the Shared Owner state after taking the lease. After the existing
+  Owner recovery flow clears the receipt, resume the same plan when it is still
+  valid.
+- Verify the committed policy record against the target and the live
+  destination before reporting an interrupted activation as complete.
+
 ## 0.7.0
 
 - Add a Runtime policy record per profile destination with the target policy,

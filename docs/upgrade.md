@@ -1,6 +1,6 @@
 # Adopt a Qdrant policy with the upgrade commands
 
-Runtime 0.7.0 separates three things that used to be implicit:
+Runtime 0.7.1 separates three things that used to be implicit:
 
 - the **target** policy derived from the profile configuration;
 - the **effective** policy this destination accepted;
@@ -46,6 +46,13 @@ The result carries:
 create an index, run recovery, change configuration or download a model. Use
 `--dry-run` to read the same result without saving it.
 
+A plan that already started and has not reached `ready` keeps its phase,
+failure, step records and recovery point. A normal `plan` reports that record,
+its `plan_id` and the next command instead of overwriting it. Resume the saved
+plan. If the plan is stale and cannot continue, use `upgrade plan --replace`.
+The replacement archives the old plan and its backup reference under the profile
+before it saves a new plan. Do not delete a control-plane file by hand.
+
 An embedded destination needs exclusive access to the local store. If another
 writer holds the lease, the command stops with `writer_busy` and no state
 changes.
@@ -84,7 +91,15 @@ maintenance commands accept with `--policy`.
 | `activate` | Write the effective policy at a new generation |
 
 Each step is idempotent. A crash after a step succeeded but before its record
-was written is detected on `resume` instead of repeating destructive work.
+was written is detected on `resume` instead of repeating destructive work. If
+the embedded backup copy exists but its step record was lost, `resume` verifies
+the copy against the planned point count. It then adopts the existing path.
+It does not create a second recovery point.
+
+`apply` and `resume` take the writer lease before they read the saved plan
+again. If another pass replaced the plan while the lock was acquired, the older
+plan is refused and the newer record is not overwritten. Repeating a finished
+plan reports `already_applied` without a new backup or policy generation.
 
 ## Resume
 
@@ -94,7 +109,15 @@ qdrant-memory --home /path/to/profile upgrade resume --plan PLAN_ID
 
 `resume` accepts the same flags as `apply`. It re-validates the saved plan
 against the live profile. A changed configuration, collection, destination or
-point count is a stale plan. Plan again instead of forcing the old one.
+point count is a stale plan. Use `upgrade plan --replace` to keep the old
+recovery record and plan again. Do not force the old plan.
+
+Before and after the lease, `apply` and `resume` read the Shared Owner state.
+An admitted lifecycle receipt with no queued event blocks the pass. So does an
+incomplete shared request. Complete the existing Owner recovery flow first.
+Maintenance commands never clear receipts, re-extract a turn or replay a pending
+event for you. After recovery, resume the plan when it is still valid, or use
+`upgrade plan --replace` when it is stale.
 
 ## Status
 
@@ -106,7 +129,9 @@ qdrant-memory --home /path/to/profile upgrade status
 safe while a server is unreachable. `unplanned` means no plan exists. `planned`
 means a plan is ready to apply. `applying` and `verifying` mean a pass stopped
 part way. `failed` carries a sanitized failure type. `ready` means the effective
-policy is committed.
+policy is committed. `backup_path` reports a recovery point that is still
+recorded, and `plan_stale` reports whether the saved plan still matches the
+profile. `next` distinguishes apply, resume and `plan --replace`.
 
 ## Blocker reference
 
@@ -119,6 +144,7 @@ policy is committed.
 | `index_conflict` | Inspect the field type. Runtime never deletes or rebuilds a conflicting index |
 | `pending_operations`, `failed_events`, `quarantined_events` | Clear the work with the existing recovery path first |
 | `reset_intent`, `scope_delete_intent`, `shared_pending` | Resume or resolve the destructive intent first |
+| `shared_owner_receipt` | Complete the existing Owner recovery flow. Do not clear the receipt or replay the event by hand |
 | `backend_unreachable` | Fix connectivity and permissions, then plan again |
 | `policy_corrupt` | The saved policy record is unreadable. Inspect it before any apply |
 
