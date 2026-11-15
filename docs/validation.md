@@ -59,8 +59,9 @@ Packaging run: https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/run
   committed Ledger watermark in the plan. A no-write resume reuses the original
   backup; an in-place Runtime update makes `status` report `plan_stale_reason:
   write_since_plan` and `resume` refuse with `upgrade plan --replace`. A failed
-  operation that never committed does not advance the watermark. The isolated
-  suite is 1,538 passed, 52 skipped, including 49 upgrade-policy tests.
+  operation that never committed does not advance the watermark, but it remains
+  an unresolved-work blocker. The isolated suite is 1,539 passed, 52 skipped,
+  including 50 upgrade-policy tests.
 
 - Write-boundary probe against the public PyPI 0.7.1 wheel
   (`0cbb7ed46dbe1eac191e51e076601c2744dc21dd108db03bf17e357b60aea75a`):

@@ -103,6 +103,8 @@ plan 在 writer lease 内创建时还会记录本地 Ledger 写入水位。`appl
 
 - 若 plan 之后没有本地 Runtime 写入提交，resume 沿用同一 plan ID 与原备份。
   已完成的 resume 重复执行不会新增备份，也不会增加策略 generation。
+- 已完成的 destination reset 会推进水位中记录的 Ledger generation；即使之后
+  rowid 数值重复，reset 之前的 plan 也会过期。
 - 若 plan 之后有本地 Runtime 写入提交，或保存的 plan 没有水位，则 plan 过期。
   保持 writer 隔离，运行 `upgrade plan --replace`，在新的停写边界重新取备份，
   再 apply。旧 plan 及其备份引用会归档。不要把旧备份当作新检查点，也不要修改
@@ -132,7 +134,8 @@ qdrant-memory --home /path/to/profile upgrade status
 `failed` 附带脱敏的失败类型；`ready` 表示有效策略已提交。`backup_path` 报告仍被记录的
 恢复点，`plan_stale` 报告已保存的 plan 是否仍匹配当前 profile；`plan_stale_reason`
 为 `destination`、`write_since_plan` 或 `no_watermark`；`write_watermark` 报告当前
-本地 Ledger 操作 rowid；`next` 区分 apply、resume 与 `plan --replace`。
+本地 Ledger 边界的 `max_rowid`、已提交数量和 reset epoch；`next` 区分 apply、
+resume 与 `plan --replace`。
 
 ## Blocker 对照
 
@@ -143,7 +146,7 @@ qdrant-memory --home /path/to/profile upgrade status
 | `dimension_mismatch`、`distance_mismatch`、`vector_datatype` | 不是原地升级，改用兼容集合 |
 | `identity_missing` | 集合无可信 fingerprint，不要原地纳管 |
 | `index_conflict` | 核对字段类型。Runtime 从不删除或重建冲突索引 |
-| `pending_operations`、`failed_events`、`quarantined_events` | 先用既有恢复路径处理 |
+| `pending_operations`、`failed_operations`、`failed_events`、`quarantined_events` | 先用既有恢复路径处理。失败本地写入可能已到达 destination |
 | `reset_intent`、`scope_delete_intent`、`shared_pending` | 先恢复或解除这些破坏性意图 |
 | `shared_owner_receipt` | 重启 Owner，让其生命周期恢复把已准入的计划重新入队。事件已终态失败时，先运行运维 `retry` 再重启。不要手动清理回执 |
 | `plan_stale` | 本地写入越过已保存的停写边界，或 plan 没有水位。保持 writer 隔离，运行 `upgrade plan --replace`，重新取备份后再 apply。不要复用旧恢复点 |
