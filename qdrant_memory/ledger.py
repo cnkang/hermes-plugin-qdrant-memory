@@ -103,6 +103,9 @@ class Ledger:
                 CREATE TABLE IF NOT EXISTS metrics (name TEXT, value REAL, collection TEXT);
                 CREATE TABLE IF NOT EXISTS counters (
                     name TEXT, value INTEGER, collection TEXT, PRIMARY KEY(name,collection));
+                CREATE TABLE IF NOT EXISTS ledger_meta (
+                    collection TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
+                    PRIMARY KEY(collection,key));
                 CREATE TABLE IF NOT EXISTS unattributed_sessions (
                     session_id TEXT, collection TEXT, PRIMARY KEY(session_id,collection));
                 CREATE TABLE IF NOT EXISTS session_provenance (
@@ -183,11 +186,15 @@ class Ledger:
         cleared memory on the next Owner start.
         """
         with self.lock, self.db:
-            # A completed reset invalidates every upgrade plan that pointed at
-            # the previous destination generation. user_version is durable
-            # through VACUUM and is not a table row that this method deletes.
-            epoch = self.db.execute("PRAGMA user_version").fetchone()[0]
-            self.db.execute(f"PRAGMA user_version={int(epoch) + 1}")
+            # A completed reset invalidates only plans for this destination.
+            # Store the epoch outside the tables cleared below so another
+            # namespace's plan stays valid.
+            self.db.execute(
+                "INSERT INTO ledger_meta(collection,key,value) VALUES(?,?,1) "
+                "ON CONFLICT(collection,key) DO UPDATE "
+                "SET value=CAST(ledger_meta.value AS INTEGER)+1",
+                (self.collection, "reset_epoch"),
+            )
             tables = [
                 "events",
                 "operations",

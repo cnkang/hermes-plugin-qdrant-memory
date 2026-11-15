@@ -184,11 +184,21 @@ def _ledger_snapshot(home, namespace):
                 "WHERE collection=? AND status='COMMITTED'",
                 (namespace,),
             ).fetchone()
-            snapshot["reset_epoch"] = db.execute("PRAGMA user_version").fetchone()[0]
+            epoch = 0
+            if "ledger_meta" in tables:
+                row = db.execute(
+                    "SELECT value FROM ledger_meta WHERE collection=? AND key='reset_epoch'",
+                    (namespace,),
+                ).fetchone()
+                try:
+                    epoch = int(row[0]) if row else 0
+                except (TypeError, ValueError):
+                    epoch = 0
+            snapshot["reset_epoch"] = epoch
             snapshot["write_watermark"] = {
                 "max_rowid": committed[0],
                 "committed": committed[1],
-                "reset_epoch": snapshot["reset_epoch"],
+                "reset_epoch": epoch,
             }
         snapshot.update(pending_shared(db, namespace))
         return snapshot
@@ -443,17 +453,16 @@ def _in_progress(state):
     )
 
 
-def _existing_plan_result(state, cfg, namespace, shared, snapshot):
+def _existing_plan_result(state, cfg, namespace, current, snapshot):
     """Report an in-progress plan without overwriting its recovery record."""
     stale_reason = _watermark_stale(state, snapshot)
     stale = _plan_is_stale(state, cfg, namespace) or stale_reason is not None
     plan = state.get("plan") or {}
-    saved = [
-        item
-        for item in state.get("blockers", [])
-        if item.get("code") not in {"shared_pending", "shared_owner_receipt"}
-    ]
-    blockers = saved + list(shared)
+    current_codes = {item.get("code") for item in current}
+    # Recompute live blockers and keep only saved blockers that this pass did
+    # not independently observe. The live detail wins when both exist.
+    saved = [item for item in state.get("blockers", []) if item.get("code") not in current_codes]
+    blockers = saved + list(current)
     if stale_reason:
         detail = (
             "the saved plan has no local write watermark; it cannot prove the "
@@ -522,8 +531,8 @@ def plan_destination(home, cfg, *, persist=True, destination_policy=None, replac
         existing = strategy.read_state(home, namespace, STATE_SUFFIX)
         snapshot = _ledger_snapshot(home, namespace)
         if existing and _in_progress(existing) and not replace:
-            shared = _shared_work(snapshot)
-            return _existing_plan_result(existing, cfg, namespace, shared, snapshot)
+            current = _unresolved_work(snapshot)
+            return _existing_plan_result(existing, cfg, namespace, current, snapshot)
         source = strategy.effective_summary(home, namespace, cfg)
         if cfg["qdrant"]["mode"] == "embedded" and not Path(cfg["qdrant"]["path"]).is_dir():
             # Opening the local client would create the directory; a plan must not.
