@@ -10,8 +10,8 @@ model, or a production deployment.
 
 Local validation for the upgrade-recovery and Shared Owner receipt fixes:
 
-- Python 3.14.7 on macOS arm64: 1,529 passed, 52 environment-gated skips, 0
-  failed across 110 test files. The run was serial (285 s) against the current
+- Python 3.14.7 on macOS arm64: 1,531 passed, 52 environment-gated skips, 0
+  failed across 110 test files. The run was serial (283 s) against the current
   Hermes `main` checkout and a real Qdrant Server container at the reviewed
   1.20.1 digest.
 - Ruff lint and Ruff format check passed across 198 files. The Markdown link
