@@ -98,6 +98,22 @@ qdrant-memory --home /path/to/profile upgrade resume --plan PLAN_ID
 配置、集合、destination 或点数变化都视为过期 plan。使用 `upgrade plan --replace`
 保留旧恢复记录后重新 plan，不要强行沿用。
 
+plan 在 writer lease 内创建时还会记录本地 Ledger 写入水位。`apply` 或 `resume`
+改动任何数据前，会取得同一把 lease 并把当前水位与该记录比较。
+
+- 若 plan 之后没有本地 Runtime 写入提交，resume 沿用同一 plan ID 与原备份。
+  已完成的 resume 重复执行不会新增备份，也不会增加策略 generation。
+- 若 plan 之后有本地 Runtime 写入提交，或保存的 plan 没有水位，则 plan 过期。
+  保持 writer 隔离，运行 `upgrade plan --replace`，在新的停写边界重新取备份，
+  再 apply。旧 plan 及其备份引用会归档。不要把旧备份当作新检查点，也不要修改
+  或删除旧备份。
+- `status` 等只读访问不改变水位；本地 Runtime 写入会改变。水位一致不代表每条
+  payload 逐字节未变，只代表该 profile 的本地写入 Ledger 没有前进。外部 writer、
+  另一台主机或 Cloud 凭据仍可能在不触碰本地 Ledger 的情况下写入。
+
+resume 成功不能证明停写边界全程未破。若无法确认所有 writer 都已停止，应替换
+plan，不要 resume。Cloud 与 Server 目标要在新的停写边界通过服务商重新取备份。
+
 取得 lease 后，`apply` 与 `resume` 会读取 Shared Owner 状态。已落盘、但关联事件
 尚未到达终态的生命周期回执会阻止该轮操作；未完成的 shared request 同样阻止。
 先完成既有 Owner 恢复流程：重启 Owner，让其生命周期恢复把已准入的计划重新入队。
@@ -114,8 +130,9 @@ qdrant-memory --home /path/to/profile upgrade status
 `status` 只读控制面，不打开 destination，因此服务不可达时也能安全查看。
 `unplanned` 表示没有 plan；`planned` 表示可 apply；`applying`、`verifying` 表示中途停止；
 `failed` 附带脱敏的失败类型；`ready` 表示有效策略已提交。`backup_path` 报告仍被记录的
-恢复点，`plan_stale` 报告已保存的 plan 是否仍匹配当前 profile；`next` 区分 apply、
-resume 与 `plan --replace`。
+恢复点，`plan_stale` 报告已保存的 plan 是否仍匹配当前 profile；`plan_stale_reason`
+为 `destination`、`write_since_plan` 或 `no_watermark`；`write_watermark` 报告当前
+本地 Ledger 操作 rowid；`next` 区分 apply、resume 与 `plan --replace`。
 
 ## Blocker 对照
 
@@ -129,6 +146,7 @@ resume 与 `plan --replace`。
 | `pending_operations`、`failed_events`、`quarantined_events` | 先用既有恢复路径处理 |
 | `reset_intent`、`scope_delete_intent`、`shared_pending` | 先恢复或解除这些破坏性意图 |
 | `shared_owner_receipt` | 重启 Owner，让其生命周期恢复把已准入的计划重新入队。事件已终态失败时，先运行运维 `retry` 再重启。不要手动清理回执 |
+| `plan_stale` | 本地写入越过已保存的停写边界，或 plan 没有水位。保持 writer 隔离，运行 `upgrade plan --replace`，重新取备份后再 apply。不要复用旧恢复点 |
 | `backend_unreachable` | 修好连通性与权限后重新 plan |
 | `policy_corrupt` | 策略记录不可读，先人工检查再 apply |
 

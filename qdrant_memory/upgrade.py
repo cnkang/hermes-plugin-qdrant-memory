@@ -149,6 +149,7 @@ def _ledger_snapshot(home, namespace):
         "scope_deletes": 0,
         "shared_requests": 0,
         "owner_receipts": 0,
+        "write_watermark": 0,
     }
     if not path.is_file():
         return snapshot
@@ -170,6 +171,16 @@ def _ledger_snapshot(home, namespace):
         if "qdrant_scope_deletes" in tables:
             snapshot["scope_deletes"] = db.execute(
                 "SELECT COUNT(*) FROM qdrant_scope_deletes WHERE collection=?", (namespace,)
+            ).fetchone()[0]
+        if "operations" in tables:
+            # A committed local operation is the durable evidence of a data
+            # mutation. Its rowid is stable across processes; failed or merely
+            # admitted rows do not advance this boundary. Retention never
+            # removes the newest committed row.
+            snapshot["write_watermark"] = db.execute(
+                "SELECT COALESCE(MAX(rowid),0) FROM operations "
+                "WHERE collection=? AND status='COMMITTED'",
+                (namespace,),
             ).fetchone()[0]
         snapshot.update(pending_shared(db, namespace))
         return snapshot
@@ -382,6 +393,22 @@ def _plan_is_stale(state, cfg, namespace):
     return not _destination_matches(state, cfg, namespace)
 
 
+def _saved_watermark(state):
+    """Return the local operation watermark saved with a plan, if any."""
+    value = (state.get("ledger") or {}).get("write_watermark")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _watermark_stale(state, snapshot):
+    """Explain whether local writes crossed the saved plan boundary."""
+    saved = _saved_watermark(state)
+    if saved is None:
+        return "no_watermark"
+    if snapshot.get("write_watermark", 0) != saved:
+        return "write_since_plan"
+    return None
+
+
 def _in_progress(state):
     """Return whether a saved plan has started and has not reached ready."""
     if state.get("phase") == PHASE_READY:
@@ -393,9 +420,10 @@ def _in_progress(state):
     )
 
 
-def _existing_plan_result(state, cfg, namespace, shared):
+def _existing_plan_result(state, cfg, namespace, shared, snapshot):
     """Report an in-progress plan without overwriting its recovery record."""
-    stale = _plan_is_stale(state, cfg, namespace)
+    stale_reason = _watermark_stale(state, snapshot)
+    stale = _plan_is_stale(state, cfg, namespace) or stale_reason is not None
     plan = state.get("plan") or {}
     saved = [
         item
@@ -403,6 +431,15 @@ def _existing_plan_result(state, cfg, namespace, shared):
         if item.get("code") not in {"shared_pending", "shared_owner_receipt"}
     ]
     blockers = saved + list(shared)
+    if stale_reason:
+        detail = (
+            "the saved plan has no local write watermark; it cannot prove the "
+            "stop-write boundary stayed closed"
+            if stale_reason == "no_watermark"
+            else "local writes were committed after the plan; the recovery point "
+            "no longer describes the live data"
+        )
+        blockers.append({"code": "plan_stale", "detail": detail})
     return {
         "ok": not blockers,
         "phase": state.get("phase"),
@@ -419,6 +456,9 @@ def _existing_plan_result(state, cfg, namespace, shared):
         "steps": state.get("steps", {}),
         "failure": state.get("failure"),
         "backup": (state.get("steps") or {}).get("backup", {}),
+        "plan_stale": stale,
+        "plan_stale_reason": stale_reason,
+        "write_watermark": snapshot.get("write_watermark"),
         "next": "qdrant-memory upgrade plan --replace"
         if stale
         else f"qdrant-memory upgrade resume --plan {state.get('plan_id')}",
@@ -457,10 +497,10 @@ def plan_destination(home, cfg, *, persist=True, destination_policy=None, replac
     lease = WriterLease.for_config(home, cfg, destination_policy=destination_policy)
     try:
         existing = strategy.read_state(home, namespace, STATE_SUFFIX)
-        if existing and _in_progress(existing) and not replace:
-            shared = _shared_work(_ledger_snapshot(home, namespace))
-            return _existing_plan_result(existing, cfg, namespace, shared)
         snapshot = _ledger_snapshot(home, namespace)
+        if existing and _in_progress(existing) and not replace:
+            shared = _shared_work(snapshot)
+            return _existing_plan_result(existing, cfg, namespace, shared, snapshot)
         source = strategy.effective_summary(home, namespace, cfg)
         if cfg["qdrant"]["mode"] == "embedded" and not Path(cfg["qdrant"]["path"]).is_dir():
             # Opening the local client would create the directory; a plan must not.
@@ -974,6 +1014,18 @@ def _guarded_apply(args, home, cfg, namespace):
             state["instance_id"] = uuid.uuid4().hex
             state["legacy_backup"] = True
         snapshot = _ledger_snapshot(home, namespace)
+        stale_reason = _watermark_stale(state, snapshot)
+        if stale_reason:
+            hint = (
+                "The saved plan has no local write watermark, so it cannot prove "
+                "writers stayed stopped. Run `upgrade plan --replace` to archive "
+                "the old plan and recovery point, take a new backup, then apply."
+                if stale_reason == "no_watermark"
+                else "Local writes were committed after the plan. Run "
+                "`upgrade plan --replace` to archive the old plan and recovery "
+                "point, take a new backup, then apply."
+            )
+            raise UpgradePlanStaleError(hint)
         client = build_client(cfg)
         context = None
         try:
@@ -1136,8 +1188,22 @@ def status(home, cfg):
             "effective": effective["status"],
             "next": "qdrant-memory upgrade plan",
         }
+    stale_reason = None
+    watermark = None
     try:
-        stale = bool(namespace) and _plan_is_stale(state, cfg, namespace)
+        if state.get("phase") == PHASE_READY:
+            stale = False
+        elif namespace:
+            snapshot = _ledger_snapshot(home, namespace)
+            watermark = snapshot.get("write_watermark")
+            if _plan_is_stale(state, cfg, namespace):
+                stale = True
+                stale_reason = "destination"
+            else:
+                stale_reason = _watermark_stale(state, snapshot)
+                stale = stale_reason is not None
+        else:
+            stale = False
     except Exception:
         # Status must stay readable without resolved secrets or a reachable endpoint.
         stale = None
@@ -1167,6 +1233,8 @@ def status(home, cfg):
         "failure": state.get("failure"),
         "backup_path": (state.get("steps") or {}).get("backup", {}).get("path"),
         "plan_stale": stale,
+        "plan_stale_reason": stale_reason,
+        "write_watermark": watermark,
         "effective": effective["status"],
         "target": effective["target"],
         "requires_restart": phase == PHASE_READY,
