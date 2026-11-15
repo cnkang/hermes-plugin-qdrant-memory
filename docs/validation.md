@@ -10,14 +10,14 @@ model, or a production deployment.
 
 Local validation for the upgrade-recovery and Shared Owner receipt fixes:
 
-- Python 3.14.7 on macOS arm64: 1,525 passed, 52 environment-gated skips, 0
-  failed across 110 test files. The run was serial (284 s) against the current
+- Python 3.14.7 on macOS arm64: 1,529 passed, 52 environment-gated skips, 0
+  failed across 110 test files. The run was serial (285 s) against the current
   Hermes `main` checkout and a real Qdrant Server container at the reviewed
   1.20.1 digest.
 - Ruff lint and Ruff format check passed across 198 files. The Markdown link
   check passed for 99 files with no missing local links.
 - Regression tests use real on-disk embedded stores and SQLite ledgers. They
-  cover a crash after the backup copy exists but before its step record. They
+  cover a crash after the backup copy exists but before its step record, and reject a partial backup without a completion marker. They
   cover a replan that must not replace that record, resume reuse of the
   existing recovery point, and repeated resume without a second backup. They
   also prove that a repeated resume does not add a policy generation.
