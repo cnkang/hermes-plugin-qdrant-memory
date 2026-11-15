@@ -953,14 +953,14 @@ def _guarded_apply(args, home, cfg, namespace):
     """Validate a saved plan and run it under one writer lease."""
     state = _load_state(home, namespace)
     _validate_apply_state(state, args, cfg, namespace)
-    planned_instance = state.get("instance_id")
+    planned_revision = digest(state)
     lease = WriterLease.for_config(home, cfg, destination_policy=_destination_policy(args))
     try:
         # Another plan may have replaced this record before the lease was
         # acquired. Re-read under the lock and never write the older object.
         state = _load_state(home, namespace)
         _validate_apply_state(state, args, cfg, namespace)
-        if state.get("instance_id") != planned_instance:
+        if digest(state) != planned_revision:
             raise UpgradePlanStaleError(
                 "The saved plan was replaced before the writer lease was acquired; "
                 "run the same apply command again."
