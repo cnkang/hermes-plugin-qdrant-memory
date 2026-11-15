@@ -1,6 +1,6 @@
 # 用 upgrade 命令纳管 Qdrant 策略
 
-Runtime 0.7.0 把过去隐含的三件事分开：
+Runtime 0.7.1 把过去隐含的三件事分开：
 
 - 由 profile 配置推导的**目标**策略；
 - 该 destination 已验收的**有效**策略；
@@ -42,6 +42,11 @@ qdrant-memory --home /path/to/profile upgrade plan
 `plan` 只在 profile 内写入 plan 记录。它不写 Ledger、不建索引、不跑恢复、不改配置、
 不下载模型。加 `--dry-run` 可只读取结果而不保存。
 
+已经开始、且尚未到达 `ready` 的 plan 会保留阶段、失败原因、步骤记录和恢复点。
+普通 `plan` 只报告这条记录、它的 `plan_id` 和下一条命令，不会覆盖它。请续跑该 plan。
+若 plan 确实过期、无法继续，使用 `upgrade plan --replace`。替换会先归档旧 plan 及其
+备份引用，再保存新 plan。不要手动删除控制面文件。
+
 Embedded destination 需要独占本地存储。其他 writer 持有 lease 时命令以
 `writer_busy` 停止，且不产生任何状态变更。
 
@@ -76,6 +81,12 @@ Runtime 不持有 Qdrant 管理备份权限，也不会静默跳过恢复点。
 | `activate` | 以新 generation 写入有效策略 |
 
 每一步幂等。步骤成功但记录未写就崩溃时，`resume` 会检测到已完成，而不是重复执行。
+若 embedded 备份副本已存在、但步骤记录丢失，`resume` 会按计划的点数核验该副本并
+沿用已有路径，不会创建第二个恢复点。
+
+`apply` 与 `resume` 先取得 writer lease，再重新读取已保存的 plan。若取锁期间另一轮
+替换了 plan，旧 plan 会被拒绝，新记录不会被覆盖。对已完成的 plan 重复执行只报告
+`already_applied`，不会新增备份或策略 generation。
 
 ## Resume
 
@@ -84,7 +95,15 @@ qdrant-memory --home /path/to/profile upgrade resume --plan PLAN_ID
 ```
 
 `resume` 接受与 `apply` 相同的开关。它会用当前 profile 重新校验已保存的 plan。
-配置、集合、destination 或点数变化都视为过期 plan。请重新 plan，不要强行沿用。
+配置、集合、destination 或点数变化都视为过期 plan。使用 `upgrade plan --replace`
+保留旧恢复记录后重新 plan，不要强行沿用。
+
+取得 lease 后，`apply` 与 `resume` 会读取 Shared Owner 状态。已落盘、但关联事件
+尚未到达终态的生命周期回执会阻止该轮操作；未完成的 shared request 同样阻止。
+先完成既有 Owner 恢复流程：重启 Owner，让其生命周期恢复把已准入的计划重新入队。
+若事件已终态失败，先停止 Owner，对其 profile 运行运维 `retry`，再重启。维护命令
+不会自动清理回执、重新提取或重放待处理事件。恢复完成后，原 plan 仍有效则 resume；
+已过期则使用 `upgrade plan --replace`。
 
 ## Status
 
@@ -94,7 +113,9 @@ qdrant-memory --home /path/to/profile upgrade status
 
 `status` 只读控制面，不打开 destination，因此服务不可达时也能安全查看。
 `unplanned` 表示没有 plan；`planned` 表示可 apply；`applying`、`verifying` 表示中途停止；
-`failed` 附带脱敏的失败类型；`ready` 表示有效策略已提交。
+`failed` 附带脱敏的失败类型；`ready` 表示有效策略已提交。`backup_path` 报告仍被记录的
+恢复点，`plan_stale` 报告已保存的 plan 是否仍匹配当前 profile；`next` 区分 apply、
+resume 与 `plan --replace`。
 
 ## Blocker 对照
 
@@ -107,6 +128,7 @@ qdrant-memory --home /path/to/profile upgrade status
 | `index_conflict` | 核对字段类型。Runtime 从不删除或重建冲突索引 |
 | `pending_operations`、`failed_events`、`quarantined_events` | 先用既有恢复路径处理 |
 | `reset_intent`、`scope_delete_intent`、`shared_pending` | 先恢复或解除这些破坏性意图 |
+| `shared_owner_receipt` | 重启 Owner，让其生命周期恢复把已准入的计划重新入队。事件已终态失败时，先运行运维 `retry` 再重启。不要手动清理回执 |
 | `backend_unreachable` | 修好连通性与权限后重新 plan |
 | `policy_corrupt` | 策略记录不可读，先人工检查再 apply |
 

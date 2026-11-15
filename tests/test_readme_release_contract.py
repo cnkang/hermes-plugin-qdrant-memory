@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_VERSION = "0.7.0"
+RUNTIME_VERSION = "0.7.1"
 RUNTIME_RELEASE_REF = f"v{RUNTIME_VERSION}"
-LATEST_PUBLISHED_RUNTIME_REF = "v0.6.3"
+LATEST_PUBLISHED_RUNTIME_REF = "v0.7.0"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
 ACTIVE_INSTALL_DOCS = {

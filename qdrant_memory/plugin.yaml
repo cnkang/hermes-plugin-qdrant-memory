@@ -1,5 +1,5 @@
 name: qdrant-memory
-version: 0.7.0
+version: 0.7.1
 description: Durable native memory with Qdrant and Hermes LLM extraction
 manifest_version: 2
 requires_hermes: ">=0.21.5"

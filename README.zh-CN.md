@@ -16,12 +16,12 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.7.0** 让新装与原地升级收敛到同一套 Qdrant 策略。先跑 `upgrade plan`，审阅 blocker 与索引状态，再在短维护窗口内 `upgrade apply`。默认仍是 dense 与 float32 向量：不搬集合、不重嵌入、不改记忆身份。
+> **Runtime 0.7.1** 保留中断升级的恢复记录，并在 Shared Owner 仍持有已落盘、但关联事件尚未到达终态的回执时阻止策略 apply。先跑 `upgrade plan`，审阅 blocker 与索引状态，再在短维护窗口内运行 `upgrade apply --plan <plan_id>`。默认仍是 dense 与 float32 向量：不搬集合、不重嵌入、不改记忆身份。
 > 安全文件处理支持 macOS、Linux 和受支持的 Windows 本地卷。
 > 原生客户端确认采纳前，状态保持 `HANDOFF_PENDING`、`native_verified=false`。
 > 作用域删除也会使隔离事件失效，避免后续重试恢复已删除的数据。
-> 保留官方 FastEmbed 0.9.1。本指南选择 Runtime 0.7.0。
-> 安装前请在[PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.0/)
+> 保留官方 FastEmbed 0.9.1。本指南选择 Runtime 0.7.1。
+> 安装前请在[PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.1/)
 > 核实该版本是否已公开。
 > 若包镜像尚未同步此版本，请使用
 > [已发布的 0.6.3 指南](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.6.3/README.zh-CN.md)
@@ -29,7 +29,7 @@
 > 通用 MCP 发行包和托管启动器各自选择精确的 Runtime 依赖，分别发布。
 > Hermes Plugin Catalog 使用独立审核的固定版本（不可变），PyPI 发布不会自动升级目录中的版本。
 > 每个目的地仍只允许一个写入者。
-> 参见[发布说明](docs/releases/0.7.0.zh-CN.md)和[验证记录](docs/validation.md)。
+> 参见[发布说明](docs/releases/0.7.1.zh-CN.md)和[验证记录](docs/validation.md)。
 
 切换工具时保留可阅读的导出和原始 harness 数据。优先使用各 harness 支持的导入导出
 接口；没有原生批量导入时使用通用交接包。卸载集成不删除记忆、备份和来源。
@@ -51,7 +51,7 @@ schema-v1 payload。不使用 Mem0 SDK 或独立 LLM SDK，不发送遥测，不
 ## 工作原理
 
 非 Hermes 用户可在私有的 Python 3.11+ 环境中安装：
-`pip install 'hermes-plugin-qdrant-memory[mcp]==0.7.0'`（仅 CLI 可省略 `[mcp]`）。
+`pip install 'hermes-plugin-qdrant-memory[mcp]==0.7.1'`（仅 CLI 可省略 `[mcp]`）。
 `qdrant-memory` 是 CLI，`mcp` 是其服务子命令。Standalone 不需要 Hermes。
 见[安装与快速开始](docs/standalone.md)。以 MCP 为主的 Agent 也可改用
 [metadata-only 分发包](https://github.com/cnkang/qdrant-memory-mcp)。
@@ -130,7 +130,7 @@ Hermes 版本为 v0.21.5（v2026.9.24）。[CI 服务](docs/ci.md)页面记录�
 
 明确选择**当前活动 profile** 的 home。不要复用其他 profile 的数据。
 
-**推荐：通过 Hermes CLI 安装固定版本的 Runtime 0.7.0 源码。**
+**推荐：通过 Hermes CLI 安装固定版本的 Runtime 0.7.1 源码。**
 
 此不可变源码提交包含可选启用的共享记忆。它不依赖 PyPI 发布或 Catalog 更新。
 
@@ -138,7 +138,7 @@ Hermes 版本为 v0.21.5（v2026.9.24）。[CI 服务](docs/ci.md)页面记录�
 export HERMES_HOME="/absolute/path/to/your/hermes-profile"
 ollama pull qwen3-embedding:4b
 # 如果 Ollama 尚未运行，先启动服务并保持其可用。
-RUNTIME_SHA="$(git ls-remote https://github.com/cnkang/hermes-plugin-qdrant-memory 'refs/tags/v0.7.0^{}' | cut -f1)"
+RUNTIME_SHA="$(git ls-remote https://github.com/cnkang/hermes-plugin-qdrant-memory 'refs/tags/v0.7.1^{}' | cut -f1)"
 test "${#RUNTIME_SHA}" -eq 40
 hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
   --ref "$RUNTIME_SHA"
@@ -157,7 +157,7 @@ hermes qdrant-memory init
 
 **Catalog 方案：安装官方 Hermes Plugin Catalog 审核过的版本。**
 
-Catalog 独立选择固定提交，该版本可能早于 Runtime 0.7.0。如需使用当前发布版本
+Catalog 独立选择固定提交，该版本可能早于 Runtime 0.7.1。如需使用当前发布版本
 （包括可选启用的共享记忆），请采用上方推荐的固定版本安装方式。
 
 ```bash
@@ -185,7 +185,7 @@ hermes qdrant-memory doctor
 发现、manifest 解析、导入与注册。开发安装见[开发指南](docs/development.md)。
 
 发布说明、支持的 Hermes/Python 版本和当前限制见
-[0.7.0 发布说明](docs/releases/0.7.0.zh-CN.md)和[CI 说明](docs/ci.md)。
+[0.7.1 发布说明](docs/releases/0.7.1.zh-CN.md)和[CI 说明](docs/ci.md)。
 
 修改配置后请重启会话。现有系统提示与工具集保持不变，以维持 prompt 缓存。
 

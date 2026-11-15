@@ -6,6 +6,55 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
+## Runtime 0.7.1 candidate checks (2026-11-15)
+
+Local validation for the upgrade-recovery and Shared Owner receipt fixes:
+
+- Python 3.14.7 on macOS arm64: 1,534 passed, 52 environment-gated skips, 0
+  failed across 110 test files. The run was serial (289 s) against the current
+  Hermes `main` checkout and a real Qdrant Server container at the reviewed
+  1.20.1 digest.
+- Ruff lint and Ruff format check passed across 198 files. The Markdown link
+  check passed for 99 files with no missing local links.
+- Regression tests use real on-disk embedded stores and SQLite ledgers. They
+  cover a crash after the backup copy exists but before its step record, and reject a partial backup without a completion marker. They
+  cover a replan that must not replace that record, resume reuse of the
+  existing recovery point, and repeated resume without a second backup. They
+  also prove that a repeated resume does not add a policy generation.
+- Further cases cover a plan replaced while the writer lease is acquired, a
+  receipt present before plan, a receipt that appears after plan, and a receipt
+  seen again at resume. They also cover recovery that reopens the same plan and
+  a terminal-event receipt that must not block.
+- Published MCP 0.3.3 / Runtime 0.6.2 to candidate 0.7.1 wheel: the old MCP
+  distribution wrote a sanitized embedded profile in one virtual environment.
+  A separate environment installed only the candidate wheel and ran `upgrade
+  plan`, `apply` and `status`.
+- The artifact run kept both original point IDs, payloads, scope and embedding
+  fingerprint. It kept the deleted memory absent from the collection and the
+  recovery point, accepted a new write, and reported one policy generation.
+  The repeated apply returned `already_applied`. This runs locally and in the
+  packaging CI job.
+- Native Hermes upgrade: a temporary profile installed the Catalog 0.6.3 entry
+  at `b8c1d8ba` and used local Ollama `qwen3-embedding:4b`. It upgraded to the
+  candidate commit `b2c0df1` through an immutable `--ref`. The provider was
+  listed before and after the upgrade.
+- After a fresh process, the original point IDs were present and the deleted
+  memory was absent. A new write was visible, and `queue_prefetch` plus
+  `prefetch` returned the old and new memories. Dependency preparation used
+  `--no-deps` because the shared PM workspace rejected duplicate plugin member
+  names. The host environment already contained the declared dependencies.
+  This run validates provider and storage behavior, not PM dependency
+  installation.
+- The existing public 0.6.1 and 0.6.3 to wheel packaging checks remain in the
+  same workflow and passed on the candidate commit.
+
+Packaging run: https://github.com/cnkang/hermes-plugin-qdrant-memory/actions/runs/43671470086
+
+The 52 skips are the same environment gates as earlier releases. They cover
+authenticated Cloud, a prepared local model cache, Windows-only paths, the Pi
+quality driver and the shared-security device server. The full CI matrix is
+recorded on the release pull request.
+
 ## Runtime 0.7.0 candidate checks (2026-11-14)
 
 Local validation for the policy upgrade release:

@@ -655,3 +655,480 @@ def test_plan_output_carries_no_endpoint_or_secret(tmp_path):
     text = json.dumps(result)
     assert "super-secret-key" not in text
     assert "example.invalid" not in text
+
+
+def _write_owner_receipt(home, namespace, *, event_status=None, event_json='{"user":"SECRET"}'):
+    """Persist one real admitted receipt on disk, with an optional terminal event."""
+    from qdrant_memory.ledger import Ledger
+
+    ledger = Ledger(home, namespace)
+    try:
+        with ledger.lock, ledger.db:
+            ledger.db.execute(
+                """CREATE TABLE IF NOT EXISTS owner_events_v1 (
+                    collection TEXT NOT NULL, request_key TEXT NOT NULL,
+                    input_hash TEXT NOT NULL, event_key TEXT NOT NULL, event_json TEXT NOT NULL,
+                    PRIMARY KEY(collection, request_key))"""
+            )
+            ledger.db.execute(
+                "INSERT OR REPLACE INTO owner_events_v1 VALUES(?,?,?,?,?)",
+                (namespace, "receipt-1", "input", "event-1", event_json),
+            )
+            if event_status:
+                ledger.db.execute(
+                    "INSERT OR REPLACE INTO events(event_id,payload_json,status,collection)"
+                    " VALUES(?,?,?,?)",
+                    ("event-1", "{}", event_status, namespace),
+                )
+    finally:
+        ledger.close()
+
+
+def _scrub_owner_receipt(home, namespace):
+    """Represent the Owner recovery path clearing its admitted receipt."""
+    from qdrant_memory.ledger import Ledger
+
+    ledger = Ledger(home, namespace)
+    try:
+        with ledger.lock, ledger.db:
+            ledger.db.execute(
+                "UPDATE owner_events_v1 SET event_json='{}' WHERE collection=?",
+                (namespace,),
+            )
+    finally:
+        ledger.close()
+
+
+def _write_shared_request(home, namespace, *, done):
+    """Persist one incomplete shared request on disk."""
+    from qdrant_memory.ledger import Ledger
+
+    ledger = Ledger(home, namespace)
+    try:
+        with ledger.lock, ledger.db:
+            ledger.db.execute(
+                """CREATE TABLE IF NOT EXISTS shared_requests_v1 (
+                    collection TEXT, request_key TEXT, input_hash TEXT, plan TEXT,
+                    response TEXT, done INTEGER, principal TEXT,
+                    PRIMARY KEY(collection, request_key))"""
+            )
+            ledger.db.execute(
+                "INSERT OR REPLACE INTO shared_requests_v1 VALUES(?,?,?,?,?,?,?)",
+                (namespace, "request-1", "hash", "null", "{}", done, "principal"),
+            )
+    finally:
+        ledger.close()
+
+
+def _interrupt_after_backup(monkeypatch):
+    """Fail before the backup completion record is saved, after the copy exists."""
+    original = upgrade._Context.mark
+
+    def interrupt(self, step, status, **detail):
+        """Raise at the exact crash window this regression covers."""
+        if step == "backup" and status == "done":
+            raise RuntimeError("simulated crash before backup record")
+        return original(self, step, status, **detail)
+
+    monkeypatch.setattr(upgrade._Context, "mark", interrupt)
+    return original
+
+
+def test_plan_preserves_an_interrupted_backup_and_resume_reuses_it(tmp_path, monkeypatch):
+    """A replan keeps the phase, step record and recovery point of an interrupted pass."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original_mark = _interrupt_after_backup(monkeypatch)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    failed = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    assert failed["phase"] == upgrade.PHASE_FAILED
+    assert failed["steps"]["backup"]["status"] == "running"
+    assert "path" not in failed["steps"]["backup"]
+    backups = list((tmp_path / "qdrant-memory" / "backups").iterdir())
+    assert len(backups) == 1
+
+    replanned = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan"))
+    assert replanned["ok"] is True
+    assert replanned["reused_existing_plan"] is True
+    assert replanned["persisted"] is False
+    assert replanned["plan_id"] == state["plan_id"]
+    assert replanned["phase"] == upgrade.PHASE_FAILED
+    assert strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX) == failed
+
+    monkeypatch.setattr(upgrade._Context, "mark", original_mark)
+    resumed = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
+    )
+    assert resumed["phase"] == upgrade.PHASE_READY
+    assert resumed["steps"]["backup"]["detected"] is True
+    assert resumed["steps"]["backup"]["recovered"] is True
+    assert (tmp_path / resumed["steps"]["backup"]["path"]).is_dir()
+    assert strategy.read(tmp_path, ledger_namespace(cfg))["generation"] == 1
+    again = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
+    )
+    assert again["already_applied"] is True
+    assert strategy.read(tmp_path, ledger_namespace(cfg))["generation"] == 1
+    assert len(list((tmp_path / "qdrant-memory" / "backups").iterdir())) == 1
+
+
+def test_plan_replace_archives_the_interrupted_plan_and_backup_reference(tmp_path, monkeypatch):
+    """An explicit replacement keeps the old plan and its recovery point on disk."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original_mark = _interrupt_after_backup(monkeypatch)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    monkeypatch.setattr(upgrade._Context, "mark", original_mark)
+    failed = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+
+    moved = embedded_cfg(tmp_path, search={"top_k": 9})
+    replaced = upgrade.describe(tmp_path, moved, plan_args(upgrade_action="plan", replace=True))
+    assert replaced["ok"] is True
+    assert replaced["plan_id"] != state["plan_id"]
+    assert replaced["previous_plan"]["plan_id"] == state["plan_id"]
+    assert replaced["previous_plan"]["backup"] == failed["steps"]["backup"]
+    archive = strategy.state_path(
+        tmp_path, ledger_namespace(cfg), replaced["previous_plan"]["archive"]
+    )
+    assert archive.is_file()
+    archived = strategy.read_state(
+        tmp_path, ledger_namespace(cfg), replaced["previous_plan"]["archive"]
+    )
+    assert archived["steps"]["backup"] == failed["steps"]["backup"]
+    assert archived["archived_at"]
+
+
+def test_apply_does_not_overwrite_a_plan_replaced_after_the_lease(tmp_path, monkeypatch):
+    """A plan that changes while the lock is acquired is refused, not overwritten."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    namespace = ledger_namespace(cfg)
+    replacement = dict(state)
+    replacement["instance_id"] = "d" * 32
+    replacement["phase"] = upgrade.PHASE_APPLYING
+    replacement["updated_at"] = "later"
+    original = upgrade.WriterLease.for_config
+
+    class Lease:
+        """Publish a newer plan between the preflight read and the lock."""
+
+        @classmethod
+        def for_config(cls, home, cfg_value, *, destination_policy=None):
+            """Acquire the real lease, then replace the active record."""
+            lease = original(home, cfg_value, destination_policy=destination_policy)
+            strategy.write_state(home, namespace, upgrade.STATE_SUFFIX, replacement)
+            return lease
+
+        def close(self):
+            """Release nothing."""
+
+    monkeypatch.setattr(upgrade, "WriterLease", Lease)
+    with pytest.raises(upgrade.UpgradePlanStaleError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    assert strategy.read_state(tmp_path, namespace, upgrade.STATE_SUFFIX) == replacement
+    assert len(list((tmp_path / "qdrant-memory" / "backups").glob("*"))) == 0
+
+
+def test_plan_blocks_on_an_admitted_owner_receipt(tmp_path):
+    """A receipt with no queued event blocks planning and the saved plan is inert."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _write_owner_receipt(tmp_path, ledger_namespace(cfg))
+    result, state = run_plan(tmp_path, cfg)
+    assert result["ok"] is False
+    assert "shared_owner_receipt" in {item["code"] for item in result["blockers"]}
+    assert state["steps"] == {name: {"status": "pending"} for name in upgrade.STEPS}
+    with pytest.raises(upgrade.UpgradeBlockedError) as blocked:
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    assert "shared_owner_receipt" in {item["code"] for item in blocked.value.blockers}
+    assert strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX) == state
+
+
+def test_owner_receipt_appearing_after_plan_blocks_apply_until_recovered(tmp_path):
+    """The in-lease preflight catches a receipt that was not present at plan time."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    _write_owner_receipt(tmp_path, ledger_namespace(cfg))
+    with pytest.raises(upgrade.UpgradeBlockedError) as blocked:
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    assert {item["code"] for item in blocked.value.blockers} == {"shared_owner_receipt"}
+    assert strategy.read(tmp_path, ledger_namespace(cfg)) is None
+    assert strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX) == state
+
+    _scrub_owner_receipt(tmp_path, ledger_namespace(cfg))
+    applied = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"])
+    )
+    assert applied["phase"] == upgrade.PHASE_READY
+
+
+def test_resume_retries_the_interlock_after_owner_recovery(tmp_path, monkeypatch):
+    """A receipt that arrives before resume blocks it, and recovery reopens the same plan."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original_mark = _interrupt_after_backup(monkeypatch)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    monkeypatch.setattr(upgrade._Context, "mark", original_mark)
+    _write_owner_receipt(tmp_path, ledger_namespace(cfg))
+    with pytest.raises(upgrade.UpgradeBlockedError) as blocked:
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"]))
+    assert "shared_owner_receipt" in {item["code"] for item in blocked.value.blockers}
+    interrupted = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    assert interrupted["phase"] == upgrade.PHASE_FAILED
+    assert interrupted["steps"]["backup"]["status"] == "running"
+
+    _scrub_owner_receipt(tmp_path, ledger_namespace(cfg))
+    resumed = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
+    )
+    assert resumed["phase"] == upgrade.PHASE_READY
+    assert resumed["steps"]["backup"]["recovered"] is True
+    assert strategy.read(tmp_path, ledger_namespace(cfg))["generation"] == 1
+
+
+def test_terminal_owner_receipt_does_not_block_an_upgrade(tmp_path):
+    """A crash leftover after a terminal event is not pending replay work."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _write_owner_receipt(tmp_path, ledger_namespace(cfg), event_status="COMMITTED")
+    result, state = run_plan(tmp_path, cfg)
+    assert result["ok"] is True
+    assert "shared_owner_receipt" not in {item["code"] for item in result["blockers"]}
+    applied = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"])
+    )
+    assert applied["phase"] == upgrade.PHASE_READY
+
+
+def test_incomplete_shared_request_blocks_planning(tmp_path):
+    """The shared-request half of the reused interlock still reports its blocker."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _write_shared_request(tmp_path, ledger_namespace(cfg), done=0)
+    result, _ = run_plan(tmp_path, cfg)
+    assert result["ok"] is False
+    assert "shared_pending" in {item["code"] for item in result["blockers"]}
+
+
+def test_ready_apply_rechecks_an_owner_receipt(tmp_path):
+    """A receipt admitted after ready still blocks a repeated apply."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    _write_owner_receipt(tmp_path, ledger_namespace(cfg))
+    with pytest.raises(upgrade.UpgradeBlockedError) as blocked:
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    assert "shared_owner_receipt" in {item["code"] for item in blocked.value.blockers}
+    assert (
+        strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)["phase"]
+        == upgrade.PHASE_READY
+    )
+
+    _scrub_owner_receipt(tmp_path, ledger_namespace(cfg))
+    repeated = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"])
+    )
+    assert repeated["already_applied"] is True
+
+
+def test_replace_keeps_every_archive_when_the_plan_identifier_is_stable(tmp_path, monkeypatch):
+    """Two replacements of one deterministic plan never overwrite an archive."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original_mark = _interrupt_after_backup(monkeypatch)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    monkeypatch.setattr(upgrade._Context, "mark", original_mark)
+
+    first = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan", replace=True))
+    second = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan", replace=True))
+    assert first["plan_id"] == second["plan_id"] == state["plan_id"]
+    assert first["previous_plan"]["archive"] != second["previous_plan"]["archive"]
+    archives = sorted(
+        strategy.directory(tmp_path).glob(f"*.{upgrade.STATE_SUFFIX}-replaced-*.json")
+    )
+    assert len(archives) == 2
+    archived = [json.loads(path.read_text(encoding="utf-8")) for path in archives]
+    assert any(item["steps"]["backup"].get("status") == "running" for item in archived)
+    assert all(item.get("archived_at") for item in archived)
+
+
+def test_partial_backup_without_a_completion_marker_is_not_adopted(tmp_path):
+    """A crash during the copy leaves a directory that resume must not trust."""
+    import shutil
+
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    namespace = ledger_namespace(cfg)
+    fake = tmp_path / "qdrant-memory" / "backups" / f"20260101T000000Z-{state['instance_id'][:12]}"
+    fake.mkdir(parents=True)
+    shutil.copytree(cfg["qdrant"]["path"], fake / "qdrant")
+    state["phase"] = upgrade.PHASE_FAILED
+    state["steps"]["backup"] = {"status": "running"}
+    strategy.write_state(tmp_path, namespace, upgrade.STATE_SUFFIX, state)
+
+    resumed = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
+    )
+    assert resumed["phase"] == upgrade.PHASE_READY
+    assert resumed["steps"]["backup"].get("recovered") is not True
+    adopted = tmp_path / resumed["steps"]["backup"]["path"]
+    assert (adopted / upgrade.BACKUP_MARKER).is_file()
+    assert adopted != fake
+    assert len(list((tmp_path / "qdrant-memory" / "backups").iterdir())) == 2
+
+
+def test_failure_recording_does_not_mask_the_upgrade_error(tmp_path, monkeypatch):
+    """A control-plane write failure must not replace the original apply error."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    _interrupt_after_backup(monkeypatch)
+    original_write = strategy.write_state
+
+    def failing(home, namespace, suffix, record):
+        """Refuse only the failure record, leaving earlier writes intact."""
+        if record.get("phase") == upgrade.PHASE_FAILED:
+            raise ValueError("simulated publication failure")
+        return original_write(home, namespace, suffix, record)
+
+    monkeypatch.setattr(upgrade.strategy, "write_state", failing)
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+
+
+def test_replacement_does_not_adopt_a_backup_from_an_earlier_instance(tmp_path, monkeypatch):
+    """A new plan instance never treats the old maintenance point as its own."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original_mark = _interrupt_after_backup(monkeypatch)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    monkeypatch.setattr(upgrade._Context, "mark", original_mark)
+    failed = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    old_instance = failed["instance_id"]
+    replaced = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan", replace=True))
+    assert replaced["plan_id"] == state["plan_id"]
+    new_state = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    assert new_state["instance_id"] != old_instance
+
+    resumed = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
+    )
+    assert resumed["phase"] == upgrade.PHASE_READY
+    assert resumed["steps"]["backup"].get("recovered") is not True
+    new_backup = tmp_path / resumed["steps"]["backup"]["path"]
+    assert (
+        json.loads((new_backup / upgrade.BACKUP_MARKER).read_text())["instance_id"]
+        == new_state["instance_id"]
+    )
+    assert len(list((tmp_path / "qdrant-memory" / "backups").iterdir())) == 2
+
+
+def test_plain_replan_of_an_unexecuted_plan_does_not_archive(tmp_path):
+    """A plan that never ran may be replaced without an archive or backup claim."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    repeated = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan"))
+    assert repeated["plan_id"] == state["plan_id"]
+    assert repeated["previous_plan"] is None
+    assert not list(strategy.directory(tmp_path).glob(f"*.{upgrade.STATE_SUFFIX}-replaced-*.json"))
+
+
+def test_legacy_backup_without_a_marker_is_adopted_on_first_resume(tmp_path, monkeypatch):
+    """A 0.7.0 backup survives the first 0.7.1 resume instead of being duplicated."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original_mark = _interrupt_after_backup(monkeypatch)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    monkeypatch.setattr(upgrade._Context, "mark", original_mark)
+    backups = list((tmp_path / "qdrant-memory" / "backups").iterdir())
+    assert len(backups) == 1
+    legacy = backups[0].with_name(f"20260101T000000Z-{state['plan_id'][:12]}")
+    backups[0].rename(legacy)
+    (legacy / upgrade.BACKUP_MARKER).unlink()
+    failed = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    failed.pop("instance_id", None)
+    failed["phase"] = upgrade.PHASE_FAILED
+    failed["steps"]["backup"] = {"status": "running"}
+    strategy.write_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX, failed)
+
+    resumed = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
+    )
+    assert resumed["phase"] == upgrade.PHASE_READY
+    assert resumed["steps"]["backup"]["recovered"] is True
+    assert (tmp_path / resumed["steps"]["backup"]["path"]) == legacy
+    assert len(list((tmp_path / "qdrant-memory" / "backups").iterdir())) == 1
+
+
+def test_reused_plan_reports_current_shared_blockers(tmp_path, monkeypatch):
+    """A normal plan of an interrupted record refreshes only shared blockers."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original_mark = _interrupt_after_backup(monkeypatch)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    monkeypatch.setattr(upgrade._Context, "mark", original_mark)
+    _write_owner_receipt(tmp_path, ledger_namespace(cfg))
+    reused = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan"))
+    assert reused["ok"] is False
+    assert "shared_owner_receipt" in {item["code"] for item in reused["blockers"]}
+    assert reused["plan_id"] == state["plan_id"]
+
+
+def test_resume_rejects_a_done_activation_without_the_policy_record(tmp_path):
+    """A done activate step is re-verified before the plan can become ready."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    ready = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    strategy.record_path(tmp_path, ledger_namespace(cfg)).unlink()
+    ready["phase"] = upgrade.PHASE_APPLYING
+    strategy.write_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX, ready)
+    with pytest.raises(upgrade.UpgradeStateError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"]))
