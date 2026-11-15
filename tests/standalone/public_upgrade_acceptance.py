@@ -7,7 +7,8 @@ Invoke with an installed interpreter in isolated mode:
 
 ``prepare`` runs the published MCP 0.3.3 environment, which pins Runtime 0.6.2.
 ``verify`` runs a separate environment that installs only the candidate wheel.
-Both phases share one disposable profile directory, never one virtualenv.
+Both phases share one disposable profile directory, never one virtualenv. The
+loopback embedding service is an unauthenticated test fixture.
 """
 
 import json
@@ -208,6 +209,7 @@ def _prepare(home, expected):
         )
     finally:
         server.shutdown()
+        server.server_close()
 
 
 def _verify(home, expected):
@@ -287,6 +289,7 @@ def _verify(home, expected):
         )
     finally:
         server.shutdown()
+        server.server_close()
 
 
 def main():

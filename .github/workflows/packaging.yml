@@ -37,7 +37,8 @@ jobs:
           DATA="$RUNNER_TEMP/runtime-operator-data"
           python -m venv "$OLD_ENV"
           "$OLD_ENV/bin/python" -m pip install 'qdrant-memory-mcp==0.3.3'
-          "$OLD_ENV/bin/python" -I tests/standalone/public_upgrade_acceptance.py prepare "$DATA" "0.6.2"
+          OLD_RUNTIME=$("$OLD_ENV/bin/python" -c "from importlib.metadata import version; print(version('hermes-plugin-qdrant-memory'))")
+          "$OLD_ENV/bin/python" -I tests/standalone/public_upgrade_acceptance.py prepare "$DATA" "$OLD_RUNTIME"
           python -m venv "$NEW_ENV"
           "$NEW_ENV/bin/python" -m pip install "$(find dist -name '*.whl')[mcp]"
           "$NEW_ENV/bin/python" -I tests/standalone/public_upgrade_acceptance.py verify "$DATA" "$VERSION"
