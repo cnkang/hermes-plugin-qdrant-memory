@@ -1068,3 +1068,34 @@ def test_plain_replan_of_an_unexecuted_plan_does_not_archive(tmp_path):
     assert repeated["plan_id"] == state["plan_id"]
     assert repeated["previous_plan"] is None
     assert not list(strategy.directory(tmp_path).glob(f"*.{upgrade.STATE_SUFFIX}-replaced-*.json"))
+
+
+def test_legacy_backup_without_a_marker_is_adopted_on_first_resume(tmp_path, monkeypatch):
+    """A 0.7.0 backup survives the first 0.7.1 resume instead of being duplicated."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original_mark = _interrupt_after_backup(monkeypatch)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    monkeypatch.setattr(upgrade._Context, "mark", original_mark)
+    backups = list((tmp_path / "qdrant-memory" / "backups").iterdir())
+    assert len(backups) == 1
+    legacy = backups[0].with_name(f"20260101T000000Z-{state['plan_id'][:12]}")
+    backups[0].rename(legacy)
+    (legacy / upgrade.BACKUP_MARKER).unlink()
+    failed = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    failed.pop("instance_id", None)
+    failed["phase"] = upgrade.PHASE_FAILED
+    failed["steps"]["backup"] = {"status": "running"}
+    strategy.write_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX, failed)
+
+    resumed = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
+    )
+    assert resumed["phase"] == upgrade.PHASE_READY
+    assert resumed["steps"]["backup"]["recovered"] is True
+    assert (tmp_path / resumed["steps"]["backup"]["path"]) == legacy
+    assert len(list((tmp_path / "qdrant-memory" / "backups").iterdir())) == 1

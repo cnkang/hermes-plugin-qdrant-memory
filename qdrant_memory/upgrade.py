@@ -828,33 +828,57 @@ def _recover_backup(ctx):
     if not root.is_dir():
         return None
     checkpoint = ctx.state["plan"]["checkpoint"]
-    prefix = ctx.state["instance_id"][:12]
+    prefixes = [ctx.state["instance_id"][:12]]
+    legacy = bool(ctx.state.get("legacy_backup"))
+    if legacy:
+        prefixes.append(ctx.state["plan_id"][:12])
     expected_identity = (checkpoint.get("identity") or {}).get("embedding_fingerprint")
-    for candidate in sorted(root.glob(f"*-{prefix}"), reverse=True):
-        if candidate.is_symlink() or not candidate.is_dir():
-            continue
-        if candidate.name.endswith(".partial"):
-            continue
-        try:
-            marker = json.loads((candidate / BACKUP_MARKER).read_text(encoding="utf-8"))
-            snapshot = _backup_snapshot(candidate / "qdrant", ctx.collection)
-        except Exception:
-            continue
-        if marker.get("plan_id") != ctx.state["plan_id"]:
-            continue
-        if marker.get("instance_id") != ctx.state.get("instance_id"):
-            continue
-        if marker.get("collection") != ctx.collection:
-            continue
-        if marker.get("points") != snapshot["points"]:
-            continue
-        if (marker.get("identity") or {}).get("embedding_fingerprint") != expected_identity:
-            continue
-        if snapshot["points"] != checkpoint.get("points"):
-            continue
-        if (snapshot.get("identity") or {}).get("embedding_fingerprint") != expected_identity:
-            continue
-        return str(candidate.relative_to(Path(ctx.home).resolve()))
+    seen = set()
+    for prefix in prefixes:
+        for candidate in sorted(root.glob(f"*-{prefix}"), reverse=True):
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            if candidate.is_symlink() or not candidate.is_dir():
+                continue
+            if candidate.name.endswith(".partial"):
+                continue
+            try:
+                marker_path = candidate / BACKUP_MARKER
+                if marker_path.is_file():
+                    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+                    if marker.get("instance_id") != ctx.state.get("instance_id"):
+                        continue
+                elif not (legacy and prefix == ctx.state["plan_id"][:12]):
+                    continue
+                else:
+                    # A 0.7.0 backup has no marker. Require the ledger copy when
+                    # the saved plan says a ledger existed.
+                    if (
+                        ctx.state.get("ledger", {}).get("present")
+                        and not (candidate / "state.db").is_file()
+                    ):
+                        continue
+                    marker = {}
+                snapshot = _backup_snapshot(candidate / "qdrant", ctx.collection)
+            except Exception:
+                continue
+            if marker.get("plan_id") not in (None, ctx.state["plan_id"]):
+                continue
+            if marker.get("collection") not in (None, ctx.collection):
+                continue
+            if marker.get("points") not in (None, snapshot["points"]):
+                continue
+            if (marker.get("identity") or {}).get("embedding_fingerprint") not in (
+                None,
+                expected_identity,
+            ):
+                continue
+            if snapshot["points"] != checkpoint.get("points"):
+                continue
+            if (snapshot.get("identity") or {}).get("embedding_fingerprint") != expected_identity:
+                continue
+            return str(candidate.relative_to(Path(ctx.home).resolve()))
     return None
 
 
@@ -928,7 +952,9 @@ def _guarded_apply(args, home, cfg, namespace):
             if pending:
                 raise UpgradeBlockedError(pending)
             return {"ok": True, "phase": PHASE_READY, "already_applied": True}
-        state.setdefault("instance_id", uuid.uuid4().hex)
+        if "instance_id" not in state:
+            state["instance_id"] = uuid.uuid4().hex
+            state["legacy_backup"] = True
         snapshot = _ledger_snapshot(home, namespace)
         client = build_client(cfg)
         context = None
