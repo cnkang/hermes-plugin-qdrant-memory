@@ -11,7 +11,7 @@ model, or a production deployment.
 Local validation for the upgrade-recovery and Shared Owner receipt fixes:
 
 - Python 3.14.7 on macOS arm64: 1,534 passed, 52 environment-gated skips, 0
-  failed across 110 test files. The run was serial (288 s) against the current
+  failed across 110 test files. The run was serial (289 s) against the current
   Hermes `main` checkout and a real Qdrant Server container at the reviewed
   1.20.1 digest.
 - Ruff lint and Ruff format check passed across 198 files. The Markdown link
@@ -36,7 +36,7 @@ Local validation for the upgrade-recovery and Shared Owner receipt fixes:
   packaging CI job.
 - Native Hermes upgrade: a temporary profile installed the Catalog 0.6.3 entry
   at `b8c1d8ba` and used local Ollama `qwen3-embedding:4b`. It upgraded to the
-  candidate commit `db8bb2c` through an immutable `--ref`. The provider was
+  candidate commit `b2c0df1` through an immutable `--ref`. The provider was
   listed before and after the upgrade.
 - After a fresh process, the original point IDs were present and the deleted
   memory was absent. A new write was visible, and `queue_prefetch` plus
