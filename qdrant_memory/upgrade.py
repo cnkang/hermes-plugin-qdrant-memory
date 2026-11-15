@@ -13,6 +13,8 @@ Every durable write goes through :mod:`qdrant_memory.strategy` so the policy
 record and the upgrade checkpoint share one private, atomic publication path.
 """
 
+import json
+import os
 import shutil
 import sqlite3
 from contextlib import closing
@@ -33,6 +35,7 @@ PHASE_FAILED = "failed"
 LIVE_PHASES = {PHASE_PLANNED, PHASE_APPLYING, PHASE_VERIFYING, PHASE_FAILED}
 STEPS = ("backup", "indexes", "verify", "activate")
 STATE_SUFFIX = "upgrade"
+BACKUP_MARKER = "backup.complete.json"
 
 REMOTE_BACKUP_NOTE = (
     "This Runtime does not hold Qdrant administrative backup rights. Take a "
@@ -58,7 +61,7 @@ class UpgradeRefusedError(UpgradeError):
 
 
 class UpgradeBlockedError(UpgradeError):
-    """Report blockers that make this destination ineligible for 0.7.0."""
+    """Report blockers that make this destination ineligible for the upgrade."""
 
     def __init__(self, blockers):
         """Carry the machine-readable blockers alongside the operator message."""
@@ -213,8 +216,9 @@ def _unresolved_work(snapshot):
             {
                 "code": "shared_owner_receipt",
                 "detail": (
-                    "the Shared Owner holds an admitted lifecycle receipt that has no "
-                    "queued event; complete the Owner recovery path, then resume or plan again"
+                    "the Shared Owner holds an admitted lifecycle receipt whose event "
+                    "has not reached a terminal state; complete the Owner recovery path, "
+                    "then resume or plan again"
                 ),
             }
         )
@@ -409,13 +413,19 @@ def _existing_plan_result(state, cfg, namespace):
 
 def _archive_state(home, namespace, state):
     """Keep a replaced plan and its recovery reference outside the active slot."""
+    plan_id = state.get("plan_id")
+    if not plan_id:
+        raise UpgradeStateError("The saved plan has no identifier; inspect the control plane.")
     archived = dict(state)
     archived["archived_at"] = now()
-    strategy.write_state(home, namespace, f"{STATE_SUFFIX}-replaced-{state['plan_id']}", archived)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    suffix = f"{STATE_SUFFIX}-replaced-{plan_id}-{stamp}"
+    strategy.write_state(home, namespace, suffix, archived)
     return {
-        "plan_id": state.get("plan_id"),
+        "plan_id": plan_id,
         "phase": state.get("phase"),
         "backup": (state.get("steps") or {}).get("backup"),
+        "archive": suffix,
     }
 
 
@@ -587,51 +597,76 @@ def _backup_embedded(ctx):
     checkpoint = ctx.state["plan"]["checkpoint"]
     root = Path(ctx.home).resolve() / "qdrant-memory" / "backups"
     target = root / f"{_stamp()}-{ctx.state['plan_id'][:12]}"
-    if target.exists():
-        shutil.rmtree(target)
-    target.mkdir(parents=True, mode=0o700)
+    partial = target.with_name(target.name + ".partial")
+    if partial.exists():
+        shutil.rmtree(partial)
+    partial.mkdir(parents=True, mode=0o700)
     storage = Path(ctx.cfg["qdrant"]["path"])
     # Close every local SQLite handle before the copy, then reopen afterwards.
     ctx.client.close()
     try:
-        shutil.copytree(storage, target / "qdrant")
+        shutil.copytree(storage, partial / "qdrant")
         ledger_dir = Path(ctx.home).resolve() / "qdrant-memory"
         for name in ("state.db", "state.db-wal", "state.db-shm"):
             source = ledger_dir / name
             if source.is_file():
-                shutil.copy2(source, target / name)
+                shutil.copy2(source, partial / name)
         policy = strategy.directory(ctx.home)
         if policy.is_dir():
-            shutil.copytree(policy, target / "strategy")
+            shutil.copytree(policy, partial / "strategy")
         for name in ("qdrant-memory.json", ".setup-owner.json"):
             source = Path(ctx.home).resolve() / name
             if source.is_file():
-                shutil.copy2(source, target / name)
+                shutil.copy2(source, partial / name)
     finally:
         ctx.client = build_client(ctx.cfg)
-    reopened = _reopen_backup(target / "qdrant", ctx.collection)
-    if reopened != checkpoint.get("points"):
+    snapshot = _backup_snapshot(partial / "qdrant", ctx.collection)
+    if snapshot["points"] != checkpoint.get("points"):
         raise UpgradeRefusedError(
             "The recovery point does not reopen with the planned point count; "
             "stop the maintenance window and inspect the local store."
         )
+    _write_backup_marker(partial, ctx, snapshot)
+    if target.exists():
+        shutil.rmtree(target)
+    os.replace(partial, target)
     return {
         "outcome": "created",
         "path": str(target.relative_to(Path(ctx.home).resolve())),
-        "points": reopened,
+        "points": snapshot["points"],
         "verified": True,
     }
 
 
-def _reopen_backup(path, collection):
-    """Open a copied embedded store and count the collection under upgrade."""
+def _write_backup_marker(directory, ctx, snapshot):
+    """Publish the completion marker last, so a partial copy is never adopted."""
+    marker = {
+        "schema": 1,
+        "plan_id": ctx.state["plan_id"],
+        "collection": ctx.collection,
+        "points": snapshot["points"],
+        "identity": snapshot["identity"],
+        "created_at": now(),
+    }
+    descriptor = os.open(directory / BACKUP_MARKER, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        json.dump(marker, stream, sort_keys=True)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _backup_snapshot(path, collection):
+    """Open a copied embedded store and read the count and identity sentinel."""
     client = build_client({"qdrant": {"mode": "embedded", "path": str(path)}})
     try:
         if not client.collection_exists(collection):
             raise UpgradeRefusedError(
                 "The recovery point does not contain the collection under upgrade."
             )
-        return _memory_count(client, collection)
+        return {
+            "points": _memory_count(client, collection),
+            "identity": _identity(client, collection),
+        }
     finally:
         client.close()
 
@@ -780,22 +815,36 @@ def _recover_backup(ctx):
         return None
     checkpoint = ctx.state["plan"]["checkpoint"]
     prefix = ctx.state["plan_id"][:12]
+    expected_identity = (checkpoint.get("identity") or {}).get("embedding_fingerprint")
     for candidate in sorted(root.glob(f"*-{prefix}"), reverse=True):
         if candidate.is_symlink() or not candidate.is_dir():
             continue
+        if candidate.name.endswith(".partial"):
+            continue
         try:
-            points = _reopen_backup(candidate / "qdrant", ctx.collection)
+            marker = json.loads((candidate / BACKUP_MARKER).read_text(encoding="utf-8"))
+            snapshot = _backup_snapshot(candidate / "qdrant", ctx.collection)
         except Exception:
             continue
-        if points == checkpoint.get("points"):
-            return str(candidate.relative_to(Path(ctx.home).resolve()))
+        if marker.get("plan_id") != ctx.state["plan_id"]:
+            continue
+        if marker.get("collection") != ctx.collection:
+            continue
+        if marker.get("points") != snapshot["points"]:
+            continue
+        if snapshot["points"] != checkpoint.get("points"):
+            continue
+        if (snapshot.get("identity") or {}).get("embedding_fingerprint") != expected_identity:
+            continue
+        return str(candidate.relative_to(Path(ctx.home).resolve()))
     return None
 
 
 def _indexes_done(ctx):
     """Detect created indexes that were not recorded before a crash."""
     if ctx.backend == "embedded":
-        return None
+        # Embedded storage has no payload indexes; the step is recorded as not applicable.
+        return {}
     observation = strategy.observe(ctx.client, ctx.collection, ctx.backend)
     return {} if not strategy.managed_drift(observation) else None
 
@@ -850,8 +899,6 @@ def _guarded_apply(args, home, cfg, namespace):
     """Validate a saved plan and run it under one writer lease."""
     state = _load_state(home, namespace)
     _validate_apply_state(state, args, cfg, namespace)
-    if state["phase"] == PHASE_READY:
-        return {"ok": True, "phase": PHASE_READY, "already_applied": True}
     lease = WriterLease.for_config(home, cfg, destination_policy=_destination_policy(args))
     try:
         # Another plan may have replaced this record before the lease was
@@ -859,6 +906,9 @@ def _guarded_apply(args, home, cfg, namespace):
         state = _load_state(home, namespace)
         _validate_apply_state(state, args, cfg, namespace)
         if state["phase"] == PHASE_READY:
+            pending = _unresolved_work(_ledger_snapshot(home, namespace))
+            if pending:
+                raise UpgradeBlockedError(pending)
             return {"ok": True, "phase": PHASE_READY, "already_applied": True}
         snapshot = _ledger_snapshot(home, namespace)
         client = build_client(cfg)
@@ -973,7 +1023,8 @@ def _record_failure(home, namespace, exc, plan_id):
     state["failure"] = {"type": type(exc).__name__, "retryable": _retryable(exc)}
     try:
         strategy.write_state(home, namespace, STATE_SUFFIX, state)
-    except OSError:
+    except Exception:
+        # Never mask the upgrade failure that reached this recorder.
         return None
     return state
 
