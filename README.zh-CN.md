@@ -16,7 +16,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.7.1** 保留中断升级的恢复记录，并在 Shared Owner 仍持有已落盘、但关联事件尚未到达终态的回执时阻止策略 apply。先跑 `upgrade plan`，审阅 blocker 与索引状态，再在短维护窗口内 `upgrade apply`。默认仍是 dense 与 float32 向量：不搬集合、不重嵌入、不改记忆身份。
+> **Runtime 0.7.1** 保留中断升级的恢复记录，并在 Shared Owner 仍持有已落盘、但关联事件尚未到达终态的回执时阻止策略 apply。先跑 `upgrade plan`，审阅 blocker 与索引状态，再在短维护窗口内运行 `upgrade apply --plan <plan_id>`。默认仍是 dense 与 float32 向量：不搬集合、不重嵌入、不改记忆身份。
 > 安全文件处理支持 macOS、Linux 和受支持的 Windows 本地卷。
 > 原生客户端确认采纳前，状态保持 `HANDOFF_PENDING`、`native_verified=false`。
 > 作用域删除也会使隔离事件失效，避免后续重试恢复已删除的数据。

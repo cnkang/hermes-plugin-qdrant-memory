@@ -393,12 +393,18 @@ def _in_progress(state):
     )
 
 
-def _existing_plan_result(state, cfg, namespace):
+def _existing_plan_result(state, cfg, namespace, shared):
     """Report an in-progress plan without overwriting its recovery record."""
     stale = _plan_is_stale(state, cfg, namespace)
     plan = state.get("plan") or {}
+    saved = [
+        item
+        for item in state.get("blockers", [])
+        if item.get("code") not in {"shared_pending", "shared_owner_receipt"}
+    ]
+    blockers = saved + list(shared)
     return {
-        "ok": not state.get("blockers"),
+        "ok": not blockers,
         "phase": state.get("phase"),
         "plan_id": state.get("plan_id"),
         "persisted": False,
@@ -408,7 +414,7 @@ def _existing_plan_result(state, cfg, namespace):
         "source_policy": plan.get("source_policy"),
         "target": plan.get("target"),
         "checkpoint": plan.get("checkpoint"),
-        "blockers": state.get("blockers", []),
+        "blockers": blockers,
         "warnings": state.get("warnings", []),
         "steps": state.get("steps", {}),
         "failure": state.get("failure"),
@@ -452,7 +458,8 @@ def plan_destination(home, cfg, *, persist=True, destination_policy=None, replac
     try:
         existing = strategy.read_state(home, namespace, STATE_SUFFIX)
         if existing and _in_progress(existing) and not replace:
-            return _existing_plan_result(existing, cfg, namespace)
+            shared = _shared_work(_ledger_snapshot(home, namespace))
+            return _existing_plan_result(existing, cfg, namespace, shared)
         snapshot = _ledger_snapshot(home, namespace)
         source = strategy.effective_summary(home, namespace, cfg)
         if cfg["qdrant"]["mode"] == "embedded" and not Path(cfg["qdrant"]["path"]).is_dir():
@@ -923,6 +930,11 @@ def _run_steps(ctx):
     for name in STEPS:
         record = ctx.state["steps"].get(name, {"status": "pending"})
         if record.get("status") == "done":
+            if name == "activate" and _activate_done(ctx) is None:
+                raise UpgradeStateError(
+                    "The committed policy record no longer matches the saved plan; "
+                    "run `upgrade plan --replace`."
+                )
             continue
         detector = DETECTORS[name]
         detail = detector(ctx) if detector is not None else None
@@ -941,12 +953,18 @@ def _guarded_apply(args, home, cfg, namespace):
     """Validate a saved plan and run it under one writer lease."""
     state = _load_state(home, namespace)
     _validate_apply_state(state, args, cfg, namespace)
+    planned_instance = state.get("instance_id")
     lease = WriterLease.for_config(home, cfg, destination_policy=_destination_policy(args))
     try:
         # Another plan may have replaced this record before the lease was
         # acquired. Re-read under the lock and never write the older object.
         state = _load_state(home, namespace)
         _validate_apply_state(state, args, cfg, namespace)
+        if state.get("instance_id") != planned_instance:
+            raise UpgradePlanStaleError(
+                "The saved plan was replaced before the writer lease was acquired; "
+                "run the same apply command again."
+            )
         if state["phase"] == PHASE_READY:
             pending = _shared_work(_ledger_snapshot(home, namespace))
             if pending:

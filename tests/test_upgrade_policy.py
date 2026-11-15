@@ -814,7 +814,7 @@ def test_apply_does_not_overwrite_a_plan_replaced_after_the_lease(tmp_path, monk
     _, state = run_plan(tmp_path, cfg)
     namespace = ledger_namespace(cfg)
     replacement = dict(state)
-    replacement["plan_id"] = "c" * 64
+    replacement["instance_id"] = "d" * 32
     replacement["phase"] = upgrade.PHASE_APPLYING
     replacement["updated_at"] = "later"
     original = upgrade.WriterLease.for_config
@@ -1099,3 +1099,36 @@ def test_legacy_backup_without_a_marker_is_adopted_on_first_resume(tmp_path, mon
     assert resumed["steps"]["backup"]["recovered"] is True
     assert (tmp_path / resumed["steps"]["backup"]["path"]) == legacy
     assert len(list((tmp_path / "qdrant-memory" / "backups").iterdir())) == 1
+
+
+def test_reused_plan_reports_current_shared_blockers(tmp_path, monkeypatch):
+    """A normal plan of an interrupted record refreshes only shared blockers."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original_mark = _interrupt_after_backup(monkeypatch)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    monkeypatch.setattr(upgrade._Context, "mark", original_mark)
+    _write_owner_receipt(tmp_path, ledger_namespace(cfg))
+    reused = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan"))
+    assert reused["ok"] is False
+    assert "shared_owner_receipt" in {item["code"] for item in reused["blockers"]}
+    assert reused["plan_id"] == state["plan_id"]
+
+
+def test_resume_rejects_a_done_activation_without_the_policy_record(tmp_path):
+    """A done activate step is re-verified before the plan can become ready."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    ready = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    strategy.record_path(tmp_path, ledger_namespace(cfg)).unlink()
+    ready["phase"] = upgrade.PHASE_APPLYING
+    strategy.write_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX, ready)
+    with pytest.raises(upgrade.UpgradeStateError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"]))
