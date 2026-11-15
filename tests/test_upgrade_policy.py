@@ -989,7 +989,7 @@ def test_partial_backup_without_a_completion_marker_is_not_adopted(tmp_path):
     store.close()
     _, state = run_plan(tmp_path, cfg)
     namespace = ledger_namespace(cfg)
-    fake = tmp_path / "qdrant-memory" / "backups" / f"20260101T000000Z-{state['plan_id'][:12]}"
+    fake = tmp_path / "qdrant-memory" / "backups" / f"20260101T000000Z-{state['instance_id'][:12]}"
     fake.mkdir(parents=True)
     shutil.copytree(cfg["qdrant"]["path"], fake / "qdrant")
     state["phase"] = upgrade.PHASE_FAILED
@@ -1025,3 +1025,34 @@ def test_failure_recording_does_not_mask_the_upgrade_error(tmp_path, monkeypatch
     monkeypatch.setattr(upgrade.strategy, "write_state", failing)
     with pytest.raises(RuntimeError, match="simulated crash"):
         upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+
+
+def test_replacement_does_not_adopt_a_backup_from_an_earlier_instance(tmp_path, monkeypatch):
+    """A new plan instance never treats the old maintenance point as its own."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original_mark = _interrupt_after_backup(monkeypatch)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    monkeypatch.setattr(upgrade._Context, "mark", original_mark)
+    failed = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    old_instance = failed["instance_id"]
+    replaced = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan", replace=True))
+    assert replaced["plan_id"] == state["plan_id"]
+    new_state = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    assert new_state["instance_id"] != old_instance
+
+    resumed = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
+    )
+    assert resumed["phase"] == upgrade.PHASE_READY
+    assert resumed["steps"]["backup"].get("recovered") is not True
+    new_backup = tmp_path / resumed["steps"]["backup"]["path"]
+    assert (
+        json.loads((new_backup / upgrade.BACKUP_MARKER).read_text())["instance_id"]
+        == new_state["instance_id"]
+    )
+    assert len(list((tmp_path / "qdrant-memory" / "backups").iterdir())) == 2

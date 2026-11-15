@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import sqlite3
+import uuid
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -457,6 +458,7 @@ def plan_destination(home, cfg, *, persist=True, destination_policy=None, replac
         state = {
             "schema": 1,
             "plan_id": digest(plan),
+            "instance_id": uuid.uuid4().hex,
             "created_at": now(),
             "updated_at": now(),
             "phase": PHASE_PLANNED,
@@ -596,7 +598,7 @@ def _backup_embedded(ctx):
     """Copy the closed local store, ledger and policy records, then reopen them."""
     checkpoint = ctx.state["plan"]["checkpoint"]
     root = Path(ctx.home).resolve() / "qdrant-memory" / "backups"
-    target = root / f"{_stamp()}-{ctx.state['plan_id'][:12]}"
+    target = root / f"{_stamp()}-{ctx.state['instance_id'][:12]}"
     partial = target.with_name(target.name + ".partial")
     if partial.exists():
         shutil.rmtree(partial)
@@ -643,6 +645,7 @@ def _write_backup_marker(directory, ctx, snapshot):
     marker = {
         "schema": 1,
         "plan_id": ctx.state["plan_id"],
+        "instance_id": ctx.state.get("instance_id"),
         "collection": ctx.collection,
         "points": snapshot["points"],
         "identity": snapshot["identity"],
@@ -814,7 +817,7 @@ def _recover_backup(ctx):
     if not root.is_dir():
         return None
     checkpoint = ctx.state["plan"]["checkpoint"]
-    prefix = ctx.state["plan_id"][:12]
+    prefix = ctx.state["instance_id"][:12]
     expected_identity = (checkpoint.get("identity") or {}).get("embedding_fingerprint")
     for candidate in sorted(root.glob(f"*-{prefix}"), reverse=True):
         if candidate.is_symlink() or not candidate.is_dir():
@@ -827,6 +830,8 @@ def _recover_backup(ctx):
         except Exception:
             continue
         if marker.get("plan_id") != ctx.state["plan_id"]:
+            continue
+        if marker.get("instance_id") != ctx.state.get("instance_id"):
             continue
         if marker.get("collection") != ctx.collection:
             continue
@@ -910,6 +915,7 @@ def _guarded_apply(args, home, cfg, namespace):
             if pending:
                 raise UpgradeBlockedError(pending)
             return {"ok": True, "phase": PHASE_READY, "already_applied": True}
+        state.setdefault("instance_id", uuid.uuid4().hex)
         snapshot = _ledger_snapshot(home, namespace)
         client = build_client(cfg)
         context = None
