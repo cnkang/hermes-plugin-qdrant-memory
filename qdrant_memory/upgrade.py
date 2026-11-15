@@ -23,6 +23,7 @@ from . import strategy
 from .models import digest, now
 from .ownership import WriterLease
 from .qdrant_store import IDENTITY_ID, build_client
+from .shared_state import pending_shared
 
 PHASE_PLANNED = "planned"
 PHASE_APPLYING = "applying"
@@ -142,7 +143,8 @@ def _ledger_snapshot(home, namespace):
         "events": {},
         "reset_intents": 0,
         "scope_deletes": 0,
-        "shared_pending": 0,
+        "shared_requests": 0,
+        "owner_receipts": 0,
     }
     if not path.is_file():
         return snapshot
@@ -165,11 +167,7 @@ def _ledger_snapshot(home, namespace):
             snapshot["scope_deletes"] = db.execute(
                 "SELECT COUNT(*) FROM qdrant_scope_deletes WHERE collection=?", (namespace,)
             ).fetchone()[0]
-        if "shared_requests_v1" in tables:
-            snapshot["shared_pending"] = db.execute(
-                "SELECT COUNT(*) FROM shared_requests_v1 WHERE collection=? AND done=0",
-                (namespace,),
-            ).fetchone()[0]
+        snapshot.update(pending_shared(db, namespace))
         return snapshot
 
 
@@ -203,9 +201,22 @@ def _unresolved_work(snapshot):
                 "detail": "an interrupted scoped deletion must be resumed by delete-all",
             }
         )
-    if snapshot.get("shared_pending", 0):
+    if snapshot.get("shared_requests", 0):
         blockers.append(
-            {"code": "shared_pending", "detail": "shared requests are still unacknowledged"}
+            {
+                "code": "shared_pending",
+                "detail": "shared requests are still unacknowledged",
+            }
+        )
+    if snapshot.get("owner_receipts", 0):
+        blockers.append(
+            {
+                "code": "shared_owner_receipt",
+                "detail": (
+                    "the Shared Owner holds an admitted lifecycle receipt that has no "
+                    "queued event; complete the Owner recovery path, then resume or plan again"
+                ),
+            }
         )
     return blockers
 
@@ -342,16 +353,90 @@ def _unreachable(cfg, exc):
     }
 
 
-def plan_destination(home, cfg, *, persist=True, destination_policy=None):
-    """Inspect one destination and save the plan that ``apply`` must reference."""
+def _destination_matches(state, cfg, namespace):
+    """Return whether a saved plan still names this profile and destination."""
+    plan = state.get("plan") or {}
+    current = {
+        "namespace": namespace,
+        "collection": cfg["qdrant"]["collection"],
+        "backend": cfg["qdrant"]["mode"],
+        "config_digest": strategy.config_digest(cfg),
+    }
+    return all(plan.get(key) == value for key, value in current.items())
+
+
+def _plan_is_stale(state, cfg, namespace):
+    """Report a saved plan that can no longer describe this destination."""
+    return not _destination_matches(state, cfg, namespace)
+
+
+def _in_progress(state):
+    """Return whether a saved plan has started and has not reached ready."""
+    if state.get("phase") == PHASE_READY:
+        return False
+    if state.get("phase") in {PHASE_APPLYING, PHASE_VERIFYING, PHASE_FAILED}:
+        return True
+    return any(
+        (record or {}).get("status") != "pending" for record in (state.get("steps") or {}).values()
+    )
+
+
+def _existing_plan_result(state, cfg, namespace):
+    """Report an in-progress plan without overwriting its recovery record."""
+    stale = _plan_is_stale(state, cfg, namespace)
+    plan = state.get("plan") or {}
+    return {
+        "ok": not state.get("blockers"),
+        "phase": state.get("phase"),
+        "plan_id": state.get("plan_id"),
+        "persisted": False,
+        "reused_existing_plan": True,
+        "collection": plan.get("collection"),
+        "backend": plan.get("backend"),
+        "source_policy": plan.get("source_policy"),
+        "target": plan.get("target"),
+        "checkpoint": plan.get("checkpoint"),
+        "blockers": state.get("blockers", []),
+        "warnings": state.get("warnings", []),
+        "steps": state.get("steps", {}),
+        "failure": state.get("failure"),
+        "backup": (state.get("steps") or {}).get("backup", {}),
+        "next": "qdrant-memory upgrade plan --replace"
+        if stale
+        else f"qdrant-memory upgrade resume --plan {state.get('plan_id')}",
+    }
+
+
+def _archive_state(home, namespace, state):
+    """Keep a replaced plan and its recovery reference outside the active slot."""
+    archived = dict(state)
+    archived["archived_at"] = now()
+    strategy.write_state(home, namespace, f"{STATE_SUFFIX}-replaced-{state['plan_id']}", archived)
+    return {
+        "plan_id": state.get("plan_id"),
+        "phase": state.get("phase"),
+        "backup": (state.get("steps") or {}).get("backup"),
+    }
+
+
+def plan_destination(home, cfg, *, persist=True, destination_policy=None, replace=False):
+    """Inspect one destination and save the plan that ``apply`` must reference.
+
+    An interrupted plan keeps its phase, failure, steps and recovery reference.
+    A normal plan reports that record. ``replace`` archives it first, then saves
+    a fresh plan so an operator never has to delete a control-plane file by hand.
+    """
     from .config import ledger_namespace
 
     namespace = ledger_namespace(cfg)
     target = strategy.desired_policy(cfg)
-    snapshot = _ledger_snapshot(home, namespace)
-    source = strategy.effective_summary(home, namespace, cfg)
     lease = WriterLease.for_config(home, cfg, destination_policy=destination_policy)
     try:
+        existing = strategy.read_state(home, namespace, STATE_SUFFIX)
+        if existing and _in_progress(existing) and not replace:
+            return _existing_plan_result(existing, cfg, namespace)
+        snapshot = _ledger_snapshot(home, namespace)
+        source = strategy.effective_summary(home, namespace, cfg)
         if cfg["qdrant"]["mode"] == "embedded" and not Path(cfg["qdrant"]["path"]).is_dir():
             # Opening the local client would create the directory; a plan must not.
             observed = {"initialized": False, "collection": cfg["qdrant"]["collection"]}
@@ -377,6 +462,8 @@ def plan_destination(home, cfg, *, persist=True, destination_policy=None):
         if persist:
             # Publish before the next writer can start, so a plan can never
             # overwrite progress another pass recorded after the lease.
+            if existing:
+                state["previous_plan"] = _archive_state(home, namespace, existing)
             strategy.write_state(home, namespace, STATE_SUFFIX, state)
         return state
     finally:
@@ -425,19 +512,11 @@ def _load_state(home, namespace):
 
 def _require_same_destination(state, cfg, namespace):
     """Refuse a plan whose profile, destination or settings have moved."""
-    plan = state.get("plan") or {}
-    current = {
-        "namespace": namespace,
-        "collection": cfg["qdrant"]["collection"],
-        "backend": cfg["qdrant"]["mode"],
-        "config_digest": strategy.config_digest(cfg),
-    }
-    for key, value in current.items():
-        if plan.get(key) != value:
-            raise UpgradePlanStaleError(
-                "The saved plan no longer matches this profile or destination; "
-                "run `upgrade plan` again."
-            )
+    if not _destination_matches(state, cfg, namespace):
+        raise UpgradePlanStaleError(
+            "The saved plan no longer matches this profile or destination; "
+            "run `upgrade plan --replace` to keep its recovery record and plan again."
+        )
 
 
 def _require_authorization(state, cfg, args):
@@ -455,7 +534,10 @@ def _require_authorization(state, cfg, args):
             "snapshot at the same stopped-writer point, or stop here."
         )
     if state.get("plan", {}).get("backend") != cfg["qdrant"]["mode"]:
-        raise UpgradePlanStaleError("The backend mode changed after the plan was saved.")
+        raise UpgradePlanStaleError(
+            "The backend mode changed after the plan was saved; "
+            "run `upgrade plan --replace` to keep the old recovery record."
+        )
 
 
 class _Context:
@@ -683,22 +765,58 @@ def _backup_done(ctx):
     """Detect a completed backup after a crash before its record was written."""
     record = ctx.state["steps"].get("backup", {})
     path = record.get("path")
-    if not path:
-        return False
-    return (Path(ctx.home).resolve() / path).is_dir()
+    if path and (Path(ctx.home).resolve() / path).is_dir():
+        return {}
+    recovered = _recover_backup(ctx)
+    if recovered:
+        return {"path": recovered, "verified": True, "recovered": True}
+    return None
+
+
+def _recover_backup(ctx):
+    """Adopt a verified backup that was copied before its step record landed."""
+    root = Path(ctx.home).resolve() / "qdrant-memory" / "backups"
+    if not root.is_dir():
+        return None
+    checkpoint = ctx.state["plan"]["checkpoint"]
+    prefix = ctx.state["plan_id"][:12]
+    for candidate in sorted(root.glob(f"*-{prefix}"), reverse=True):
+        if candidate.is_symlink() or not candidate.is_dir():
+            continue
+        try:
+            points = _reopen_backup(candidate / "qdrant", ctx.collection)
+        except Exception:
+            continue
+        if points == checkpoint.get("points"):
+            return str(candidate.relative_to(Path(ctx.home).resolve()))
+    return None
 
 
 def _indexes_done(ctx):
     """Detect created indexes that were not recorded before a crash."""
     if ctx.backend == "embedded":
-        return False
-    return not strategy.managed_drift(strategy.observe(ctx.client, ctx.collection, ctx.backend))
+        return None
+    observation = strategy.observe(ctx.client, ctx.collection, ctx.backend)
+    return {} if not strategy.managed_drift(observation) else None
 
 
 def _activate_done(ctx):
-    """Detect a policy record committed by an interrupted activation."""
+    """Detect and verify a policy record committed by an interrupted activation.
+
+    The record must carry the expected target and plan identifier, and the live
+    destination must still satisfy the post-conditions. A single marker is not
+    enough to report success.
+    """
     record = strategy.read(ctx.home, ctx.namespace) or {}
-    return record.get("activated_from") == ctx.state["plan_id"]
+    if record.get("activated_from") != ctx.state["plan_id"]:
+        return None
+    if record.get("policy") != ctx.state["plan"]["target"]:
+        return None
+    generation = record.get("generation")
+    if not isinstance(generation, int) or isinstance(generation, bool) or generation < 1:
+        return None
+    _verify(ctx)
+    return {"generation": generation, "verified": True}
 
 
 DETECTORS = {
@@ -716,8 +834,9 @@ def _run_steps(ctx):
         if record.get("status") == "done":
             continue
         detector = DETECTORS[name]
-        if detector is not None and detector(ctx):
-            ctx.mark(name, "done", detected=True)
+        detail = detector(ctx) if detector is not None else None
+        if detail is not None:
+            ctx.mark(name, "done", detected=True, **detail)
             continue
         ctx.mark(name, "running")
         detail = ACTIONS[name](ctx)
@@ -730,27 +849,25 @@ def _run_steps(ctx):
 def _guarded_apply(args, home, cfg, namespace):
     """Validate a saved plan and run it under one writer lease."""
     state = _load_state(home, namespace)
-    if args.plan != state.get("plan_id"):
-        raise UpgradePlanStaleError(
-            "The requested plan does not match the saved plan for this destination."
-        )
+    _validate_apply_state(state, args, cfg, namespace)
     if state["phase"] == PHASE_READY:
         return {"ok": True, "phase": PHASE_READY, "already_applied": True}
-    if state["phase"] not in LIVE_PHASES:
-        raise UpgradeStateError("The saved plan has an unsupported phase; run `upgrade plan`.")
-    _require_same_destination(state, cfg, namespace)
-    _require_authorization(state, cfg, args)
-    if state.get("blockers"):
-        raise UpgradeBlockedError(state["blockers"])
     lease = WriterLease.for_config(home, cfg, destination_policy=_destination_policy(args))
     try:
-        current = _unresolved_work(_ledger_snapshot(home, namespace))
-        if current:
-            raise UpgradeBlockedError(current)
+        # Another plan may have replaced this record before the lease was
+        # acquired. Re-read under the lock and never write the older object.
+        state = _load_state(home, namespace)
+        _validate_apply_state(state, args, cfg, namespace)
+        if state["phase"] == PHASE_READY:
+            return {"ok": True, "phase": PHASE_READY, "already_applied": True}
+        snapshot = _ledger_snapshot(home, namespace)
         client = build_client(cfg)
         context = None
         try:
             observed = _inspect(client, cfg, state["plan"]["target"])
+            current_blockers = _blockers(observed, snapshot, state["plan"])
+            if current_blockers:
+                raise UpgradeBlockedError(current_blockers)
             _require_live_matches(state, observed)
             context = _Context(home, cfg, namespace, state, client, args)
             context.state["phase"] = PHASE_APPLYING
@@ -758,7 +875,7 @@ def _guarded_apply(args, home, cfg, namespace):
             try:
                 _run_steps(context)
             except Exception as exc:
-                _record_failure(home, namespace, exc)
+                _record_failure(home, namespace, exc, state["plan_id"])
                 raise
             return _result(context)
         finally:
@@ -775,6 +892,20 @@ def _guarded_apply(args, home, cfg, namespace):
         lease.close()
 
 
+def _validate_apply_state(state, args, cfg, namespace):
+    """Require one live plan identifier, phase and matching destination."""
+    if args.plan != state.get("plan_id"):
+        raise UpgradePlanStaleError(
+            "The requested plan does not match the saved plan for this destination."
+        )
+    if state["phase"] == PHASE_READY:
+        return
+    if state["phase"] not in LIVE_PHASES:
+        raise UpgradeStateError("The saved plan has an unsupported phase; run `upgrade plan`.")
+    _require_same_destination(state, cfg, namespace)
+    _require_authorization(state, cfg, args)
+
+
 def _require_live_matches(state, observed):
     """Refuse to start when the destination moved since the plan was saved."""
     checkpoint = state["plan"]["checkpoint"]
@@ -782,11 +913,14 @@ def _require_live_matches(state, observed):
         raise UpgradeBlockedError(observed["blockers"])
     if observed.get("points") != checkpoint.get("points"):
         raise UpgradePlanStaleError(
-            "The destination changed since the plan was saved. Stop every writer "
-            "and run `upgrade plan` again."
+            "The destination changed since the plan was saved; run "
+            "`upgrade plan --replace` to keep the old recovery record and plan again."
         )
     if (observed.get("identity") or {}) != (checkpoint.get("identity") or {}):
-        raise UpgradePlanStaleError("The embedding identity changed since the plan was saved.")
+        raise UpgradePlanStaleError(
+            "The embedding identity changed since the plan was saved; run "
+            "`upgrade plan --replace` to keep the old recovery record and plan again."
+        )
 
 
 def _result(ctx):
@@ -829,10 +963,10 @@ def apply_plan(args, home, cfg):
     return _guarded_apply(args, home, cfg, namespace)
 
 
-def _record_failure(home, namespace, exc):
-    """Persist a sanitized failure so ``status`` shows where the pass stopped."""
+def _record_failure(home, namespace, exc, plan_id):
+    """Persist a sanitized failure only against the plan that was running."""
     state = strategy.read_state(home, namespace, STATE_SUFFIX)
-    if not state or state.get("phase") == PHASE_READY:
+    if not state or state.get("plan_id") != plan_id or state.get("phase") == PHASE_READY:
         return
     state["phase"] = PHASE_FAILED
     state["failed_at"] = now()
@@ -888,8 +1022,26 @@ def status(home, cfg):
             "effective": effective["status"],
             "next": "qdrant-memory upgrade plan",
         }
+    try:
+        stale = bool(namespace) and _plan_is_stale(state, cfg, namespace)
+    except Exception:
+        # Status must stay readable without resolved secrets or a reachable endpoint.
+        stale = None
+    phase = state.get("phase")
+    if phase == PHASE_READY:
+        next_command = None
+    elif stale:
+        next_command = "qdrant-memory upgrade plan --replace"
+    elif stale is False and phase in {PHASE_PLANNED, PHASE_FAILED}:
+        next_command = "qdrant-memory upgrade apply --plan <plan_id>"
+    elif stale is False and phase in {PHASE_APPLYING, PHASE_VERIFYING}:
+        next_command = "qdrant-memory upgrade resume --plan <plan_id>"
+    elif stale is False:
+        next_command = "qdrant-memory upgrade plan --replace"
+    else:
+        next_command = "qdrant-memory upgrade status"
     return {
-        "phase": state.get("phase"),
+        "phase": phase,
         "plan_id": state.get("plan_id"),
         "created_at": state.get("created_at"),
         "updated_at": state.get("updated_at"),
@@ -899,14 +1051,12 @@ def status(home, cfg):
         "warnings": state.get("warnings", []),
         "steps": state.get("steps", {}),
         "failure": state.get("failure"),
+        "backup_path": (state.get("steps") or {}).get("backup", {}).get("path"),
+        "plan_stale": stale,
         "effective": effective["status"],
         "target": effective["target"],
-        "requires_restart": state.get("phase") == PHASE_READY,
-        "next": "qdrant-memory upgrade apply --plan <plan_id>"
-        if state.get("phase") in {PHASE_PLANNED, PHASE_FAILED}
-        else "qdrant-memory upgrade resume --plan <plan_id>"
-        if state.get("phase") in {PHASE_APPLYING, PHASE_VERIFYING}
-        else None,
+        "requires_restart": phase == PHASE_READY,
+        "next": next_command,
     }
 
 
@@ -921,12 +1071,16 @@ def describe(home, cfg, args):
             cfg,
             persist=not getattr(args, "dry_run", False),
             destination_policy=_destination_policy(args),
+            replace=getattr(args, "replace", False),
         )
+        if state.get("reused_existing_plan"):
+            return state
         return {
             "ok": not state["blockers"],
             "phase": state["phase"],
             "plan_id": state["plan_id"],
             "persisted": not getattr(args, "dry_run", False),
+            "reused_existing_plan": False,
             "collection": state["plan"]["collection"],
             "backend": state["plan"]["backend"],
             "source_policy": state["plan"]["source_policy"],
@@ -937,6 +1091,7 @@ def describe(home, cfg, args):
             "checkpoint": state["plan"]["checkpoint"],
             "blockers": state["blockers"],
             "warnings": state["warnings"],
+            "previous_plan": state.get("previous_plan"),
             "next": "qdrant-memory upgrade apply --plan " + state["plan_id"],
         }
     return apply_plan(args, home, cfg)

@@ -211,6 +211,11 @@ def register_upgrade(commands):
         "--dry-run", action="store_true", help="Report the plan without saving it"
     )
     planning.add_argument(
+        "--replace",
+        action="store_true",
+        help="Archive an interrupted or stale plan and keep its recovery reference",
+    )
+    planning.add_argument(
         "--policy",
         type=Path,
         help="Protected destination policy for an enrolled destination",
