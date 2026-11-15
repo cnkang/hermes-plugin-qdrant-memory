@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Record a local Ledger write watermark in each upgrade plan. `apply` and
+  `resume` compare it under the writer lease and refuse an interrupted plan
+  when a local Runtime write crossed the stop-write boundary. The refusal keeps
+  the old plan and backup reference and directs the operator to
+  `upgrade plan --replace`. Plans saved without a watermark require the same
+  replacement path.
+
 ## 0.7.1
 
 - Keep an interrupted upgrade's phase, failure, step records and recovery-point

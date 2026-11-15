@@ -213,7 +213,7 @@ def register_upgrade(commands):
     planning.add_argument(
         "--replace",
         action="store_true",
-        help="Archive an interrupted or stale plan and keep its recovery reference",
+        help="Archive a stale or interrupted plan, keep its recovery reference and plan again",
     )
     planning.add_argument(
         "--policy",
@@ -221,7 +221,12 @@ def register_upgrade(commands):
         help="Protected destination policy for an enrolled destination",
     )
     for name in ("apply", "resume"):
-        action_parser = actions.add_parser(name, help=f"{name.capitalize()} a saved plan")
+        help_text = (
+            "Continue a saved plan only while every writer stays stopped"
+            if name == "resume"
+            else "Execute a saved plan inside the writer lease"
+        )
+        action_parser = actions.add_parser(name, help=help_text)
         action_parser.add_argument("--collection")
         action_parser.add_argument("--plan", required=True, help="Saved plan identifier")
         action_parser.add_argument(

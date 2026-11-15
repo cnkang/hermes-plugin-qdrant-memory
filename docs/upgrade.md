@@ -112,6 +112,29 @@ against the live profile. A changed configuration, collection, destination or
 point count is a stale plan. Use `upgrade plan --replace` to keep the old
 recovery record and plan again. Do not force the old plan.
 
+The plan also records a local Ledger write watermark when it is created under
+the writer lease. Before `apply` or `resume` changes anything, the same lease is
+taken and the current watermark is compared with that record.
+
+- If no local Runtime write was committed after the plan, resume keeps the same
+  plan ID and the original backup. Repeating a completed resume does not create
+  another backup or increase the policy generation.
+- If a local Runtime write was committed, or the saved plan has no watermark,
+  the plan is stale. Keep writers isolated, run `upgrade plan --replace`, take a
+  new backup at the new stopped-writer point, then apply. The old plan and its
+  backup reference are archived. Do not treat the old backup as a new
+  checkpoint, and do not edit or delete it.
+- Status reads and other read-only access do not change the watermark. Local
+  Runtime writes do. A watermark match does not prove every payload is
+  byte-for-byte unchanged; it proves that this profile's local write ledger did
+  not advance. An external writer, another host or a Cloud credential can still
+  write without touching this local Ledger.
+
+A successful resume is not evidence that the stop-write boundary stayed closed.
+If you cannot confirm that every writer stayed stopped, replace the plan instead
+of resuming it. For Cloud and Server destinations, take the new backup through
+the provider at the new boundary.
+
 After taking the lease, `apply` and `resume` read the Shared Owner state.
 An admitted lifecycle receipt whose event has not reached a terminal state
 blocks the pass. So does an incomplete shared request. Complete the existing
@@ -134,7 +157,9 @@ means a plan is ready to apply. `applying` and `verifying` mean a pass stopped
 part way. `failed` carries a sanitized failure type. `ready` means the effective
 policy is committed. `backup_path` reports a recovery point that is still
 recorded, and `plan_stale` reports whether the saved plan still matches the
-profile. `next` distinguishes apply, resume and `plan --replace`.
+profile. `plan_stale_reason` is `destination`, `write_since_plan` or
+`no_watermark`. `write_watermark` reports the current local Ledger operation
+rowid. `next` distinguishes apply, resume and `plan --replace`.
 
 ## Blocker reference
 
@@ -148,6 +173,7 @@ profile. `next` distinguishes apply, resume and `plan --replace`.
 | `pending_operations`, `failed_events`, `quarantined_events` | Clear the work with the existing recovery path first |
 | `reset_intent`, `scope_delete_intent`, `shared_pending` | Resume or resolve the destructive intent first |
 | `shared_owner_receipt` | Restart the Owner so its lifecycle recovery re-enqueues the admitted plan. For a terminally failed event, run the operator `retry` before the restart. Do not clear the receipt by hand |
+| `plan_stale` | Local writes crossed the saved stop-write boundary, or the plan has no watermark. Keep writers isolated, use `upgrade plan --replace`, then take a new backup and apply. Do not reuse the old recovery point |
 | `backend_unreachable` | Fix connectivity and permissions, then plan again |
 | `policy_corrupt` | The saved policy record is unreadable. Inspect it before any apply |
 

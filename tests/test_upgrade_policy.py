@@ -546,6 +546,155 @@ def test_resume_completes_a_step_that_succeeded_before_its_record(tmp_path, monk
     assert strategy.read(tmp_path, ledger_namespace(cfg))["generation"] == 1
 
 
+def test_resume_reuses_the_backup_when_no_writer_touched_the_store(tmp_path, monkeypatch):
+    """A stopped-writer interruption keeps the original recovery point."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original = upgrade._Context.mark
+
+    def interrupt(self, step, status, **detail):
+        """Stop after the backup has been verified and recorded."""
+        if step == "verify" and status == "running":
+            raise RuntimeError("simulated crash after backup")
+        return original(self, step, status, **detail)
+
+    monkeypatch.setattr(upgrade._Context, "mark", interrupt)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    failed = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    backup = failed["steps"]["backup"]["path"]
+    assert (tmp_path / backup).is_dir()
+    monkeypatch.setattr(upgrade._Context, "mark", original)
+    resumed = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
+    )
+    assert resumed["phase"] == upgrade.PHASE_READY
+    assert resumed["steps"]["backup"]["path"] == backup
+    assert len(list((tmp_path / "qdrant-memory" / "backups").iterdir())) == 1
+
+
+def test_resume_refuses_a_plan_after_a_real_local_write(tmp_path, monkeypatch):
+    """An in-place Runtime write crosses the saved plan boundary."""
+    from qdrant_memory.ledger import Ledger
+    from qdrant_memory.models import Scope, point_id
+    from qdrant_memory.runtime import Runtime
+
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    before = store.count()
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original = upgrade._Context.mark
+
+    def interrupt(self, step, status, **detail):
+        """Stop after the backup so the recovery point exists."""
+        if step == "verify" and status == "running":
+            raise RuntimeError("simulated crash after backup")
+        return original(self, step, status, **detail)
+
+    monkeypatch.setattr(upgrade._Context, "mark", interrupt)
+    with pytest.raises(RuntimeError):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    failed = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    backup = failed["steps"]["backup"]["path"]
+    before = failed["plan"]["checkpoint"]["points"]
+
+    scope = Scope("alice", None)
+    identifier = point_id(scope, "fixture", "alicecats preferred")
+    store = QdrantStore(QdrantClient(path=cfg["qdrant"]["path"]), cfg, Embedder())
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    rt = Runtime(cfg, store, ledger)
+    try:
+        old = store.get(identifier, scope)
+        value = dict(old.payload)
+        value["importance"] = 0.99
+        key = rt.operation(identifier, "UPSERT", value)
+        rt.commit([key])
+        assert store.count() == before
+    finally:
+        ledger.close()
+        store.close()
+    monkeypatch.setattr(upgrade._Context, "mark", original)
+
+    status = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="status"))
+    assert status["plan_stale"] is True
+    assert status["plan_stale_reason"] == "write_since_plan"
+    assert status["next"] == "qdrant-memory upgrade plan --replace"
+    with pytest.raises(upgrade.UpgradePlanStaleError, match="Local writes"):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"]))
+    kept = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    assert kept["plan_id"] == state["plan_id"]
+    assert kept["steps"]["backup"]["path"] == backup
+    assert (tmp_path / backup).is_dir()
+    reused = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan"))
+    assert reused["plan_id"] == state["plan_id"]
+    assert reused["plan_stale"] is True
+    assert "plan_stale" in {item["code"] for item in reused["blockers"]}
+    assert (
+        strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)["plan_id"]
+        == state["plan_id"]
+    )
+
+    replanned = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan", replace=True))
+    assert replanned["persisted"] is True
+    fresh = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
+    assert fresh["ledger"]["write_watermark"] > state["ledger"]["write_watermark"]
+    archives = list(strategy.directory(tmp_path).glob("*.upgrade-replaced-*.json"))
+    assert archives
+    archived = json.loads(archives[0].read_text())
+    assert archived["plan_id"] == state["plan_id"]
+    assert archived["steps"]["backup"]["path"] == backup
+
+
+def test_failed_operation_does_not_advance_the_watermark(tmp_path):
+    """An admitted but failed write attempt is not a data mutation."""
+    from qdrant_memory.ledger import Ledger
+    from qdrant_memory.models import Scope, point_id
+    from qdrant_memory.runtime import Runtime
+
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    scope = Scope("alice", None)
+    identifier = point_id(scope, "fixture", "alicecats preferred")
+    store = QdrantStore(QdrantClient(path=cfg["qdrant"]["path"]), cfg, Embedder())
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    rt = Runtime(cfg, store, ledger)
+    try:
+        old = store.get(identifier, scope)
+        key = rt.operation(identifier, "UPSERT", dict(old.payload))
+        ledger.failure("operations", key, RuntimeError("simulated write failure"), terminal=True)
+    finally:
+        ledger.close()
+        store.close()
+    result = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"])
+    )
+    assert result["phase"] == upgrade.PHASE_READY
+    status = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="status"))
+    assert status["plan_stale"] is False
+
+
+def test_old_plan_without_a_watermark_requires_replacement(tmp_path):
+    """A plan saved before the watermark cannot prove the stop-write window."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    state.pop("ledger", None)
+    strategy.write_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX, state)
+    status = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="status"))
+    assert status["plan_stale"] is True
+    assert status["plan_stale_reason"] == "no_watermark"
+    with pytest.raises(upgrade.UpgradePlanStaleError, match="no local write watermark"):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+
+
 def test_remote_apply_requires_isolation_and_a_recovery_point(tmp_path, monkeypatch):
     """A remote destination cannot be adopted without explicit operator evidence."""
     cfg = config(
