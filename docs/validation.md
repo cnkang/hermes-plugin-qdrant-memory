@@ -36,7 +36,7 @@ Local validation for the upgrade-recovery and Shared Owner receipt fixes:
   packaging CI job.
 - Native Hermes upgrade: a temporary profile installed the Catalog 0.6.3 entry
   at `b8c1d8ba` and used local Ollama `qwen3-embedding:4b`. It upgraded to the
-  candidate commit `29e89a3` through an immutable `--ref`. The provider was
+  candidate commit `db8bb2c` through an immutable `--ref`. The provider was
   listed before and after the upgrade.
 - After a fresh process, the original point IDs were present and the deleted
   memory was absent. A new write was visible, and `queue_prefetch` plus
