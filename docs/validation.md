@@ -76,6 +76,46 @@ authenticated Cloud, a prepared local model cache, Windows-only paths, the Pi
 quality driver and the shared-security device server. The full CI matrix is
 recorded on the release pull request.
 
+## Clean Hermes PM acceptance (2026-11-16)
+
+This run used an independent Hermes checkout and a new Python environment; it
+did not reuse the active Hermes profile or its dependency environment.
+
+- Hermes: `v0.23.1+7594.g8783054`, commit
+  `8783054ef6cbafd86f10892241436862c1171a66`, from a detached worktree
+  (`<scratch>/hermes-pm-clean`).
+- Base environment: a new Python 3.14.9 virtual environment with no
+  `qdrant_client` and no `fastembed` before installation.
+- Temporary `HERMES_HOME`: a new `profiles/default` directory. The Hermes PM
+  environment was created under the isolated install store, not by extending
+  the active Hermes environment.
+- Catalog install: `hermes plugins install qdrant-memory` installed the
+  Catalog `community@b8c1d8ba` source at Runtime `0.6.3`.
+- Upgrade entry: the supported source-install path
+  `hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory
+  --ref cc5cac025f5d18afb5c698b2b5db444e30fc240e --force --yes-deps` installed
+  Runtime `0.7.1`. The literal `plugins update` command was not used because it
+  has no `--ref` option and the Catalog pin remains `0.6.3`.
+- Dependency resolution ran without `--no-deps`. The PM environment resolved
+  `qdrant-client 1.20.0`, `httpx 0.28.1`, `portalocker 3.2.0`,
+  `jsonschema 4.26.0` and `uvicorn 0.54.0`.
+- Data: three synthetic records were written through the four scoped provider
+  tools on the 0.6.3 install. Their IDs, scope `uid:501 / hermes` and
+  fingerprint `8b5dffffa9f5477f8d0727a7b6b50e4b755e665a3ccb6ef0b500af46614a6b91`
+  survived the update. After restart, the four tools remained available; the
+  deleted record did not return, a new record was visible, and `prefetch`
+  returned the old and new records without the deleted one.
+- Remaining gap: the plugin manifest declares `mcp>=1.30,<3`, but the PM
+  environment did not install the `mcp` distribution, including after
+  `hermes pm repair`; `mcp` is therefore `MISSING` while the four native
+  provider tools work. The optional MCP-server entry point is not validated by
+  this run. The `pywin32` warning is a platform conditional on macOS and is not
+  a macOS failure.
+
+This is local acceptance of the published `0.7.1` source and the PM
+source-install path. It does not change the Catalog pin and is not an upstream
+repin request.
+
 ## Runtime 0.7.0 candidate checks (2026-11-14)
 
 Local validation for the policy upgrade release:
