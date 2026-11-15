@@ -641,7 +641,10 @@ def test_resume_refuses_a_plan_after_a_real_local_write(tmp_path, monkeypatch):
     replanned = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan", replace=True))
     assert replanned["persisted"] is True
     fresh = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
-    assert fresh["ledger"]["write_watermark"] > state["ledger"]["write_watermark"]
+    assert (
+        fresh["ledger"]["write_watermark"]["committed"]
+        > state["ledger"]["write_watermark"]["committed"]
+    )
     archives = list(strategy.directory(tmp_path).glob("*.upgrade-replaced-*.json"))
     assert archives
     archived = json.loads(archives[0].read_text())
@@ -649,8 +652,8 @@ def test_resume_refuses_a_plan_after_a_real_local_write(tmp_path, monkeypatch):
     assert archived["steps"]["backup"]["path"] == backup
 
 
-def test_failed_operation_does_not_advance_the_watermark(tmp_path):
-    """An admitted but failed write attempt is not a data mutation."""
+def test_failed_operation_is_unresolved_work_not_a_watermark_advance(tmp_path):
+    """A failed write attempt does not advance the watermark, but it blocks apply."""
     from qdrant_memory.ledger import Ledger
     from qdrant_memory.models import Scope, point_id
     from qdrant_memory.runtime import Runtime
@@ -672,12 +675,33 @@ def test_failed_operation_does_not_advance_the_watermark(tmp_path):
     finally:
         ledger.close()
         store.close()
-    result = upgrade.describe(
-        tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"])
-    )
-    assert result["phase"] == upgrade.PHASE_READY
+    snapshot = upgrade._ledger_snapshot(tmp_path, ledger_namespace(cfg))
+    assert snapshot["write_watermark"] == state["ledger"]["write_watermark"]
+    with pytest.raises(upgrade.UpgradeBlockedError) as blocked:
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    assert "failed_operations" in {item["code"] for item in blocked.value.blockers}
+
+
+def test_completed_destination_reset_invalidates_the_saved_boundary(tmp_path):
+    """A cleared Ledger starts a new epoch even before new writes land."""
+    from qdrant_memory.ledger import Ledger
+
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    ledger = Ledger(tmp_path, ledger_namespace(cfg))
+    try:
+        ledger.clear_destination()
+    finally:
+        ledger.close()
     status = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="status"))
-    assert status["plan_stale"] is False
+    assert status["plan_stale"] is True
+    assert status["plan_stale_reason"] == "write_since_plan"
+    assert (
+        status["write_watermark"]["reset_epoch"] > state["ledger"]["write_watermark"]["reset_epoch"]
+    )
 
 
 def test_old_plan_without_a_watermark_requires_replacement(tmp_path):

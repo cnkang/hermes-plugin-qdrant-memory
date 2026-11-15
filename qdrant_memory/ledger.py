@@ -183,6 +183,11 @@ class Ledger:
         cleared memory on the next Owner start.
         """
         with self.lock, self.db:
+            # A completed reset invalidates every upgrade plan that pointed at
+            # the previous destination generation. user_version is durable
+            # through VACUUM and is not a table row that this method deletes.
+            epoch = self.db.execute("PRAGMA user_version").fetchone()[0]
+            self.db.execute(f"PRAGMA user_version={int(epoch) + 1}")
             tables = [
                 "events",
                 "operations",

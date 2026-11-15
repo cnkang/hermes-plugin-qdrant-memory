@@ -149,7 +149,8 @@ def _ledger_snapshot(home, namespace):
         "scope_deletes": 0,
         "shared_requests": 0,
         "owner_receipts": 0,
-        "write_watermark": 0,
+        "reset_epoch": 0,
+        "write_watermark": {"max_rowid": 0, "committed": 0, "reset_epoch": 0},
     }
     if not path.is_file():
         return snapshot
@@ -174,14 +175,21 @@ def _ledger_snapshot(home, namespace):
             ).fetchone()[0]
         if "operations" in tables:
             # A committed local operation is the durable evidence of a data
-            # mutation. Its rowid is stable across processes; failed or merely
-            # admitted rows do not advance this boundary. Retention never
-            # removes the newest committed row.
-            snapshot["write_watermark"] = db.execute(
-                "SELECT COALESCE(MAX(rowid),0) FROM operations "
+            # mutation. The count catches a lower rowid that commits after a
+            # higher one, while the reset epoch catches a cleared Ledger whose
+            # rowids later restart at the same values. Neither failed nor
+            # merely admitted rows advance this boundary.
+            committed = db.execute(
+                "SELECT COALESCE(MAX(rowid),0),COUNT(*) FROM operations "
                 "WHERE collection=? AND status='COMMITTED'",
                 (namespace,),
-            ).fetchone()[0]
+            ).fetchone()
+            snapshot["reset_epoch"] = db.execute("PRAGMA user_version").fetchone()[0]
+            snapshot["write_watermark"] = {
+                "max_rowid": committed[0],
+                "committed": committed[1],
+                "reset_epoch": snapshot["reset_epoch"],
+            }
         snapshot.update(pending_shared(db, namespace))
         return snapshot
 
@@ -215,6 +223,13 @@ def _unresolved_work(snapshot):
     blockers = []
     if snapshot.get("operations", {}).get("PENDING", 0):
         blockers.append({"code": "pending_operations", "detail": "pending writes remain"})
+    if snapshot.get("operations", {}).get("FAILED", 0):
+        blockers.append(
+            {
+                "code": "failed_operations",
+                "detail": "a failed write may have reached the destination; resolve it first",
+            }
+        )
     if snapshot.get("events", {}).get("FAILED", 0):
         blockers.append(
             {
@@ -396,7 +411,15 @@ def _plan_is_stale(state, cfg, namespace):
 def _saved_watermark(state):
     """Return the local operation watermark saved with a plan, if any."""
     value = (state.get("ledger") or {}).get("write_watermark")
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
+    if not isinstance(value, dict):
+        return None
+    fields = ("max_rowid", "committed", "reset_epoch")
+    if any(
+        not isinstance(value.get(field), int) or isinstance(value.get(field), bool)
+        for field in fields
+    ):
+        return None
+    return {field: value[field] for field in fields}
 
 
 def _watermark_stale(state, snapshot):
@@ -404,7 +427,7 @@ def _watermark_stale(state, snapshot):
     saved = _saved_watermark(state)
     if saved is None:
         return "no_watermark"
-    if snapshot.get("write_watermark", 0) != saved:
+    if snapshot.get("write_watermark") != saved:
         return "write_since_plan"
     return None
 
@@ -1191,17 +1214,18 @@ def status(home, cfg):
     stale_reason = None
     watermark = None
     try:
-        if state.get("phase") == PHASE_READY:
-            stale = False
-        elif namespace:
+        if namespace:
             snapshot = _ledger_snapshot(home, namespace)
             watermark = snapshot.get("write_watermark")
             if _plan_is_stale(state, cfg, namespace):
                 stale = True
                 stale_reason = "destination"
-            else:
+            elif state.get("phase") != PHASE_READY:
                 stale_reason = _watermark_stale(state, snapshot)
                 stale = stale_reason is not None
+            else:
+                # A completed plan stays complete; later writes are normal.
+                stale = False
         else:
             stale = False
     except Exception:

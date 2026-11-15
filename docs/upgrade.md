@@ -119,6 +119,9 @@ taken and the current watermark is compared with that record.
 - If no local Runtime write was committed after the plan, resume keeps the same
   plan ID and the original backup. Repeating a completed resume does not create
   another backup or increase the policy generation.
+- A completed destination reset advances the Ledger generation recorded in the
+  watermark, so a plan from before the reset is stale even if its rowid values
+  later repeat.
 - If a local Runtime write was committed, or the saved plan has no watermark,
   the plan is stale. Keep writers isolated, run `upgrade plan --replace`, take a
   new backup at the new stopped-writer point, then apply. The old plan and its
@@ -158,8 +161,9 @@ part way. `failed` carries a sanitized failure type. `ready` means the effective
 policy is committed. `backup_path` reports a recovery point that is still
 recorded, and `plan_stale` reports whether the saved plan still matches the
 profile. `plan_stale_reason` is `destination`, `write_since_plan` or
-`no_watermark`. `write_watermark` reports the current local Ledger operation
-rowid. `next` distinguishes apply, resume and `plan --replace`.
+`no_watermark`. `write_watermark` reports the current local Ledger boundary:
+`max_rowid`, committed count and reset epoch. `next` distinguishes apply,
+resume and `plan --replace`.
 
 ## Blocker reference
 
@@ -170,7 +174,7 @@ rowid. `next` distinguishes apply, resume and `plan --replace`.
 | `dimension_mismatch`, `distance_mismatch`, `vector_datatype` | Not an in-place upgrade. Choose a compatible collection |
 | `identity_missing` | The collection has no trusted fingerprint. Do not adopt it in place |
 | `index_conflict` | Inspect the field type. Runtime never deletes or rebuilds a conflicting index |
-| `pending_operations`, `failed_events`, `quarantined_events` | Clear the work with the existing recovery path first |
+| `pending_operations`, `failed_operations`, `failed_events`, `quarantined_events` | Clear the work with the existing recovery path first. A failed local write may have reached the destination |
 | `reset_intent`, `scope_delete_intent`, `shared_pending` | Resume or resolve the destructive intent first |
 | `shared_owner_receipt` | Restart the Owner so its lifecycle recovery re-enqueues the admitted plan. For a terminally failed event, run the operator `retry` before the restart. Do not clear the receipt by hand |
 | `plan_stale` | Local writes crossed the saved stop-write boundary, or the plan has no watermark. Keep writers isolated, use `upgrade plan --replace`, then take a new backup and apply. Do not reuse the old recovery point |
