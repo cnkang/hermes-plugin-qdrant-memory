@@ -967,7 +967,7 @@ def test_replace_keeps_every_archive_when_the_plan_identifier_is_stable(tmp_path
     monkeypatch.setattr(upgrade._Context, "mark", original_mark)
 
     first = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan", replace=True))
-    second = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan"))
+    second = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan", replace=True))
     assert first["plan_id"] == second["plan_id"] == state["plan_id"]
     assert first["previous_plan"]["archive"] != second["previous_plan"]["archive"]
     archives = sorted(
@@ -1056,3 +1056,15 @@ def test_replacement_does_not_adopt_a_backup_from_an_earlier_instance(tmp_path, 
         == new_state["instance_id"]
     )
     assert len(list((tmp_path / "qdrant-memory" / "backups").iterdir())) == 2
+
+
+def test_plain_replan_of_an_unexecuted_plan_does_not_archive(tmp_path):
+    """A plan that never ran may be replaced without an archive or backup claim."""
+    cfg = embedded_cfg(tmp_path)
+    store = legacy_store(tmp_path, cfg)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    repeated = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan"))
+    assert repeated["plan_id"] == state["plan_id"]
+    assert repeated["previous_plan"] is None
+    assert not list(strategy.directory(tmp_path).glob(f"*.{upgrade.STATE_SUFFIX}-replaced-*.json"))

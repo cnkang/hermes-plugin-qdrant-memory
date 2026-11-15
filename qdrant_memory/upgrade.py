@@ -175,6 +175,30 @@ def _ledger_snapshot(home, namespace):
         return snapshot
 
 
+def _shared_work(snapshot):
+    """Report only Shared Owner work that the upgrade interlock must respect."""
+    blockers = []
+    if snapshot.get("shared_requests", 0):
+        blockers.append(
+            {
+                "code": "shared_pending",
+                "detail": "shared requests are still unacknowledged",
+            }
+        )
+    if snapshot.get("owner_receipts", 0):
+        blockers.append(
+            {
+                "code": "shared_owner_receipt",
+                "detail": (
+                    "the Shared Owner holds an admitted lifecycle receipt whose event "
+                    "has not reached a terminal state; complete the Owner recovery path, "
+                    "then resume or plan again"
+                ),
+            }
+        )
+    return blockers
+
+
 def _unresolved_work(snapshot):
     """Return blockers for pending work that only a recovery path may resolve."""
     blockers = []
@@ -205,24 +229,7 @@ def _unresolved_work(snapshot):
                 "detail": "an interrupted scoped deletion must be resumed by delete-all",
             }
         )
-    if snapshot.get("shared_requests", 0):
-        blockers.append(
-            {
-                "code": "shared_pending",
-                "detail": "shared requests are still unacknowledged",
-            }
-        )
-    if snapshot.get("owner_receipts", 0):
-        blockers.append(
-            {
-                "code": "shared_owner_receipt",
-                "detail": (
-                    "the Shared Owner holds an admitted lifecycle receipt whose event "
-                    "has not reached a terminal state; complete the Owner recovery path, "
-                    "then resume or plan again"
-                ),
-            }
-        )
+    blockers.extend(_shared_work(snapshot))
     return blockers
 
 
@@ -420,7 +427,7 @@ def _archive_state(home, namespace, state):
     archived = dict(state)
     archived["archived_at"] = now()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    suffix = f"{STATE_SUFFIX}-replaced-{plan_id}-{stamp}"
+    suffix = f"{STATE_SUFFIX}-replaced-{plan_id}-{stamp}-{uuid.uuid4().hex[:8]}"
     strategy.write_state(home, namespace, suffix, archived)
     return {
         "plan_id": plan_id,
@@ -474,7 +481,8 @@ def plan_destination(home, cfg, *, persist=True, destination_policy=None, replac
         if persist:
             # Publish before the next writer can start, so a plan can never
             # overwrite progress another pass recorded after the lease.
-            if existing:
+            keep_previous = existing is not None and (replace or _in_progress(existing))
+            if existing and (keep_previous or existing.get("phase") == PHASE_READY):
                 state["previous_plan"] = _archive_state(home, namespace, existing)
             strategy.write_state(home, namespace, STATE_SUFFIX, state)
         return state
@@ -599,6 +607,9 @@ def _backup_embedded(ctx):
     checkpoint = ctx.state["plan"]["checkpoint"]
     root = Path(ctx.home).resolve() / "qdrant-memory" / "backups"
     target = root / f"{_stamp()}-{ctx.state['instance_id'][:12]}"
+    for stale in root.glob(f"*-{ctx.state['instance_id'][:12]}.partial"):
+        if stale.is_dir() and not stale.is_symlink():
+            shutil.rmtree(stale)
     partial = target.with_name(target.name + ".partial")
     if partial.exists():
         shutil.rmtree(partial)
@@ -837,6 +848,8 @@ def _recover_backup(ctx):
             continue
         if marker.get("points") != snapshot["points"]:
             continue
+        if (marker.get("identity") or {}).get("embedding_fingerprint") != expected_identity:
+            continue
         if snapshot["points"] != checkpoint.get("points"):
             continue
         if (snapshot.get("identity") or {}).get("embedding_fingerprint") != expected_identity:
@@ -911,7 +924,7 @@ def _guarded_apply(args, home, cfg, namespace):
         state = _load_state(home, namespace)
         _validate_apply_state(state, args, cfg, namespace)
         if state["phase"] == PHASE_READY:
-            pending = _unresolved_work(_ledger_snapshot(home, namespace))
+            pending = _shared_work(_ledger_snapshot(home, namespace))
             if pending:
                 raise UpgradeBlockedError(pending)
             return {"ok": True, "phase": PHASE_READY, "already_applied": True}
@@ -1021,13 +1034,13 @@ def apply_plan(args, home, cfg):
 
 def _record_failure(home, namespace, exc, plan_id):
     """Persist a sanitized failure only against the plan that was running."""
-    state = strategy.read_state(home, namespace, STATE_SUFFIX)
-    if not state or state.get("plan_id") != plan_id or state.get("phase") == PHASE_READY:
-        return
-    state["phase"] = PHASE_FAILED
-    state["failed_at"] = now()
-    state["failure"] = {"type": type(exc).__name__, "retryable": _retryable(exc)}
     try:
+        state = strategy.read_state(home, namespace, STATE_SUFFIX)
+        if not state or state.get("plan_id") != plan_id or state.get("phase") == PHASE_READY:
+            return
+        state["phase"] = PHASE_FAILED
+        state["failed_at"] = now()
+        state["failure"] = {"type": type(exc).__name__, "retryable": _retryable(exc)}
         strategy.write_state(home, namespace, STATE_SUFFIX, state)
     except Exception:
         # Never mask the upgrade failure that reached this recorder.
