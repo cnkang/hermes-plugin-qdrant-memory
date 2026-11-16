@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Raise the hashed quality-evaluation lock to `opentelemetry-api==1.45.2`,
+  fixing GHSA-mf5v-w3w3-f6cg / CVE-2026-126360 (quadratic traceparent parsing).
+
 - Record a local Ledger write watermark in each upgrade plan. `apply` and
   `resume` compare it under the writer lease and refuse an interrupted plan
   when a local Runtime write crossed the stop-write boundary. The refusal keeps
