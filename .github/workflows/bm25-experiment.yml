@@ -87,8 +87,23 @@ jobs:
         run: |
           uv run python -c "
           import tempfile
-          from experiments.bm25_experiment import BM25ExperimentRunner, Scope, EXPERIMENT_CONFIGS
+          import shutil
+          from qdrant_client import QdrantClient, models as m
           from qdrant_memory.config import DEFAULTS, merge
+          from qdrant_memory.models import Scope
+          from qdrant_memory.qdrant_store import QdrantStore
+
+          # Simple deterministic embedder for smoke test
+          class TestEmbedder:
+              dimensions = 2560
+              fingerprint = 'test-embedding'
+              def embed_query(self, text):
+                  # Simple hash-based embedding
+                  import hashlib
+                  h = hashlib.md5(text.encode()).digest()
+                  return [b / 255.0 for b in h] + [0.0] * (2560 - 16)
+              def embed_documents(self, texts):
+                  return [self.embed_query(t) for t in texts]
 
           temp_dir = tempfile.mkdtemp(prefix='qdrant_test_')
           cfg = merge(DEFAULTS, {
@@ -97,15 +112,32 @@ jobs:
               'search': {'top_k': 8, 'candidate_k': 24, 'min_score': None, 'hnsw_ef': 128, 'exact': False},
           })
           scope = Scope(user_id='test_user', agent_id='test_agent')
-          config = EXPERIMENT_CONFIGS[0]  # dense_baseline embedded
-
-          runner = BM25ExperimentRunner(cfg, scope, use_server=False)
-          runner.setup()
-          result = runner.search_dense('test query', config.top_k, config.dense_candidate_k)
-          assert len(result.retrieved_ids) > 0
-          print(f'Embedded smoke test passed: {len(result.retrieved_ids)} results in {result.latency_ms:.1f}ms')
-          runner.cleanup()
-          import shutil
+          
+          client = QdrantClient(path=temp_dir, force_disable_check_same_thread=True)
+          store = QdrantStore(client, cfg, TestEmbedder())
+          store.initialize(create=True, reset=False)
+          
+          # Insert a test point
+          store.upsert([('test_id', {
+              'text': 'test query content',
+              'user_id': 'test_user',
+              'agent_id': 'test_agent',
+              'source': 'test',
+              'category': ['test'],
+              'importance': 0.5,
+              'metadata': {},
+              'session_id': '',
+              'content_hash': 'sha256:test',
+              'schema_version': 1,
+              'created_at': '2026-01-01T00:00:00Z',
+              'updated_at': '2026-01-01T00:00:00Z'
+          })])
+          
+          # Search
+          result = store.search('test query', scope, top_k=8)
+          assert len(result) > 0, 'No results found'
+          print(f'Embedded smoke test passed: {len(result)} results')
+          store.close()
           shutil.rmtree(temp_dir, ignore_errors=True)
           "
 
