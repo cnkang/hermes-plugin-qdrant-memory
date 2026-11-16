@@ -32,12 +32,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -66,7 +67,7 @@ jobs:
 
       - name: Wait for Qdrant
         run: |
-          for i in {1..30}; do
+          for _ in {1..30}; do
             if curl -sf http://localhost:6333/ >/dev/null; then
               echo "Qdrant ready"
               exit 0
@@ -148,8 +149,6 @@ jobs:
       - name: Run Server BM25-only smoke test
         run: |
           uv run python -c "
-          import tempfile
-          import shutil
           import uuid
           import httpx
           from qdrant_client import QdrantClient, models as m
@@ -167,15 +166,14 @@ jobs:
               def embed_documents(self, texts):
                   return [self.embed_query(t) for t in texts]
 
-          temp_dir = tempfile.mkdtemp(prefix='qdrant_test_')
           cfg = merge(DEFAULTS, {
-              'qdrant': {'path': temp_dir, 'collection': 'smoke_bm25'},
+              'qdrant': {'collection': 'smoke_bm25'},
               'embedding': {'dimensions': 2560},
               'search': {'top_k': 8, 'candidate_k': 24, 'min_score': None, 'hnsw_ef': 128, 'exact': False},
           })
           scope = Scope(user_id='test_user', agent_id='test_agent')
           
-          client = QdrantClient(path=temp_dir, force_disable_check_same_thread=True)
+          client = QdrantClient(url='http://127.0.0.1:6333')
           store = QdrantStore(client, cfg, TestEmbedder())
           store.initialize(create=True, reset=False)
           
@@ -231,7 +229,8 @@ jobs:
               # Test dense search
               vector = TestEmbedder().embed_query('Python async')
               r = http.post('/collections/smoke_bm25/points/query', json={
-                  'prefetch': [{'query': vector, 'using': 'dense', 'limit': 10}],
+                  'query': vector,
+                  'using': 'dense',
                   'limit': 5, 'with_payload': True,
               })
               dense_ids = [p['id'] for p in r.json()['result']['points']]
@@ -259,6 +258,7 @@ jobs:
               print(f'Hybrid results: {hybrid_ids}')
               
               # Verify scope isolation: insert doc with different scope, verify not returned
+          scope_http = httpx.Client(base_url='http://127.0.0.1:6333', timeout=30)
           other_id = str(uuid.uuid4())
           store.upsert([(other_id, {
               'text': 'Python async programming tutorial',
@@ -275,20 +275,21 @@ jobs:
               'updated_at': '2026-01-01T00:00:00Z'
           })])
 
-          r = http.post('/collections/smoke_bm25/points/query', json={
+          r = scope_http.post('/collections/smoke_bm25/points/query', json={
               'prefetch': [
                   {'query': vector, 'using': 'dense', 'limit': 10},
                   {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 10},
               ],
               'query': {'rrf': {'k': 60}},
+              'filter': scope_filter(scope).model_dump(mode='json'),
               'limit': 10, 'with_payload': True,
           })
           hybrid_ids = [p['id'] for p in r.json()['result']['points']]
           assert other_id not in hybrid_ids, 'Scope isolation failed!'
           print('Scope isolation verified')
+          scope_http.close()
           
           store.close()
-          shutil.rmtree(temp_dir, ignore_errors=True)
           print('Server BM25/hybrid smoke test passed')
           "
 
@@ -299,12 +300,13 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -333,7 +335,7 @@ jobs:
 
       - name: Wait for Qdrant
         run: |
-          for i in {1..30}; do
+          for _ in {1..30}; do
             if curl -sf http://localhost:6333/ >/dev/null; then
               echo "Qdrant ready"
               exit 0
@@ -350,10 +352,10 @@ jobs:
         id: ollama
         run: |
           if command -v ollama &> /dev/null && ollama list | grep -q "qwen3-embedding:4b"; then
-            echo "available=true" >> $GITHUB_OUTPUT
+            echo "available=true" >> "$GITHUB_OUTPUT"
             ollama pull qwen3-embedding:4b 2>/dev/null || true
           else
-            echo "available=false" >> $GITHUB_OUTPUT
+            echo "available=false" >> "$GITHUB_OUTPUT"
             echo "Ollama or qwen3-embedding:4b not available, will use fixture vectors"
           fi
 
@@ -366,7 +368,7 @@ jobs:
           OLLAMA_AVAILABLE: ${{ steps.ollama.outputs.available }}
 
       - name: Upload quality results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4
         with:
           name: bm25-quality-results-${{ github.sha }}
           path: experiments/results/
@@ -421,34 +423,53 @@ jobs:
               print(f'dense_latency_ms={dense_lat:.1f}')
               print(f'hybrid_latency_ms={hybrid_lat:.1f}')
               print(f'latency_pct_increase={(hybrid_lat - dense_lat) / dense_lat * 100:.1f}')
-          " >> $GITHUB_OUTPUT
+          " >> "$GITHUB_OUTPUT"
 
       - name: Quality gate summary
+        env:
+          MIXED_DENSE_RECALL8: ${{ steps.metrics.outputs.mixed_dense_recall8 }}
+          MIXED_HYBRID_RECALL8: ${{ steps.metrics.outputs.mixed_hybrid_recall8 }}
+          MIXED_DELTA_RECALL8: ${{ steps.metrics.outputs.mixed_delta_recall8 }}
+          MIXED_DENSE_NDCG8: ${{ steps.metrics.outputs.mixed_dense_ndcg8 }}
+          MIXED_HYBRID_NDCG8: ${{ steps.metrics.outputs.mixed_hybrid_ndcg8 }}
+          MIXED_DELTA_NDCG8: ${{ steps.metrics.outputs.mixed_delta_ndcg8 }}
+          CH_DENSE_RECALL8: ${{ steps.metrics.outputs.ch_dense_recall8 }}
+          CH_HYBRID_RECALL8: ${{ steps.metrics.outputs.ch_hybrid_recall8 }}
+          CHINESE_DELTA_RECALL8: ${{ steps.metrics.outputs.chinese_delta_recall8 }}
+          CODE_DENSE_RECALL8: ${{ steps.metrics.outputs.code_dense_recall8 }}
+          CODE_HYBRID_RECALL8: ${{ steps.metrics.outputs.code_hybrid_recall8 }}
+          CODE_DELTA_RECALL8: ${{ steps.metrics.outputs.code_delta_recall8 }}
+          ID_DENSE_RECALL8: ${{ steps.metrics.outputs.id_dense_recall8 }}
+          ID_HYBRID_RECALL8: ${{ steps.metrics.outputs.id_hybrid_recall8 }}
+          IDENTIFIERS_DELTA_RECALL8: ${{ steps.metrics.outputs.identifiers_delta_recall8 }}
+          DENSE_LATENCY_MS: ${{ steps.metrics.outputs.dense_latency_ms }}
+          HYBRID_LATENCY_MS: ${{ steps.metrics.outputs.hybrid_latency_ms }}
+          LATENCY_PCT_INCREASE: ${{ steps.metrics.outputs.latency_pct_increase }}
         run: |
           echo "## BM25 Quality Gate Results"
           echo ""
           echo "| Slice | Dense Recall@8 | Hybrid Recall@8 | Δ Recall@8 | Dense nDCG@8 | Hybrid nDCG@8 | Δ nDCG@8 |"
           echo "|-------|----------------|-----------------|------------|--------------|---------------|----------|"
-          echo "| mixed | ${{ steps.metrics.outputs.mixed_dense_recall8 }} | ${{ steps.metrics.outputs.mixed_hybrid_recall8 }} | ${{ steps.metrics.outputs.mixed_delta_recall8 }} | ${{ steps.metrics.outputs.mixed_dense_ndcg8 }} | ${{ steps.metrics.outputs.mixed_hybrid_ndcg8 }} | ${{ steps.metrics.outputs.mixed_delta_ndcg8 }} |"
-          echo "| chinese | ${{ steps.metrics.outputs.ch_dense_recall8 }} | ${{ steps.metrics.outputs.ch_hybrid_recall8 }} | ${{ steps.metrics.outputs.chinese_delta_recall8 }} | - | - | - |"
-          echo "| code | ${{ steps.metrics.outputs.code_dense_recall8 }} | ${{ steps.metrics.outputs.code_hybrid_recall8 }} | ${{ steps.metrics.outputs.code_delta_recall8 }} | - | - | - |"
-          echo "| identifiers | ${{ steps.metrics.outputs.id_dense_recall8 }} | ${{ steps.metrics.outputs.id_hybrid_recall8 }} | ${{ steps.metrics.outputs.identifiers_delta_recall8 }} | - | - | - |"
+          echo "| mixed | ${MIXED_DENSE_RECALL8} | ${MIXED_HYBRID_RECALL8} | ${MIXED_DELTA_RECALL8} | ${MIXED_DENSE_NDCG8} | ${MIXED_HYBRID_NDCG8} | ${MIXED_DELTA_NDCG8} |"
+          echo "| chinese | ${CH_DENSE_RECALL8} | ${CH_HYBRID_RECALL8} | ${CHINESE_DELTA_RECALL8} | - | - | - |"
+          echo "| code | ${CODE_DENSE_RECALL8} | ${CODE_HYBRID_RECALL8} | ${CODE_DELTA_RECALL8} | - | - | - |"
+          echo "| identifiers | ${ID_DENSE_RECALL8} | ${ID_HYBRID_RECALL8} | ${IDENTIFIERS_DELTA_RECALL8} | - | - | - |"
           echo ""
-          echo "**Latency**: Dense ${{ steps.metrics.outputs.dense_latency_ms }}ms → Hybrid ${{ steps.metrics.outputs.hybrid_latency_ms }}ms (${{ steps.metrics.outputs.latency_pct_increase }}% increase)"
+          echo "**Latency**: Dense ${DENSE_LATENCY_MS}ms → Hybrid ${HYBRID_LATENCY_MS}ms (${LATENCY_PCT_INCREASE}% increase)"
           echo ""
           echo "### Threshold Check"
-          MIXED_DELTA=$(echo "${{ steps.metrics.outputs.mixed_delta_recall8 }} >= 0.10" | bc -l 2>/dev/null || echo 0)
-          CH_DELTA=$(echo "${{ steps.metrics.outputs.chinese_delta_recall8 }} >= 0.10" | bc -l 2>/dev/null || echo 0)
-          CODE_REGRESS=$(echo "${{ steps.metrics.outputs.code_delta_recall8 }} < -0.02" | bc -l 2>/dev/null || echo 0)
-          LATENCY_OK=$(echo "${{ steps.metrics.outputs.latency_pct_increase }} <= 20" | bc -l 2>/dev/null || echo 0)
+          MIXED_DELTA=$(echo "${MIXED_DELTA_RECALL8} >= 0.10" | bc -l 2>/dev/null || echo 0)
+          CH_DELTA=$(echo "${CHINESE_DELTA_RECALL8} >= 0.10" | bc -l 2>/dev/null || echo 0)
+          CODE_REGRESS=$(echo "${CODE_DELTA_RECALL8} < -0.02" | bc -l 2>/dev/null || echo 0)
+          LATENCY_OK=$(echo "${LATENCY_PCT_INCREASE} <= 20" | bc -l 2>/dev/null || echo 0)
           
-          echo "- Mixed ΔRecall@8 ≥ 0.10: $([ \$MIXED_DELTA -eq 1 ] && echo '✅ PASS' || echo '❌ FAIL')"
-          echo "- Chinese ΔRecall@8 ≥ 0.10: $([ \$CH_DELTA -eq 1 ] && echo '✅ PASS' || echo '❌ FAIL')"
-          echo "- Code regression < -0.02: $([ \$CODE_REGRESS -eq 1 ] && echo '❌ FAIL' || echo '✅ PASS')"
-          echo "- Latency increase ≤ 20%: $([ \$LATENCY_OK -eq 1 ] && echo '✅ PASS' || echo '❌ FAIL')"
+          echo "- Mixed ΔRecall@8 ≥ 0.10: $([ "$MIXED_DELTA" -eq 1 ] && echo '✅ PASS' || echo '❌ FAIL')"
+          echo "- Chinese ΔRecall@8 ≥ 0.10: $([ "$CH_DELTA" -eq 1 ] && echo '✅ PASS' || echo '❌ FAIL')"
+          echo "- Code regression < -0.02: $([ "$CODE_REGRESS" -eq 1 ] && echo '❌ FAIL' || echo '✅ PASS')"
+          echo "- Latency increase ≤ 20%: $([ "$LATENCY_OK" -eq 1 ] && echo '✅ PASS' || echo '❌ FAIL')"
 
       - name: Upload metrics summary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4
         with:
           name: bm25-metrics-${{ github.sha }}
           path: |
@@ -462,12 +483,13 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -497,7 +519,7 @@ jobs:
 
       - name: Wait for Qdrant
         run: |
-          for i in {1..30}; do
+          for _ in {1..30}; do
             if curl -sf http://localhost:6333/ >/dev/null; then
               echo "Qdrant ready"
               exit 0
@@ -594,7 +616,7 @@ jobs:
           import shutil, tempfile
           # Note: temp_dir will be cleaned up by the test runner
           print('Stability collection ready')
-          " >> $GITHUB_STEP_SUMMARY
+          " >> "$GITHUB_STEP_SUMMARY"
 
       - name: Warmup runs (5 iterations)
         run: |
@@ -665,7 +687,7 @@ jobs:
               if errors > 0:
                   print(f'ERROR RATE: {errors}/20 = {errors*5}%')
                   exit(1)
-          " >> $GITHUB_STEP_SUMMARY
+          " >> "$GITHUB_STEP_SUMMARY"
 
       - name: Restart recovery test (same volume)
         run: |
@@ -675,7 +697,7 @@ jobs:
           sleep 2
           docker start qdrant_stability
           
-          for i in {1..30}; do
+          for _ in {1..30}; do
             if curl -sf http://localhost:6333/ >/dev/null; then
               echo "Qdrant restarted"
               break
@@ -730,7 +752,7 @@ jobs:
               all_ids = [p['id'] for p in r.json()['result']['points']]
               assert all(id in {'doc1','doc2','doc3','doc4','doc5'} for id in all_ids), 'Scope isolation failed after restart!'
               print('Restart recovery test passed')
-          " >> $GITHUB_STEP_SUMMARY
+          " >> "$GITHUB_STEP_SUMMARY"
 
       - name: Concurrent read/write test
         run: |
@@ -822,7 +844,7 @@ jobs:
                   print(f'  {e}')
               exit(1)
           print('Concurrent read/write test passed')
-          " >> $GITHUB_STEP_SUMMARY
+          " >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
         if: always()
@@ -837,12 +859,13 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -871,7 +894,7 @@ jobs:
 
       - name: Wait for Qdrant
         run: |
-          for i in {1..30}; do
+          for _ in {1..30}; do
             if curl -sf http://localhost:6333/ >/dev/null; then
               echo "Qdrant 1.20.1 ready"
               exit 0
@@ -1084,7 +1107,7 @@ jobs:
           store.close()
           shutil.rmtree(temp_dir, ignore_errors=True)
           print('Qdrant 1.20.1 compatibility test passed')
-          " >> $GITHUB_STEP_SUMMARY
+          " >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
         if: always()
