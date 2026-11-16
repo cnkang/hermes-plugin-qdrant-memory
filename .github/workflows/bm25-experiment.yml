@@ -88,6 +88,7 @@ jobs:
           uv run python -c "
           import tempfile
           import shutil
+          import uuid
           from qdrant_client import QdrantClient, models as m
           from qdrant_memory.config import DEFAULTS, merge
           from qdrant_memory.models import Scope
@@ -117,8 +118,9 @@ jobs:
           store = QdrantStore(client, cfg, TestEmbedder())
           store.initialize(create=True, reset=False)
           
-          # Insert a test point
-          store.upsert([('test_id', {
+          # Insert a test point with valid UUID
+          test_id = str(uuid.uuid4())
+          store.upsert([(test_id, {
               'text': 'test query content',
               'user_id': 'test_user',
               'agent_id': 'test_agent',
