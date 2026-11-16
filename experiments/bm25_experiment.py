@@ -12,8 +12,10 @@ Uses Qdrant REST API directly for BM25/hybrid since Python client 1.20.0
 doesn't fully support text queries yet.
 """
 
+import hashlib
 import json
 import math
+import os
 import statistics
 import time
 import uuid
@@ -33,6 +35,22 @@ from qdrant_memory.qdrant_store import QdrantStore, scope_filter
 # =============================================================================
 # Test Corpus Definition
 # =============================================================================
+
+
+class FixtureEmbedder:
+    """Return deterministic vectors when CI does not have a local embedding model."""
+
+    dimensions = 2560
+    fingerprint = "bm25-fixture-v1"
+
+    def embed_query(self, text):
+        """Return a deterministic nonzero vector for one fixture query."""
+        digest = hashlib.md5(text.encode()).digest()
+        return [byte / 255.0 for byte in digest] + [0.0] * (self.dimensions - len(digest))
+
+    def embed_documents(self, texts):
+        """Return deterministic fixture vectors in document order."""
+        return [self.embed_query(text) for text in texts]
 
 
 @dataclass
@@ -697,7 +715,14 @@ class BM25ExperimentRunner:
             # For embedded mode, we can't use BM25/hybrid yet (no text index support)
             # So we'll only run dense experiments in embedded mode
 
-        self.embedder = build_embedder(None, self.cfg)
+        ollama_available = os.environ.get("OLLAMA_AVAILABLE")
+        if ollama_available is None:
+            self.embedder = build_embedder(None, self.cfg)
+        elif ollama_available.lower() == "true":
+            self.embedder = build_embedder(None, self.cfg, secret_reader=os.environ.get)
+        else:
+            print("Ollama unavailable; using deterministic fixture embeddings")
+            self.embedder = FixtureEmbedder()
         self.store = QdrantStore(self.client, self.cfg, self.embedder)
         # Use reset=False since we're using fresh temp dirs/collections
         self.store.initialize(create=True, reset=False)

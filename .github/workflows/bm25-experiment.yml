@@ -199,7 +199,7 @@ jobs:
                   'created_at': '2026-01-01T00:00:00Z',
                   'updated_at': '2026-01-01T00:00:00Z'
               })])
-          
+
           # Create multilingual text index with BM25 scoring
           with httpx.Client(base_url='http://127.0.0.1:6333', timeout=30) as http:
               # Create index
@@ -532,13 +532,11 @@ jobs:
       - name: Setup test collection with hybrid index
         run: |
           uv run python -c "
-          import tempfile
-          import uuid
           import httpx
           from qdrant_client import QdrantClient, models as m
           from qdrant_memory.config import DEFAULTS, merge
           from qdrant_memory.models import Scope
-          from qdrant_memory.qdrant_store import QdrantStore
+          from qdrant_memory.qdrant_store import QdrantStore, scope_filter
 
           class TestEmbedder:
               dimensions = 2560
@@ -550,25 +548,24 @@ jobs:
               def embed_documents(self, texts):
                   return [self.embed_query(t) for t in texts]
 
-          temp_dir = tempfile.mkdtemp(prefix='qdrant_stability_')
           cfg = merge(DEFAULTS, {
-              'qdrant': {'path': temp_dir, 'collection': 'stability'},
+              'qdrant': {'collection': 'stability'},
               'embedding': {'dimensions': 2560},
               'search': {'top_k': 8, 'candidate_k': 24, 'min_score': None, 'hnsw_ef': 128, 'exact': False},
           })
           scope = Scope(user_id='stability_user', agent_id='stability_agent')
           
-          client = QdrantClient(path=temp_dir, force_disable_check_same_thread=True)
+          client = QdrantClient(url='http://127.0.0.1:6333')
           store = QdrantStore(client, cfg, TestEmbedder())
           store.initialize(create=True, reset=False)
           
           # Insert stable test docs
           docs = [
-              ('doc1', 'Python async programming tutorial for beginners'),
-              ('doc2', 'Redis cluster deployment steps for production'),
-              ('doc3', '中英混写测试: Python异步编程asyncio教程'),
-              ('doc4', 'Docker Compose multi-container orchestration example'),
-              ('doc5', 'Error code ECONNREFUSED 111 connection refused'),
+              (1, 'Python async programming tutorial for beginners'),
+              (2, 'Redis cluster deployment steps for production'),
+              (3, '中英混写测试: Python异步编程asyncio教程'),
+              (4, 'Docker Compose multi-container orchestration example'),
+              (5, 'Error code ECONNREFUSED 111 connection refused'),
           ]
           for doc_id, text in docs:
               store.upsert([(doc_id, {
@@ -585,6 +582,21 @@ jobs:
                   'created_at': '2026-01-01T00:00:00Z',
                   'updated_at': '2026-01-01T00:00:00Z'
               })])
+
+          store.upsert([(999, {
+              'text': 'Foreign scope document for isolation verification',
+              'user_id': 'other_user',
+              'agent_id': 'stability_agent',
+              'source': 'stability',
+              'category': ['stability'],
+              'importance': 0.5,
+              'metadata': {},
+              'session_id': '',
+              'content_hash': 'sha256:foreign_scope',
+              'schema_version': 1,
+              'created_at': '2026-01-01T00:00:00Z',
+              'updated_at': '2026-01-01T00:00:00Z'
+          })])
           
           # Create multilingual text index with BM25 scoring
           import httpx
@@ -613,8 +625,6 @@ jobs:
                   time.sleep(0.5)
           
           store.close()
-          import shutil, tempfile
-          # Note: temp_dir will be cleaned up by the test runner
           print('Stability collection ready')
           " >> "$GITHUB_STEP_SUMMARY"
 
@@ -708,6 +718,8 @@ jobs:
           uv run python -c "
           import httpx
           from qdrant_client import QdrantClient, models as m
+          from qdrant_memory.models import Scope
+          from qdrant_memory.qdrant_store import scope_filter
           import hashlib
           
           class TestEmbedder:
@@ -735,22 +747,24 @@ jobs:
               print(f'Post-restart hybrid search: {ids}')
               
               # Verify original doc IDs still present
-              expected = {'doc1', 'doc2', 'doc3', 'doc4', 'doc5'}
+              expected = {1, 2, 3, 4, 5}
               found = set(ids) & expected
               print(f'Original docs found: {len(found)}/5')
               assert len(found) == 5, f'Missing original docs: {expected - found}'
               
               # Verify no data from other scope leaked
+              scope = Scope(user_id='stability_user', agent_id='stability_agent')
               r = http.post('/collections/stability/points/query', json={
                   'prefetch': [
                       {'query': vector, 'using': 'dense', 'limit': 20},
                       {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 20},
                   ],
                   'query': {'rrf': {'k': 60}},
+                  'filter': scope_filter(scope).model_dump(mode='json'),
                   'limit': 20, 'with_payload': True,
               })
               all_ids = [p['id'] for p in r.json()['result']['points']]
-              assert all(id in {'doc1','doc2','doc3','doc4','doc5'} for id in all_ids), 'Scope isolation failed after restart!'
+              assert 999 not in all_ids, 'Scope isolation failed after restart!'
               print('Restart recovery test passed')
           " >> "$GITHUB_STEP_SUMMARY"
 
@@ -761,6 +775,7 @@ jobs:
           import time
           import httpx
           import hashlib
+          import uuid
           from qdrant_client import QdrantClient, models as m
           
           class TestEmbedder:
@@ -797,7 +812,7 @@ jobs:
           
           def writer():
               for i in range(5):
-                  doc_id = f'concurrent_{i}_{int(time.time()*1000)}'
+                  doc_id = str(uuid.uuid4())
                   vector = embedder.embed_query(f'Concurrent write {i}')
                   start = time.monotonic()
                   try:
@@ -967,14 +982,12 @@ jobs:
       - name: Run Server hybrid on 1.20.1
         run: |
           uv run python -c "
-          import tempfile
-          import shutil
           import uuid
           import httpx
           from qdrant_client import QdrantClient, models as m
           from qdrant_memory.config import DEFAULTS, merge
           from qdrant_memory.models import Scope
-          from qdrant_memory.qdrant_store import QdrantStore
+          from qdrant_memory.qdrant_store import QdrantStore, scope_filter
 
           class TestEmbedder:
               dimensions = 2560
@@ -986,15 +999,14 @@ jobs:
               def embed_documents(self, texts):
                   return [self.embed_query(t) for t in texts]
 
-          temp_dir = tempfile.mkdtemp(prefix='qdrant_1201_')
           cfg = merge(DEFAULTS, {
-              'qdrant': {'path': temp_dir, 'collection': 'test_1201_hybrid'},
+              'qdrant': {'collection': 'test_1201_hybrid'},
               'embedding': {'dimensions': 2560},
               'search': {'top_k': 8, 'candidate_k': 24, 'min_score': None, 'hnsw_ef': 128, 'exact': False},
           })
           scope = Scope(user_id='test_user', agent_id='test_agent')
           
-          client = QdrantClient(path=temp_dir, force_disable_check_same_thread=True)
+          client = QdrantClient(url='http://127.0.0.1:6333')
           store = QdrantStore(client, cfg, TestEmbedder())
           store.initialize(create=True, reset=False)
           
@@ -1048,7 +1060,8 @@ jobs:
               # Test dense
               vector = TestEmbedder().embed_query('Python async')
               r = http.post('/collections/test_1201_hybrid/points/query', json={
-                  'prefetch': [{'query': vector, 'using': 'dense', 'limit': 10}],
+                  'query': vector,
+                  'using': 'dense',
                   'limit': 5, 'with_payload': True,
               })
               dense_ids = [p['id'] for p in r.json()['result']['points']]
@@ -1092,20 +1105,22 @@ jobs:
               'updated_at': '2026-01-01T00:00:00Z'
           })])
 
-          r = http.post('/collections/test_1201_hybrid/points/query', json={
+          scope_http = httpx.Client(base_url='http://127.0.0.1:6333', timeout=30)
+          r = scope_http.post('/collections/test_1201_hybrid/points/query', json={
               'prefetch': [
                   {'query': vector, 'using': 'dense', 'limit': 10},
                   {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 10},
               ],
               'query': {'rrf': {'k': 60}},
+              'filter': scope_filter(scope).model_dump(mode='json'),
               'limit': 10, 'with_payload': True,
           })
           hybrid_ids = [p['id'] for p in r.json()['result']['points']]
           assert other_id not in hybrid_ids, 'Scope isolation failed on 1.20.1!'
           print('1.20.1 Scope isolation verified')
+          scope_http.close()
           
           store.close()
-          shutil.rmtree(temp_dir, ignore_errors=True)
           print('Qdrant 1.20.1 compatibility test passed')
           " >> "$GITHUB_STEP_SUMMARY"
 
