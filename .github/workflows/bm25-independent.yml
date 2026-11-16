@@ -1,0 +1,136 @@
+name: BM25 Independent Holdout
+
+on:
+  push:
+    branches: [codex/bm25-hybrid-eval]
+    paths:
+      - 'experiments/independent/**'
+      - '.github/workflows/bm25-independent.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bm25-independent-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QDRANT_IMAGE: qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2
+  QDRANT_IMAGE_DIGEST: sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2
+  OLLAMA_MODEL: qwen3-embedding:4b
+
+jobs:
+  independent:
+    name: Frozen real-model holdout and warm latency
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v6
+        with:
+          python-version: '3.11'
+      - name: Install experiment dependencies
+        run: python -m pip install httpx==0.28.1
+      - name: Validate frozen data and scoring
+        run: python -m unittest discover -s experiments/independent -p 'test_*.py' -v
+      - name: Start isolated pinned Qdrant
+        run: |
+          docker pull "$QDRANT_IMAGE"
+          docker run -d --name bm25-independent-ci -p 127.0.0.1:16333:6333 \
+            -v bm25_independent_ci:/qdrant/storage "$QDRANT_IMAGE"
+          for _ in {1..60}; do
+            if curl -fsS http://127.0.0.1:16333/readyz; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Fixture mutation and same-volume restart
+        id: lifecycle
+        run: |
+          python experiments/independent/lifecycle.py --container bm25-independent-ci \
+            --output independent-results/lifecycle.json
+      - name: Prepare real embedding model
+        id: model
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          if ! curl -fsS http://127.0.0.1:11434/api/version; then
+            nohup ollama serve > "$RUNNER_TEMP/bm25-ollama.log" 2>&1 &
+          fi
+          for _ in {1..60}; do
+            if curl -fsS http://127.0.0.1:11434/api/version; then break; fi
+            sleep 1
+          done
+          ollama pull "$OLLAMA_MODEL"
+          ollama show "$OLLAMA_MODEL"
+      - name: Development pipeline check
+        id: development
+        run: |
+          python experiments/independent/run.py --split dev --rounds 1 \
+            --latency-pairs 2 --latency-queries 2 \
+            --lifecycle-report independent-results/lifecycle.json \
+            --output independent-results/dev.json
+      - name: Full holdout and three warm latency rounds
+        id: holdout
+        run: |
+          python experiments/independent/run.py --split holdout --rounds 3 --latency-pairs 100 \
+            --lifecycle-report independent-results/lifecycle.json \
+            --output independent-results/holdout.json
+      - name: Execution and experiment status
+        if: always()
+        env:
+          VALIDATION_STATUS: ${{ job.status }}
+          LIFECYCLE_STATUS: ${{ steps.lifecycle.outcome }}
+          MODEL_STATUS: ${{ steps.model.outcome }}
+          DEV_STATUS: ${{ steps.development.outcome }}
+          HOLDOUT_STATUS: ${{ steps.holdout.outcome }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path('independent-results')
+          root.mkdir(exist_ok=True)
+          holdout = root / 'holdout.json'
+          lifecycle = root / 'lifecycle.json'
+          if holdout.exists():
+              r = json.loads(holdout.read_text())
+              execution, verdict = r['execution_status'], r['decision']['verdict']
+              reason = r.get('error', '')
+          else:
+              execution, verdict = 'ERROR', 'INCONCLUSIVE'
+              reason = 'holdout did not execute; inspect step outcomes'
+          if lifecycle.exists() and json.loads(lifecycle.read_text())['status'] == 'FAIL':
+              verdict, reason = 'NO-GO', 'lifecycle assertion failed'
+          if os.environ['MODEL_STATUS'] == 'failure':
+              execution, reason = 'UNVERIFIED', 'required real model installation or availability failed'
+          status = dict(execution_status=execution, experiment=verdict, reason=reason,
+                        commit=os.environ['GITHUB_SHA'], run=os.environ['GITHUB_RUN_ID'],
+                        steps={k:v for k,v in os.environ.items() if k.endswith('_STATUS')})
+          (root/'status.json').write_text(json.dumps(status,indent=2)+'\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write(f"Execution: **{execution}**; experiment: **{verdict}**. {reason}\n\n")
+              report = root/'holdout.md'
+              if report.exists(): f.write(report.read_text())
+          print(json.dumps(status,indent=2))
+          PY
+      - name: Upload raw timings, rankings and status
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4
+        with:
+          name: bm25-independent-${{ github.sha }}
+          path: |
+            independent-results/
+            experiments/independent/freeze.json
+            experiments/independent/annotations.jsonl
+            experiments/independent/review.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Qdrant diagnostics
+        if: failure()
+        run: docker logs --tail 100 bm25-independent-ci
+      - name: Stop temporary server
+        if: always()
+        run: docker rm -f bm25-independent-ci || true

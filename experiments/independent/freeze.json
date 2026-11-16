@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "exposure": "unexposed before first run; all subsequent retrieval changes exploratory unless a fresh holdout is used",
+  "config": {
+    "model": "qwen3-embedding:4b",
+    "image": "qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2",
+    "top_k": 8,
+    "dense_candidates": 24,
+    "sparse_candidates": 24,
+    "rrf_k": 60,
+    "tokenizer": "multilingual",
+    "min_token_len": 2,
+    "max_token_len": 15,
+    "lowercase": true,
+    "enable_hnsw": true,
+    "score_threshold": null,
+    "query_instruction": "",
+    "document_instruction": "",
+    "bootstrap_draws": 10000,
+    "bootstrap_seed": 152,
+    "latency_bootstrap_draws": 2000,
+    "warmup_passes": 2,
+    "model_digest": "df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907"
+  },
+  "files": {
+    "dataset.json": "1a37e962f8b010f29d32445a96c4274c4484992fe273560c5bb8a41d133eee8f",
+    "dataset.py": "2f0e09ab4ddb69f8ef1608c98c3e8efe11b2d058f5343eef6f24aeac2bf84037",
+    "PLAN.md": "27e81bd8d89aefac7979d17809e45a60c96a538fd2ecaec4d59664f2f397748d",
+    "REVIEW.md": "71cb023bfcb76e72410f4ca7026c3ecbd9258f28307a7ff57e14b4cfba2d589d",
+    "review.json": "86c281429ebb6c1cb9fac3d2872a3180407c4eb61abbeac842da1e323105cd91",
+    "annotations.jsonl": "71365f67b9a9911df05e992dbaf164a81c1ee0fff415dbff8098ab4c20cf4f4d",
+    "scoring.py": "f71903ebe01323b8bf3ef84210724accfa0ee2fd958ff47af0d7838eec0fffc3",
+    "decision.py": "3adf169ce6bab85edb13c81c4b06d37bee94fde4fb5e59d52f3341021da7256c",
+    "server.py": "a7ee1f702acd0d3942d7bb0774d9b21821cb335c15d97990a8e6f582c5da7a4f",
+    "run.py": "da3e48739c086988444f1882cee144f12e830d3c4a9e8ff9fbb94b5eeeca3c42",
+    "lifecycle.py": "3d3c36648e89b2b45d80b62f7a74aca6ce6f7848071812890679307c9b941850",
+    "test_scoring.py": "529c4aef409a17f8ca5a09b6370f5ba95dc07b47e126196df7f75c6b5615b233",
+    "FREEZE_HISTORY.md": "98f1cf65dc80b6fbf9db85a2c54ae00b17f6a38ce19467aa7048e6463d9d7edd"
+  }
+}

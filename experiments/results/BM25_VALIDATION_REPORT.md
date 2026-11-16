@@ -1,5 +1,14 @@
 # BM25 Hybrid Recall Validation Experiment Report
 
+> Historical exploratory baseline. Its slice-wide shared relevant IDs are not
+> independent per-question validation. The current reviewable experiment is
+> [independent/README.md](../independent/README.md), with the frozen plan in
+> [independent/PLAN.md](../independent/PLAN.md). Recommendations below are the
+> historical report, superseded by the independent experiment's decision.
+> CI run 43876725500 had mixed Recall delta +0.10, Chinese +0.02, code flat,
+> stale_fact 0.444 to 0.400. Its +1.4% mixed mean latency is not warm p95.
+> Chinese +10pp remains an original check; it is not relaxed for this round.
+
 **Experiment Date**: 2026-11-16  
 **Runtime Version**: 0.7.1 (main branch)  
 **Qdrant Server**: 1.20.0  
