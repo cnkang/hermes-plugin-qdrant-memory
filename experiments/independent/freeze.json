@@ -23,18 +23,20 @@
     "model_digest": "df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907"
   },
   "files": {
-    "dataset.json": "1a37e962f8b010f29d32445a96c4274c4484992fe273560c5bb8a41d133eee8f",
+    "dataset.json": "baad2a10ab3c6288c8e0bf09c84f0203b6c918fe9b3e5463ade6425f0b0d5586",
     "dataset.py": "2f0e09ab4ddb69f8ef1608c98c3e8efe11b2d058f5343eef6f24aeac2bf84037",
     "PLAN.md": "27e81bd8d89aefac7979d17809e45a60c96a538fd2ecaec4d59664f2f397748d",
     "REVIEW.md": "71cb023bfcb76e72410f4ca7026c3ecbd9258f28307a7ff57e14b4cfba2d589d",
-    "review.json": "86c281429ebb6c1cb9fac3d2872a3180407c4eb61abbeac842da1e323105cd91",
-    "annotations.jsonl": "71365f67b9a9911df05e992dbaf164a81c1ee0fff415dbff8098ab4c20cf4f4d",
+    "review.json": "705eb8a3e09a4144601ed59531ed0188e1c4512cd16e17f7f28ce029c21db838",
+    "annotations.jsonl": "21caeb72edc40dfb93dcde5385e76689d73b065cfd8ed4adbd3e8666cb5bd76b",
     "scoring.py": "f71903ebe01323b8bf3ef84210724accfa0ee2fd958ff47af0d7838eec0fffc3",
     "decision.py": "3adf169ce6bab85edb13c81c4b06d37bee94fde4fb5e59d52f3341021da7256c",
     "server.py": "a7ee1f702acd0d3942d7bb0774d9b21821cb335c15d97990a8e6f582c5da7a4f",
-    "run.py": "da3e48739c086988444f1882cee144f12e830d3c4a9e8ff9fbb94b5eeeca3c42",
+    "run.py": "d825c015817eb5eeb51b26151334b1bb33eb99fb24834208998829b2e91d96d0",
     "lifecycle.py": "3d3c36648e89b2b45d80b62f7a74aca6ce6f7848071812890679307c9b941850",
     "test_scoring.py": "529c4aef409a17f8ca5a09b6370f5ba95dc07b47e126196df7f75c6b5615b233",
-    "FREEZE_HISTORY.md": "98f1cf65dc80b6fbf9db85a2c54ae00b17f6a38ce19467aa7048e6463d9d7edd"
-  }
+    "FREEZE_HISTORY.md": "a5d9a25d44637ced2346d31bb06a4548d73a8f7efd2bddac8507ef8a96060762"
+  },
+  "holdout_annotations_sha256": "71ae443eb89fe5bd64c757b3e671c29e035c1106198011e7b3e1734f73388fcc",
+  "development_correction_only": true
 }

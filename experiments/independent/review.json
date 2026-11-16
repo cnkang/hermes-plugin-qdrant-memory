@@ -2,7 +2,7 @@
   "status": "approved",
   "reviewer": "Codex (user-delegated annotation verification)",
   "date": "2026-11-16",
-  "dataset_sha256": "1a37e962f8b010f29d32445a96c4274c4484992fe273560c5bb8a41d133eee8f",
+  "dataset_sha256": "baad2a10ab3c6288c8e0bf09c84f0203b6c918fe9b3e5463ade6425f0b0d5586",
   "query_ids": [
     "reply-language/q1",
     "reply-language/q2",
@@ -137,5 +137,6 @@
     "null-agent/q2",
     "null-agent/q3"
   ],
-  "method": "Semantic inspection of every question and rationale plus schema/scope/split checks; see REVIEW.md"
+  "method": "Semantic inspection of every question and rationale plus schema/scope/split checks; see REVIEW.md",
+  "development_correction": "reply-language/q1: exception record b also directly answers; holdout unchanged"
 }

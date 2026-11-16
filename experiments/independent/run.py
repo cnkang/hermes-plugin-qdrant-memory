@@ -1,6 +1,7 @@
 """Frozen real-model evaluation. Run from the repository root; no Runtime imports."""
 
 import argparse
+import hashlib
 import json
 import platform
 import subprocess
@@ -25,6 +26,12 @@ def verify_freeze():
     assert review["status"] == "approved" and review["reviewer"], "annotation review required"
     assert review["dataset_sha256"] == digest(ROOT / "dataset.json")
     _, queries = load_dataset()
+    if "holdout_annotations_sha256" in frozen:
+        holdout = [q for q in queries if q["split"] == "holdout"]
+        actual = hashlib.sha256(
+            json.dumps(holdout, ensure_ascii=False, sort_keys=True).encode()
+        ).hexdigest()
+        assert actual == frozen["holdout_annotations_sha256"], "holdout annotations changed"
     expanded = "".join(json.dumps(q, ensure_ascii=False, sort_keys=True) + "\n" for q in queries)
     assert expanded == (ROOT / "annotations.jsonl").read_text(), (
         "expanded annotations differ from authoring source"
