@@ -13,10 +13,10 @@ numpy==2.4.6 ; python_full_version < '3.12'
 numpy==2.5.3 ; python_full_version >= '3.12'
 portalocker==3.2.0
 protobuf==7.36.2
-pydantic==2.14.2
-pydantic-core==2.50.2
+pydantic==2.14.3
+pydantic-core==2.50.4
 pywin32==312 ; sys_platform == 'win32'
 qdrant-client==1.20.0
 typing-extensions==4.16.0
-typing-inspection==0.4.4
+typing-inspection==0.4.5
 urllib3==2.8.0
