@@ -51,6 +51,9 @@ jobs:
           uv pip install httpx
           uv pip install -e .
 
+      - name: Verify imports
+        run: uv run python -c "import httpx; print('httpx OK')"
+
       - name: Start Qdrant Server
         run: |
           docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}
@@ -133,6 +136,9 @@ jobs:
         run: |
           uv pip install httpx
           uv pip install -e .
+
+      - name: Verify imports
+        run: uv run python -c "import httpx; print('httpx OK')"
 
       - name: Start Qdrant Server
         run: |
@@ -266,6 +272,9 @@ jobs:
         run: |
           uv pip install httpx
           uv pip install -e .
+
+      - name: Verify imports
+        run: uv run python -c "import httpx; print('httpx OK')"
 
       - name: Start Qdrant Server
         run: |
@@ -491,6 +500,9 @@ jobs:
         run: |
           uv pip install httpx
           uv pip install -e .
+
+      - name: Verify imports
+        run: uv run python -c "import httpx; print('httpx OK')"
 
       - name: Start Qdrant 1.20.1
         run: |
