@@ -76,7 +76,7 @@ jobs:
 
       - name: Smoke test imports
         run: |
-          python -c "
+          uv run python -c "
           from experiments.bm25_experiment import BM25ExperimentRunner, Scope, EXPERIMENT_CONFIGS
           from qdrant_memory.config import DEFAULTS, merge
           from qdrant_memory.embedding import build_embedder
@@ -85,7 +85,7 @@ jobs:
 
       - name: Run embedded smoke test
         run: |
-          python -c "
+          uv run python -c "
           import tempfile
           from experiments.bm25_experiment import BM25ExperimentRunner, Scope, EXPERIMENT_CONFIGS
           from qdrant_memory.config import DEFAULTS, merge
