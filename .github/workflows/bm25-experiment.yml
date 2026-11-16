@@ -19,9 +19,9 @@ permissions:
 env:
   # Pinned dependencies for reproducibility
   QDRANT_VERSION: "1.20.0"
-  QDRANT_DIGEST: "sha256:222b2e44ab1c3f17e8246396ead6558e45041df7"
+  # QDRANT_DIGEST: "sha256:..."  # TODO: add correct SHA256 digest (64 hex chars)
   QDRANT_VERSION_COMPAT: "1.20.1"
-  QDRANT_DIGEST_COMPAT: "sha256:9b3c4e5d6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3"
+  # QDRANT_DIGEST_COMPAT: "sha256:..."  # TODO: add correct SHA256 digest
   PYTHON_VERSION: "3.11"
   OLLAMA_MODEL: "qwen3-embedding:4b"
 
@@ -58,11 +58,11 @@ jobs:
 
       - name: Start Qdrant Server (1.20.0)
         run: |
-          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
+          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}
           docker run -d --name qdrant \
             -p 6333:6333 -p 6334:6334 \
             -v qdrant_data:/qdrant/storage \
-            qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
+            qdrant/qdrant:v${{ env.QDRANT_VERSION }}
 
       - name: Wait for Qdrant
         run: |
@@ -324,11 +324,11 @@ jobs:
 
       - name: Start Qdrant Server (1.20.0)
         run: |
-          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
+          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}
           docker run -d --name qdrant \
             -p 6333:6333 -p 6334:6334 \
             -v qdrant_data:/qdrant/storage \
-            qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
+            qdrant/qdrant:v${{ env.QDRANT_VERSION }}
 
       - name: Wait for Qdrant
         run: |
@@ -487,12 +487,12 @@ jobs:
 
       - name: Start Qdrant Server (1.20.0) with persistent volume
         run: |
-          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
+          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}
           docker volume create qdrant_stability_data
           docker run -d --name qdrant_stability \
             -p 6333:6333 -p 6334:6334 \
             -v qdrant_stability_data:/qdrant/storage \
-            qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
+            qdrant/qdrant:v${{ env.QDRANT_VERSION }}
 
       - name: Wait for Qdrant
         run: |
@@ -862,11 +862,11 @@ jobs:
 
       - name: Start Qdrant 1.20.1
         run: |
-          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION_COMPAT }}@${{ env.QDRANT_DIGEST_COMPAT }}
+          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION_COMPAT }}
           docker run -d --name qdrant_compat \
             -p 6333:6333 -p 6334:6334 \
             -v qdrant_compat_data:/qdrant/storage \
-            qdrant/qdrant:v${{ env.QDRANT_VERSION_COMPAT }}@${{ env.QDRANT_DIGEST_COMPAT }}
+            qdrant/qdrant:v${{ env.QDRANT_VERSION_COMPAT }}
 
       - name: Wait for Qdrant
         run: |
