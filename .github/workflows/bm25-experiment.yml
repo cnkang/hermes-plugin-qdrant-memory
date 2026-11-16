@@ -47,7 +47,7 @@ jobs:
         run: uv venv
 
       - name: Install dependencies
-        run: uv pip install -e ".[test,mcp,remote,local]" httpx
+        run: uv pip install -e . httpx
 
       - name: Start Qdrant Server
         run: |
@@ -128,7 +128,7 @@ jobs:
         run: uv venv
 
       - name: Install dependencies
-        run: uv pip install -e ".[test,mcp,remote,local]" httpx
+        run: uv pip install -e . httpx
 
       - name: Start Qdrant Server
         run: |
@@ -259,7 +259,7 @@ jobs:
         run: uv venv
 
       - name: Install dependencies
-        run: uv pip install -e ".[test,mcp,remote,local]" httpx
+        run: uv pip install -e . httpx
 
       - name: Start Qdrant Server
         run: |
@@ -482,7 +482,7 @@ jobs:
         run: uv venv
 
       - name: Install dependencies
-        run: uv pip install -e ".[test,mcp,remote,local]" httpx
+        run: uv pip install -e . httpx
 
       - name: Start Qdrant 1.20.1
         run: |
