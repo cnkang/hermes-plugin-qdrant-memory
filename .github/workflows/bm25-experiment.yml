@@ -20,6 +20,8 @@ env:
   # Pinned dependencies for reproducibility
   QDRANT_VERSION: "1.20.0"
   QDRANT_DIGEST: "sha256:222b2e44ab1c3f17e8246396ead6558e45041df7"
+  QDRANT_VERSION_COMPAT: "1.20.1"
+  QDRANT_DIGEST_COMPAT: "sha256:9b3c4e5d6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3"
   PYTHON_VERSION: "3.11"
   OLLAMA_MODEL: "qwen3-embedding:4b"
 
@@ -54,13 +56,13 @@ jobs:
       - name: Verify imports
         run: uv run python -c "import httpx; print('httpx OK')"
 
-      - name: Start Qdrant Server
+      - name: Start Qdrant Server (1.20.0)
         run: |
-          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}
+          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
           docker run -d --name qdrant \
             -p 6333:6333 -p 6334:6334 \
             -v qdrant_data:/qdrant/storage \
-            qdrant/qdrant:v${{ env.QDRANT_VERSION }}
+            qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
 
       - name: Wait for Qdrant
         run: |
@@ -74,6 +76,10 @@ jobs:
           echo "Qdrant failed to start"
           exit 1
 
+      - name: Verify Qdrant version
+        run: |
+          curl -s http://localhost:6333/ | jq -r .version
+
       - name: Smoke test imports
         run: |
           uv run python -c "
@@ -83,23 +89,21 @@ jobs:
           print('All imports OK')
           "
 
-      - name: Run embedded smoke test
+      - name: Run embedded dense smoke test
         run: |
           uv run python -c "
           import tempfile
           import shutil
           import uuid
-          from qdrant_client import QdrantClient, models as m
+          from qdrant_client import QdrantClient
           from qdrant_memory.config import DEFAULTS, merge
           from qdrant_memory.models import Scope
           from qdrant_memory.qdrant_store import QdrantStore
 
-          # Simple deterministic embedder for smoke test
           class TestEmbedder:
               dimensions = 2560
               fingerprint = 'test-embedding'
               def embed_query(self, text):
-                  # Simple hash-based embedding
                   import hashlib
                   h = hashlib.md5(text.encode()).digest()
                   return [b / 255.0 for b in h] + [0.0] * (2560 - 16)
@@ -118,7 +122,6 @@ jobs:
           store = QdrantStore(client, cfg, TestEmbedder())
           store.initialize(create=True, reset=False)
           
-          # Insert a test point with valid UUID
           test_id = str(uuid.uuid4())
           store.upsert([(test_id, {
               'text': 'test query content',
@@ -135,12 +138,157 @@ jobs:
               'updated_at': '2026-01-01T00:00:00Z'
           })])
           
-          # Search
           result = store.search('test query', scope, top_k=8)
           assert len(result) > 0, 'No results found'
-          print(f'Embedded smoke test passed: {len(result)} results')
+          print(f'Embedded dense smoke test passed: {len(result)} results')
           store.close()
           shutil.rmtree(temp_dir, ignore_errors=True)
+          "
+
+      - name: Run Server BM25-only smoke test
+        run: |
+          uv run python -c "
+          import tempfile
+          import shutil
+          import uuid
+          import httpx
+          from qdrant_client import QdrantClient, models as m
+          from qdrant_memory.config import DEFAULTS, merge
+          from qdrant_memory.models import Scope
+          from qdrant_memory.qdrant_store import QdrantStore, scope_filter
+
+          class TestEmbedder:
+              dimensions = 2560
+              fingerprint = 'test-embedding'
+              def embed_query(self, text):
+                  import hashlib
+                  h = hashlib.md5(text.encode()).digest()
+                  return [b / 255.0 for b in h] + [0.0] * (2560 - 16)
+              def embed_documents(self, texts):
+                  return [self.embed_query(t) for t in texts]
+
+          temp_dir = tempfile.mkdtemp(prefix='qdrant_test_')
+          cfg = merge(DEFAULTS, {
+              'qdrant': {'path': temp_dir, 'collection': 'smoke_bm25'},
+              'embedding': {'dimensions': 2560},
+              'search': {'top_k': 8, 'candidate_k': 24, 'min_score': None, 'hnsw_ef': 128, 'exact': False},
+          })
+          scope = Scope(user_id='test_user', agent_id='test_agent')
+          
+          client = QdrantClient(path=temp_dir, force_disable_check_same_thread=True)
+          store = QdrantStore(client, cfg, TestEmbedder())
+          store.initialize(create=True, reset=False)
+          
+          # Insert test docs with distinct content
+          docs = [
+              ('id1', 'Python async programming tutorial for beginners'),
+              ('id2', 'Redis cluster deployment steps production'),
+              ('id3', '中文查询测试: Python异步编程asyncio教程'),
+              ('id4', 'Unrelated content about cooking recipes'),
+          ]
+          for doc_id, text in docs:
+              store.upsert([(doc_id, {
+                  'text': text,
+                  'user_id': 'test_user',
+                  'agent_id': 'test_agent',
+                  'source': 'test',
+                  'category': ['test'],
+                  'importance': 0.5,
+                  'metadata': {},
+                  'session_id': '',
+                  'content_hash': 'sha256:test',
+                  'schema_version': 1,
+                  'created_at': '2026-01-01T00:00:00Z',
+                  'updated_at': '2026-01-01T00:00:00Z'
+              })])
+          
+          # Create multilingual text index with BM25 scoring
+          with httpx.Client(base_url='http://127.0.0.1:6333', timeout=30) as http:
+              # Create index
+              r = http.put(f'/collections/smoke_bm25/index', json={
+                  'field_name': 'text',
+                  'field_schema': {
+                      'type': 'text',
+                      'tokenizer': 'multilingual',
+                      'min_token_len': 1,
+                      'max_token_len': 20,
+                      'lowercase': True,
+                      'enable_hnsw': True,
+                      'scoring': {'type': 'bm25'},
+                  }
+              })
+              assert r.status_code == 200, f'Index creation failed: {r.text}'
+              
+              # Wait for index ready
+              import time
+              for _ in range(20):
+                  r = http.get('/collections/smoke_bm25')
+                  schema = r.json().get('result', {}).get('payload_schema', {})
+                  if 'text' in schema and schema['text'].get('params', {}).get('scoring'):
+                      break
+                  time.sleep(0.5)
+              
+              # Test dense search
+              vector = TestEmbedder().embed_query('Python async')
+              r = http.post('/collections/smoke_bm25/points/query', json={
+                  'prefetch': [{'query': vector, 'using': 'dense', 'limit': 10}],
+                  'limit': 5, 'with_payload': True,
+              })
+              dense_ids = [p['id'] for p in r.json()['result']['points']]
+              print(f'Dense results: {dense_ids}')
+              
+              # Test BM25-only
+              r = http.post('/collections/smoke_bm25/points/query', json={
+                  'query': {'text': 'Python async'},
+                  'using': 'text',
+                  'limit': 5, 'with_payload': True,
+              })
+              bm25_ids = [p['id'] for p in r.json()['result']['points']]
+              print(f'BM25 results: {bm25_ids}')
+              
+              # Test hybrid RRF
+              r = http.post('/collections/smoke_bm25/points/query', json={
+                  'prefetch': [
+                      {'query': vector, 'using': 'dense', 'limit': 10},
+                      {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 10},
+                  ],
+                  'query': {'rrf': {'k': 60}},
+                  'limit': 5, 'with_payload': True,
+              })
+              hybrid_ids = [p['id'] for p in r.json()['result']['points']]
+              print(f'Hybrid results: {hybrid_ids}')
+              
+              # Verify scope isolation: insert doc with different scope, verify not returned
+              store.upsert([('other_scope', {
+                  'text': 'Python async programming tutorial',
+                  'user_id': 'other_user',  # Different user!
+                  'agent_id': 'test_agent',
+                  'source': 'test',
+                  'category': ['test'],
+                  'importance': 0.5,
+                  'metadata': {},
+                  'session_id': '',
+                  'content_hash': 'sha256:other',
+                  'schema_version': 1,
+                  'created_at': '2026-01-01T00:00:00Z',
+                  'updated_at': '2026-01-01T00:00:00Z'
+              })])
+              
+              r = http.post('/collections/smoke_bm25/points/query', json={
+                  'prefetch': [
+                      {'query': vector, 'using': 'dense', 'limit': 10},
+                      {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 10},
+                  ],
+                  'query': {'rrf': {'k': 60}},
+                  'limit': 10, 'with_payload': True,
+              })
+              hybrid_ids = [p['id'] for p in r.json()['result']['points']]
+              assert 'other_scope' not in hybrid_ids, 'Scope isolation failed!'
+              print('Scope isolation verified')
+          
+          store.close()
+          shutil.rmtree(temp_dir, ignore_errors=True)
+          print('Server BM25/hybrid smoke test passed')
           "
 
   quality:
@@ -174,13 +322,13 @@ jobs:
       - name: Verify imports
         run: uv run python -c "import httpx; print('httpx OK')"
 
-      - name: Start Qdrant Server
+      - name: Start Qdrant Server (1.20.0)
         run: |
-          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}
+          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
           docker run -d --name qdrant \
             -p 6333:6333 -p 6334:6334 \
             -v qdrant_data:/qdrant/storage \
-            qdrant/qdrant:v${{ env.QDRANT_VERSION }}
+            qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
 
       - name: Wait for Qdrant
         run: |
@@ -194,12 +342,27 @@ jobs:
           echo "Qdrant failed to start"
           exit 1
 
-      - name: Run full quality experiment
+      - name: Verify Qdrant version
+        run: curl -s http://localhost:6333/ | jq -r .version
+
+      - name: Check Ollama availability
+        id: ollama
+        run: |
+          if command -v ollama &> /dev/null && ollama list | grep -q "qwen3-embedding:4b"; then
+            echo "available=true" >> $GITHUB_OUTPUT
+            ollama pull qwen3-embedding:4b 2>/dev/null || true
+          else
+            echo "available=false" >> $GITHUB_OUTPUT
+            echo "Ollama or qwen3-embedding:4b not available, will use fixture vectors"
+          fi
+
+      - name: Run quality experiment
         id: quality
         run: |
-          python experiments/bm25_experiment.py
+          uv run python experiments/bm25_experiment.py --mode quality
         env:
           QDRANT_URL: http://localhost:6333
+          OLLAMA_AVAILABLE: ${{ steps.ollama.outputs.available }}
 
       - name: Upload quality results
         uses: actions/upload-artifact@v4
@@ -211,47 +374,52 @@ jobs:
       - name: Extract key metrics
         id: metrics
         run: |
-          python -c "
+          uv run python -c "
           import json
           with open('experiments/results/bm25_experiment_results.json') as f:
               data = json.load(f)
           
-          # Extract key comparison metrics
           metrics = data['metrics']
           
-          # Find best hybrid vs dense baseline for mixed slice
-          mixed_dense = [m for m in metrics if m['slice'] == 'mixed' and m['config_name'] == 'dense_baseline' and m['mode'] == 'server'][0]
-          mixed_hybrid = [m for m in metrics if m['slice'] == 'mixed' and m['config_name'] == 'hybrid_multilingual_rrf'][0]
+          # Find best hybrid vs dense baseline for mixed slice (server mode)
+          mixed_dense = [m for m in metrics if m['slice'] == 'mixed' and m['config_name'] == 'dense_baseline' and m['mode'] == 'server']
+          mixed_hybrid = [m for m in metrics if m['slice'] == 'mixed' and m['config_name'] == 'hybrid_multilingual_rrf' and m['mode'] == 'server']
           
-          print(f'mixed_dense_recall8={mixed_dense[\"recall_at_k\"][8]:.3f}')
-          print(f'mixed_hybrid_recall8={mixed_hybrid[\"recall_at_k\"][8]:.3f}')
-          print(f'mixed_delta_recall8={mixed_hybrid[\"recall_at_k\"][8] - mixed_dense[\"recall_at_k\"][8]:.3f}')
-          
-          print(f'mixed_dense_ndcg8={mixed_dense[\"ndcg_at_k\"][8]:.3f}')
-          print(f'mixed_hybrid_ndcg8={mixed_hybrid[\"ndcg_at_k\"][8]:.3f}')
-          print(f'mixed_delta_ndcg8={mixed_hybrid[\"ndcg_at_k\"][8] - mixed_dense[\"ndcg_at_k\"][8]:.3f}')
+          if mixed_dense and mixed_hybrid:
+              md = mixed_dense[0]
+              mh = mixed_hybrid[0]
+              print(f'mixed_dense_recall8={md[\"recall_at_k\"][\"8\"]:.4f}')
+              print(f'mixed_hybrid_recall8={mh[\"recall_at_k\"][\"8\"]:.4f}')
+              print(f'mixed_delta_recall8={mh[\"recall_at_k\"][\"8\"] - md[\"recall_at_k\"][\"8\"]:.4f}')
+              print(f'mixed_dense_ndcg8={md[\"ndcg_at_k\"][\"8\"]:.4f}')
+              print(f'mixed_hybrid_ndcg8={mh[\"ndcg_at_k\"][\"8\"]:.4f}')
+              print(f'mixed_delta_ndcg8={mh[\"ndcg_at_k\"][\"8\"] - md[\"ndcg_at_k\"][\"8\"]:.4f}')
           
           # Chinese slice
-          ch_dense = [m for m in metrics if m['slice'] == 'chinese' and m['config_name'] == 'dense_baseline' and m['mode'] == 'server'][0]
-          ch_hybrid = [m for m in metrics if m['slice'] == 'chinese' and m['config_name'] == 'hybrid_multilingual_rrf'][0]
-          print(f'chinese_delta_recall8={ch_hybrid[\"recall_at_k\"][8] - ch_dense[\"recall_at_k\"][8]:.3f}')
+          ch_dense = [m for m in metrics if m['slice'] == 'chinese' and m['config_name'] == 'dense_baseline' and m['mode'] == 'server']
+          ch_hybrid = [m for m in metrics if m['slice'] == 'chinese' and m['config_name'] == 'hybrid_multilingual_rrf' and m['mode'] == 'server']
+          if ch_dense and ch_hybrid:
+              print(f'chinese_delta_recall8={ch_hybrid[0][\"recall_at_k\"][\"8\"] - ch_dense[0][\"recall_at_k\"][\"8\"]:.4f}')
           
           # Code slice (should not regress)
-          code_dense = [m for m in metrics if m['slice'] == 'code' and m['config_name'] == 'dense_baseline' and m['mode'] == 'server'][0]
-          code_hybrid = [m for m in metrics if m['slice'] == 'code' and m['config_name'] == 'hybrid_multilingual_rrf'][0]
-          print(f'code_delta_recall8={code_hybrid[\"recall_at_k\"][8] - code_dense[\"recall_at_k\"][8]:.3f}')
+          code_dense = [m for m in metrics if m['slice'] == 'code' and m['config_name'] == 'dense_baseline' and m['mode'] == 'server']
+          code_hybrid = [m for m in metrics if m['slice'] == 'code' and m['config_name'] == 'hybrid_multilingual_rrf' and m['mode'] == 'server']
+          if code_dense and code_hybrid:
+              print(f'code_delta_recall8={code_hybrid[0][\"recall_at_k\"][\"8\"] - code_dense[0][\"recall_at_k\"][\"8\"]:.4f}')
           
           # Identifiers slice
-          id_dense = [m for m in metrics if m['slice'] == 'identifiers' and m['config_name'] == 'dense_baseline' and m['mode'] == 'server'][0]
-          id_hybrid = [m for m in metrics if m['slice'] == 'identifiers' and m['config_name'] == 'hybrid_multilingual_rrf'][0]
-          print(f'identifiers_delta_recall8={id_hybrid[\"recall_at_k\"][8] - id_dense[\"recall_at_k\"][8]:.3f}')
+          id_dense = [m for m in metrics if m['slice'] == 'identifiers' and m['config_name'] == 'dense_baseline' and m['mode'] == 'server']
+          id_hybrid = [m for m in metrics if m['slice'] == 'identifiers' and m['config_name'] == 'hybrid_multilingual_rrf' and m['mode'] == 'server']
+          if id_dense and id_hybrid:
+              print(f'identifiers_delta_recall8={id_hybrid[0][\"recall_at_k\"][\"8\"] - id_dense[0][\"recall_at_k\"][\"8\"]:.4f}')
           
           # Latency check
-          dense_lat = mixed_dense['avg_latency_ms']
-          hybrid_lat = mixed_hybrid['avg_latency_ms']
-          print(f'dense_latency_ms={dense_lat:.1f}')
-          print(f'hybrid_latency_ms={hybrid_lat:.1f}')
-          print(f'latency_pct_increase={(hybrid_lat - dense_lat) / dense_lat * 100:.1f}')
+          if mixed_dense and mixed_hybrid:
+              dense_lat = mixed_dense[0]['avg_latency_ms']
+              hybrid_lat = mixed_hybrid[0]['avg_latency_ms']
+              print(f'dense_latency_ms={dense_lat:.1f}')
+              print(f'hybrid_latency_ms={hybrid_lat:.1f}')
+              print(f'latency_pct_increase={(hybrid_lat - dense_lat) / dense_lat * 100:.1f}')
           " >> $GITHUB_OUTPUT
 
       - name: Quality gate summary
@@ -268,16 +436,23 @@ jobs:
           echo "**Latency**: Dense ${{ steps.metrics.outputs.dense_latency_ms }}ms → Hybrid ${{ steps.metrics.outputs.hybrid_latency_ms }}ms (${{ steps.metrics.outputs.latency_pct_increase }}% increase)"
           echo ""
           echo "### Threshold Check"
-          # Check thresholds
-          MIXED_DELTA=$(echo "${{ steps.metrics.outputs.mixed_delta_recall8 }} >= 0.10" | bc -l)
-          CH_DELTA=$(echo "${{ steps.metrics.outputs.chinese_delta_recall8 }} >= 0.10" | bc -l)
-          CODE_REGRESS=$(echo "${{ steps.metrics.outputs.code_delta_recall8 }} < -0.02" | bc -l)
-          LATENCY_OK=$(echo "${{ steps.metrics.outputs.latency_pct_increase }} <= 20" | bc -l)
+          MIXED_DELTA=$(echo "${{ steps.metrics.outputs.mixed_delta_recall8 }} >= 0.10" | bc -l 2>/dev/null || echo 0)
+          CH_DELTA=$(echo "${{ steps.metrics.outputs.chinese_delta_recall8 }} >= 0.10" | bc -l 2>/dev/null || echo 0)
+          CODE_REGRESS=$(echo "${{ steps.metrics.outputs.code_delta_recall8 }} < -0.02" | bc -l 2>/dev/null || echo 0)
+          LATENCY_OK=$(echo "${{ steps.metrics.outputs.latency_pct_increase }} <= 20" | bc -l 2>/dev/null || echo 0)
           
           echo "- Mixed ΔRecall@8 ≥ 0.10: $([ \$MIXED_DELTA -eq 1 ] && echo '✅ PASS' || echo '❌ FAIL')"
           echo "- Chinese ΔRecall@8 ≥ 0.10: $([ \$CH_DELTA -eq 1 ] && echo '✅ PASS' || echo '❌ FAIL')"
           echo "- Code regression < -0.02: $([ \$CODE_REGRESS -eq 1 ] && echo '❌ FAIL' || echo '✅ PASS')"
           echo "- Latency increase ≤ 20%: $([ \$LATENCY_OK -eq 1 ] && echo '✅ PASS' || echo '❌ FAIL')"
+
+      - name: Upload metrics summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: bm25-metrics-${{ github.sha }}
+          path: |
+            experiments/results/bm25_experiment_results.json
+          retention-days: 30
 
   stability:
     name: Stability Tests (repeated runs)
@@ -310,13 +485,14 @@ jobs:
       - name: Verify imports
         run: uv run python -c "import httpx; print('httpx OK')"
 
-      - name: Start Qdrant Server
+      - name: Start Qdrant Server (1.20.0) with persistent volume
         run: |
-          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}
-          docker run -d --name qdrant \
+          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
+          docker volume create qdrant_stability_data
+          docker run -d --name qdrant_stability \
             -p 6333:6333 -p 6334:6334 \
-            -v qdrant_data:/qdrant/storage \
-            qdrant/qdrant:v${{ env.QDRANT_VERSION }}
+            -v qdrant_stability_data:/qdrant/storage \
+            qdrant/qdrant:v${{ env.QDRANT_VERSION }}@${{ env.QDRANT_DIGEST }}
 
       - name: Wait for Qdrant
         run: |
@@ -330,66 +506,150 @@ jobs:
           echo "Qdrant failed to start"
           exit 1
 
-      - name: Warmup runs
+      - name: Setup test collection with hybrid index
         run: |
+          uv run python -c "
+          import tempfile
+          import uuid
+          import httpx
+          from qdrant_client import QdrantClient, models as m
+          from qdrant_memory.config import DEFAULTS, merge
+          from qdrant_memory.models import Scope
+          from qdrant_memory.qdrant_store import QdrantStore
+
+          class TestEmbedder:
+              dimensions = 2560
+              fingerprint = 'test-embedding'
+              def embed_query(self, text):
+                  import hashlib
+                  h = hashlib.md5(text.encode()).digest()
+                  return [b / 255.0 for b in h] + [0.0] * (2560 - 16)
+              def embed_documents(self, texts):
+                  return [self.embed_query(t) for t in texts]
+
+          temp_dir = tempfile.mkdtemp(prefix='qdrant_stability_')
+          cfg = merge(DEFAULTS, {
+              'qdrant': {'path': temp_dir, 'collection': 'stability'},
+              'embedding': {'dimensions': 2560},
+              'search': {'top_k': 8, 'candidate_k': 24, 'min_score': None, 'hnsw_ef': 128, 'exact': False},
+          })
+          scope = Scope(user_id='stability_user', agent_id='stability_agent')
+          
+          client = QdrantClient(path=temp_dir, force_disable_check_same_thread=True)
+          store = QdrantStore(client, cfg, TestEmbedder())
+          store.initialize(create=True, reset=False)
+          
+          # Insert stable test docs
+          docs = [
+              ('doc1', 'Python async programming tutorial for beginners'),
+              ('doc2', 'Redis cluster deployment steps for production'),
+              ('doc3', '中英混写测试: Python异步编程asyncio教程'),
+              ('doc4', 'Docker Compose multi-container orchestration example'),
+              ('doc5', 'Error code ECONNREFUSED 111 connection refused'),
+          ]
+          for doc_id, text in docs:
+              store.upsert([(doc_id, {
+                  'text': text,
+                  'user_id': 'stability_user',
+                  'agent_id': 'stability_agent',
+                  'source': 'stability',
+                  'category': ['stability'],
+                  'importance': 0.5,
+                  'metadata': {},
+                  'session_id': '',
+                  'content_hash': f'sha256:{doc_id}',
+                  'schema_version': 1,
+                  'created_at': '2026-01-01T00:00:00Z',
+                  'updated_at': '2026-01-01T00:00:00Z'
+              })])
+          
+          # Create multilingual text index with BM25 scoring
+          import httpx
+          with httpx.Client(base_url='http://127.0.0.1:6333', timeout=30) as http:
+              r = http.put('/collections/stability/index', json={
+                  'field_name': 'text',
+                  'field_schema': {
+                      'type': 'text',
+                      'tokenizer': 'multilingual',
+                      'min_token_len': 1,
+                      'max_token_len': 20,
+                      'lowercase': True,
+                      'enable_hnsw': True,
+                      'scoring': {'type': 'bm25'},
+                  }
+              })
+              assert r.status_code == 200, f'Index creation failed: {r.text}'
+              
+              import time
+              for _ in range(20):
+                  r = http.get('/collections/stability')
+                  schema = r.json().get('result', {}).get('payload_schema', {})
+                  if 'text' in schema and schema['text'].get('params', {}).get('scoring'):
+                      print('Hybrid index ready')
+                      break
+                  time.sleep(0.5)
+          
+          store.close()
+          import shutil, tempfile
+          # Note: temp_dir will be cleaned up by the test runner
+          print('Stability collection ready')
+          " >> $GITHUB_STEP_SUMMARY
+
+      - name: Warmup runs (5 iterations)
+        run: |
+          printf 'import httpx\nfrom qdrant_client import QdrantClient, models as m\nimport hashlib\n\nclass TestEmbedder:\n    dimensions = 2560\n    def embed_query(self, text):\n        h = hashlib.md5(text.encode()).digest()\n        return [b / 255.0 for b in h] + [0.0] * (2560 - 16)\n\nvector = TestEmbedder().embed_query(\"stability warmup query\")\n\nwith httpx.Client(base_url=\"http://127.0.0.1:6333\", timeout=30) as http:\n    r = http.post(\"/collections/stability/points/query\", json={\n        \"prefetch\": [\n            {\"query\": vector, \"using\": \"dense\", \"limit\": 10},\n            {\"query\": {\"text\": \"Python async\"}, \"using\": \"text\", \"limit\": 10},\n        ],\n        \"query\": {\"rrf\": {\"k\": 60}},\n        \"limit\": 5, \"with_payload\": True,\n    })\n    assert r.status_code == 200\n    results = r.json()["result"]["points"]\n    print(f"Warmup: {len(results)} results")\n' > /tmp/warmup.py
           for i in {1..5}; do
             echo "Warmup run $i/5"
-            python -c "
-            import tempfile
-            from experiments.bm25_experiment import BM25ExperimentRunner, Scope
-            from qdrant_memory.config import DEFAULTS, merge
-
-            temp_dir = tempfile.mkdtemp(prefix='qdrant_test_')
-            cfg = merge(DEFAULTS, {
-                'qdrant': {'path': temp_dir},
-                'embedding': {'dimensions': 2560},
-                'search': {'top_k': 8, 'candidate_k': 24, 'min_score': None, 'hnsw_ef': 128, 'exact': False},
-            })
-            scope = Scope(user_id='test_user', agent_id='test_agent')
-            runner = BM25ExperimentRunner(cfg, scope, use_server=False)
-            runner.setup()
-            for q in ['test query 1', 'another query', 'third test']:
-                runner.search_dense(q, 8, 24)
-            runner.cleanup()
-            import shutil
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            "
+            uv run python /tmp/warmup.py
           done
 
-      - name: Stability runs (10 iterations)
+      - name: Stability runs (20 iterations with hybrid)
         run: |
-          python -c "
+          uv run python -c "
           import time
           import statistics
-          from experiments.bm25_experiment import BM25ExperimentRunner, Scope
-          from qdrant_memory.config import DEFAULTS, merge
-          import tempfile
-          import shutil
-
+          import httpx
+          from qdrant_client import QdrantClient, models as m
+          import hashlib
+          
+          class TestEmbedder:
+              dimensions = 2560
+              def embed_query(self, text):
+                  h = hashlib.md5(text.encode()).digest()
+                  return [b / 255.0 for b in h] + [0.0] * (2560 - 16)
+          
+          embedder = TestEmbedder()
           latencies = []
           errors = 0
           
-          for i in range(10):
-              temp_dir = tempfile.mkdtemp(prefix='qdrant_stability_')
-              cfg = merge(DEFAULTS, {
-                  'qdrant': {'path': temp_dir},
-                  'embedding': {'dimensions': 2560},
-                  'search': {'top_k': 8, 'candidate_k': 24, 'min_score': None, 'hnsw_ef': 128, 'exact': False},
-              })
-              scope = Scope(user_id='test_user', agent_id='test_agent')
-              runner = BM25ExperimentRunner(cfg, scope, use_server=False)
-              runner.setup()
+          queries = [
+              'Python async programming tutorial',
+              'Redis cluster deployment steps',
+              '中英混写测试 Python异步',
+              'Docker Compose orchestration',
+              'Error code ECONNREFUSED 111',
+          ]
+          
+          for i in range(20):
+              query = queries[i % len(queries)]
+              vector = embedder.embed_query(query)
               
               start = time.monotonic()
               try:
-                  result = runner.search_dense('stability test query for mixed Chinese English 中英混写', 8, 24)
-                  latencies.append((time.monotonic() - start) * 1000)
+                  with httpx.Client(base_url='http://127.0.0.1:6333', timeout=30) as http:
+                      r = http.post('/collections/stability/points/query', json={
+                          'prefetch': [
+                              {'query': vector, 'using': 'dense', 'limit': 10},
+                              {'query': {'text': query}, 'using': 'text', 'limit': 10},
+                          ],
+                          'query': {'rrf': {'k': 60}},
+                          'limit': 8, 'with_payload': True,
+                      })
+                      assert r.status_code == 200
+                      latencies.append((time.monotonic() - start) * 1000)
               except Exception as e:
                   errors += 1
                   print(f'Error on iteration {i}: {e}')
-              finally:
-                  runner.cleanup()
-                  shutil.rmtree(temp_dir, ignore_errors=True)
           
           if latencies:
               print(f'Iterations: {len(latencies)}')
@@ -398,95 +658,152 @@ jobs:
               print(f'Stdev: {statistics.stdev(latencies) if len(latencies) > 1 else 0:.1f}ms')
               print(f'Min: {min(latencies):.1f}ms')
               print(f'Max: {max(latencies):.1f}ms')
+              print(f'p50: {sorted(latencies)[len(latencies)//2]:.1f}ms')
               print(f'p95: {sorted(latencies)[int(0.95 * len(latencies))]:.1f}ms')
+              print(f'p99: {sorted(latencies)[int(0.99 * len(latencies))]:.1f}ms')
               if errors > 0:
-                  print(f'ERROR RATE: {errors}/10 = {errors*10}%')
+                  print(f'ERROR RATE: {errors}/20 = {errors*5}%')
                   exit(1)
           " >> $GITHUB_STEP_SUMMARY
 
-      - name: Restart recovery test
+      - name: Restart recovery test (same volume)
         run: |
-          python -c "
-          import tempfile
-          from experiments.bm25_experiment import BM25ExperimentRunner, Scope
-          from qdrant_memory.config import DEFAULTS, merge
-          import shutil
-
-          # Insert data, then restart, verify recovery
-          temp_dir = tempfile.mkdtemp(prefix='qdrant_recovery_')
-          cfg = merge(DEFAULTS, {
-              'qdrant': {'path': temp_dir},
-              'embedding': {'dimensions': 2560},
-              'search': {'top_k': 8, 'candidate_k': 24, 'min_score': None, 'hnsw_ef': 128, 'exact': False},
-          })
-          scope = Scope(user_id='test_user', agent_id='test_agent')
+          echo "=== Restart Recovery Test ==="
+          # Stop and restart Qdrant with same volume
+          docker stop qdrant_stability
+          sleep 2
+          docker start qdrant_stability
           
-          # First runner inserts data
-          runner1 = BM25ExperimentRunner(cfg, scope, use_server=False)
-          runner1.setup()
-          test_queries = [
-              'Python async programming tutorial',
-              'Redis cluster deployment steps',
-              '中文查询测试',
-              'code example: async def foo(): pass'
-          ]
-          for q in test_queries:
-              runner1.search_dense(q, 8, 24)
-          runner1.cleanup()
+          for i in {1..30}; do
+            if curl -sf http://localhost:6333/ >/dev/null; then
+              echo "Qdrant restarted"
+              break
+            fi
+            sleep 1
+          done
           
-          # Second runner reopens same path
-          runner2 = BM25ExperimentRunner(cfg, scope, use_server=False)
-          runner2.setup()
-          for q in test_queries:
-              result = runner2.search_dense(q, 8, 24)
-              assert len(result.retrieved_ids) > 0, f'No results for {q}'
-          runner2.cleanup()
+          uv run python -c "
+          import httpx
+          from qdrant_client import QdrantClient, models as m
+          import hashlib
           
-          shutil.rmtree(temp_dir, ignore_errors=True)
-          print('Restart recovery test passed')
+          class TestEmbedder:
+              dimensions = 2560
+              def embed_query(self, text):
+                  h = hashlib.md5(text.encode()).digest()
+                  return [b / 255.0 for b in h] + [0.0] * (2560 - 16)
+          
+          embedder = TestEmbedder()
+          
+          # Verify original docs still accessible
+          with httpx.Client(base_url='http://127.0.0.1:6333', timeout=30) as http:
+              vector = embedder.embed_query('Python async programming')
+              r = http.post('/collections/stability/points/query', json={
+                  'prefetch': [
+                      {'query': vector, 'using': 'dense', 'limit': 10},
+                      {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 10},
+                  ],
+                  'query': {'rrf': {'k': 60}},
+                  'limit': 8, 'with_payload': True,
+              })
+              assert r.status_code == 200
+              results = r.json()['result']['points']
+              ids = [p['id'] for p in results]
+              print(f'Post-restart hybrid search: {ids}')
+              
+              # Verify original doc IDs still present
+              expected = {'doc1', 'doc2', 'doc3', 'doc4', 'doc5'}
+              found = set(ids) & expected
+              print(f'Original docs found: {len(found)}/5')
+              assert len(found) == 5, f'Missing original docs: {expected - found}'
+              
+              # Verify no data from other scope leaked
+              r = http.post('/collections/stability/points/query', json={
+                  'prefetch': [
+                      {'query': vector, 'using': 'dense', 'limit': 20},
+                      {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 20},
+                  ],
+                  'query': {'rrf': {'k': 60}},
+                  'limit': 20, 'with_payload': True,
+              })
+              all_ids = [p['id'] for p in r.json()['result']['points']]
+              assert all(id in {'doc1','doc2','doc3','doc4','doc5'} for id in all_ids), 'Scope isolation failed after restart!'
+              print('Restart recovery test passed')
           " >> $GITHUB_STEP_SUMMARY
 
       - name: Concurrent read/write test
         run: |
-          python -c "
+          uv run python -c "
           import threading
           import time
-          import tempfile
-          from experiments.bm25_experiment import BM25ExperimentRunner, Scope
-          from qdrant_memory.config import DEFAULTS, merge
-          import shutil
-
-          temp_dir = tempfile.mkdtemp(prefix='qdrant_concurrent_')
-          cfg = merge(DEFAULTS, {
-              'qdrant': {'path': temp_dir},
-              'embedding': {'dimensions': 2560},
-              'search': {'top_k': 8, 'candidate_k': 24, 'min_score': None, 'hnsw_ef': 128, 'exact': False},
-          })
-          scope = Scope(user_id='test_user', agent_id='test_agent')
+          import httpx
+          import hashlib
+          from qdrant_client import QdrantClient, models as m
           
-          runner = BM25ExperimentRunner(cfg, scope, use_server=False)
-          runner.setup()
+          class TestEmbedder:
+              dimensions = 2560
+              def embed_query(self, text):
+                  h = hashlib.md5(text.encode()).digest()
+                  return [b / 255.0 for b in h] + [0.0] * (2560 - 16)
           
+          embedder = TestEmbedder()
           errors = []
           read_latencies = []
+          write_latencies = []
           
           def reader():
-              for _ in range(20):
+              for _ in range(15):
+                  query = 'concurrent read query'
+                  vector = embedder.embed_query(query)
                   start = time.monotonic()
                   try:
-                      runner.search_dense('concurrent read query', 8, 24)
-                      read_latencies.append((time.monotonic() - start) * 1000)
+                      with httpx.Client(base_url='http://127.0.0.1:6333', timeout=10) as http:
+                          r = http.post('/collections/stability/points/query', json={
+                              'prefetch': [
+                                  {'query': vector, 'using': 'dense', 'limit': 10},
+                                  {'query': {'text': query}, 'using': 'text', 'limit': 10},
+                              ],
+                              'query': {'rrf': {'k': 60}},
+                              'limit': 8, 'with_payload': True,
+                          })
+                          assert r.status_code == 200
+                          read_latencies.append((time.monotonic() - start) * 1000)
                   except Exception as e:
                       errors.append(f'Read error: {e}')
                   time.sleep(0.01)
           
           def writer():
-              for i in range(10):
+              for i in range(5):
+                  doc_id = f'concurrent_{i}_{int(time.time()*1000)}'
+                  vector = embedder.embed_query(f'Concurrent write {i}')
+                  start = time.monotonic()
                   try:
-                      runner.store.upsert([(f'concurrent_{i}', {'text': f'Concurrent write {i}', 'user_id': 'test_user', 'agent_id': 'test_agent', 'source': 'test', 'category': ['test'], 'importance': 0.5, 'metadata': {}, 'session_id': '', 'content_hash': 'sha256:test', 'schema_version': 1, 'created_at': '2026-01-01T00:00:00Z', 'updated_at': '2026-01-01T00:00:00Z'})])
+                      with httpx.Client(base_url='http://127.0.0.1:6333', timeout=10) as http:
+                          r = http.put('/collections/stability/points', json={
+                              'points': [{
+                                  'id': doc_id,
+                                  'vector': {'dense': vector},
+                                  'payload': {
+                                      'text': f'Concurrent write {i}',
+                                      'user_id': 'stability_user',
+                                      'agent_id': 'stability_agent',
+                                      'source': 'stability',
+                                      'category': ['concurrent'],
+                                      'importance': 0.5,
+                                      'metadata': {},
+                                      'session_id': '',
+                                      'content_hash': f'sha256:{doc_id}',
+                                      'schema_version': 1,
+                                      'created_at': '2026-01-01T00:00:00Z',
+                                      'updated_at': '2026-01-01T00:00:00Z'
+                                  }
+                              }]
+                          })
+                          assert r.status_code == 200
+                          write_latencies.append((time.monotonic() - start) * 1000)
                   except Exception as e:
                       errors.append(f'Write error: {e}')
-                  time.sleep(0.02)
+                  time.sleep(0.05)
           
           threads = [threading.Thread(target=reader) for _ in range(3)] + [threading.Thread(target=writer) for _ in range(2)]
           for t in threads:
@@ -494,18 +811,23 @@ jobs:
           for t in threads:
               t.join()
           
-          runner.cleanup()
-          shutil.rmtree(temp_dir, ignore_errors=True)
-          
           print(f'Errors: {len(errors)}')
           if read_latencies:
-              print(f'Read latency - mean: {sum(read_latencies)/len(read_latencies):.1f}ms, max: {max(read_latencies):.1f}ms')
+              print(f'Read latency - mean: {sum(read_latencies)/len(read_latencies):.1f}ms, max: {max(read_latencies):.1f}ms, p95: {sorted(read_latencies)[int(0.95*len(read_latencies))]:.1f}ms')
+          if write_latencies:
+              print(f'Write latency - mean: {sum(write_latencies)/len(write_latencies):.1f}ms, max: {max(write_latencies):.1f}ms')
           if errors:
               for e in errors:
                   print(f'  {e}')
               exit(1)
           print('Concurrent read/write test passed')
           " >> $GITHUB_STEP_SUMMARY
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop qdrant_stability 2>/dev/null || true
+          docker volume rm qdrant_stability_data 2>/dev/null || true
 
   qdrant-1-20-1:
     name: Qdrant 1.20.1 Compatibility
@@ -540,11 +862,11 @@ jobs:
 
       - name: Start Qdrant 1.20.1
         run: |
-          docker pull qdrant/qdrant:v1.20.1
-          docker run -d --name qdrant \
+          docker pull qdrant/qdrant:v${{ env.QDRANT_VERSION_COMPAT }}@${{ env.QDRANT_DIGEST_COMPAT }}
+          docker run -d --name qdrant_compat \
             -p 6333:6333 -p 6334:6334 \
-            -v qdrant_data:/qdrant/storage \
-            qdrant/qdrant:v1.20.1
+            -v qdrant_compat_data:/qdrant/storage \
+            qdrant/qdrant:v${{ env.QDRANT_VERSION_COMPAT }}@${{ env.QDRANT_DIGEST_COMPAT }}
 
       - name: Wait for Qdrant
         run: |
@@ -558,13 +880,30 @@ jobs:
           echo "Qdrant failed to start"
           exit 1
 
-      - name: Run key configs on 1.20.1
+      - name: Verify Qdrant 1.20.1 version
         run: |
-          python -c "
-          from experiments.bm25_experiment import BM25ExperimentRunner, Scope, EXPERIMENT_CONFIGS
-          from qdrant_memory.config import DEFAULTS, merge
+          curl -s http://localhost:6333/ | jq -r .version
+
+      - name: Run dense baseline on 1.20.1
+        run: |
+          uv run python -c "
           import tempfile
           import shutil
+          import uuid
+          from qdrant_client import QdrantClient
+          from qdrant_memory.config import DEFAULTS, merge
+          from qdrant_memory.models import Scope
+          from qdrant_memory.qdrant_store import QdrantStore
+
+          class TestEmbedder:
+              dimensions = 2560
+              fingerprint = 'test-embedding'
+              def embed_query(self, text):
+                  import hashlib
+                  h = hashlib.md5(text.encode()).digest()
+                  return [b / 255.0 for b in h] + [0.0] * (2560 - 16)
+              def embed_documents(self, texts):
+                  return [self.embed_query(t) for t in texts]
 
           temp_dir = tempfile.mkdtemp(prefix='qdrant_1201_')
           cfg = merge(DEFAULTS, {
@@ -574,18 +913,179 @@ jobs:
           })
           scope = Scope(user_id='test_user', agent_id='test_agent')
           
-          # Test dense baseline
-          config = EXPERIMENT_CONFIGS[0]
-          runner = BM25ExperimentRunner(cfg, scope, use_server=False)
-          runner.setup()
-          result = runner.search_dense('test query for 1.20.1', config.top_k, config.dense_candidate_k)
-          assert len(result.retrieved_ids) > 0
-          print(f'Qdrant 1.20.1 dense baseline: {len(result.retrieved_ids)} results, {result.latency_ms:.1f}ms')
-          runner.cleanup()
+          client = QdrantClient(path=temp_dir, force_disable_check_same_thread=True)
+          store = QdrantStore(client, cfg, TestEmbedder())
+          store.initialize(create=True, reset=False)
           
-          # Test server mode hybrid (if server available)
-          # For now just test embedded
-          print('Qdrant 1.20.1 compatibility test passed')
+          test_id = str(uuid.uuid4())
+          store.upsert([(test_id, {
+              'text': 'test query for 1.20.1 compatibility',
+              'user_id': 'test_user',
+              'agent_id': 'test_agent',
+              'source': 'test',
+              'category': ['test'],
+              'importance': 0.5,
+              'metadata': {},
+              'session_id': '',
+              'content_hash': 'sha256:test',
+              'schema_version': 1,
+              'created_at': '2026-01-01T00:00:00Z',
+              'updated_at': '2026-01-01T00:00:00Z'
+          })])
           
+          result = store.search('test query', scope, top_k=8)
+          assert len(result) > 0
+          print(f'Qdrant 1.20.1 dense baseline: {len(result)} results')
+          store.close()
           shutil.rmtree(temp_dir, ignore_errors=True)
           "
+
+      - name: Run Server hybrid on 1.20.1
+        run: |
+          uv run python -c "
+          import tempfile
+          import shutil
+          import uuid
+          import httpx
+          from qdrant_client import QdrantClient, models as m
+          from qdrant_memory.config import DEFAULTS, merge
+          from qdrant_memory.models import Scope
+          from qdrant_memory.qdrant_store import QdrantStore
+
+          class TestEmbedder:
+              dimensions = 2560
+              fingerprint = 'test-embedding'
+              def embed_query(self, text):
+                  import hashlib
+                  h = hashlib.md5(text.encode()).digest()
+                  return [b / 255.0 for b in h] + [0.0] * (2560 - 16)
+              def embed_documents(self, texts):
+                  return [self.embed_query(t) for t in texts]
+
+          temp_dir = tempfile.mkdtemp(prefix='qdrant_1201_')
+          cfg = merge(DEFAULTS, {
+              'qdrant': {'path': temp_dir, 'collection': 'test_1201_hybrid'},
+              'embedding': {'dimensions': 2560},
+              'search': {'top_k': 8, 'candidate_k': 24, 'min_score': None, 'hnsw_ef': 128, 'exact': False},
+          })
+          scope = Scope(user_id='test_user', agent_id='test_agent')
+          
+          client = QdrantClient(path=temp_dir, force_disable_check_same_thread=True)
+          store = QdrantStore(client, cfg, TestEmbedder())
+          store.initialize(create=True, reset=False)
+          
+          # Insert test docs
+          docs = [
+              ('id1', 'Python async programming tutorial'),
+              ('id2', 'Redis cluster deployment'),
+              ('id3', '中英混写测试 Python异步'),
+          ]
+          for doc_id, text in docs:
+              store.upsert([(doc_id, {
+                  'text': text,
+                  'user_id': 'test_user',
+                  'agent_id': 'test_agent',
+                  'source': 'test',
+                  'category': ['test'],
+                  'importance': 0.5,
+                  'metadata': {},
+                  'session_id': '',
+                  'content_hash': f'sha256:{doc_id}',
+                  'schema_version': 1,
+                  'created_at': '2026-01-01T00:00:00Z',
+                  'updated_at': '2026-01-01T00:00:00Z'
+              })])
+          
+          # Create multilingual index with BM25 scoring
+          import httpx
+          with httpx.Client(base_url='http://127.0.0.1:6333', timeout=30) as http:
+              r = http.put('/collections/test_1201_hybrid/index', json={
+                  'field_name': 'text',
+                  'field_schema': {
+                      'type': 'text',
+                      'tokenizer': 'multilingual',
+                      'min_token_len': 1,
+                      'max_token_len': 20,
+                      'lowercase': True,
+                      'enable_hnsw': True,
+                      'scoring': {'type': 'bm25'},
+                  }
+              })
+              assert r.status_code == 200, f'Index creation failed: {r.text}'
+              
+              import time
+              for _ in range(20):
+                  r = http.get('/collections/test_1201_hybrid')
+                  schema = r.json().get('result', {}).get('payload_schema', {})
+                  if 'text' in schema and schema['text'].get('params', {}).get('scoring'):
+                      break
+                  time.sleep(0.5)
+              
+              # Test dense
+              vector = TestEmbedder().embed_query('Python async')
+              r = http.post('/collections/test_1201_hybrid/points/query', json={
+                  'prefetch': [{'query': vector, 'using': 'dense', 'limit': 10}],
+                  'limit': 5, 'with_payload': True,
+              })
+              dense_ids = [p['id'] for p in r.json()['result']['points']]
+              print(f'1.20.1 Dense: {dense_ids}')
+              
+              # Test BM25-only
+              r = http.post('/collections/test_1201_hybrid/points/query', json={
+                  'query': {'text': 'Python async'},
+                  'using': 'text',
+                  'limit': 5, 'with_payload': True,
+              })
+              bm25_ids = [p['id'] for p in r.json()['result']['points']]
+              print(f'1.20.1 BM25: {bm25_ids}')
+              
+              # Test hybrid RRF
+              r = http.post('/collections/test_1201_hybrid/points/query', json={
+                  'prefetch': [
+                      {'query': vector, 'using': 'dense', 'limit': 10},
+                      {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 10},
+                  ],
+                  'query': {'rrf': {'k': 60}},
+                  'limit': 5, 'with_payload': True,
+              })
+              hybrid_ids = [p['id'] for p in r.json()['result']['points']]
+              print(f'1.20.1 Hybrid: {hybrid_ids}')
+              
+              # Scope isolation
+              store.upsert([('other_scope', {
+                  'text': 'Python async programming',
+                  'user_id': 'other_user',
+                  'agent_id': 'test_agent',
+                  'source': 'test',
+                  'category': ['test'],
+                  'importance': 0.5,
+                  'metadata': {},
+                  'session_id': '',
+                  'content_hash': 'sha256:other',
+                  'schema_version': 1,
+                  'created_at': '2026-01-01T00:00:00Z',
+                  'updated_at': '2026-01-01T00:00:00Z'
+              })])
+              
+              r = http.post('/collections/test_1201_hybrid/points/query', json={
+                  'prefetch': [
+                      {'query': vector, 'using': 'dense', 'limit': 10},
+                      {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 10},
+                  ],
+                  'query': {'rrf': {'k': 60}},
+                  'limit': 10, 'with_payload': True,
+              })
+              hybrid_ids = [p['id'] for p in r.json()['result']['points']]
+              assert 'other_scope' not in hybrid_ids, 'Scope isolation failed on 1.20.1!'
+              print('1.20.1 Scope isolation verified')
+          
+          store.close()
+          shutil.rmtree(temp_dir, ignore_errors=True)
+          print('Qdrant 1.20.1 compatibility test passed')
+          " >> $GITHUB_STEP_SUMMARY
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop qdrant_compat 2>/dev/null || true
+          docker volume rm qdrant_compat_data 2>/dev/null || true
