@@ -43,6 +43,9 @@ jobs:
       - name: Install uv
         run: pip install uv
 
+      - name: Create virtual environment
+        run: uv venv
+
       - name: Install dependencies
         run: uv pip install -e ".[test,mcp,remote,local]" httpx
 
@@ -120,6 +123,9 @@ jobs:
 
       - name: Install uv
         run: pip install uv
+
+      - name: Create virtual environment
+        run: uv venv
 
       - name: Install dependencies
         run: uv pip install -e ".[test,mcp,remote,local]" httpx
@@ -248,6 +254,9 @@ jobs:
 
       - name: Install uv
         run: pip install uv
+
+      - name: Create virtual environment
+        run: uv venv
 
       - name: Install dependencies
         run: uv pip install -e ".[test,mcp,remote,local]" httpx
@@ -468,6 +477,9 @@ jobs:
 
       - name: Install uv
         run: pip install uv
+
+      - name: Create virtual environment
+        run: uv venv
 
       - name: Install dependencies
         run: uv pip install -e ".[test,mcp,remote,local]" httpx
