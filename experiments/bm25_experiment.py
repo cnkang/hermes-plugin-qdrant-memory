@@ -745,7 +745,8 @@ class BM25ExperimentRunner:
             for m in self.memories
         ]
 
-        batch_size = 64
+        # Keep CPU-only Ollama embedding requests small enough to finish reliably in CI.
+        batch_size = 8
         for i in range(0, len(records), batch_size):
             batch = records[i : i + batch_size]
             self.store.upsert(batch)
@@ -1075,7 +1076,7 @@ def run_full_experiment():
         DEFAULTS,
         {
             "qdrant": {"path": temp_dir},
-            "embedding": {"dimensions": 2560},
+            "embedding": {"dimensions": 2560, "timeout_seconds": 180},
             "search": {
                 "top_k": 8,
                 "candidate_k": 24,
