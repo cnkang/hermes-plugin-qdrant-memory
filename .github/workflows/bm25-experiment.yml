@@ -179,12 +179,12 @@ jobs:
           store = QdrantStore(client, cfg, TestEmbedder())
           store.initialize(create=True, reset=False)
           
-          # Insert test docs with distinct content
+          # Insert test docs with distinct content (use valid UUIDs for point IDs)
           docs = [
-              ('id1', 'Python async programming tutorial for beginners'),
-              ('id2', 'Redis cluster deployment steps production'),
-              ('id3', '中文查询测试: Python异步编程asyncio教程'),
-              ('id4', 'Unrelated content about cooking recipes'),
+              (str(uuid.uuid4()), 'Python async programming tutorial for beginners'),
+              (str(uuid.uuid4()), 'Redis cluster deployment steps production'),
+              (str(uuid.uuid4()), '中文查询测试: Python异步编程asyncio教程'),
+              (str(uuid.uuid4()), 'Unrelated content about cooking recipes'),
           ]
           for doc_id, text in docs:
               store.upsert([(doc_id, {
@@ -259,32 +259,33 @@ jobs:
               print(f'Hybrid results: {hybrid_ids}')
               
               # Verify scope isolation: insert doc with different scope, verify not returned
-              store.upsert([('other_scope', {
-                  'text': 'Python async programming tutorial',
-                  'user_id': 'other_user',  # Different user!
-                  'agent_id': 'test_agent',
-                  'source': 'test',
-                  'category': ['test'],
-                  'importance': 0.5,
-                  'metadata': {},
-                  'session_id': '',
-                  'content_hash': 'sha256:other',
-                  'schema_version': 1,
-                  'created_at': '2026-01-01T00:00:00Z',
-                  'updated_at': '2026-01-01T00:00:00Z'
-              })])
-              
-              r = http.post('/collections/smoke_bm25/points/query', json={
-                  'prefetch': [
-                      {'query': vector, 'using': 'dense', 'limit': 10},
-                      {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 10},
-                  ],
-                  'query': {'rrf': {'k': 60}},
-                  'limit': 10, 'with_payload': True,
-              })
-              hybrid_ids = [p['id'] for p in r.json()['result']['points']]
-              assert 'other_scope' not in hybrid_ids, 'Scope isolation failed!'
-              print('Scope isolation verified')
+                            other_id = str(uuid.uuid4())
+                            store.upsert([(other_id, {
+                                'text': 'Python async programming tutorial',
+                                'user_id': 'other_user',  # Different user!
+                                'agent_id': 'test_agent',
+                                'source': 'test',
+                                'category': ['test'],
+                                'importance': 0.5,
+                                'metadata': {},
+                                'session_id': '',
+                                'content_hash': 'sha256:other',
+                                'schema_version': 1,
+                                'created_at': '2026-01-01T00:00:00Z',
+                                'updated_at': '2026-01-01T00:00:00Z'
+                            })])
+
+                            r = http.post('/collections/smoke_bm25/points/query', json={
+                                'prefetch': [
+                                    {'query': vector, 'using': 'dense', 'limit': 10},
+                                    {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 10},
+                                ],
+                                'query': {'rrf': {'k': 60}},
+                                'limit': 10, 'with_payload': True,
+                            })
+                            hybrid_ids = [p['id'] for p in r.json()['result']['points']]
+                            assert other_id not in hybrid_ids, 'Scope isolation failed!'
+                            print('Scope isolation verified')
           
           store.close()
           shutil.rmtree(temp_dir, ignore_errors=True)
@@ -976,9 +977,9 @@ jobs:
           
           # Insert test docs
           docs = [
-              ('id1', 'Python async programming tutorial'),
-              ('id2', 'Redis cluster deployment'),
-              ('id3', '中英混写测试 Python异步'),
+              (str(uuid.uuid4()), 'Python async programming tutorial'),
+              (str(uuid.uuid4()), 'Redis cluster deployment'),
+              (str(uuid.uuid4()), '中英混写测试 Python异步'),
           ]
           for doc_id, text in docs:
               store.upsert([(doc_id, {
@@ -1052,32 +1053,33 @@ jobs:
               print(f'1.20.1 Hybrid: {hybrid_ids}')
               
               # Scope isolation
-              store.upsert([('other_scope', {
-                  'text': 'Python async programming',
-                  'user_id': 'other_user',
-                  'agent_id': 'test_agent',
-                  'source': 'test',
-                  'category': ['test'],
-                  'importance': 0.5,
-                  'metadata': {},
-                  'session_id': '',
-                  'content_hash': 'sha256:other',
-                  'schema_version': 1,
-                  'created_at': '2026-01-01T00:00:00Z',
-                  'updated_at': '2026-01-01T00:00:00Z'
-              })])
-              
-              r = http.post('/collections/test_1201_hybrid/points/query', json={
-                  'prefetch': [
-                      {'query': vector, 'using': 'dense', 'limit': 10},
-                      {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 10},
-                  ],
-                  'query': {'rrf': {'k': 60}},
-                  'limit': 10, 'with_payload': True,
-              })
-              hybrid_ids = [p['id'] for p in r.json()['result']['points']]
-              assert 'other_scope' not in hybrid_ids, 'Scope isolation failed on 1.20.1!'
-              print('1.20.1 Scope isolation verified')
+                            other_id = str(uuid.uuid4())
+                            store.upsert([(other_id, {
+                                'text': 'Python async programming',
+                                'user_id': 'other_user',
+                                'agent_id': 'test_agent',
+                                'source': 'test',
+                                'category': ['test'],
+                                'importance': 0.5,
+                                'metadata': {},
+                                'session_id': '',
+                                'content_hash': 'sha256:other',
+                                'schema_version': 1,
+                                'created_at': '2026-01-01T00:00:00Z',
+                                'updated_at': '2026-01-01T00:00:00Z'
+                            })])
+
+                            r = http.post('/collections/test_1201_hybrid/points/query', json={
+                                'prefetch': [
+                                    {'query': vector, 'using': 'dense', 'limit': 10},
+                                    {'query': {'text': 'Python async'}, 'using': 'text', 'limit': 10},
+                                ],
+                                'query': {'rrf': {'k': 60}},
+                                'limit': 10, 'with_payload': True,
+                            })
+                            hybrid_ids = [p['id'] for p in r.json()['result']['points']]
+                            assert other_id not in hybrid_ids, 'Scope isolation failed on 1.20.1!'
+                            print('1.20.1 Scope isolation verified')
           
           store.close()
           shutil.rmtree(temp_dir, ignore_errors=True)
