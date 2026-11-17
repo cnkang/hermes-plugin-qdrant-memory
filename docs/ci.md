@@ -44,6 +44,15 @@ requirements. This preserves the host's security overrides, including
 `Pillow==13.0.0`. An export alone does not carry these overrides. PM checks
 installed dependencies against that lock and still rejects unrelated conflicts.
 
+## Snyk dependency snapshots
+
+The main-only Snyk job keeps dependency findings and authentication failures
+blocking. Its `monitor` commands retry up to two times only when Snyk reports an
+HTTP 5xx response for the monitor request. Other CLI failures stop immediately,
+and a persistent 5xx still fails the job. This handles temporary Snyk service
+errors without weakening the required security gate or re-running a scan that
+reported a vulnerability.
+
 ## Transient infrastructure retries
 
 The validation workflows have a separate, bounded retry controller. It permits
@@ -65,8 +74,10 @@ A failed job qualifies only under one of these evidence classes:
 The classifier fails closed. A test failure, a dependency conflict, a `404`, a
 missing credential, a permission error and an unreadable log never qualify.
 A `TimeoutError` from Python test code is not network evidence. Quality, lint,
-dependency and security jobs are never retried, even when their logs contain a
-timeout. A run with mixed retryable and non-retryable failures is not rerun.
+dependency and security jobs are never automatically rerun by this controller,
+even when their logs contain a timeout. The Snyk monitor's narrow, in-job HTTP
+5xx retry is documented above. A run with mixed retryable and non-retryable
+failures is not rerun.
 Fork pull requests, foreign heads, stale events and exhausted budgets are
 rejected. A failed controller does not rerun anything and cannot trigger
 itself.
