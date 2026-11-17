@@ -2,6 +2,8 @@
 
 **One Memory. Multiple Agents. No Lock-in.**
 
+**Installing Qdrant Memory?** Start with the profile-aware [installation guide](INSTALL.md).
+
 Durable, portable, permission-aware memory for AI agents. Hermes, MCP, CLI and
 Agent Skills use one Qdrant backend. The standalone CLI and MCP do not require Hermes.
 
@@ -147,88 +149,11 @@ See [standalone setup](docs/standalone.md), [shared memory](docs/shared-memory/R
 
 ## Install
 
-These steps install the Hermes adapter. CLI/MCP users should follow
-[standalone setup](docs/standalone.md).
-
-Requirements: Python 3.11+, a compatible Hermes installation, and a reachable
-embedding service. The minimum supported Hermes release is v0.21.5 (v2026.9.24).
-The [CI services](docs/ci.md) page documents the tested host versions.
-The default model needs Ollama and enough local resources
-to serve `qwen3-embedding:4b`.
-
-Choose the **active profile's** home explicitly. Do not reuse another profile's data.
-
-**Recommended: install the version-locked Runtime 0.7.1 source through the Hermes CLI.**
-
-This immutable source revision includes opt-in shared memory. It does not depend
-on a PyPI release or a catalog update.
-
-```bash
-export HERMES_HOME="/absolute/path/to/your/hermes-profile"
-ollama pull qwen3-embedding:4b
-# Start Ollama if it is not running. Keep its service available.
-RUNTIME_SHA="$(git ls-remote https://github.com/cnkang/hermes-plugin-qdrant-memory 'refs/tags/v0.7.1^{}' | cut -f1)"
-test "${#RUNTIME_SHA}" -eq 40
-hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref "$RUNTIME_SHA"
-hermes plugins enable qdrant-memory
-hermes memory setup
-hermes config set memory.provider qdrant-memory
-hermes qdrant-memory init
-```
-
-For this version-locked form, `hermes plugins install` checks out the versioned
-release's full commit SHA (current Hermes rejects tags in `--ref`), and
-`hermes plugins enable` prepares the declared dependencies
-through Hermes PM. The
-[releases page](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)
-lists the release commits. Do not pip-install into a managed Hermes
-environment. Omit `--ref` to track `main`, the development line.
-
-**Catalog option: install the version reviewed by the official Hermes Plugin Catalog.**
-
-The Catalog selects its own fixed revision, which may be older than Runtime
-0.7.1. To use the current release, including opt-in shared memory, follow the
-recommended version-locked installation above.
-
-```bash
-export HERMES_HOME="/absolute/path/to/your/hermes-profile"
-ollama pull qwen3-embedding:4b
-# Start Ollama if it is not running. Keep its service available.
-hermes plugins install qdrant-memory
-hermes plugins enable qdrant-memory
-hermes memory setup
-hermes config set memory.provider qdrant-memory
-hermes qdrant-memory init
-```
-
-The install resolves the catalog's reviewed commit and prints the entry's declared
-tools, requirements and known issues before it clones anything.
-`hermes plugins enable` prepares the declared dependencies through Hermes PM.
-
-Then verify the install:
-
-```bash
-hermes qdrant-memory status
-hermes qdrant-memory doctor
-```
-
-A healthy install reports the destination, the embedding service and the
-schema fingerprint. `doctor` validates runtime discovery, manifest parsing,
-import and registration. For development installs, see
-[development setup](docs/development.md).
-
-The release notes, supported Hermes/Python versions and the current
-limitations are in the [0.7.1 release notes](docs/releases/0.7.1.md)
-and [CI guide](docs/ci.md).
-
-Restart the conversation after configuration changes. Existing system prompts
-and toolsets stay fixed for prompt caching.
-
-Defaults use embedded Qdrant and Ollama `qwen3-embedding:4b` (2560 dimensions).
-Run the embedding service and provision that model before you activate the provider.
-For server/Cloud, configure the mode in `$HERMES_HOME/qdrant-memory.json`. Supply
-`QDRANT_URL` / `QDRANT_API_KEY` in the active profile's secret scope.
+Follow [INSTALL.md](INSTALL.md) to choose one verified route. Hermes users start
+with the official Catalog; Codex and other non-Hermes agents use the fixed-version
+stdio MCP package and its [Quickstart](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/quickstart.md).
+That guide covers profile checks, Ollama model reuse, existing-data safety,
+verification and the separate advanced integrations.
 
 ## Capabilities
 
