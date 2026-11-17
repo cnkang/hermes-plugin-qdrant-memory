@@ -21,6 +21,7 @@ import uuid
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from . import strategy
 from .models import digest, now
@@ -138,9 +139,13 @@ def _memory_count(client, collection):
     ).count
 
 
-def _ledger_snapshot(home, namespace):
+def _ledger_snapshot(home, namespace, *, path=None, verify=False):
     """Read pending work and destructive intents from an existing ledger only."""
-    path = Path(home).resolve() / "qdrant-memory" / "state.db"
+    path = (
+        Path(path).resolve()
+        if path is not None
+        else Path(home).resolve() / "qdrant-memory" / "state.db"
+    )
     snapshot = {
         "present": False,
         "operations": {},
@@ -155,7 +160,11 @@ def _ledger_snapshot(home, namespace):
     if not path.is_file():
         return snapshot
     with closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as db:
+        if verify and db.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+            raise UpgradeRefusedError("The recovery point contains a corrupt local Ledger.")
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if verify and "operations" not in tables:
+            raise UpgradeRefusedError("The recovery point is missing the Ledger operations table.")
         snapshot["present"] = True
         for table in ("events", "operations"):
             if table in tables:
@@ -750,6 +759,8 @@ def _write_backup_marker(directory, ctx, snapshot):
 
 def _backup_snapshot(path, collection):
     """Open a copied embedded store and read the count and identity sentinel."""
+    if not (Path(path) / "meta.json").is_file():
+        raise UpgradeRefusedError("The recovery point is missing the embedded store metadata.")
     client = build_client({"qdrant": {"mode": "embedded", "path": str(path)}})
     try:
         if not client.collection_exists(collection):
@@ -890,18 +901,39 @@ ACTIONS = {
 
 
 def _backup_done(ctx):
-    """Detect a completed backup after a crash before its record was written."""
+    """Verify a recorded backup or recover an unrecorded completed copy."""
     record = ctx.state["steps"].get("backup", {})
     path = record.get("path")
-    if path and (Path(ctx.home).resolve() / path).is_dir():
-        return {}
-    recovered = _recover_backup(ctx)
+    recorded = Path(ctx.home).resolve() / path if path else None
+    recovered = _recover_backup(ctx, recorded=recorded)
     if recovered:
+        if recovered == path:
+            return {}
         return {"path": recovered, "verified": True, "recovered": True}
     return None
 
 
-def _recover_backup(ctx):
+def _verify_backup_ledger(ctx, candidate):
+    """Validate a private Ledger copy without changing backup WAL or shared-memory files."""
+    if not ctx.state.get("ledger", {}).get("present"):
+        return
+    if not (candidate / "state.db").is_file():
+        raise UpgradeRefusedError("The recovery point is missing the local Ledger.")
+    with TemporaryDirectory(prefix="qdrant-upgrade-ledger-") as scratch:
+        for name in ("state.db", "state.db-wal", "state.db-shm"):
+            source = candidate / name
+            if source.is_file():
+                shutil.copy2(source, Path(scratch) / name)
+        snapshot = _ledger_snapshot(
+            ctx.home, ctx.namespace, path=Path(scratch) / "state.db", verify=True
+        )
+    if _watermark_stale(ctx.state, snapshot):
+        raise UpgradeRefusedError(
+            "The recovery point Ledger does not match the planned write watermark."
+        )
+
+
+def _recover_backup(ctx, *, recorded=None):
     """Adopt a verified backup that was copied before its step record landed."""
     root = Path(ctx.home).resolve() / "qdrant-memory" / "backups"
     if not root.is_dir():
@@ -914,7 +946,10 @@ def _recover_backup(ctx):
     expected_identity = (checkpoint.get("identity") or {}).get("embedding_fingerprint")
     seen = set()
     for prefix in prefixes:
-        for candidate in sorted(root.glob(f"*-{prefix}"), reverse=True):
+        candidates = sorted(root.glob(f"*-{prefix}"), reverse=True)
+        if recorded is not None and prefix == prefixes[-1]:
+            candidates.insert(0, recorded)
+        for candidate in candidates:
             if candidate in seen:
                 continue
             seen.add(candidate)
@@ -923,6 +958,7 @@ def _recover_backup(ctx):
             if candidate.name.endswith(".partial"):
                 continue
             try:
+                _verify_backup_ledger(ctx, candidate)
                 marker_path = candidate / BACKUP_MARKER
                 if marker_path.is_file():
                     marker = json.loads(marker_path.read_text(encoding="utf-8"))
@@ -931,13 +967,7 @@ def _recover_backup(ctx):
                 elif not (legacy and prefix == ctx.state["plan_id"][:12]):
                     continue
                 else:
-                    # A 0.7.0 backup has no marker. Require the ledger copy when
-                    # the saved plan says a ledger existed.
-                    if (
-                        ctx.state.get("ledger", {}).get("present")
-                        and not (candidate / "state.db").is_file()
-                    ):
-                        continue
+                    # A 0.7.0 backup has no marker.
                     marker = {}
                 snapshot = _backup_snapshot(candidate / "qdrant", ctx.collection)
             except Exception:
@@ -1002,6 +1032,15 @@ def _run_steps(ctx):
     for name in STEPS:
         record = ctx.state["steps"].get(name, {"status": "pending"})
         if record.get("status") == "done":
+            if name == "backup" and ctx.backend == "embedded":
+                detail = _backup_done(ctx)
+                if detail is None:
+                    raise UpgradeStateError(
+                        "The recorded backup is missing or invalid and cannot be recovered; "
+                        "run `upgrade plan --replace`."
+                    )
+                if detail:
+                    ctx.mark(name, "done", detected=True, **detail)
             if name == "activate" and _activate_done(ctx) is None:
                 raise UpgradeStateError(
                     "The committed policy record no longer matches the saved plan; "
