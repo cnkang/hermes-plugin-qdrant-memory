@@ -546,7 +546,10 @@ def test_resume_completes_a_step_that_succeeded_before_its_record(tmp_path, monk
     assert strategy.read(tmp_path, ledger_namespace(cfg))["generation"] == 1
 
 
-def test_resume_reuses_the_backup_when_no_writer_touched_the_store(tmp_path, monkeypatch):
+@pytest.mark.parametrize("backup_state", ["present", "moved", "damaged"])
+def test_resume_reuses_the_backup_when_no_writer_touched_the_store(
+    tmp_path, monkeypatch, backup_state
+):
     """A stopped-writer interruption keeps the original recovery point."""
     cfg = embedded_cfg(tmp_path)
     store = legacy_store(tmp_path, cfg)
@@ -566,13 +569,128 @@ def test_resume_reuses_the_backup_when_no_writer_touched_the_store(tmp_path, mon
     failed = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
     backup = failed["steps"]["backup"]["path"]
     assert (tmp_path / backup).is_dir()
+    if backup_state != "present":
+        recovered = (tmp_path / backup).with_name(f"recovered-{state['instance_id'][:12]}")
+        if backup_state == "damaged":
+            import shutil
+
+            shutil.copytree(tmp_path / backup, recovered)
+            shutil.rmtree(tmp_path / backup / "qdrant")
+        else:
+            (tmp_path / backup).rename(recovered)
+        backup = str(recovered.relative_to(tmp_path))
     monkeypatch.setattr(upgrade._Context, "mark", original)
     resumed = upgrade.describe(
         tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
     )
     assert resumed["phase"] == upgrade.PHASE_READY
     assert resumed["steps"]["backup"]["path"] == backup
-    assert len(list((tmp_path / "qdrant-memory" / "backups").iterdir())) == 1
+    if backup_state != "present":
+        assert resumed["steps"]["backup"]["recovered"] is True
+    assert len(list((tmp_path / "qdrant-memory" / "backups").iterdir())) == (
+        2 if backup_state == "damaged" else 1
+    )
+
+
+@pytest.mark.parametrize("action", ["apply", "resume"])
+@pytest.mark.parametrize("interrupted_step", ["indexes", "activate"])
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "directory",
+        "qdrant",
+        "metadata",
+        "ledger",
+        "collection",
+        "instance",
+        "corrupt_ledger",
+        "watermark",
+    ],
+)
+def test_resume_refuses_a_missing_recorded_backup(
+    tmp_path, monkeypatch, action, interrupted_step, missing
+):
+    """A lost recovery point blocks every subsequent target action."""
+    import shutil
+
+    cfg = embedded_cfg(tmp_path)
+    if missing in ("ledger", "corrupt_ledger", "watermark"):
+        from qdrant_memory.ledger import Ledger
+
+        Ledger(tmp_path, ledger_namespace(cfg)).close()
+    store = legacy_store(tmp_path, cfg)
+    seed(store)
+    store.close()
+    _, state = run_plan(tmp_path, cfg)
+    original = upgrade._Context.mark
+
+    def interrupt(self, step, status, **detail):
+        """Stop before the target step while retaining the completed backup record."""
+        if step == interrupted_step:
+            raise RuntimeError("simulated crash after backup")
+        return original(self, step, status, **detail)
+
+    monkeypatch.setattr(upgrade._Context, "mark", interrupt)
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+    namespace = ledger_namespace(cfg)
+    failed = strategy.read_state(tmp_path, namespace, upgrade.STATE_SUFFIX)
+    backup_record = failed["steps"]["backup"]
+    assert backup_record["status"] == "done"
+    backup = tmp_path / backup_record["path"]
+    if missing == "metadata":
+        (backup / "qdrant" / "meta.json").unlink()
+    elif missing == "ledger":
+        (backup / "state.db").unlink()
+    elif missing == "corrupt_ledger":
+        (backup / "state.db").write_bytes(b"corrupt SQLite backup")
+    elif missing == "watermark":
+        import sqlite3
+
+        with sqlite3.connect(backup / "state.db") as db:
+            db.execute(
+                "INSERT OR REPLACE INTO ledger_meta(collection,key,value) VALUES(?,?,?)",
+                (namespace, "reset_epoch", "1"),
+            )
+    elif missing == "instance":
+        marker_path = backup / upgrade.BACKUP_MARKER
+        marker = json.loads(marker_path.read_text())
+        marker["instance_id"] = "another-plan-instance"
+        marker_path.write_text(json.dumps(marker))
+    elif missing == "collection":
+        client = QdrantClient(path=str(backup / "qdrant"))
+        try:
+            client.delete_collection(cfg["qdrant"]["collection"])
+        finally:
+            client.close()
+    else:
+        shutil.rmtree(backup if missing == "directory" else backup / "qdrant")
+    backup_contents = {
+        path.relative_to(backup): path.read_bytes() for path in backup.rglob("*") if path.is_file()
+    }
+    monkeypatch.setattr(upgrade._Context, "mark", original)
+
+    def unexpected_action(ctx):
+        """Fail if any action runs without the original recovery point."""
+        pytest.fail("target action ran after the recorded backup was lost")
+
+    monkeypatch.setattr(upgrade, "ACTIONS", dict.fromkeys(upgrade.STEPS, unexpected_action))
+    with pytest.raises(upgrade.UpgradeStateError, match="upgrade plan --replace"):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action=action, plan=state["plan_id"]))
+    after = strategy.read_state(tmp_path, namespace, upgrade.STATE_SUFFIX)
+    assert after["phase"] == upgrade.PHASE_FAILED
+    assert after["steps"] == failed["steps"]
+    assert backup_contents == {
+        path.relative_to(backup): path.read_bytes() for path in backup.rglob("*") if path.is_file()
+    }
+    assert strategy.read(tmp_path, namespace) is None
+    assert list((tmp_path / "qdrant-memory" / "backups").iterdir()) == (
+        [] if missing == "directory" else [backup]
+    )
+    if missing == "qdrant":
+        assert not (backup / "qdrant").exists()
+    elif missing == "metadata":
+        assert not (backup / "qdrant" / "meta.json").exists()
 
 
 def test_resume_refuses_a_plan_after_a_real_local_write(tmp_path, monkeypatch):
