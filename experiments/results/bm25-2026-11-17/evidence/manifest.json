@@ -1,0 +1,39 @@
+{
+  "archive_date": "2026-11-17",
+  "status": "Archived for later reassessment; Draft PR remains open",
+  "primary": {
+    "code_sha": "05f077702ea58ad10e05039744e12c993511df6b",
+    "run_id": 43895633048,
+    "artifact_id": 14239811709,
+    "artifact_digest": "sha256:b6e130ef5ca388e9b3a44834417271d9daf218bb63a1a73c7f03e58fc0dfb28f",
+    "original_json_sha256": "a37fb2e6aee6236bc55023ae0103e1b8e162eb3473cfde341e3a85170f5e61d4"
+  },
+  "followup": {
+    "code_sha": "5c50ca9a3d9ed09905af3da7ff25640541f1ea27",
+    "run_id": 44002798029,
+    "artifact_id": 14292503583,
+    "artifact_digest": "sha256:e62384a708ccd5e0bf9d48ceebb2e244dca6e267d3cac2ec07adfc8f31a26f73",
+    "original_json_sha256": "300d73fdc83c3673df7f990e2d52f83018be90dd39ce2ffd4673d84001bf7436"
+  },
+  "original_raw_artifact_expiry": {
+    "primary": "2026-12-16",
+    "followup": "2026-12-17"
+  },
+  "extraction": "Curated evidence, not byte-identical copies of CI ZIPs. Full metric summaries, ordered rankings/scores and timing samples are retained. Repeated text/scope payloads, point UUIDs and expanded query definitions are omitted where recoverable from frozen annotations and UUID5 mapping. Candidate points are stored as [memory_id, score]. Full original logs/JSON remain in the linked CI artifacts while retained.",
+  "annotations": "experiments/independent/annotations.jsonl at the primary code SHA",
+  "rows": {
+    "holdout_queries": 108,
+    "holdout_timing_pairs": 324,
+    "followup_queries": 24,
+    "followup_index_query_traces": 48,
+    "followup_timing_records": 576
+  },
+  "files": {
+    "evidence/holdout-summary.json": "867cac1774d73157e0670bfed7fe29defbadee211331fe0ef85ae1cb77dac460",
+    "evidence/holdout-rankings.jsonl": "e482e2ceb431cca539796356c3b2ad8294c3604d8cc43e806567dccbb2dc869d",
+    "evidence/holdout-timings.csv": "b096ab77ca66d8610f076751ca2702c9c2f00cf28380f4a61504bfb5c615e20f",
+    "evidence/followup-summary.json": "8b3dbd43fa021bd75265219e76bed37550e9e234f02178016861b79d847bd49e",
+    "evidence/followup-timings.csv": "0cf848772b48cce2e089969cc369b030dedc4c6635dcb1468877f510f389c3a1",
+    "evidence/followup-rankings.jsonl": "f59fba092a6b77d62af8ab546882ef34c01118d9e912d84c8eb942d8a6f924dc"
+  }
+}

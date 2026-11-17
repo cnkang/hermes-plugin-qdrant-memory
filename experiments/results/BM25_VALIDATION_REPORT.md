@@ -1,5 +1,10 @@
 # BM25 Hybrid Recall Validation Experiment Report
 
+> **Final status: archived; enablement is on hold.** Read the
+> [complete English conclusion and durable evidence](bm25-2026-11-17/SUMMARY.md).
+> The independent fixed comparison is NO-GO; the development follow-up found no
+> added recall. The historical opt-in recommendation below is superseded.
+
 > Historical exploratory baseline. Its slice-wide shared relevant IDs are not
 > independent per-question validation. The current reviewable experiment is
 > [independent/README.md](../independent/README.md), with the frozen plan in
