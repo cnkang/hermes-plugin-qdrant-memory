@@ -48,6 +48,17 @@ INFRA_ACTION = re.compile(
     r"Run actions/(?:checkout|setup-python|upload-artifact|download-artifact)@[0-9a-f]{40}"
 )
 
+# Dependency installation is an ordinary `run` step rather than an `actions/*`
+# step, yet a transient network error there is still runner infrastructure.
+INSTALL_STEP = re.compile(
+    r"^(?:install|set up|build|download|fetch|restore|prepare)\b", re.IGNORECASE
+)
+
+# Result-upload and acceptance steps commonly run with `if: always()`. When an
+# install fails and never produces the artifact, they fail as a consequence;
+# they are not independent root causes.
+DEPENDENT_STEP = re.compile(r"upload|artifact|save .*results|acceptance", re.IGNORECASE)
+
 # Every pattern describes a network or GitHub service failure. Generic words
 # such as "timeout" alone are deliberately absent.
 TRANSIENT = re.compile(
@@ -153,14 +164,26 @@ def classify_job(job, log):
         }
     steps = job.get("steps", [])
     failed = _failed_steps(job)
-    if len(failed) != 1:
+    if not failed:
         return {
             "category": "UNKNOWN_FAILURE",
             "retryable": False,
             "gate": False,
-            "basis": "Expected exactly one failed step",
+            "basis": "No failed step reported",
         }
     step = failed[0]
+    if len(failed) > 1:
+        # Look past downstream result-upload failures only when the earliest
+        # failure is an install step and every other failure is a dependent
+        # result/acceptance step. Anything else stays fail-closed.
+        dependent_only = all(DEPENDENT_STEP.search(entry.get("name") or "") for entry in failed[1:])
+        if not (INSTALL_STEP.search(step.get("name") or "") and dependent_only):
+            return {
+                "category": "UNKNOWN_FAILURE",
+                "retryable": False,
+                "gate": False,
+                "basis": "Expected one root-cause failure with dependent steps",
+            }
     step_name = step.get("name") or ""
     index = steps.index(step)
     if any(previous.get("conclusion") == "failure" for previous in steps[:index]):
@@ -200,6 +223,20 @@ def classify_job(job, log):
             "retryable": False,
             "gate": False,
             "basis": "Infrastructure action failed without verified transient evidence",
+        }
+    if INSTALL_STEP.search(step_name) and earlier_steps_ok:
+        if TRANSIENT.search(log) and not DETERMINISTIC.search(log):
+            return {
+                "category": "TRANSIENT_NETWORK",
+                "retryable": True,
+                "gate": False,
+                "basis": "Dependency install failed with a transient network error",
+            }
+        return {
+            "category": "UNKNOWN_FAILURE",
+            "retryable": False,
+            "gate": False,
+            "basis": "Dependency install failed without verified transient evidence",
         }
     if WHITELISTED_JOB in name.lower() and step_name == WHITELISTED_STEP:
         failures = _test_failures(log)
