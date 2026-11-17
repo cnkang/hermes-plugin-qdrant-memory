@@ -47,11 +47,11 @@ installed dependencies against that lock and still rejects unrelated conflicts.
 ## Snyk dependency snapshots
 
 The main-only Snyk job keeps dependency findings and authentication failures
-blocking. Its `monitor` commands retry up to two times only when Snyk reports an
-HTTP 5xx response for the monitor request. Other CLI failures stop immediately,
-and a persistent 5xx still fails the job. This handles temporary Snyk service
-errors without weakening the required security gate or re-running a scan that
-reported a vulnerability.
+blocking through `snyk test`. Its `monitor` commands do not retry an HTTP 5xx:
+the request may have stored the snapshot before the response failed, and a
+repeat could add a duplicate history entry. Instead, that specific response is
+reported as a warning; other CLI failures still fail the job. The vulnerability
+scan remains required even when Snyk's snapshot service is unavailable.
 
 ## Transient infrastructure retries
 
@@ -75,9 +75,9 @@ The classifier fails closed. A test failure, a dependency conflict, a `404`, a
 missing credential, a permission error and an unreadable log never qualify.
 A `TimeoutError` from Python test code is not network evidence. Quality, lint,
 dependency and security jobs are never automatically rerun by this controller,
-even when their logs contain a timeout. The Snyk monitor's narrow, in-job HTTP
-5xx retry is documented above. A run with mixed retryable and non-retryable
-failures is not rerun.
+even when their logs contain a timeout. The Snyk monitor's ambiguous HTTP 5xx
+response is handled without resubmitting the snapshot, as documented above. A
+run with mixed retryable and non-retryable failures is not rerun.
 Fork pull requests, foreign heads, stale events and exhausted budgets are
 rejected. A failed controller does not rerun anything and cannot trigger
 itself.
