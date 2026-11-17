@@ -2,6 +2,8 @@
 
 **One Memory. Multiple Agents. No Lock-in.**
 
+**准备安装 Qdrant Memory？** 请从这份按 profile 分流的[安装指南](INSTALL.md)开始。
+
 面向 AI Agent 的持久、可迁移、受权限控制的记忆。Hermes、MCP、CLI 和 Agent Skills
 复用同一 Qdrant 后端。独立 CLI 与 MCP 不需要 Hermes。
 
@@ -123,76 +125,10 @@ CLI 调用方式为 `qdrant-memory --home PATH`。这些接口提供限定作用
 
 ## 安装
 
-以下步骤安装 Hermes 适配器。CLI/MCP 用户请参见[独立设置](docs/standalone.md)。
-
-要求：Python 3.11+、兼容的 Hermes 安装以及可访问的 embedding 服务。最低支持的
-Hermes 版本为 v0.21.5（v2026.9.24）。[CI 服务](docs/ci.md)页面记录了已测试的
-主机版本。默认模型需要 Ollama，并需要足够的本机资源来提供 `qwen3-embedding:4b`。
-
-明确选择**当前活动 profile** 的 home。不要复用其他 profile 的数据。
-
-**推荐：通过 Hermes CLI 安装固定版本的 Runtime 0.7.1 源码。**
-
-此不可变源码提交包含可选启用的共享记忆。它不依赖 PyPI 发布或 Catalog 更新。
-
-```bash
-export HERMES_HOME="/absolute/path/to/your/hermes-profile"
-ollama pull qwen3-embedding:4b
-# 如果 Ollama 尚未运行，先启动服务并保持其可用。
-RUNTIME_SHA="$(git ls-remote https://github.com/cnkang/hermes-plugin-qdrant-memory 'refs/tags/v0.7.1^{}' | cut -f1)"
-test "${#RUNTIME_SHA}" -eq 40
-hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory \
-  --ref "$RUNTIME_SHA"
-hermes plugins enable qdrant-memory
-hermes memory setup
-hermes config set memory.provider qdrant-memory
-hermes qdrant-memory init
-```
-
-对于这种固定版本形式，`hermes plugins install` 会检出发布版的完整提交 SHA
-（当前 Hermes 的 `--ref` 不接受 tag），
-`hermes plugins enable` 通过 Hermes PM 准备声明的依赖。
-[releases 页面](https://github.com/cnkang/hermes-plugin-qdrant-memory/releases)
-列出各发布提交。不要向受管理的 Hermes 环境执行 pip install。省略 `--ref` 即跟踪
-`main`，也就是开发线。
-
-**Catalog 方案：安装官方 Hermes Plugin Catalog 审核过的版本。**
-
-Catalog 独立选择固定提交，该版本可能早于 Runtime 0.7.1。如需使用当前发布版本
-（包括可选启用的共享记忆），请采用上方推荐的固定版本安装方式。
-
-```bash
-export HERMES_HOME="/absolute/path/to/your/hermes-profile"
-ollama pull qwen3-embedding:4b
-# 如果 Ollama 尚未运行，先启动服务并保持其可用。
-hermes plugins install qdrant-memory
-hermes plugins enable qdrant-memory
-hermes memory setup
-hermes config set memory.provider qdrant-memory
-hermes qdrant-memory init
-```
-
-安装会解析 Catalog 审核过的提交，并在克隆前打印该条目声明的工具、要求与已知问题。
-`hermes plugins enable` 通过 Hermes PM 准备声明的依赖。
-
-然后验证安装：
-
-```bash
-hermes qdrant-memory status
-hermes qdrant-memory doctor
-```
-
-安装健康时会报告目的地、embedding 服务和 schema fingerprint。`doctor` 校验运行时
-发现、manifest 解析、导入与注册。开发安装见[开发指南](docs/development.md)。
-
-发布说明、支持的 Hermes/Python 版本和当前限制见
-[0.7.1 发布说明](docs/releases/0.7.1.zh-CN.md)和[CI 说明](docs/ci.md)。
-
-修改配置后请重启会话。现有系统提示与工具集保持不变，以维持 prompt 缓存。
-
-默认使用 embedded Qdrant 和 Ollama `qwen3-embedding:4b`（2560 维）。启用 provider 前
-先运行 embedding 服务并提供该模型。Server/Cloud 请在 `$HERMES_HOME/qdrant-memory.json`
-中配置模式。在当前 profile 的 secret scope 中提供 `QDRANT_URL` / `QDRANT_API_KEY`。
+请按[安装指南](INSTALL.md)选择唯一的已验证路径。Hermes 用户默认从官方 Catalog
+安装；Codex 与其他非 Hermes Agent 使用固定版本的 stdio MCP 发行包及其
+[Quickstart](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/quickstart.zh-CN.md)。
+指南说明 profile 检查、复用已有 Ollama 模型、已有数据保护、验收和进阶集成。
 
 ## 已实现能力
 

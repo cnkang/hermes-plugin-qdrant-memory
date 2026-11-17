@@ -1,7 +1,6 @@
 """Keep bilingual release guidance tied to the published Runtime installation."""
 
 import re
-import shlex
 import tomllib
 from pathlib import Path
 
@@ -14,7 +13,6 @@ LATEST_PUBLISHED_RUNTIME_REF = "v0.7.1"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
 ACTIVE_INSTALL_DOCS = {
-    **dict.fromkeys(READMES, "mcp"),
     "docs/standalone.md": "mcp",
     "docs/mcp.md": "mcp",
     "docs/local-embedding.md": "mcp,local",
@@ -36,26 +34,6 @@ def release_notice(readme):
     filename, text = readme
     lines = [line.removeprefix("> ") for line in text.splitlines() if line.startswith("> ")]
     return filename, " ".join(" ".join(lines).split())
-
-
-@pytest.fixture
-def recommended_installation(readme):
-    """Locate the sole recommended installation and its executable shell example."""
-    _, text = readme
-    sections = re.findall(r"^\*\*([^\n]+?)\*\*\s*\n(.*?)(?=^\*\*|^## |\Z)", text, re.M | re.S)
-    recommended = [
-        (heading, body)
-        for heading, body in sections
-        if heading.startswith(("Recommended:", "推荐："))
-    ]
-    assert len(recommended) == 1, "Each README must have one recommended installation"
-    heading, body = recommended[0]
-    examples = re.findall(r"^```bash\n(.*?)^```", body, re.M | re.S)
-    assert len(examples) == 1, "The recommendation must include one shell example"
-    commands = [
-        shlex.split(line, comments=True) for line in examples[0].replace("\\\n", " ").splitlines()
-    ]
-    return heading, [command for command in commands if command]
 
 
 def test_release_notice_links_the_exact_published_runtime(release_notice):
@@ -103,61 +81,21 @@ def test_pypi_publication_does_not_upgrade_the_catalog(release_notice):
         assert fragment in notice
 
 
-def test_catalog_option_warns_that_its_revision_can_predate_the_release(readme):
-    """Catalog installation must explain why the release recommendation is separate."""
-    filename, text = readme
-    matches = re.findall(r"^\*\*Catalog[^\n]*\*\*\s*\n(.*?)^```bash", text, re.M | re.S)
-    assert len(matches) == 1
-    guidance = " ".join(matches[0].split())
-    fragments = {
-        "README.md": ("own fixed revision", f"older than Runtime {RUNTIME_VERSION}"),
-        "README.zh-CN.md": ("独立选择固定提交", f"可能早于 Runtime {RUNTIME_VERSION}"),
-    }
-    for fragment in fragments[filename]:
-        assert fragment in guidance
-
-
-def test_current_runtime_is_the_recommended_installation(recommended_installation):
-    """Reject a return to recommending the catalog or a previous Runtime release."""
-    heading, _ = recommended_installation
-    assert f"Runtime {RUNTIME_VERSION}" in heading
-    assert "Hermes CLI" in heading
-
-
-def test_recommended_install_pins_the_published_release(recommended_installation):
-    """Keep the recommended Hermes install on the versioned Runtime release."""
-    _, commands = recommended_installation
-    assert any(
-        f"'refs/tags/{RUNTIME_RELEASE_REF}^{{}}'" in command[0]
-        for command in commands
-        if command and command[0].startswith("RUNTIME_SHA=")
+def test_install_guide_defaults_to_catalog_and_pins_verified_runtime():
+    """Catalog is the fresh Hermes route; an optional Runtime pin is immutable."""
+    guide = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
+    assert "hermes plugins install qdrant-memory" in guide
+    assert "Catalog installs Runtime 0.6.3" in guide
+    assert "b8c1d8babe125470d9278404454728d4426f1dc3" in guide
+    assert "latest published Runtime is 0.7.1" in guide
+    assert "cc5cac025f5d18afb5c698b2b5db444e30fc240e" in guide
+    assert (
+        "hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --ref"
+        in guide
     )
-    installs = [command for command in commands if command[:3] == ["hermes", "plugins", "install"]]
-    assert installs == [["hermes", "plugins", "install", REPOSITORY_URL, "--ref", "$RUNTIME_SHA"]]
-
-
-def test_pinned_install_preserves_the_profile_and_guided_setup(recommended_installation):
-    """The release example must select its profile before enabling and initializing."""
-    _, commands = recommended_installation
-    install = [
-        "hermes",
-        "plugins",
-        "install",
-        REPOSITORY_URL,
-        "--ref",
-        "$RUNTIME_SHA",
-    ]
-    install_index = commands.index(install)
-    assert ["test", "${#RUNTIME_SHA}", "-eq", "40"] in commands[:install_index]
-    assert ["export", "HERMES_HOME=/absolute/path/to/your/hermes-profile"] in commands[
-        :install_index
-    ]
-    assert commands[install_index + 1 :] == [
-        ["hermes", "plugins", "enable", "qdrant-memory"],
-        ["hermes", "memory", "setup"],
-        ["hermes", "config", "set", "memory.provider", "qdrant-memory"],
-        ["hermes", "qdrant-memory", "init"],
-    ]
+    assert "Do not install a second Qdrant MCP server into the same Hermes profile" in " ".join(
+        guide.split()
+    )
 
 
 def test_demo_defaults_to_published_runtime_and_source_ref_waits_for_tag():
