@@ -1,0 +1,87 @@
+name: BM25 Bounded Development Exploration
+
+on:
+  push:
+    branches: [codex/bm25-hybrid-eval]
+    paths:
+      - 'experiments/bm25_followup/**'
+      - '.github/workflows/bm25-followup.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bm25-followup-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QDRANT_IMAGE: qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2
+  OLLAMA_MODEL: qwen3-embedding:4b
+
+jobs:
+  development:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v6
+        with:
+          python-version: '3.11'
+      - name: Install and validate experiment
+        run: |
+          python -m pip install httpx==0.28.1
+          python -m unittest discover -s experiments/independent -p 'test_*.py' -v
+      - name: Start isolated pinned Server
+        run: |
+          docker run -d --name bm25-followup-ci -p 127.0.0.1:16333:6333 \
+            -v bm25_followup_ci:/qdrant/storage "$QDRANT_IMAGE"
+          for _ in {1..60}; do
+            if curl -fsS http://127.0.0.1:16333/readyz; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Fixture lifecycle and restart
+        run: python experiments/independent/lifecycle.py --container bm25-followup-ci --output followup-results/lifecycle.json
+      - name: Prepare real model
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          if ! curl -fsS http://127.0.0.1:11434/api/version; then
+            nohup ollama serve > "$RUNNER_TEMP/bm25-followup-ollama.log" 2>&1 &
+          fi
+          for _ in {1..60}; do
+            if curl -fsS http://127.0.0.1:11434/api/version; then break; fi
+            sleep 1
+          done
+          ollama pull "$OLLAMA_MODEL"
+      - name: Development weights, token probes and latency attribution
+        run: python experiments/bm25_followup/explore.py --output followup-results/results.json
+      - name: Publish execution separately from recommendation
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path('followup-results/results.json')
+          r = json.loads(p.read_text()) if p.exists() else {'execution_status': 'ERROR', 'error': 'experiment did not execute; inspect failed step'}
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write(f"Execution: {r['execution_status']}; verdict: {r.get('verdict', 'INCONCLUSIVE')}; type: EXPLORATORY (never GO).\n\n")
+              f.write(r.get('recommendation', r.get('error', '')))
+          report = p.with_suffix('.md')
+          if report.exists():
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f: f.write('\n\n' + report.read_text())
+          PY
+      - name: Upload complete development traces
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4
+        with:
+          name: bm25-followup-${{ github.sha }}
+          path: |
+            followup-results/
+            experiments/bm25_followup/PLAN.md
+          retention-days: 30
+      - name: Stop temporary Server
+        if: always()
+        run: docker rm -f bm25-followup-ci || true
