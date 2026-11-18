@@ -13,6 +13,7 @@ Every durable write goes through :mod:`qdrant_memory.strategy` so the policy
 record and the upgrade checkpoint share one private, atomic publication path.
 """
 
+import errno
 import json
 import os
 import shutil
@@ -60,6 +61,10 @@ class UpgradePlanStaleError(UpgradeError):
 
 class UpgradeRefusedError(UpgradeError):
     """Refuse an upgrade that cannot prove isolation or safety."""
+
+
+class _BackupStorageError(UpgradeRefusedError):
+    """Report insufficient space to verify a backup."""
 
 
 class UpgradeBlockedError(UpgradeError):
@@ -931,19 +936,29 @@ def _verify_backup_ledger(ctx, candidate):
             raise UpgradeRefusedError("The recovery point is missing the local Ledger.")
         return
     profile_storage = Path(ctx.home).resolve() / "qdrant-memory"
-    with TemporaryDirectory(prefix=".upgrade-ledger-", dir=profile_storage) as scratch:
-        for name in ("state.db", "state.db-wal", "state.db-shm"):
-            source = candidate / name
-            if source.is_file():
-                shutil.copy2(source, Path(scratch) / name)
-        try:
+    try:
+        with TemporaryDirectory(prefix=".upgrade-ledger-", dir=profile_storage) as scratch:
+            for name in ("state.db", "state.db-wal", "state.db-shm"):
+                source = candidate / name
+                if source.is_file():
+                    shutil.copy2(source, Path(scratch) / name)
             snapshot = _ledger_snapshot(
                 ctx.home, ctx.namespace, path=Path(scratch) / "state.db", verify=True
             )
-        except sqlite3.DatabaseError as exc:
+    except (OSError, sqlite3.DatabaseError) as exc:
+        if (
+            getattr(exc, "errno", None) == errno.ENOSPC
+            or getattr(exc, "sqlite_errorcode", None) == sqlite3.SQLITE_FULL
+        ):
+            raise _BackupStorageError(
+                "There is insufficient space on the profile filesystem to verify the recovery "
+                "point Ledger. Free space and retry the same plan."
+            ) from exc
+        if isinstance(exc, sqlite3.DatabaseError):
             raise UpgradeRefusedError(
                 "The recovery point contains a corrupt local Ledger."
             ) from exc
+        raise
     if _watermark_stale(ctx.state, snapshot):
         raise UpgradeRefusedError(
             "The recovery point Ledger does not match the planned write watermark."
@@ -975,7 +990,6 @@ def _recover_backup(ctx, *, recorded=None):
             if candidate.name.endswith(".partial"):
                 continue
             try:
-                _verify_backup_ledger(ctx, candidate)
                 marker_path = candidate / BACKUP_MARKER
                 if marker_path.is_file():
                     marker = json.loads(marker_path.read_text(encoding="utf-8"))
@@ -989,7 +1003,10 @@ def _recover_backup(ctx, *, recorded=None):
                 else:
                     # A 0.7.0 backup has no marker.
                     marker = {}
+                _verify_backup_ledger(ctx, candidate)
                 snapshot = _backup_snapshot(candidate / "qdrant", ctx.collection)
+            except _BackupStorageError:
+                raise
             except Exception:
                 continue
             if marker.get("plan_id") not in (None, ctx.state["plan_id"]):

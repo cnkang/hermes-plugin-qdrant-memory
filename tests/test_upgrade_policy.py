@@ -1,5 +1,6 @@
 """Policy planning, adoption and resume contracts for the 0.7.0 upgrade path."""
 
+import errno
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -769,6 +770,77 @@ def test_resume_refuses_a_missing_recorded_backup(
         assert not (backup / "qdrant").exists()
     elif missing == "metadata":
         assert not (backup / "qdrant" / "meta.json").exists()
+
+
+@pytest.mark.parametrize("stage", ["allocate", "copy", "sqlite"])
+def test_resume_retries_the_same_backup_after_verification_runs_out_of_space(
+    tmp_path, monkeypatch, stage
+):
+    """Scratch failures leave the recorded backup available for a later resume."""
+    import sqlite3
+
+    from qdrant_memory.ledger import Ledger
+
+    cfg = embedded_cfg(tmp_path)
+    legacy_store(tmp_path, cfg).close()
+    namespace = ledger_namespace(cfg)
+    Ledger(tmp_path, namespace).close()
+    _, state = run_plan(tmp_path, cfg)
+
+    mark = upgrade._Context.mark
+
+    def interrupt(self, step, status, **detail):
+        if step == "indexes":
+            raise RuntimeError("simulated crash after backup")
+        return mark(self, step, status, **detail)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(upgrade._Context, "mark", interrupt)
+        with pytest.raises(RuntimeError, match="simulated crash after backup"):
+            upgrade.describe(
+                tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"])
+            )
+
+    failed = strategy.read_state(tmp_path, namespace, upgrade.STATE_SUFFIX)
+    backup_record = failed["steps"]["backup"]
+    backup = tmp_path / backup_record["path"]
+    assert backup_record["status"] == "done"
+
+    def no_space(*args, **kwargs):
+        if stage == "sqlite":
+            error = sqlite3.OperationalError("database or disk is full")
+            error.sqlite_errorcode = sqlite3.SQLITE_FULL
+            raise error
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    resume = plan_args(upgrade_action="resume", plan=state["plan_id"])
+    with monkeypatch.context() as patch:
+        if stage == "allocate":
+            patch.setattr(upgrade, "TemporaryDirectory", no_space)
+        elif stage == "copy":
+            patch.setattr(upgrade.shutil, "copy2", no_space)
+        else:
+            ledger_snapshot = upgrade._ledger_snapshot
+
+            def snapshot(*args, **kwargs):
+                if kwargs.get("verify"):
+                    no_space()
+                return ledger_snapshot(*args, **kwargs)
+
+            patch.setattr(upgrade, "_ledger_snapshot", snapshot)
+        with pytest.raises(upgrade.UpgradeRefusedError, match="Free space.*retry the same plan"):
+            upgrade.describe(tmp_path, cfg, resume)
+
+    after = strategy.read_state(tmp_path, namespace, upgrade.STATE_SUFFIX)
+    assert after["phase"] == upgrade.PHASE_FAILED
+    assert after["steps"] == failed["steps"]
+    assert strategy.read(tmp_path, namespace) is None
+    assert list(backup.parent.iterdir()) == [backup]
+
+    resumed = upgrade.describe(tmp_path, cfg, resume)
+    assert resumed["phase"] == upgrade.PHASE_READY
+    assert resumed["steps"]["backup"] == backup_record
+    assert list(backup.parent.iterdir()) == [backup]
 
 
 def test_resume_refuses_a_plan_after_a_real_local_write(tmp_path, monkeypatch):
