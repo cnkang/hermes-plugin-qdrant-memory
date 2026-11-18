@@ -22,7 +22,7 @@ WorkBuddy 的默认行为保持私有且不变。本次工作不会重新配置�
 
 安装包前，请检查 [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.2/)
 是否已提供 Runtime 0.7.2。
-若尚未发布，请使用[已发布指南](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.6.2/docs/shared-memory/README.zh-CN.md)
+若尚未发布，请使用[已发布的 0.7.1 指南](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.7.1/docs/shared-memory/README.zh-CN.md)
 或经审核的源码预览；下方包安装命令须等待版本公开。
 
 ```sh
