@@ -727,6 +727,11 @@ def _backup_embedded(ctx):
             "The recovery point does not reopen with the planned point count; "
             "stop the maintenance window and inspect the local store."
         )
+    if _backup_fingerprint(snapshot) != _backup_fingerprint(checkpoint):
+        raise UpgradeRefusedError(
+            "The recovery point does not reopen with the planned embedding fingerprint; "
+            "stop the maintenance window and inspect the local store."
+        )
     _verify_backup_ledger(ctx, partial)
     _write_backup_marker(partial, ctx, snapshot)
     if target.exists():
@@ -774,6 +779,11 @@ def _backup_snapshot(path, collection):
         }
     finally:
         client.close()
+
+
+def _backup_fingerprint(snapshot):
+    """Read the embedding fingerprint from a backup snapshot, marker or checkpoint."""
+    return (snapshot.get("identity") or {}).get("embedding_fingerprint")
 
 
 def _indexes(ctx):
@@ -920,7 +930,8 @@ def _verify_backup_ledger(ctx, candidate):
         if ctx.state.get("ledger", {}).get("present"):
             raise UpgradeRefusedError("The recovery point is missing the local Ledger.")
         return
-    with TemporaryDirectory(prefix="qdrant-upgrade-ledger-") as scratch:
+    profile_storage = Path(ctx.home).resolve() / "qdrant-memory"
+    with TemporaryDirectory(prefix=".upgrade-ledger-", dir=profile_storage) as scratch:
         for name in ("state.db", "state.db-wal", "state.db-shm"):
             source = candidate / name
             if source.is_file():
@@ -949,7 +960,7 @@ def _recover_backup(ctx, *, recorded=None):
     legacy = bool(ctx.state.get("legacy_backup"))
     if legacy:
         prefixes.append(ctx.state["plan_id"][:12])
-    expected_identity = (checkpoint.get("identity") or {}).get("embedding_fingerprint")
+    expected_fingerprint = _backup_fingerprint(checkpoint)
     seen = set()
     for prefix in prefixes:
         candidates = sorted(root.glob(f"*-{prefix}"), reverse=True)
@@ -984,14 +995,11 @@ def _recover_backup(ctx, *, recorded=None):
                 continue
             if marker.get("points") not in (None, snapshot["points"]):
                 continue
-            if (marker.get("identity") or {}).get("embedding_fingerprint") not in (
-                None,
-                expected_identity,
-            ):
+            if _backup_fingerprint(marker) not in (None, expected_fingerprint):
                 continue
             if snapshot["points"] != checkpoint.get("points"):
                 continue
-            if (snapshot.get("identity") or {}).get("embedding_fingerprint") != expected_identity:
+            if _backup_fingerprint(snapshot) != expected_fingerprint:
                 continue
             return str(candidate.relative_to(Path(ctx.home).resolve()))
     return None
