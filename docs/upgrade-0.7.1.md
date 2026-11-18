@@ -1,8 +1,8 @@
 # Upgrade guide for published Runtime 0.7.1
 
 This page describes the published Runtime 0.7.1 wheel. The
-[main-branch guide](upgrade.md) also documents an unreleased local Ledger write
-watermark that is not part of the 0.7.1 wheel.
+[current guide](upgrade.md) also documents the local Ledger write watermark
+released in Runtime 0.7.2, which is not part of the 0.7.1 wheel.
 
 Runtime 0.7.1 preserves the recovery record of an interrupted upgrade and its
 backup reference. It also blocks a policy apply while the Shared Owner still has

@@ -1,7 +1,7 @@
 # 已发布 Runtime 0.7.1 的升级指南
 
-本页说明已发布的 Runtime 0.7.1 wheel。[main 分支指南](upgrade.zh-CN.md)还记录了
-一个尚未发布的本地 Ledger 写入水位，该护栏不属于 0.7.1 wheel。
+本页说明已发布的 Runtime 0.7.1 wheel。[当前指南](upgrade.zh-CN.md)还记录了
+Runtime 0.7.2 发布的本地 Ledger 写入水位，该护栏不属于 0.7.1 wheel。
 
 Runtime 0.7.1 会保留中断升级的恢复记录及备份引用，也会在 Shared Owner 仍持有
 已落盘、但关联事件尚未到达终态的回执时阻止策略 apply。它会校验配置、集合、
