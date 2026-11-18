@@ -321,6 +321,39 @@ def test_apply_rechecks_the_ledger_under_the_lease(tmp_path):
     assert strategy.read(tmp_path, ledger_namespace(cfg)) is None
 
 
+def test_apply_refuses_to_publish_a_corrupt_ledger_backup(tmp_path, monkeypatch):
+    """A fresh backup must pass the same Ledger checks as a resumed backup."""
+    from qdrant_memory.ledger import Ledger
+
+    cfg = embedded_cfg(tmp_path)
+    legacy_store(tmp_path, cfg).close()
+    namespace = ledger_namespace(cfg)
+    Ledger(tmp_path, namespace).close()
+    _, state = run_plan(tmp_path, cfg)
+    copy_file = upgrade.shutil.copy2
+
+    def corrupt_ledger_copy(source, destination, *args, **kwargs):
+        copied = copy_file(source, destination, *args, **kwargs)
+        if Path(source).name == "state.db":
+            Path(copied).write_bytes(b"invalid SQLite copy")
+        return copied
+
+    with monkeypatch.context() as patch:
+        patch.setattr(upgrade.shutil, "copy2", corrupt_ledger_copy)
+        with pytest.raises(upgrade.UpgradeRefusedError, match="corrupt local Ledger"):
+            upgrade.describe(
+                tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"])
+            )
+
+    assert strategy.read(tmp_path, namespace) is None
+    backups = tmp_path / "qdrant-memory" / "backups"
+    assert not list(backups.glob(f"*/{upgrade.BACKUP_MARKER}"))
+    resumed = upgrade.describe(
+        tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
+    )
+    assert resumed["phase"] == upgrade.PHASE_READY
+
+
 def test_backup_verification_uses_the_collection_under_upgrade(tmp_path):
     """A recovery copy is checked against the upgraded collection, not the first one."""
     cfg = embedded_cfg(tmp_path)
@@ -758,6 +791,9 @@ def test_resume_refuses_a_plan_after_a_real_local_write(tmp_path, monkeypatch):
 
     replanned = upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="plan", replace=True))
     assert replanned["persisted"] is True
+    assert replanned["plan_id"] != state["plan_id"]
+    with pytest.raises(upgrade.UpgradePlanStaleError, match="does not match the saved plan"):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"]))
     fresh = strategy.read_state(tmp_path, ledger_namespace(cfg), upgrade.STATE_SUFFIX)
     assert (
         fresh["ledger"]["write_watermark"]["committed"]
