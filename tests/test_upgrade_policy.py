@@ -609,9 +609,18 @@ def test_resume_completes_a_step_that_succeeded_before_its_record(tmp_path, monk
     assert strategy.read(tmp_path, ledger_namespace(cfg))["generation"] == 1
 
 
-@pytest.mark.parametrize("backup_state", ["present", "moved", "damaged"])
+@pytest.mark.parametrize(
+    ("backup_state", "invalid_identity"),
+    [
+        ("present", None),
+        ("moved", None),
+        ("damaged", None),
+        ("damaged", "not-an-object"),
+        ("damaged", []),
+    ],
+)
 def test_resume_reuses_the_backup_when_no_writer_touched_the_store(
-    tmp_path, monkeypatch, backup_state
+    tmp_path, monkeypatch, backup_state, invalid_identity
 ):
     """A stopped-writer interruption keeps the original recovery point."""
     cfg = embedded_cfg(tmp_path)
@@ -638,7 +647,13 @@ def test_resume_reuses_the_backup_when_no_writer_touched_the_store(
             import shutil
 
             shutil.copytree(tmp_path / backup, recovered)
-            shutil.rmtree(tmp_path / backup / "qdrant")
+            if invalid_identity is None:
+                shutil.rmtree(tmp_path / backup / "qdrant")
+            else:
+                marker_path = tmp_path / backup / upgrade.BACKUP_MARKER
+                marker = json.loads(marker_path.read_text(encoding="utf-8"))
+                marker["identity"] = invalid_identity
+                marker_path.write_text(json.dumps(marker), encoding="utf-8")
         else:
             (tmp_path / backup).rename(recovered)
         backup = str(recovered.relative_to(tmp_path))

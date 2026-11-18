@@ -981,6 +981,9 @@ def _recover_backup(ctx, *, recorded=None):
                     marker = json.loads(marker_path.read_text(encoding="utf-8"))
                     if marker.get("instance_id") != ctx.state.get("instance_id"):
                         continue
+                    identity = marker.get("identity")
+                    if identity is not None and not isinstance(identity, dict):
+                        continue
                 elif not (legacy and prefix == ctx.state["plan_id"][:12]):
                     continue
                 else:
