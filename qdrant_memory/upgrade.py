@@ -552,7 +552,7 @@ def plan_destination(home, cfg, *, persist=True, destination_policy=None, replac
         plan = _plan_body(cfg, namespace, target, observed, source)
         state = {
             "schema": 1,
-            "plan_id": digest(plan),
+            "plan_id": digest([plan, snapshot["write_watermark"]]),
             "instance_id": uuid.uuid4().hex,
             "created_at": now(),
             "updated_at": now(),
@@ -727,6 +727,7 @@ def _backup_embedded(ctx):
             "The recovery point does not reopen with the planned point count; "
             "stop the maintenance window and inspect the local store."
         )
+    _verify_backup_ledger(ctx, partial)
     _write_backup_marker(partial, ctx, snapshot)
     if target.exists():
         shutil.rmtree(target)
@@ -915,18 +916,23 @@ def _backup_done(ctx):
 
 def _verify_backup_ledger(ctx, candidate):
     """Validate a private Ledger copy without changing backup WAL or shared-memory files."""
-    if not ctx.state.get("ledger", {}).get("present"):
-        return
     if not (candidate / "state.db").is_file():
-        raise UpgradeRefusedError("The recovery point is missing the local Ledger.")
+        if ctx.state.get("ledger", {}).get("present"):
+            raise UpgradeRefusedError("The recovery point is missing the local Ledger.")
+        return
     with TemporaryDirectory(prefix="qdrant-upgrade-ledger-") as scratch:
         for name in ("state.db", "state.db-wal", "state.db-shm"):
             source = candidate / name
             if source.is_file():
                 shutil.copy2(source, Path(scratch) / name)
-        snapshot = _ledger_snapshot(
-            ctx.home, ctx.namespace, path=Path(scratch) / "state.db", verify=True
-        )
+        try:
+            snapshot = _ledger_snapshot(
+                ctx.home, ctx.namespace, path=Path(scratch) / "state.db", verify=True
+            )
+        except sqlite3.DatabaseError as exc:
+            raise UpgradeRefusedError(
+                "The recovery point contains a corrupt local Ledger."
+            ) from exc
     if _watermark_stale(ctx.state, snapshot):
         raise UpgradeRefusedError(
             "The recovery point Ledger does not match the planned write watermark."
