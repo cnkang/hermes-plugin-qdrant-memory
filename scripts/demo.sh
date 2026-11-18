@@ -41,6 +41,9 @@ set -euo pipefail
 DEMO_HOME="${1:-$HOME/.hermes-qdrant-demo}"
 # Default to the latest published Runtime; override with a release tag or full SHA.
 RUNTIME_RELEASE_REF="${RUNTIME_RELEASE_REF:-v0.7.2}"
+# The default tag must still resolve to the reviewed release commit. A moved tag
+# fails the demo instead of installing different code.
+RUNTIME_RELEASE_COMMIT="${RUNTIME_RELEASE_COMMIT:-0ce83104fefbaecabe6b9e4560d3c83ee4e20438}"
 # Local CLI sessions attribute memory to the host's local session identity
 # (uid:<os-uid>). The inventory and deletion commands must use the same scope.
 SCOPE_USER="uid:$(id -u)"
@@ -111,6 +114,12 @@ else
     | awk 'NR == 1 {sha = $1} /\^\{\}$/ {sha = $1} END {print sha}')
 fi
 [[ "$runtime_sha" =~ ^[0-9a-fA-F]{40}$ ]] || fail "release tag did not resolve to a full SHA"
+# bash 3.2 (macOS /bin/bash) has no ${var,,}, so lower-case through tr.
+runtime_sha_lower=$(printf '%s' "$runtime_sha" | tr '[:upper:]' '[:lower:]')
+expected_sha_lower=$(printf '%s' "$RUNTIME_RELEASE_COMMIT" | tr '[:upper:]' '[:lower:]')
+if [[ "$RUNTIME_RELEASE_REF" != "$runtime_sha" && "$runtime_sha_lower" != "$expected_sha_lower" ]]; then
+  fail "release ref $RUNTIME_RELEASE_REF resolves to $runtime_sha, not the reviewed release commit $RUNTIME_RELEASE_COMMIT; review the new commit and set RUNTIME_RELEASE_COMMIT"
+fi
 install_args=("$runtime_repo" --ref "$runtime_sha")
 install_help=$(hermes plugins install --help 2>/dev/null || true)
 # --yes-deps exists on newer Hermes; older releases prepare dependencies by

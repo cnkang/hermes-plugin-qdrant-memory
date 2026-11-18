@@ -10,6 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_VERSION = "0.7.2"
 RUNTIME_RELEASE_REF = f"v{RUNTIME_VERSION}"
 LATEST_PUBLISHED_RUNTIME_REF = "v0.7.2"
+# Reviewed commit that the release tag dereferences to. Closeout updates it with
+# the tag target, which the release workflow also verifies for the build.
+RELEASE_COMMIT = "0ce83104fefbaecabe6b9e4560d3c83ee4e20438"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
 ACTIVE_INSTALL_DOCS = {
@@ -98,25 +101,29 @@ def test_install_guide_defaults_to_catalog_and_pins_verified_runtime():
     )
 
 
-def test_demo_defaults_to_published_runtime_and_source_ref_waits_for_tag():
-    """Keep the demo installable before release and document source tag timing."""
+def test_demo_and_source_pin_use_the_reviewed_release_commit():
+    """Keep the demo tag default and the source pin on the reviewed release commit."""
     script = (ROOT / "scripts/demo.sh").read_text(encoding="utf-8")
     match = re.search(r'^RUNTIME_RELEASE_REF="\$\{RUNTIME_RELEASE_REF:-([^}]+)\}"', script, re.M)
     assert match, "scripts/demo.sh must default to a versioned Runtime release tag"
     assert match.group(1) == LATEST_PUBLISHED_RUNTIME_REF
+    commit_match = re.search(
+        r'^RUNTIME_RELEASE_COMMIT="\$\{RUNTIME_RELEASE_COMMIT:-([0-9a-f]{40})\}"',
+        script,
+        re.M,
+    )
+    assert commit_match, "scripts/demo.sh must record the reviewed release commit"
+    assert commit_match.group(1) == RELEASE_COMMIT
+    assert "runtime_sha_lower" in script.split("install_args=", 1)[0], (
+        "the demo must verify the resolved tag against the recorded commit"
+    )
 
     remote_owner = (ROOT / "docs/shared-memory/remote-owner.md").read_text(encoding="utf-8")
-    source_match = re.search(
-        r"hermes-plugin-qdrant-memory\.git@(v[0-9]+\.[0-9]+\.[0-9]+)", remote_owner
-    )
-    assert source_match, "remote-owner.md must pin a versioned Runtime source tag"
-    assert source_match.group(1) == RUNTIME_RELEASE_REF
+    source_match = re.search(r"hermes-plugin-qdrant-memory\.git@([0-9a-f]{40})", remote_owner)
+    assert source_match, "remote-owner.md must pin the source install to a full commit"
+    assert source_match.group(1) == RELEASE_COMMIT
     normalized = " ".join(remote_owner.split())
-    assert f"only after the `{RUNTIME_RELEASE_REF}` Git tag has been pushed" in normalized
-    assert (
-        "before tag creation, validate from a clean checkout pinned to the final main SHA"
-        in normalized
-    )
+    assert f"`{RUNTIME_RELEASE_REF}`" in normalized
 
 
 def test_pypi_description_installs_the_version_being_built():
