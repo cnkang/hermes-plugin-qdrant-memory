@@ -328,14 +328,20 @@ def test_apply_refuses_to_publish_a_corrupt_ledger_backup(tmp_path, monkeypatch)
     cfg = embedded_cfg(tmp_path)
     legacy_store(tmp_path, cfg).close()
     namespace = ledger_namespace(cfg)
+    profile_storage = tmp_path / "qdrant-memory"
+    backups = profile_storage / "backups"
     Ledger(tmp_path, namespace).close()
     _, state = run_plan(tmp_path, cfg)
     copy_file = upgrade.shutil.copy2
 
     def corrupt_ledger_copy(source, destination, *args, **kwargs):
         copied = copy_file(source, destination, *args, **kwargs)
-        if Path(source).name == "state.db":
-            Path(copied).write_bytes(b"invalid SQLite copy")
+        path = Path(copied)
+        if path.name == "state.db":
+            if path.parent.parent == backups and path.parent.suffix == ".partial":
+                path.write_bytes(b"invalid SQLite copy")
+            else:
+                assert path.parent.parent == profile_storage
         return copied
 
     with monkeypatch.context() as patch:
@@ -346,12 +352,36 @@ def test_apply_refuses_to_publish_a_corrupt_ledger_backup(tmp_path, monkeypatch)
             )
 
     assert strategy.read(tmp_path, namespace) is None
-    backups = tmp_path / "qdrant-memory" / "backups"
     assert not list(backups.glob(f"*/{upgrade.BACKUP_MARKER}"))
     resumed = upgrade.describe(
         tmp_path, cfg, plan_args(upgrade_action="resume", plan=state["plan_id"])
     )
     assert resumed["phase"] == upgrade.PHASE_READY
+    backup = tmp_path / resumed["steps"]["backup"]["path"]
+    assert backup.parent == backups
+    assert backup.suffix != ".partial"
+    assert (backup / upgrade.BACKUP_MARKER).is_file()
+
+
+def test_apply_refuses_to_publish_a_backup_with_a_different_fingerprint(tmp_path, monkeypatch):
+    """A matching point count cannot compensate for the wrong embedding identity."""
+    cfg = embedded_cfg(tmp_path)
+    legacy_store(tmp_path, cfg).close()
+    _, state = run_plan(tmp_path, cfg)
+    backup_snapshot = upgrade._backup_snapshot
+
+    def mismatched_snapshot(path, collection):
+        snapshot = backup_snapshot(path, collection)
+        snapshot["identity"]["embedding_fingerprint"] = "different-pipeline"
+        return snapshot
+
+    monkeypatch.setattr(upgrade, "_backup_snapshot", mismatched_snapshot)
+    with pytest.raises(upgrade.UpgradeRefusedError, match="planned embedding fingerprint"):
+        upgrade.describe(tmp_path, cfg, plan_args(upgrade_action="apply", plan=state["plan_id"]))
+
+    assert strategy.read(tmp_path, ledger_namespace(cfg)) is None
+    backups = tmp_path / "qdrant-memory" / "backups"
+    assert not list(backups.glob(f"*/{upgrade.BACKUP_MARKER}"))
 
 
 def test_backup_verification_uses_the_collection_under_upgrade(tmp_path):
