@@ -1,11 +1,11 @@
-> **Version boundary:** this page describes the main branch after the local
-> Ledger write watermark change. The published Runtime 0.7.1 wheel does not
+> **Version boundary:** this page describes Runtime 0.7.2, which records the
+> local Ledger write watermark. The published Runtime 0.7.1 wheel does not
 > include that guard. For a 0.7.1 installation, use the
 > [published 0.7.1 guide](upgrade-0.7.1.md).
 
 # Adopt a Qdrant policy with the upgrade commands
 
-Runtime 0.7.1 separates three things that used to be implicit:
+The upgrade commands separate three things that used to be implicit:
 
 - the **target** policy derived from the profile configuration;
 - the **effective** policy this destination accepted;

@@ -20,22 +20,22 @@ Keep one writer per destination. See [shared setup](docs/shared-memory/README.md
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.7.1** preserves the recovery record of an interrupted upgrade and blocks a policy apply while the Shared Owner still has an admitted receipt whose event is not terminal. Run `upgrade plan`, review the blockers and the index status, then run `upgrade apply --plan <plan_id>` inside a short maintenance window. The default stays dense with float32 vectors: no collection move, no re-embedding and no memory identity change.
+> **Runtime 0.7.2** records a local Ledger write watermark in every upgrade plan. `apply` and `resume` refuse an interrupted plan when this Runtime committed a write after the plan was created. The refusal keeps the old plan and its recovery point for review. A stale plan or a plan saved without a watermark needs `upgrade plan --replace`. The default stays dense with float32 vectors: no collection move, no re-embedding and no memory identity change.
 > Secure file handling supports macOS, Linux and supported Windows local volumes.
 > Handoff stays `HANDOFF_PENDING` with `native_verified=false` until the native client confirms adoption.
 > Scoped deletion also supersedes quarantined events before later retries.
-> It retains official FastEmbed 0.9.1. This guide selects Runtime 0.7.1.
+> It retains official FastEmbed 0.9.1. This guide selects Runtime 0.7.2.
 > Check its availability on
-> [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.1/) before installation.
+> [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.2/) before installation.
 > If a package mirror has not indexed the release yet, use the
-> [published 0.6.3 guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.6.3/README.md)
+> [published 0.7.1 guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.7.1/README.md)
 > or install the versioned source tag below.
 > The generic MCP distribution and managed launcher select their own exact Runtime
 > dependency and are released independently.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.
-> This release predates the main-branch local Ledger write watermark. If any writer resumed after the backup, follow the [published 0.7.1 upgrade guide](docs/upgrade-0.7.1.md) and replace the plan; do not resume.
-> See [release notes](docs/releases/0.7.1.md) and [validation](docs/validation.md).
+> The watermark covers writes in this profile's local Ledger only. Another Runtime process, another profile or device, and direct client writes to Qdrant stay outside it. For a 0.7.1 installation, follow the [published 0.7.1 upgrade guide](docs/upgrade-0.7.1.md).
+> See [release notes](docs/releases/0.7.2.md) and [validation](docs/validation.md).
 
 Keep readable exports and original
 harness data when switching tools. Prefer supported harness import/export APIs.
@@ -61,7 +61,7 @@ as a community-maintained plugin.
 ## How it works
 
 For non-Hermes users, install in a private Python 3.11+
-environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.7.1'` (omit `[mcp]`
+environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.7.2'` (omit `[mcp]`
 for CLI only). `qdrant-memory` is the CLI and `mcp` is its server subcommand.
 Standalone does not require Hermes. See [setup and quick start](docs/standalone.md).
 MCP-focused agents may instead use the [metadata-only distribution](https://github.com/cnkang/qdrant-memory-mcp).
