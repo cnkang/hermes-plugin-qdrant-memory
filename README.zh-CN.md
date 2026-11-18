@@ -18,21 +18,21 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.7.1** 保留中断升级的恢复记录，并在 Shared Owner 仍持有已落盘、但关联事件尚未到达终态的回执时阻止策略 apply。先跑 `upgrade plan`，审阅 blocker 与索引状态，再在短维护窗口内运行 `upgrade apply --plan <plan_id>`。默认仍是 dense 与 float32 向量：不搬集合、不重嵌入、不改记忆身份。
+> **Runtime 0.7.2** 在每个升级计划中记录本地 Ledger 的写水位。若本 Runtime 在计划创建后提交过写入，`apply` 与 `resume` 会拒绝该中断计划，并保留旧计划与恢复点供审阅。过期计划或没有水位的计划需要显式执行 `upgrade plan --replace`。默认仍是 dense 与 float32 向量：不搬集合、不重嵌入、不改记忆身份。
 > 安全文件处理支持 macOS、Linux 和受支持的 Windows 本地卷。
 > 原生客户端确认采纳前，状态保持 `HANDOFF_PENDING`、`native_verified=false`。
 > 作用域删除也会使隔离事件失效，避免后续重试恢复已删除的数据。
-> 保留官方 FastEmbed 0.9.1。本指南选择 Runtime 0.7.1。
-> 安装前请在[PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.1/)
+> 保留官方 FastEmbed 0.9.1。本指南选择 Runtime 0.7.2。
+> 安装前请在[PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.2/)
 > 核实该版本是否已公开。
 > 若包镜像尚未同步此版本，请使用
-> [已发布的 0.6.3 指南](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.6.3/README.zh-CN.md)
+> [已发布的 0.7.1 指南](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.7.1/README.zh-CN.md)
 > 或使用下方固定版本 tag 的源码。
 > 通用 MCP 发行包和托管启动器各自选择精确的 Runtime 依赖，分别发布。
 > Hermes Plugin Catalog 使用独立审核的固定版本（不可变），PyPI 发布不会自动升级目录中的版本。
 > 每个目的地仍只允许一个写入者。
-> 该版本早于 main 分支的本地 Ledger 写入水位。若备份后有 writer 恢复写入，请遵循[已发布 0.7.1 升级指南](docs/upgrade-0.7.1.zh-CN.md)并替换计划，不要 resume。
-> 参见[发布说明](docs/releases/0.7.1.zh-CN.md)和[验证记录](docs/validation.md)。
+> 水位只覆盖当前 profile 本地 Ledger 记录的写入。另一 Runtime 进程、其它 profile 或设备，以及其它客户端直接写入 Qdrant 的数据都不在其覆盖范围内。使用 0.7.1 时请遵循[已发布 0.7.1 升级指南](docs/upgrade-0.7.1.zh-CN.md)。
+> 参见[发布说明](docs/releases/0.7.2.zh-CN.md)和[验证记录](docs/validation.md)。
 
 切换工具时保留可阅读的导出和原始 harness 数据。优先使用各 harness 支持的导入导出
 接口；没有原生批量导入时使用通用交接包。卸载集成不删除记忆、备份和来源。
@@ -54,7 +54,7 @@ schema-v1 payload。不使用 Mem0 SDK 或独立 LLM SDK，不发送遥测，不
 ## 工作原理
 
 非 Hermes 用户可在私有的 Python 3.11+ 环境中安装：
-`pip install 'hermes-plugin-qdrant-memory[mcp]==0.7.1'`（仅 CLI 可省略 `[mcp]`）。
+`pip install 'hermes-plugin-qdrant-memory[mcp]==0.7.2'`（仅 CLI 可省略 `[mcp]`）。
 `qdrant-memory` 是 CLI，`mcp` 是其服务子命令。Standalone 不需要 Hermes。
 见[安装与快速开始](docs/standalone.md)。以 MCP 为主的 Agent 也可改用
 [metadata-only 分发包](https://github.com/cnkang/qdrant-memory-mcp)。

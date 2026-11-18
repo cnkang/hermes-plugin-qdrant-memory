@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_VERSION = "0.7.1"
+RUNTIME_VERSION = "0.7.2"
 RUNTIME_RELEASE_REF = f"v{RUNTIME_VERSION}"
-LATEST_PUBLISHED_RUNTIME_REF = "v0.7.1"
+LATEST_PUBLISHED_RUNTIME_REF = "v0.7.2"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
 ACTIVE_INSTALL_DOCS = {
@@ -87,8 +87,8 @@ def test_install_guide_defaults_to_catalog_and_pins_verified_runtime():
     assert "hermes plugins install qdrant-memory" in guide
     assert "Catalog installs Runtime 0.6.3" in guide
     assert "b8c1d8babe125470d9278404454728d4426f1dc3" in guide
-    assert "latest published Runtime is 0.7.1" in guide
-    assert "cc5cac025f5d18afb5c698b2b5db444e30fc240e" in guide
+    assert "latest published Runtime is 0.7.2" in guide
+    assert "0ce83104fefbaecabe6b9e4560d3c83ee4e20438" in guide
     assert (
         "hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --ref"
         in guide

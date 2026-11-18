@@ -21,8 +21,8 @@ collection, embedding model and dimensions before setup.
 As checked on 2026-11-17, the official Hermes Catalog installs Runtime 0.6.3
 from immutable commit
 [`b8c1d8babe125470d9278404454728d4426f1dc3`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/b8c1d8babe125470d9278404454728d4426f1dc3).
-The latest published Runtime is 0.7.1 at
-[`cc5cac025f5d18afb5c698b2b5db444e30fc240e`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/cc5cac025f5d18afb5c698b2b5db444e30fc240e).
+The latest published Runtime is 0.7.2 at
+[`0ce83104fefbaecabe6b9e4560d3c83ee4e20438`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/0ce83104fefbaecabe6b9e4560d3c83ee4e20438).
 The Catalog pin can lag PyPI and the latest Runtime source; a PyPI release does
 not update the Catalog automatically.
 
@@ -69,7 +69,7 @@ Catalog pin, use Hermes's native plugin installer with its verified immutable
 commit SHA:
 
 ```sh
-hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --ref cc5cac025f5d18afb5c698b2b5db444e30fc240e
+hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --ref 0ce83104fefbaecabe6b9e4560d3c83ee4e20438
 ```
 
 Never substitute `main` or a development SHA. Hermes PM manages plugin
@@ -142,8 +142,8 @@ embedding 模型与维度。
 
 截至 2026-11-17，官方 Hermes Catalog 安装 Runtime 0.6.3，固定提交为
 [`b8c1d8babe125470d9278404454728d4426f1dc3`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/b8c1d8babe125470d9278404454728d4426f1dc3)。
-最新已发布 Runtime 是 0.7.1，提交为
-[`cc5cac025f5d18afb5c698b2b5db444e30fc240e`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/cc5cac025f5d18afb5c698b2b5db444e30fc240e)。
+最新已发布 Runtime 是 0.7.2，提交为
+[`0ce83104fefbaecabe6b9e4560d3c83ee4e20438`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/0ce83104fefbaecabe6b9e4560d3c83ee4e20438)。
 Catalog pin 可能落后于 PyPI 和最新 Runtime 源码；发布 PyPI 不会自动更新 Catalog。
 
 ### 1. Hermes 新建记忆目的地
@@ -180,7 +180,7 @@ Qdrant MCP。
 指定已验证的不可变提交 SHA：
 
 ```sh
-hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --ref cc5cac025f5d18afb5c698b2b5db444e30fc240e
+hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --ref 0ce83104fefbaecabe6b9e4560d3c83ee4e20438
 ```
 
 不要替换成 `main` 或开发 SHA。插件依赖由 Hermes PM 管理；不要 pip install 到 Hermes
