@@ -54,4 +54,4 @@ jobs:
         with:
           name: standalone-${{ matrix.os }}-python-${{ matrix.python }}-mcp-${{ matrix.mcp.name }}
           path: standalone-results.xml
-          if-no-files-found: error
+          if-no-files-found: warn

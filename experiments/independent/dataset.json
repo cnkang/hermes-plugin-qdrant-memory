@@ -1,0 +1,350 @@
+[
+  {"id":"reply-language","split":"dev","memories":{
+    "a":"海鹭工作室的助理默认用中文回复，句子简短。",
+    "b":"海鹭工作室在五月十二日给上游维护者提交 Tide PR #317，只有该 PR 描述临时使用 English；提交后恢复中文。",
+    "c":"另一项目 Reed 的团队所有 code review 和 PR description 一直使用 English。",
+    "d":"海鹭工作室去年曾默认 English，四月明确改为中文。"},"questions":[
+    ["海鹭 Tide PR 提交结束后 default reply 用什么语言？",["mixed","preference","stale_fact","identifiers"],["a","b"],[],["d"],"默认记录和例外记录均明确支持提交后恢复中文，两条都算直接证据；旧英文默认不再有效。"],
+    ["五月十二日海鹭给上游维护者的描述用什么语言？",["chinese","preference"],["b"],["a"],[],"特定任务临时例外使用英语。"],
+    ["Before April, what was Hailu's default reply language?",["english","historical"],["d"],[],["a"],"明确询问四月变更之前，旧默认是正确答案。"]]},
+  {"id":"vector-host","split":"dev","memories":{
+    "a":"苔原笔记一月使用 Qdrant Cloud，远程 vector database 支持 hybrid memory retrieval。",
+    "b":"苔原笔记三月迁移完成，现在只连接本机 Qdrant Server，停用 Cloud endpoint。",
+    "c":"苔原图片服务继续使用 Qdrant Cloud，未迁移。",
+    "d":"苔原笔记迁移原因是离线工作需要，而不是费用。"},"questions":[
+    ["苔原笔记现在的 Qdrant endpoint 在哪里？",["mixed","stale_fact","configuration"],["b"],["d"],["a"],"三月完成的笔记配置覆盖一月旧记录。"],
+    ["苔原笔记迁移前连接哪里？",["chinese","historical"],["a"],["d"],["b"],"历史时间点应返回 Cloud。"],
+    ["Why did Tundra notes move its vector database?",["english","configuration"],["d"],["b"],[],"原因证据单独存储，不能用新地址代替原因。"]]},
+  {"id":"merge-decision","split":"dev","memories":{
+    "a":"青岚服务周一决定准备合并 PR #731，merge 已排入周二计划。",
+    "b":"青岚服务周二明确暂不合并 PR #731，等待竞态复现；没有执行 merge。",
+    "c":"青岚服务 PR #713 已经合并，其标题也叫 worker cleanup。",
+    "d":"青岚服务 PR #731 暂缓的原因是并发写入会丢失任务。"},"questions":[
+    ["青岚 PR #731 是已经 merge 还是暂不合并？",["mixed","stale_fact","negation","identifiers"],["b"],["d"],["a"],"暂不与已经不同，编号不能交换。"],
+    ["青岚周一对七三一号变更的计划是什么？",["chinese","historical"],["a"],[],["b"],"问的是周一计划而非周二最终决定。"],
+    ["What bug blocked Qinglan worker cleanup?",["english","negation"],["d"],["b"],["c"],"等待的是任务丢失竞态，已合并的另一编号不是证据。"]]},
+  {"id":"embedding-model","split":"dev","memories":{
+    "a":"白桦档案旧 collection 用 qwen3-embedding:8b，维度 4096。",
+    "b":"白桦档案七月切到 qwen3-embedding:4b，新 collection 维度 2560；旧库只读留档。",
+    "c":"白桦聊天仍用 qwen3:8b，它不是 embedding 模型。",
+    "d":"白桦遇到向量维度不匹配时建新 collection 并重嵌入，禁止截断旧向量。"},"questions":[
+    ["白桦现在 embedding model 是 :4b 还是 :8b？",["mixed","identifiers","stale_fact"],["b"],["d"],["a"],"当前向量模型是带 embedding 的四十亿版本。"],
+    ["白桦旧库的向量有多少维？",["chinese","historical"],["a"],[],["b"],"旧库仍为四千零九十六维。"],
+    ["白桦 dimension mismatch 能直接 slice vector 吗？",["mixed","code"],["d"],["b"],[],"处理动作需重嵌入，禁止截断。"]]},
+  {"id":"repin-reason","split":"dev","memories":{
+    "a":"石榴桥接上周打算 repin Hermes 到 bridge-rc7。",
+    "b":"石榴桥接本周取消 repin，维持 bridge-rc6，因为 rc7 删除了事件重放接口。",
+    "c":"石榴网页项目已经重新固定 bridge-rc7，网页不依赖事件重放。",
+    "d":"石榴桥接解除阻塞条件是恢复 replay_event API 并补回集成用例。"},"questions":[
+    ["石榴桥接上次为什么不 Re-Pin？",["mixed","stale_fact","negation"],["b"],["d"],["a"],"大小写及连字符变化不改变取消原因。"],
+    ["石榴桥接上周原本想固定哪个候选版？",["chinese","historical"],["a"],[],["b"],"历史计划的 rc7 正确，当前 rc6 不作答。"],
+    ["Which API must return before Shiliu bridge can advance?",["english","code","identifiers"],["d"],["b"],[],"需要接口名称，不只是版本号。"]]},
+  {"id":"search-key","split":"dev","memories":{
+    "a":"浮萍引擎旧配置 retrieval.min_score=0.75，用于 dense 相似度。",
+    "b":"浮萍引擎八月改为 search.min_score=0.62；retrieval.min_score 不再读取。",
+    "c":"浮萍推荐系统使用 search.min_score=0.75，和记忆引擎不是同一服务。",
+    "d":"浮萍 CI 用 grep search.min_score config.toml 查看新键，绝不能用 RRF 分数套 dense 阈值。"},"questions":[
+    ["浮萍引擎现在 min_score 哪个键生效？",["mixed","configuration","identifiers","stale_fact"],["b"],["d"],["a"],"只有新 search 键被当前引擎读取。"],
+    ["八月以前浮萍引擎的相似度下限是多少？",["chinese","historical"],["a"],[],["b"],"变更前的 0.75 应视为历史正确。"],
+    ["浮萍用哪个 grep command 查看当前 score 配置？",["mixed","code","identifiers"],["d"],["b"],["a"],"需返回针对当前键的命令。"]]},
+  {"id":"backup-policy","split":"holdout","memories":{
+    "a":"灯塔账簿以前 nightly backup 只备份 state.db，恢复备份和 SQLite snapshot 都不包含向量。",
+    "b":"灯塔账簿九月起 nightly backup 必须同时保存 state.db 和 Qdrant snapshot；单独数据库不够。",
+    "c":"灯塔营销站仍只备份 state.db，没有向量库。",
+    "d":"灯塔账簿用 restore --verify-count 检查恢复后的向量点数。"},"questions":[
+    ["灯塔账簿现在 nightly backup 要打包什么？",["mixed","stale_fact","configuration"],["b"],[],["a"],"九月新策略要求两份存储。"],
+    ["灯塔账簿九月之前每晚保留什么？",["chinese","historical"],["a"],[],["b"],"问旧策略，不能把遗漏向量当作答错。"],
+    ["灯塔 restore 后用哪个 flag 校验点数？",["mixed","code","identifiers"],["d"],["b"],[],"恢复命令参数才是直接答案。"]]},
+  {"id":"shell-default","split":"holdout","memories":{
+    "a":"雁回助手以前所有 shell snippets 默认 bash，包含部署和日常终端示例。",
+    "b":"雁回助手现在日常终端示例默认 zsh；仅容器启动脚本继续用 bash。",
+    "c":"雁回的 Windows 同事默认 PowerShell，仅适用于 Windows agent。",
+    "d":"雁回容器入口保留 #!/usr/bin/env bash，因为基础镜像没有 zsh。"},"questions":[
+    ["雁回普通 terminal snippet 现在默认哪个 shell？",["mixed","stale_fact","preference"],["b"],["d"],["a"],"普通终端使用新默认，容器是例外。"],
+    ["雁回换默认值以前的示例用什么解释器？",["chinese","historical"],["a"],[],["b"],"历史默认 bash。"],
+    ["雁回 container entrypoint 的 shebang 保留什么？",["mixed","code","identifiers"],["d"],["b"],[],"容器继续使用 bash，理由为镜像约束。"]]},
+  {"id":"release-channel","split":"holdout","memories":{
+    "a":"松涛同步曾决定把版本 2.6.0 直接标为 stable 并上传正式 release channel。",
+    "b":"松涛同步后来撤销 stable 决定，2.6.0 只发 beta；正式频道仍是 2.5.4。",
+    "c":"松涛播放器 2.6.0 已标 stable，它是独立项目。",
+    "d":"松涛同步 beta 的安装命令是 pip install songtao-sync==2.6.0b1。"},"questions":[
+    ["松涛同步 2.6.0 现在是 stable release 吗？",["mixed","stale_fact","negation","identifiers"],["b"],[],["a"],"撤销正式版决定，不能混用播放器事实。"],
+    ["撤销前松涛同步原定发到哪个频道？",["chinese","historical"],["a"],[],["b"],"原定正式频道属于历史计划。"],
+    ["松涛同步 beta 的 pip install 命令是什么？",["mixed","code","identifiers"],["d"],["b"],[],"精确测试版本安装命令。"]]},
+  {"id":"telemetry-choice","split":"holdout","memories":{
+    "a":"云杉日记试验阶段允许 telemetry 上传原始查询，记录 query text 方便排错。",
+    "b":"云杉日记上线前明确禁止上传原始 query，只保留请求耗时和计数。",
+    "c":"云杉演示数据允许日志包含虚构 query，演示不是用户日记。",
+    "d":"云杉日记启动时以 TELEMETRY_RAW=false 禁用原文记录。"},"questions":[
+    ["云杉日记现在 telemetry 可以记录 query text 吗？",["mixed","stale_fact","negation"],["b"],["d"],["a"],"上线前禁令覆盖试验许可。"],
+    ["云杉日记试验阶段允许上传什么内容？",["chinese","historical"],["a"],[],["b"],"按所问试验时间点标注。"],
+    ["云杉用哪个 env var 关掉 raw telemetry？",["mixed","code","identifiers"],["d"],["b"],[],"变量与 false 值直接作答。"]]},
+  {"id":"task-priority","split":"holdout","memories":{
+    "a":"星芒排程原计划先完成 UI redesign，再做队列丢任务修复。",
+    "b":"星芒排程周五反转优先级：先修队列丢任务，UI redesign 延后。",
+    "c":"星芒官网周五先做 UI redesign，不包含排程队列。",
+    "d":"星芒排程的修复分支名为 fix/lost-job，不是 feat/new-ui。"},"questions":[
+    ["星芒排程现在 UI redesign 和 lost job 哪个优先？",["mixed","stale_fact","decision"],["b"],["d"],["a"],"周五决定反转顺序。"],
+    ["星芒排程最初打算先做什么？",["chinese","historical"],["a"],[],["b"],"最初计划应是界面重设计。"],
+    ["星芒队列丢任务要 checkout 哪个 branch？",["mixed","code","identifiers"],["d"],["b"],[],"分支标识直接用于修复任务。"]]},
+  {"id":"rerank-switch","split":"holdout","memories":{
+    "a":"南风检索曾在 staging 打开 rerank=true，所有搜索默认进行重排。",
+    "b":"南风检索六月关闭默认 rerank，只有用户传 --rerank 时启用。",
+    "c":"南风商品搜索默认 rerank=true，和笔记检索是不同入口。",
+    "d":"南风关闭默认重排的原因是首屏响应超时，不是召回率下降。"},"questions":[
+    ["南风笔记 search 现在默认做 rerank 吗？",["mixed","stale_fact","configuration","negation"],["b"],["d"],["a"],"六月新默认关闭但保留显式开关。"],
+    ["南风六月调整前默认会重排吗？",["chinese","historical"],["a"],[],["b"],"历史启用事实应命中。"],
+    ["Why was default reranking disabled for Nanfeng notes?",["english","decision"],["d"],["b"],[],"首屏超时是唯一记录原因。"]]},
+  {"id":"git-worktree","split":"holdout","memories":{
+    "a":"溪石工具以前直接在 main checkout 上跑集成验证，并且允许工作区共用。",
+    "b":"溪石工具现在验证必须新建独立 worktree，禁止在 main 上改动实验文件。",
+    "c":"溪石文档预览仍可在 main 只读运行，不属于集成验证。",
+    "d":"溪石验证命令为 git worktree add ../xishi-eval -b eval/isolated。"},"questions":[
+    ["溪石 integration test 现在可以直接改 main 吗？",["mixed","stale_fact","negation","code"],["b"],["d"],["a"],"当前隔离要求优先，只读文档不是例外授权。"],
+    ["溪石过去在哪里做集成验证？",["chinese","historical"],["a"],[],["b"],"历史共用工作区是所问事实。"],
+    ["溪石创建 eval/isolated worktree 的命令？",["mixed","code","identifiers"],["d"],["b"],[],"精确 worktree 命令。"]]},
+  {"id":"package-manager","split":"holdout","memories":{
+    "a":"枫港服务曾使用 npm ci 安装依赖，仓库提交 package-lock.json。",
+    "b":"枫港服务十月迁到 pnpm，当前 CI 使用 pnpm install --frozen-lockfile。",
+    "c":"枫港移动网站仍用 npm ci，未参加服务端迁移。",
+    "d":"枫港服务迁移后只接受 pnpm-lock.yaml，删除残留 package-lock.json。"},"questions":[
+    ["枫港服务现在 CI install 用 npm 还是 pnpm？",["mixed","stale_fact","code","identifiers"],["b"],["d"],["a"],"十月迁移已生效，移动站不同。"],
+    ["枫港服务迁移包管理器之前使用什么？",["chinese","historical"],["a"],[],["b"],"历史 npm ci 正确。"],
+    ["Which lockfile should Fenggang service reviews require now?",["english","code","identifiers"],["d"],["b"],["a"],"审查要核对当前锁文件。"]]},
+  {"id":"network-address","split":"holdout","memories":{
+    "a":"霜叶验证机旧地址为 10.78.0.8，SSH port 2222，经公网跳板连接。",
+    "b":"霜叶验证机现在仅在私网 10.78.0.9:22 提供 SSH，旧地址已停用。",
+    "c":"霜叶渲染机仍位于 10.78.0.8:2222，不是验证机。",
+    "d":"霜叶连接示例为 ssh -p 22 validator@10.78.0.9。"},"questions":[
+    ["霜叶验证机当前 SSH host 和 port 是多少？",["mixed","stale_fact","identifiers","configuration"],["b"],["d"],["a"],"当前机器和端口都需要对应。"],
+    ["霜叶验证机旧跳板连接使用哪个端口？",["chinese","historical"],["a"],[],["b"],"旧端口二二二二属于所问时间。"],
+    ["霜叶 validator 的 ssh command 怎么写？",["mixed","code","identifiers"],["d"],["b"],["c"],"示例包含正确账号地址端口。"]]},
+  {"id":"tokenizer-policy","split":"holdout","memories":{
+    "a":"墨池索引原先使用 word tokenizer，Chinese memory search 也采用空格切词。",
+    "b":"墨池索引新测试库使用 multilingual tokenizer，生产库仍暂不迁移。",
+    "c":"墨池代码索引使用 code tokenizer，它不是记忆测试库。",
+    "d":"墨池测试报告必须记录 min_token_len=2 和 max_token_len=15。"},"questions":[
+    ["墨池新 memory 测试库用哪种 tokenizer？",["mixed","stale_fact","identifiers"],["b"],["d"],["a"],"问新测试库，不推断生产已迁移。"],
+    ["墨池旧记忆索引采用哪种切词方式？",["chinese","historical"],["a"],[],["b"],"旧 word 设置仍是历史正确。"],
+    ["Which token length bounds belong in Mochi's test report?",["english","code","identifiers"],["d"],["b"],[],"需要两个精确配置值。"]]},
+  {"id":"retention-period","split":"holdout","memories":{
+    "a":"鹿鸣日志原定 retention=90d，所有 debug trace 保留九十天。",
+    "b":"鹿鸣日志隐私评审后改成 retention=7d，只有聚合计数保留九十天。",
+    "c":"鹿鸣账单凭证保留九十天，不是 debug trace。",
+    "d":"鹿鸣清理任务使用 purge --kind trace --older-than 7d。"},"questions":[
+    ["鹿鸣 debug trace 当前 retention 是多久？",["mixed","stale_fact","configuration","identifiers"],["b"],["d"],["a"],"区分原始 trace 和聚合计数。"],
+    ["鹿鸣隐私评审前追踪日志保留几天？",["chinese","historical"],["a"],[],["b"],"旧九十天策略按历史问题作答。"],
+    ["鹿鸣 purge trace 的 older-than 参数是多少？",["mixed","code","identifiers"],["d"],["b"],[],"命令参数为七天。"]]},
+  {"id":"review-tone","split":"holdout","memories":{
+    "a":"雪松助手早期 review comment 语气正式，每条都写完整背景。",
+    "b":"雪松助手现在 review comment 直接简短，只有安全披露邮件继续正式详述。",
+    "c":"雪松市场团队的 newsletter 一直正式详述，与代码评审无关。",
+    "d":"雪松要求每个阻塞问题附 file:line，不要只写抽象建议。"},"questions":[
+    ["雪松 code review comment 现在偏好什么语气？",["mixed","stale_fact","preference"],["b"],["d"],["a"],"新默认简短，安全邮件是特定例外。"],
+    ["雪松早期评审意见要求怎样组织背景？",["chinese","historical"],["a"],[],["b"],"早期正式完整背景是历史要求。"],
+    ["What evidence must a blocking Xuesong review finding include?",["english","code","identifiers"],["d"],["b"],[],"具体证据格式直接作答。"]]},
+  {"id":"retry-policy","split":"holdout","memories":{
+    "a":"赤羽队列旧策略对 HTTP 409、429 和 500 全部 retry 三次。",
+    "b":"赤羽队列现在 HTTP 409 立即报冲突，只有 429 和 500 继续重试。",
+    "c":"赤羽抓取器遇到 409 仍重试三次，它不写队列。",
+    "d":"赤羽队列以 RETRY_CONFLICT=0 表示不重试冲突响应。"},"questions":[
+    ["赤羽 queue 收到 HTTP 409 现在还 retry 吗？",["mixed","stale_fact","negation","code"],["b"],["d"],["a"],"新规则只排除冲突码，其他错误不混同。"],
+    ["赤羽旧策略会重试哪些响应码？",["chinese","historical"],["a"],[],["b"],"旧三种码都要计入。"],
+    ["Which setting disables conflict retries in Chiyu queue?",["english","code","identifiers"],["d"],["b"],[],"明确变量与零值。"]]},
+  {"id":"encryption-key","split":"holdout","memories":{
+    "a":"银杏档案开发期统一使用 key alias archive-v1，备份加密和恢复都选 v1。",
+    "b":"银杏档案轮换后新备份使用 archive-v2，旧备份恢复仍保留 archive-v1。",
+    "c":"银杏相册新备份仍用 archive-v1，相册与档案密钥空间不同。",
+    "d":"银杏恢复器必须读取 manifest.key_alias 选钥，不能总用当前默认。"},"questions":[
+    ["银杏档案新 backup 现在用哪个 key alias？",["mixed","stale_fact","identifiers"],["b"],["d"],["a"],"轮换只改变新备份默认。"],
+    ["银杏轮换前的档案备份应该用哪个别名恢复？",["chinese","historical"],["a"],["b"],[],"旧密钥继续有效，历史恢复不能误判为过时错误。"],
+    ["Which manifest field selects a Yinxing restore key?",["english","code","identifiers"],["d"],["b"],[],"恢复按 manifest 而不是新默认。"]]},
+  {"id":"db-transaction","split":"holdout","memories":{
+    "a":"远汀账本以前先更新向量库再写 SQL ledger，失败后只记录 warning。",
+    "b":"远汀账本现在先提交 SQL outbox，再异步写向量库；失败必须留待重放。",
+    "c":"远汀搜索演示仍直接写向量库，没有账本。",
+    "d":"远汀重放使用 outbox replay --pending，不能删除未完成行。"},"questions":[
+    ["远汀 ledger 现在先写 vector store 还是 SQL outbox？",["mixed","stale_fact","code"],["b"],["d"],["a"],"当前提交顺序已反转。"],
+    ["远汀原来向量写入失败会怎样处理？",["chinese","historical"],["a"],[],["b"],"过去只警告是历史行为。"],
+    ["远汀 pending outbox 的 replay command？",["mixed","code","identifiers"],["d"],["b"],[],"应重放不能删行。"]]},
+  {"id":"timeout-change","split":"holdout","memories":{
+    "a":"橙湾导入器旧 embedding timeout 为 10s，批量导入和单条查询一致。",
+    "b":"橙湾导入器批量 embedding timeout 改为 120s，交互查询仍是 10s。",
+    "c":"橙湾图片下载器 timeout 为 120s，不调用 embedding。",
+    "d":"橙湾批量导入设置 batch_timeout_seconds=120，query_timeout_seconds 不改。"},"questions":[
+    ["橙湾 batch embedding 现在 timeout 多久？",["mixed","stale_fact","configuration","identifiers"],["b"],["d"],["a"],"批量和查询路径要区分。"],
+    ["橙湾批量导入调整以前超时设为多少秒？",["chinese","historical"],["a"],[],["b"],"旧十秒是历史直接答案。"],
+    ["Which config key should Chengwan batch imports change?",["english","code","identifiers"],["d"],["b"],[],"只改 batch 键不改 query 键。"]]},
+  {"id":"cache-mode","split":"holdout","memories":{
+    "a":"竹影索引器曾启用 cache.mode=writeback，先响应再刷盘。",
+    "b":"竹影索引器断电演练后改成 cache.mode=writethrough，必须刷盘后响应。",
+    "c":"竹影缩略图缓存仍是 writeback，可以重建。",
+    "d":"竹影禁止在 durable_ack=true 前确认索引写入成功。"},"questions":[
+    ["竹影 indexer 当前 cache.mode 是 writeback 吗？",["mixed","stale_fact","configuration","negation","identifiers"],["b"],["d"],["a"],"断电演练后的写穿模式覆盖旧配置。"],
+    ["竹影断电演练前什么时候确认写入？",["chinese","historical"],["a"],[],["b"],"过去先响应后刷盘。"],
+    ["What acknowledgement must Zhuying wait for?",["english","code","identifiers"],["d"],["b"],[],"持久化确认字段而非缓存名称。"]]},
+  {"id":"test-platform","split":"holdout","memories":{
+    "a":"雨燕 native extension 以前仅在 arm64 Mac 上完成测试即算验收。",
+    "b":"雨燕 native extension 现在必须补 Linux x86_64 验证，Mac 通过不足以验收。",
+    "c":"雨燕静态文档不含 native extension，只在 Mac 预览。",
+    "d":"雨燕在 Linux 执行 pytest tests/native -q，产物必须来自本机编译。"},"questions":[
+    ["雨燕 native extension 现在只测 arm64 Mac 够吗？",["mixed","stale_fact","negation","identifiers"],["b"],["d"],["a"],"新增原生跨架构验收要求。"],
+    ["雨燕以前在哪个平台通过就算完成验收？",["chinese","historical"],["a"],[],["b"],"旧验收条件是单台 Mac。"],
+    ["雨燕 Linux native suite 用什么 pytest command？",["mixed","code","identifiers"],["d"],["b"],[],"必须直接执行原生用例。"]]},
+  {"id":"meeting-exception","split":"holdout","memories":{
+    "a":"花楸助手过去默认所有提醒提前 30 分钟，包括线上 standup。",
+    "b":"花楸助手现在默认提前 10 分钟；只有跨城线下会议临时提前 60 分钟。",
+    "c":"花楸客户支持值班仍提前 30 分钟，它不是会议提醒。",
+    "d":"花楸六月十日南京线下评审是跨城会议，结束后恢复默认提醒。"},"questions":[
+    ["花楸 remote standup 现在提前多久 reminder？",["mixed","stale_fact","preference"],["b"],[],["a"],"远程站会使用当前默认十分钟。"],
+    ["花楸调整前线上站会提醒提前多少分钟？",["chinese","historical"],["a"],[],["b"],"历史三十分钟正确。"],
+    ["How early should Huaqiu's June 10 Nanjing review reminder fire?",["english","preference"],["b","d"],[],["a"],"会议性质和例外规则分散两条，两者共同支持六十分钟。"]]},
+  {"id":"document-format","split":"holdout","memories":{
+    "a":"白露记录以前默认把会议纪要输出成 PDF，保留固定页面布局。",
+    "b":"白露记录现在默认 Markdown，只有交付签字版才输出 PDF。",
+    "c":"白露设计稿预览仍只接受 PDF，和会议纪要不同。",
+    "d":"白露导出命令 notes export --format markdown，不需要打印到 PDF。"},"questions":[
+    ["白露普通 meeting notes 现在默认 PDF 还是 Markdown？",["mixed","stale_fact","preference","identifiers"],["b"],["d"],["a"],"普通纪要采用新默认。"],
+    ["白露改格式以前的纪要默认存为什么？",["chinese","historical"],["a"],[],["b"],"旧 PDF 默认是时间点答案。"],
+    ["白露 notes export 如何指定当前默认格式？",["mixed","code","identifiers"],["d"],["b"],[],"命令的 format 值是 markdown。"]]},
+  {"id":"deployment-target","split":"holdout","memories":{
+    "a":"浅川 API 以前 deploy 到 region-ap1，production runner 使用 ap1 凭据。",
+    "b":"浅川 API 数据驻留调整后只部署 region-ap2，ap1 production 凭据已撤销。",
+    "c":"浅川静态资源仍在 region-ap1，CDN 不属于 API 数据。",
+    "d":"浅川 API 发布参数为 deploy --region region-ap2 --service api。"},"questions":[
+    ["浅川 API production 现在 deploy 到哪个 region？",["mixed","stale_fact","configuration","identifiers"],["b"],["d"],["a"],"API 迁移后只能 ap2，不混同 CDN。"],
+    ["浅川数据驻留调整前接口部署在哪里？",["chinese","historical"],["a"],[],["b"],"历史 ap1 正确。"],
+    ["浅川 API deploy 的 region flag 如何填写？",["mixed","code","identifiers"],["d"],["b"],[],"精确命令中 region 和 service 都要对应。"]]},
+  {"id":"pagination-limit","split":"holdout","memories":{
+    "a":"鹭洲目录旧 API page_size 最大 100，超过上限静默截断。",
+    "b":"鹭洲目录新版 page_size 最大 50，超出时返回 400，不再静默截断。",
+    "c":"鹭洲搜索 API page_size 最大 100，不是目录 API。",
+    "d":"鹭洲目录边界测试请求 GET /catalog?page_size=51 应断言 400。"},"questions":[
+    ["鹭洲 catalog API 当前 page_size 超过50会怎样？",["mixed","stale_fact","code","identifiers"],["b"],["d"],["a"],"新版报错而不是旧版截断。"],
+    ["鹭洲旧目录接口最多允许一页多少条？",["chinese","historical"],["a"],[],["b"],"旧上限一百不能按新上限判断。"],
+    ["Which request tests Luzhou catalog's first invalid page size?",["english","code","identifiers"],["d"],["b"],[],"边界五十一和四百响应。"]]},
+  {"id":"notification-route","split":"holdout","memories":{
+    "a":"沙棠构建失败以前发到 Slack #build-all，所有仓库共用频道。",
+    "b":"沙棠核心库现在失败只发 #core-ci，#build-all 不再接收核心库告警。",
+    "c":"沙棠网页构建失败继续发 #build-all，核心库与网页不同。",
+    "d":"沙棠核心库路由配置 notification.channel=core-ci。"},"questions":[
+    ["沙棠 core build failure 现在通知哪个 Slack channel？",["mixed","stale_fact","identifiers"],["b"],["d"],["a"],"新路由按核心库区分。"],
+    ["沙棠核心库以前的失败通知发到哪里？",["chinese","historical"],["a"],[],["b"],"旧共用频道是历史正确。"],
+    ["What notification.channel value belongs to Shatang core?",["english","code","identifiers"],["d"],["b"],[],"配置不带频道显示井号。"]]},
+  {"id":"compression-choice","split":"holdout","memories":{
+    "a":"紫苏归档以前所有 snapshot 使用 gzip level 9，CPU 消耗较高。",
+    "b":"紫苏归档现在新 snapshot 使用 zstd level 3，旧 gzip 包仍支持读取。",
+    "c":"紫苏附件邮件继续 gzip level 9，附件不属于快照。",
+    "d":"紫苏新归档压缩命令为 zstd -3 snapshot.tar。"},"questions":[
+    ["紫苏新 snapshot 现在用 gzip 还是 zstd？",["mixed","stale_fact","configuration","identifiers"],["b"],["d"],["a"],"新写入选 zstd，不把旧包兼容当默认。"],
+    ["紫苏旧快照采用哪种压缩级别？",["chinese","historical"],["a"],[],["b"],"旧 gzip 九级是历史正确。"],
+    ["紫苏 zstd command 应传哪个 level？",["mixed","code","identifiers"],["d"],["b"],[],"应传负三。"]]},
+  {"id":"timezone-policy","split":"holdout","memories":{
+    "a":"青蒲助手原先所有时间按 UTC 展示，包括用户日程和系统日志。",
+    "b":"青蒲助手现在用户日程按 Asia/Singapore 展示，系统日志继续 UTC。",
+    "c":"青蒲伦敦测试账号按 Europe/London 展示，仅适用测试账号。",
+    "d":"青蒲日程格式化器使用 ZoneInfo('Asia/Singapore')，不要手动加小时。"},"questions":[
+    ["青蒲用户 calendar 当前 timezone 是 UTC 吗？",["mixed","stale_fact","preference","identifiers"],["b"],["d"],["a"],"日程和系统日志分开。"],
+    ["青蒲调整前日程使用哪个时区？",["chinese","historical"],["a"],[],["b"],"过去 UTC 正确。"],
+    ["Which ZoneInfo value should Qingpu calendar formatting use?",["english","code","identifiers"],["d"],["b"],[],"时区对象精确值作答。"]]},
+  {"id":"sync-direction","split":"holdout","memories":{
+    "a":"蓝楹同步原先允许 laptop 和 server 双向覆盖，最后写入者获胜。",
+    "b":"蓝楹同步冲突事故后只允许 server 推送到 laptop，禁止客户端反向覆盖。",
+    "c":"蓝楹草稿便签仍允许双向合并，不属于受控同步库。",
+    "d":"蓝楹受控库以 sync --direction pull --no-upload 执行客户端同步。"},"questions":[
+    ["蓝楹受控 sync 现在 laptop 能反向 overwrite server 吗？",["mixed","stale_fact","negation"],["b"],["d"],["a"],"事故后的单向约束覆盖旧双向策略。"],
+    ["蓝楹事故前遇到双端冲突按什么规则覆盖？",["chinese","historical"],["a"],[],["b"],"历史最后写入者胜出。"],
+    ["蓝楹 laptop sync 命令如何禁止 upload？",["mixed","code","identifiers"],["d"],["b"],[],"方向和禁止上传两个参数。"]]},
+  {"id":"issue-label","split":"holdout","memories":{
+    "a":"木槿维护曾把 issue #824 标为 wontfix，认为无可复现信息。",
+    "b":"木槿维护收到最小复现后将 #824 改为 confirmed-bug，重新打开。",
+    "c":"木槿 issue #842 仍是 wontfix，标题同样是 memory drift。",
+    "d":"木槿 #824 的复现命令为 drift-repro --seed 824，#842 没有该复现。"},"questions":[
+    ["木槿 issue #824 当前还是 wontfix 吗？",["mixed","stale_fact","negation","identifiers"],["b"],["d"],["a"],"标签反转且编号近似。"],
+    ["木槿八二四号问题收到复现之前标什么？",["chinese","historical"],["a"],[],["b"],"旧 wontfix 正确。"],
+    ["木槿 memory drift #824 用什么 repro command？",["mixed","code","identifiers"],["d"],["b"],["c"],"种子和编号不可交换。"]]},
+  {"id":"default-branch","split":"holdout","memories":{
+    "a":"芦汀 SDK 默认分支过去叫 master，贡献指南全部指向 master。",
+    "b":"芦汀 SDK 重命名后默认分支 main，master 仅保留只读归档。",
+    "c":"芦汀 firmware 仓库默认分支仍为 master，SDK 不包含固件。",
+    "d":"芦汀 SDK 新贡献分支应从 git switch main 开始。"},"questions":[
+    ["芦汀 SDK default branch 现在叫 master 还是 main？",["mixed","stale_fact","identifiers"],["b"],["d"],["a"],"SDK 的重命名已生效。"],
+    ["芦汀软件开发包重命名前默认分支叫什么？",["chinese","historical"],["a"],[],["b"],"旧 master 是历史答案。"],
+    ["芦汀 SDK 开工前 git switch 哪个分支？",["mixed","code","identifiers"],["d"],["b"],["c"],"当前贡献起点 main。"]]},
+  {"id":"cost-limit","split":"holdout","memories":{
+    "a":"木荷实验原先允许 daily embedding budget 50 credits，超限只提示。",
+    "b":"木荷实验现在 daily embedding budget 20 credits，超限必须暂停新任务。",
+    "c":"木荷图片生成预算仍为 50 credits，不属于向量嵌入。",
+    "d":"木荷暂停逻辑检查 spent >= embedding_daily_limit，不按每个任务重置。"},"questions":[
+    ["木荷 embedding daily budget 当前上限及超限动作？",["mixed","stale_fact","configuration"],["b"],["d"],["a"],"两项变更都由当前记录直接支持。"],
+    ["木荷降低预算之前每天允许多少额度？",["chinese","historical"],["a"],[],["b"],"过去五十额度正确。"],
+    ["Which comparison pauses Muhe embedding work at the daily limit?",["english","code","identifiers"],["d"],["b"],[],"达到上限即暂停而不是大于才暂停。"]]},
+  {"id":"upload-consent","split":"holdout","memories":{
+    "a":"秋枫助手过去允许自动 upload 调试包到共享存储，不逐次确认。",
+    "b":"秋枫助手现在上传调试包之前必须逐次征得同意，过去的默认许可已撤销。",
+    "c":"秋枫公开示例包仍由 CI 自动上传，不包含用户调试数据。",
+    "d":"秋枫调试包本地检查命令为 debug-pack inspect --local-only。"},"questions":[
+    ["秋枫 debug bundle 现在可以自动 upload 吗？",["mixed","stale_fact","negation"],["b"],["d"],["a"],"用户调试包需逐次同意，公开示例不是许可。"],
+    ["秋枫撤销许可之前调试包上传要确认吗？",["chinese","historical"],["a"],[],["b"],"历史默认允许属于所问时间点。"],
+    ["秋枫 debug-pack 如何只在本地 inspect？",["mixed","code","identifiers"],["d"],["b"],[],"本地命令不产生上传。"]]},
+  {"id":"release-checklist","split":"holdout","memories":{
+    "a":"珊瑚索引 3.2 发版前必须核对迁移 ledger 与实际点数。",
+    "b":"珊瑚索引 3.2 发版前必须验证已删除 ID 在重启后仍不可见。",
+    "c":"珊瑚索引 3.1 发布清单只要求文档截图；这不是 3.2 清单。",
+    "d":"珊瑚索引 3.2 迁移检查命令是 audit-ledger --compare-points。"},"questions":[
+    ["珊瑚索引 3.2 release 前有哪些数据检查？",["mixed","multi_answer","identifiers"],["a","b"],["d"],["c"],"清单分散在两条记忆，旧版截图不作答。"],
+    ["珊瑚三点一版本发版当时要求检查什么？",["chinese","historical"],["c"],[],["a","b"],"历史版本只要求截图，不能套新版清单。"],
+    ["珊瑚 audit ledger 要用什么 compare flag？",["mixed","code","identifiers"],["d"],["a"],[],"命令而非两项清单。"]]},
+  {"id":"oncall-handoff","split":"holdout","memories":{
+    "a":"芙蓉服务周末交班必须交付未关闭告警列表。",
+    "b":"芙蓉服务周末交班还需交付最近一次成功回滚的 runbook 链接。",
+    "c":"芙蓉设计团队交班只发原型图，没有服务值班。",
+    "d":"芙蓉服务回滚文档路径为 ops/rollback-v3.md。"},"questions":[
+    ["芙蓉 weekend on-call handoff 要交哪两类材料？",["mixed","multi_answer"],["a","b"],["d"],["c"],"两类材料分别记录，路径只作辅助。"],
+    ["芙蓉服务交班的回滚文档在哪？",["chinese","identifiers"],["d"],["b"],[],"路径是直接答案。"],
+    ["What should Furong service hand off about unresolved alerts?",["english"],["a"],["b"],["c"],"此题只问告警列表，回滚不算第二正例。"]]},
+  {"id":"incident-evidence","split":"holdout","memories":{
+    "a":"丹桂队列事故调查确认重复消费来自 ack 超时后重试。",
+    "b":"丹桂队列事故缓解要求 consumer 写入幂等键后再 ack。",
+    "c":"丹桂邮件事故来自 SMTP 配额，不属于队列重复消费。",
+    "d":"丹桂 consumer 的幂等字段名为 delivery_key。"},"questions":[
+    ["丹桂 queue duplicate delivery 的原因和缓解方式？",["mixed","multi_answer","code"],["a","b"],["d"],["c"],"原因和动作分两条，各自直接支持一半。"],
+    ["丹桂队列消费幂等字段具体叫什么？",["chinese","code","identifiers"],["d"],["b"],[],"精确字段名。"],
+    ["What caused Dangui's email incident?",["english"],["c"],[],["a"],"同项目不同事故，队列不是答案。"]]},
+  {"id":"import-evidence","split":"holdout","memories":{
+    "a":"合欢导入文档要求校验 CSV 编码为 UTF-8。",
+    "b":"合欢导入文档还要求验证每行 tenant_id 与目标作用域一致。",
+    "c":"合欢图片导入只校验 PNG 魔数，不读取 CSV。",
+    "d":"合欢命令 import-csv --dry-run 会先检查编码和租户但不写入。"},"questions":[
+    ["合欢 CSV import 前要查哪两项？",["mixed","multi_answer","code","identifiers"],["a","b"],["d"],["c"],"编码和租户是两份直接证据。"],
+    ["合欢表格导入如何只检查不写入？",["chinese","code"],["d"],["a","b"],[],"dry-run 命令直接作答。"],
+    ["What file signature does Hehuan image import validate?",["english","identifiers"],["c"],[],["a"],"图片格式题与 CSV 无关。"]]},
+  {"id":"absent-contact","split":"dev","memories":{
+    "a":"栀子团队只记录过虚构同事林予的工作时区为 UTC。",
+    "b":"栀子团队只记录过林羽的值班邮件为 lin-yu@example.invalid。",
+    "c":"栀子会议室电话没有存入记忆。"},"questions":[
+    ["栀子林予的 phone number 是什么？",["mixed","no_answer"],[],["a"],["b"],"没有电话证据，近似名字的邮件不是答案。"],
+    ["栀子会议室电话号码是多少？",["chinese","no_answer"],[],["c"],[],"明确未存号码，无正例但保留题目。"],
+    ["What is Lin Yu's work timezone in Zhizi?",["english"],["a"],[],["b"],"时区确实存在，用于区分所有问题都无答案的捷径。"]]},
+  {"id":"foreign-scope","split":"dev","memories":{
+    "a":["萱草测试账号的 release password hint 为 moon-garden（虚构无效提示）。",["other-user","hermes"],false],
+    "b":["萱草设计 agent 的导出格式是 SVG。",["fictional","designer"],false],
+    "c":"萱草主助理只记过默认导出文本 UTF-8。"},"questions":[
+    ["萱草 release password hint 存的是什么？",["mixed","no_answer","scope"],[],[],["a"],"仅其他用户有答案，当前用户不可见。"],
+    ["萱草设计代理保存的导出图形格式？",["chinese","no_answer","scope"],[],[],["b"],"同用户不同 agent 仍不可见。"],
+    ["What text encoding did Xuancao's main assistant store?",["english","scope"],["c"],[],["b"],"当前 scope 的文本编码确实可见。"]]},
+  {"id":"deleted-note","split":"holdout","memories":{
+    "a":["鸢尾临时活动代号为 violet-comet，活动结束后此记忆已删除。",["fictional","hermes"],true],
+    "b":"鸢尾长期项目代号为 violet-planet，与临时活动不同。",
+    "c":"鸢尾活动结束后没有保存任何会场地址。"},"questions":[
+    ["鸢尾临时 event 的 violet codename 是什么？",["mixed","no_answer","deletion","identifiers"],[],[],["a","b"],"已删除 ID 不得返回，近似长期代号不作答。"],
+    ["鸢尾活动会场地址在哪里？",["chinese","no_answer"],[],["c"],[],"会场地址从未保存。"],
+    ["What is Yuanwei's long-term project codename?",["english","identifiers"],["b"],[],["a"],"长期项目可答，删除只针对活动记录。"]]},
+  {"id":"null-agent","split":"holdout","memories":{
+    "a":["紫菀用户层默认字号为 18pt。",["fictional",null],false],
+    "b":"紫菀 Hermes agent 的当前字号为 14pt。",
+    "c":["紫菀另一个用户的字号为 22pt。",["other-user",null],false]},"questions":[
+    ["紫菀用户层 font size 是多少？",["mixed","scope","identifiers"],["a"],[],["b","c"],"空 agent 只允许空 agent 范围。",["fictional",null]],
+    ["紫菀主代理的当前字号是多少？",["chinese","scope"],["b"],[],["a","c"],"具体 agent 不继承用户层答案。"],
+    ["What is Ziwan's shared-layer font family?",["english","no_answer","scope"],[],[],["a","c"],"字号不等于字体族，用户层未存字体族。",["fictional",null]]]}
+]
