@@ -10,8 +10,8 @@ model, or a production deployment.
 
 Local validation of the coordinated release candidate in the `codex/release-runtime-0.7.3` worktree:
 
-- On Python 3.14, the targeted recovery, release metadata, README, manifest and
-  install-guide suites passed: 113 passed, 1 deselected. The Hermes manifest
+- On Python 3.14, the targeted recovery, release contract, README, manifest and
+  install-guide suites passed: 114 passed, 1 deselected. The Hermes manifest
   parser test was deselected because the isolated environment does not include
   the Hermes host package; the host compatibility CI remains required.
 - The recovery suite includes a write to an existing point ID that keeps the
