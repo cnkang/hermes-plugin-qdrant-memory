@@ -1,5 +1,5 @@
-> **版本边界：**本页描述 Runtime 0.7.2，它记录本地 Ledger 的写水位。已发布的
-> Runtime 0.7.1 wheel 不包含该护栏。使用 0.7.1 时请遵循
+> **版本边界：**本页描述 Runtime 0.7.3，它将升级 plan 绑定到本地 Ledger 写入水位，
+> 并验证恢复检查点。已发布的 Runtime 0.7.1 wheel 不包含这些护栏。使用 0.7.1 时请遵循
 > [已发布 0.7.1 升级指南](upgrade-0.7.1.zh-CN.md)。
 
 # 用 upgrade 命令纳管 Qdrant 策略
@@ -126,6 +126,21 @@ plan，不要 resume。Cloud 与 Server 目标要在新的停写边界通过服�
 若事件已终态失败，先停止 Owner，对其 profile 运行运维 `retry`，再重启。维护命令
 不会自动清理回执、重新提取或重放待处理事件。恢复完成后，原 plan 仍有效则 resume；
 已过期则使用 `upgrade plan --replace`。
+
+## 恢复检查点验证
+
+发布或复用 embedded 检查点前，Runtime 会按已保存 plan 验证 Qdrant point count 和
+embedding fingerprint，并验证检查点 Ledger 的私有副本及其本地写入水位。即使 point ID
+和 point count 不变，已提交更新仍会使 plan 过期；已完成的 destination reset 会推进
+reset epoch，即使之后 row ID 重复也一样。
+
+损坏的 Ledger 数据、无效 recovery marker 或不匹配的检查点元数据不会被接受。若在 profile
+文件系统创建私有验证副本时空间不足，操作会停止并保留可恢复检查点供重试。释放空间后用
+同一 plan 重试。不要编辑 marker，或仅为绕过验证错误而替换 plan。
+
+对于 Qdrant Server 和 Cloud，本地 Ledger 水位无法观察外部 writer。请停止或隔离它们，并在
+新的停写边界通过服务商创建快照。`WriterLease` 只协调同一 profile 和 destination 中会配合的
+本地 writer。
 
 ## Status
 

@@ -26,6 +26,12 @@ The latest published Runtime is 0.7.2 at
 The Catalog pin can lag PyPI and the latest Runtime source; a PyPI release does
 not update the Catalog automatically.
 
+Runtime 0.7.3 is the coordinated release target. Until its versioned PyPI page
+is available, keep using the published 0.7.2 source pin above. The current
+standalone and integration guides prepare exact 0.7.3 commands and ask you to
+verify PyPI availability before installation. Do not substitute this branch or
+an unreviewed commit for the release tag.
+
 ## 1. Hermes with a new memory destination
 
 Use the active Hermes profile. If there is no profile yet, create one through
@@ -145,6 +151,10 @@ embedding 模型与维度。
 最新已发布 Runtime 是 0.7.2，提交为
 [`0ce83104fefbaecabe6b9e4560d3c83ee4e20438`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/0ce83104fefbaecabe6b9e4560d3c83ee4e20438)。
 Catalog pin 可能落后于 PyPI 和最新 Runtime 源码；发布 PyPI 不会自动更新 Catalog。
+
+Runtime 0.7.3 是本次协调发行目标。在对应的 PyPI 版本页公开之前，请继续使用上面的已发布
+0.7.2 源码 pin。当前 standalone 和集成指南已准备精确的 0.7.3 命令，并要求安装前核实
+PyPI 状态。不要用本分支或未经审核的 commit 替代发行 tag。
 
 ### 1. Hermes 新建记忆目的地
 

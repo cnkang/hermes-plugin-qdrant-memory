@@ -6,6 +6,28 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
+## Runtime 0.7.3 candidate checks (2026-11-23)
+
+Local validation of the coordinated release candidate in the `codex/release-runtime-0.7.3` worktree:
+
+- On Python 3.14, the targeted recovery, release contract, README, manifest and
+  install-guide suites passed: 114 passed, 1 deselected. The Hermes manifest
+  parser test was deselected because the isolated environment does not include
+  the Hermes host package; the host compatibility CI remains required.
+- The recovery suite includes a write to an existing point ID that keeps the
+  collection count unchanged. It confirms the saved plan becomes stale and
+  resume refuses to reuse the old recovery point.
+- The repository's standalone acceptance suite passed against both locally
+  built artifacts in isolated Python 3.14 installs: 353 passed from the wheel
+  and 353 passed after reinstalling the sdist.
+- `uv lock --check`, Ruff lint, Ruff format check (201 files), wheel/sdist build
+  and `twine check --strict` passed.
+- These checks apply to the local candidate tree. PyPI installation, release
+  provenance, protected Runtime CI gates, cross-platform compatibility, Hermes
+  host integration and authenticated Cloud behavior are not established here.
+  They require the reviewed PR and, for publication checks, the public 0.7.3
+  artifact.
+
 ## Runtime 0.7.1 candidate checks (2026-11-15)
 
 Local validation for the upgrade-recovery and Shared Owner receipt fixes:
