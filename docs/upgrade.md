@@ -1,6 +1,6 @@
-> **Version boundary:** this page describes Runtime 0.7.2, which records the
-> local Ledger write watermark. The published Runtime 0.7.1 wheel does not
-> include that guard. For a 0.7.1 installation, use the
+> **Version boundary:** this page describes Runtime 0.7.3, which binds upgrade
+> plans to a local Ledger watermark and verifies recovery checkpoints. The
+> published Runtime 0.7.1 wheel does not include those guards. For a 0.7.1 installation, use the
 > [published 0.7.1 guide](upgrade-0.7.1.md).
 
 # Adopt a Qdrant policy with the upgrade commands
@@ -152,6 +152,26 @@ Owner and run the operator `retry` against its profile before the restart.
 Maintenance commands never clear receipts, re-extract a turn or replay a pending
 event for you. After recovery, resume the plan when it is still valid, or use
 `upgrade plan --replace` when it is stale.
+
+## Recovery-point verification
+
+Before an embedded checkpoint is published or reused, Runtime checks its
+Qdrant point count and embedding fingerprint against the saved plan. It also
+validates a private copy of the checkpoint Ledger and compares its local write
+watermark. A committed update invalidates the plan even when the point ID and
+point count stay the same; a completed destination reset advances the reset
+epoch even if row IDs later repeat.
+
+Corrupt Ledger data, an invalid recovery marker or mismatched checkpoint
+metadata is not accepted. If the profile filesystem runs out of space while
+verification creates its private scratch copy, the operation stops and keeps
+the recoverable checkpoint for retry. Free space and retry the same plan. Do
+not edit the marker or replace the plan only to bypass a verification error.
+
+For Qdrant Server and Cloud, the local Ledger watermark cannot observe external
+writers. Stop or isolate them and take the provider snapshot at the new
+boundary. `WriterLease` only coordinates cooperating local writers for the
+same profile and destination.
 
 ## Status
 

@@ -1,15 +1,15 @@
-# HTTPS MCP Owner (Runtime 0.7.2)
+# HTTPS MCP Owner (Runtime 0.7.3)
 
-Install Runtime 0.7.2 with the `[remote]` extra in a private environment:
+Install Runtime 0.7.3 with the `[remote]` extra in a private environment:
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.2/)
-for Runtime 0.7.2 availability before running the package command.
+Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/)
+for Runtime 0.7.3 availability before running the package command.
 If PyPI is unavailable, use the source preview below. It installs the immutable
 release commit that the `v0.7.2` tag points at, so a moved tag cannot change the
 code this command installs.
 
 ```sh
-python -m pip install 'hermes-plugin-qdrant-memory[remote]==0.7.2'
+python -m pip install 'hermes-plugin-qdrant-memory[remote]==0.7.3'
 ```
 
 The commands include `remote-serve`, `remote-mcp`, `remote-event` and

@@ -5,6 +5,18 @@
 - Raise the hashed quality-evaluation lock to `opentelemetry-api==1.45.2`,
   fixing GHSA-mf5v-w3w3-f6cg / CVE-2026-126360 (quadratic traceparent parsing).
 
+## 0.7.3
+
+- Bind saved upgrade plans to the local Ledger write watermark, including the
+  destination reset epoch, so local writes and resets invalidate stale plans.
+- Verify embedded recovery points against the planned point count, embedding
+  fingerprint and copied SQLite Ledger before publishing them.
+- Reject corrupt recovery Ledgers and invalid recovery metadata. Preserve a
+  recoverable checkpoint when verification cannot finish because profile disk
+  space is low, allowing a retry with the same plan.
+- Keep retrieval defaults, memory identity, stored payloads, authorization and
+  MCP tool schemas unchanged. No data migration or re-embedding is required.
+
 ## 0.7.2
 
 - Record a local Ledger write watermark in each upgrade plan. `apply` and

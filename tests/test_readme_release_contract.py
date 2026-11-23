@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME_VERSION = "0.7.2"
+RUNTIME_VERSION = "0.7.3"
 RUNTIME_RELEASE_REF = f"v{RUNTIME_VERSION}"
 LATEST_PUBLISHED_RUNTIME_REF = "v0.7.2"
 # Reviewed commit that the release tag dereferences to. Closeout updates it with
@@ -47,7 +47,7 @@ def test_release_notice_links_the_exact_published_runtime(release_notice):
 
 
 def test_active_install_docs_use_the_exact_published_runtime():
-    """Keep every install example on the latest version available from PyPI."""
+    """Keep every active install example on the coordinated Runtime version."""
     for name, extras in ACTIVE_INSTALL_DOCS.items():
         text = (ROOT / name).read_text(encoding="utf-8")
         assert f"hermes-plugin-qdrant-memory[{extras}]=={RUNTIME_VERSION}" in text
@@ -123,7 +123,7 @@ def test_demo_and_source_pin_use_the_reviewed_release_commit():
     assert source_match, "remote-owner.md must pin the source install to a full commit"
     assert source_match.group(1) == RELEASE_COMMIT
     normalized = " ".join(remote_owner.split())
-    assert f"`{RUNTIME_RELEASE_REF}`" in normalized
+    assert f"`{LATEST_PUBLISHED_RUNTIME_REF}`" in normalized
 
 
 def test_pypi_description_installs_the_version_being_built():

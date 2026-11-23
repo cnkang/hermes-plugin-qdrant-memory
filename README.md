@@ -20,13 +20,13 @@ Keep one writer per destination. See [shared setup](docs/shared-memory/README.md
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Runtime 0.7.2** records a local Ledger write watermark in every upgrade plan. `apply` and `resume` refuse an interrupted plan when this Runtime committed a write after the plan was created. The refusal keeps the old plan and its recovery point for review. A stale plan or a plan saved without a watermark needs `upgrade plan --replace`. The default stays dense with float32 vectors: no collection move, no re-embedding and no memory identity change.
+> **Runtime 0.7.3** binds each upgrade plan to its profile-local Ledger write watermark and reset epoch. `apply` and `resume` refuse stale plans, including after an update that preserves both point ID and point count. Before publishing an embedded recovery point, Runtime verifies its point count, embedding fingerprint and copied SQLite Ledger. A low-space verification failure preserves the recoverable checkpoint for retry with the same plan.
 > Secure file handling supports macOS, Linux and supported Windows local volumes.
 > Handoff stays `HANDOFF_PENDING` with `native_verified=false` until the native client confirms adoption.
 > Scoped deletion also supersedes quarantined events before later retries.
-> It retains official FastEmbed 0.9.1. This guide selects Runtime 0.7.2.
+> It retains official FastEmbed 0.9.1. This guide selects Runtime 0.7.3.
 > Check its availability on
-> [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.2/) before installation.
+> [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/) before installation.
 > If a package mirror has not indexed the release yet, use the
 > [published 0.7.1 guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.7.1/README.md)
 > or install the versioned source tag below.
@@ -34,8 +34,9 @@ Keep one writer per destination. See [shared setup](docs/shared-memory/README.md
 > dependency and are released independently.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release
 > does not upgrade it. One writer per destination remains required.
-> The watermark covers writes in this profile's local Ledger only. Another Runtime process, another profile or device, and direct client writes to Qdrant stay outside it. For a 0.7.1 installation, follow the [published 0.7.1 upgrade guide](docs/upgrade-0.7.1.md).
-> See [release notes](docs/releases/0.7.2.md) and [validation](docs/validation.md).
+> The watermark covers writes in this profile's local Ledger only. `WriterLease` coordinates cooperating writers for that profile and destination; it does not lock other profiles, hosts, credentials or direct Qdrant clients. For Qdrant Server and Cloud, isolate every writer and take the provider snapshot at the new plan boundary. For a 0.7.1 installation, follow the [published 0.7.1 upgrade guide](docs/upgrade-0.7.1.md).
+> This release does not change retrieval defaults, memory identity, payloads, scope rules or the four explicit MCP tools. No data migration, re-embedding or index rebuild is required. Restoring a recovery point discards writes made after it.
+> See [release notes](docs/releases/0.7.3.md) and [validation](docs/validation.md).
 
 Keep readable exports and original
 harness data when switching tools. Prefer supported harness import/export APIs.
@@ -61,7 +62,7 @@ as a community-maintained plugin.
 ## How it works
 
 For non-Hermes users, install in a private Python 3.11+
-environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.7.2'` (omit `[mcp]`
+environment: `pip install 'hermes-plugin-qdrant-memory[mcp]==0.7.3'` (omit `[mcp]`
 for CLI only). `qdrant-memory` is the CLI and `mcp` is its server subcommand.
 Standalone does not require Hermes. See [setup and quick start](docs/standalone.md).
 MCP-focused agents may instead use the [metadata-only distribution](https://github.com/cnkang/qdrant-memory-mcp).
