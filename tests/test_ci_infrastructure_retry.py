@@ -16,6 +16,17 @@ PERF_STEP = "Run local behavior and host lifecycle contracts"
 PERF_TEST = "tests/test_provider.py::test_100_fast_turns_no_loss_and_replay"
 BOOTSTRAP_DNS = "Failed to download action archive: nodename nor servname provided, or not known"
 BOOTSTRAP_503 = "Failed to download action archive: HTTP 503 Service Unavailable"
+INSTALL_DNS = (
+    "Processing ./.\n"
+    "  Installing build dependencies: started\n"
+    "  Collecting setuptools<85,>=77\n"
+    "  WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, "
+    "status=None)) after connection broken by 'NameResolutionError(\"HTTPSConnection("
+    "host='files.pythonhosted.org', port=443): Failed to resolve 'files.pythonhosted.org' "
+    "([Errno 8] nodename nor servname provided, or not known)\")'\n"
+    "  error: connection-failed\n"
+    "ERROR: Failed to build 'file:///work' when installing build dependencies"
+)
 
 
 def fixture_run(attempt=1, conclusion="failure", status="completed"):
@@ -125,6 +136,27 @@ def bootstrap_job(identifier=12):
     return fixture_job(identifier=identifier)
 
 
+def standalone_install_job(identifier=12):
+    """Return the observed install failure plus its result-upload cascade."""
+    return fixture_job(
+        name="Standalone CLI and MCP (macos-latest, Python 3.11, SDK 2.x)",
+        identifier=identifier,
+        steps=[
+            {"name": "Set up job", "conclusion": "success"},
+            {"name": "Run actions/checkout@abc", "conclusion": "success"},
+            {"name": "Run actions/setup-python@abc", "conclusion": "success"},
+            {
+                "name": "Install standalone package without a Hermes checkout",
+                "conclusion": "failure",
+            },
+            {"name": "Verify setup-python selection", "conclusion": "skipped"},
+            {"name": "Require standalone subprocess and MCP contracts", "conclusion": "skipped"},
+            {"name": "Reject skipped or incomplete acceptance", "conclusion": "skipped"},
+            {"name": "Save standalone acceptance results", "conclusion": "failure"},
+        ],
+    )
+
+
 def test_confirmed_download_dns_failure_is_retryable():
     """The observed archive-download DNS failure is eligible for a bounded rerun."""
     plan = classify_run(REPOSITORY, fixture_run(), [bootstrap_job()], {12: BOOTSTRAP_DNS})
@@ -155,6 +187,62 @@ def test_http_version_status_line_is_retryable():
     """An explicit HTTP status line remains valid transient evidence."""
     log = "Failed to download action archive: HTTP/1.1 502 Bad Gateway"
     assert retry_plan(REPOSITORY, fixture_run(), [bootstrap_job()], {12: log}) == "retry"
+
+
+def test_transient_install_dns_failure_with_upload_cascade_is_retryable():
+    """The observed pip DNS failure and its upload cascade authorize a rerun."""
+    plan = classify_run(REPOSITORY, fixture_run(), [standalone_install_job()], {12: INSTALL_DNS})
+    assert plan["decision"] == "retry"
+    assert plan["jobs"][0]["category"] == "TRANSIENT_NETWORK"
+
+
+def test_transient_install_failure_without_cascade_is_retryable():
+    """A lone install step with verified transient evidence is also eligible."""
+    job = standalone_install_job()
+    job["steps"] = [step for step in job["steps"] if step.get("conclusion") != "failure"] + [
+        job["steps"][3]
+    ]
+    plan = classify_run(REPOSITORY, fixture_run(), [job], {12: INSTALL_DNS})
+    assert plan["decision"] == "retry"
+    assert plan["jobs"][0]["category"] == "TRANSIENT_NETWORK"
+
+
+def test_install_failure_without_transient_evidence_is_not_retryable():
+    """A deterministic dependency resolution error must not consume a rerun."""
+    job = standalone_install_job()
+    job["steps"] = [step for step in job["steps"] if step.get("conclusion") != "failure"] + [
+        job["steps"][3]
+    ]
+    plan = classify_run(
+        REPOSITORY,
+        fixture_run(),
+        [job],
+        {12: "ERROR: No matching distribution found for mcp>=2,<3"},
+    )
+    assert plan["decision"] == "not_retryable_failure"
+    assert plan["jobs"][0]["category"] == "UNKNOWN_FAILURE"
+
+
+def test_deterministic_error_in_install_log_is_not_retryable():
+    """An assertion in the log overrides a stray transient-looking line."""
+    plan = classify_run(
+        REPOSITORY,
+        fixture_run(),
+        [standalone_install_job()],
+        {12: INSTALL_DNS + "\nAssertionError: bad wheel"},
+    )
+    assert plan["decision"] == "not_retryable_failure"
+
+
+def test_cascade_with_non_dependent_failure_is_not_retryable():
+    """A second failing test step is not a consequence of the install failure."""
+    job = standalone_install_job()
+    for step in job["steps"]:
+        if step["name"] == "Save standalone acceptance results":
+            step["name"] = "Run canonical host test runner"
+    plan = classify_run(REPOSITORY, fixture_run(), [job], {12: INSTALL_DNS})
+    assert plan["decision"] == "not_retryable_failure"
+    assert plan["jobs"][0]["basis"] == "Expected one root-cause failure with dependent steps"
 
 
 def test_third_attempt_is_never_retried():
