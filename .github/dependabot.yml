@@ -21,6 +21,9 @@ updates:
       # qdrant-client 1.x requires portalocker <4; wait for upstream support.
       - dependency-name: portalocker
         update-types: [version-update:semver-major]
+      # fastembed 0.9.1 requires loguru <0.8; wait for upstream support.
+      - dependency-name: loguru
+        update-types: [version-update:semver-minor, version-update:semver-major]
     groups:
       python-dependencies:
         patterns:
