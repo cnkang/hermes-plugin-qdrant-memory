@@ -6,9 +6,26 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
+## Memory policy evaluation (2026-11-25)
+
+Local baseline on a labeled synthetic dataset, with no prompt change:
+
+- Admission: 49 cases across eight groups, `qwen3:8b`, admission precision 0.90,
+  admission recall 0.93, false-memory rate 0.15, no provider failures.
+- Retrieval: 14 memories and 34 queries, `qwen3-embedding:4b`. Recall@5 1.00,
+  MRR 0.94, and per-slice Recall@1 of 0.86 for English, 0.86 for Chinese and
+  0.92 for mixed-language queries.
+- Deterministic checks: `tests/test_quality_policy_dataset.py` and
+  `tests/test_retrieval_multilingual_fixture.py`.
+- Full record, failure examples, limitations and reproduction steps:
+  [memory policy evaluation](validation/memory-policy-evaluation-2026-11.md).
+- These numbers describe one local model and synthetic text. They do not
+  establish host behavior, production accuracy or an improvement over another
+  policy.
+
 ## Runtime 0.7.3 candidate checks (2026-11-23)
 
-Local validation of the coordinated release candidate in the `codex/release-runtime-0.7.3` worktree:
+Local validation of the coordinated release candidate in its release worktree:
 
 - On Python 3.14, the targeted recovery, release contract, README, manifest and
   install-guide suites passed: 114 passed, 1 deselected. The Hermes manifest
