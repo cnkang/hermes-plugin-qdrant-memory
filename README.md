@@ -96,17 +96,41 @@ destination" is an operational constraint, not an automatic cross-device lock.
 
 ## Why Qdrant Memory
 
-- Durable, private memory for Hermes Agent: conversations become searchable
-  memories in your own Qdrant store, with recall, update and scoped deletion.
-- A native Hermes `MemoryProvider` and a `migrate mem0` command for existing exports.
-- Embedded Qdrant needs no separate service. The same code targets
-  self-hosted Server and Qdrant Cloud.
-- A fully local setup works: embedded Qdrant and local Ollama keep the data
-  on your machine.
-- Data locality follows the destination. Extraction uses the LLM configured
-  in Hermes, and embedding uses the configured embedding service. Either can
-  be remote. See [Data flow and privacy](#data-flow-and-privacy).
-- Independent writers to one destination, hybrid search and a web UI are unsupported.
+An agent without durable memory restarts at every session. It repeats known
+mistakes, asks again for preferences you already stated and re-derives decisions
+that were settled. This Runtime keeps the few facts that stay true across
+sessions in a small, scoped store that you own.
+
+**Remember what matters.** Save durable preferences, project constraints,
+confirmed decisions and verified lessons. Recall them when earlier work affects
+the current task. The
+[agent-neutral skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)
+documents the admission policy, a recommended category vocabulary, query
+construction and the trust rules that keep stored text subordinate to current
+evidence.
+
+**Switch agents, keep your memory.** One backend serves the Hermes native
+provider, a standalone JSON CLI and stdio MCP. A compatible agent reuses an
+authorized profile or receives a credential-bound grant instead of starting
+from zero. Private profiles stay private.
+
+**Own your data.** Choose embedded Qdrant, a self-hosted server or Qdrant Cloud.
+Run embeddings locally with FastEmbed or Ollama, or use a remote embedding
+service. Export readable JSON, keep backups and leave without a proprietary
+service or a subscription.
+
+**Built on open interfaces.** Native Hermes integration, four scoped MCP tools,
+a JSON CLI and Agent Skills. No Mem0 SDK, no separate LLM SDK and no telemetry.
+
+Limits stay explicit:
+
+- Extraction uses the LLM configured in Hermes, and embedding uses the
+  configured embedding service. Either can be remote. See
+  [Data flow and privacy](#data-flow-and-privacy).
+- Independent writers to one destination, hybrid search and a web UI are
+  unsupported.
+- Automatic extraction and prefetch need a supported host lifecycle. The four
+  MCP tools never capture or prefetch conversation turns.
 
 ## MCP, CLI and other agents
 
@@ -463,6 +487,23 @@ mixed-language and hard-negative cases. The
 synthetic regression baseline. Rerun the current fixture for current measurements.
 These fixtures do not establish production recall quality. See the [recovery benchmark](docs/recovery-benchmark.md)
 for a separate synthetic replay and retained-storage measurement.
+
+A multilingual fixture reports the same metrics per language slice:
+
+```bash
+PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate.py \
+  --dataset tests/fixtures/retrieval-multilingual.json
+```
+
+The admission diagnostic reports extraction precision, recall and the
+false-memory rate on a labeled dataset. It runs against a local model only:
+
+```bash
+PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate_lifecycle.py \
+  --dataset tests/quality/memory-policy-v1.json
+```
+
+Both runners refuse supplied API credentials and use a disposable store.
 
 CI runs tests, SonarCloud quality gates and Snyk dependency/code scans.
 See [CI service setup](docs/ci.md) and [validation evidence](docs/validation.md).

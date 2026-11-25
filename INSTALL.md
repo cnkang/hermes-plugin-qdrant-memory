@@ -87,6 +87,48 @@ in a new session. Confirm the actual memory record or event result. A manual
 `add` or `search` call tests explicit tools only; it does not prove automatic
 extraction or prefetch.
 
+### Verification levels
+
+Each level proves a different thing. Do not report a higher level from a lower
+one.
+
+| Level | What it proves | Evidence to read |
+|---|---|---|
+| Installed | The package and its plugin entry exist | `hermes plugins list`, `hermes --version` |
+| Configured | The selected profile uses this provider and destination | `hermes memory status`, `qdrant-memory status` |
+| Connected | The interface reaches storage with the configured embedding pipeline | `qdrant-memory doctor` (payload indexes, embedding probe, fingerprint) |
+| Used | A real record survives a session boundary and changes a later result | The cross-session example below |
+
+### Cross-session example
+
+Use synthetic content only. Each step names what to observe.
+
+1. In one session, save one durable preference through an authorized explicit
+   tool call:
+
+   ```json
+   {"text": "Project Canary prefers release notes in English."}
+   ```
+
+   Expected result: an `ADD` action and an exact ID. A `SKIP` means an identical
+   record already exists in this scope.
+
+2. End the session. Start a new session with the same profile and the same
+   memory interface.
+
+3. Ask for work that depends on that preference: "Draft the release note for
+   Project Canary." The agent should search before it writes.
+
+4. Read the search result. A useful result contains the stored record, its ID
+   and a score. The release note should follow the stored preference.
+
+5. Confirm both parts. A tool call without a stored record, or a record that
+   did not change the output, is not evidence of cross-session memory.
+
+Automatic extraction follows the same flow without an explicit call. State the
+preference in a normal conversation, end the session, then verify the record or
+the event result in the new session.
+
 ## 2. Hermes with existing memory data or provider
 
 Do not use the new-destination route. First perform only read-only checks of the
@@ -199,6 +241,41 @@ hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --r
 验证自动记忆时，让 Agent 在正常 Hermes 对话中记录一个合成、非敏感事实，结束会话后在
 新会话询问该事实。检查真实的记忆记录或事件结果。手动 `add` 或 `search` 只验证显式工具，
 不能证明自动提取或预取。
+
+#### 验证层级
+
+每一层证明的内容不同。不要用较低层的证据声称达到较高层。
+
+| 层级 | 证明什么 | 需要读取的证据 |
+|---|---|---|
+| 已安装 | 包与插件入口存在 | `hermes plugins list`、`hermes --version` |
+| 已配置 | 选中 profile 使用该 provider 与目的地 | `hermes memory status`、`qdrant-memory status` |
+| 已连接 | 接口能以配置的 embedding 管线访问存储 | `qdrant-memory doctor`（payload 索引、embedding 探针、fingerprint） |
+| 已使用 | 真实记录跨会话边界保留，并改变后续结果 | 下方的跨会话示例 |
+
+#### 跨会话示例
+
+只使用合成内容。每一步都说明需要观察的结果。
+
+1. 在一个会话中，用获得授权的显式工具调用保存一条长期偏好：
+
+   ```json
+   {"text": "Project Canary 的发布说明使用英文。"}
+   ```
+
+   预期结果：动作为 `ADD`，并返回精确 ID。返回 `SKIP` 说明该作用域内已存在相同记录。
+
+2. 结束该会话。使用同一 profile 和同一记忆接口启动新会话。
+
+3. 提出依赖该偏好的任务：“为 Project Canary 起草发布说明。” Agent 应先检索再动笔。
+
+4. 阅读检索结果。有效结果包含已保存的记录、其 ID 与分数。发布说明应符合该偏好。
+
+5. 同时确认两部分。只有工具调用而没有对应记录，或有记录但输出未改变，都不算跨会话记忆
+   生效的证据。
+
+自动提取走同一流程，只是不需要显式调用：在普通对话中说明该偏好，结束会话，再在新会话中
+核实记录或事件结果。
 
 ### 2. Hermes 已有记忆数据或 provider
 
