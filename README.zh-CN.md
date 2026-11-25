@@ -76,14 +76,32 @@ flowchart LR
 
 ## 为什么选择 Qdrant Memory
 
-- 为 Hermes Agent 提供持久、私有的记忆：对话成为自有 Qdrant 存储中的可检索记忆，
-  支持召回、更新与按作用域删除。
-- 提供 Hermes 原生 `MemoryProvider`，以及用于导入既有数据的 `migrate mem0` 命令。
-- embedded Qdrant 无需独立服务。同一套代码可指向自建 Server 与 Qdrant Cloud。
-- 完全本地部署可行：embedded Qdrant 加本地 Ollama，数据留在本机。
-- 数据位置取决于目的地。提取使用 Hermes 配置的 LLM，向量化使用配置的 embedding
-  服务，两者都可能为远程服务。见[数据流与隐私](#数据流与隐私)。
+没有持久记忆的 Agent 每次会话都从零开始。它会重复已知错误，再次询问你已说明的偏好，
+重新推导已经定下的决策。本 Runtime 把你拥有的少量长期事实保存在一个作用域明确的小型
+存储中。
+
+**记住真正重要的内容。** 保存长期偏好、项目约束、已确认的决策和已验证的经验，并在
+后续工作受其影响时召回。通用的
+[qdrant-memory skill](https://github.com/cnkang/skills/tree/main/qdrant-memory)
+给出准入策略、推荐分类词汇、查询构造方法，以及让记忆从属于当前证据的可信度规则。
+
+**更换 Agent，保留记忆。** 同一后端同时服务 Hermes 原生 Provider、独立 JSON CLI 和
+stdio MCP。兼容的 Agent 可以复用获得授权的作用域，或使用凭据绑定的授权，而不必从零
+开始。私有作用域保持私有。
+
+**数据由你掌控。** 可选择 embedded Qdrant、自建 Server 或 Qdrant Cloud。向量化可用
+本地 FastEmbed 或 Ollama，也可使用远程 embedding 服务。支持导出可读 JSON、保留备份，
+并且无需专有服务或订阅即可退出。
+
+**基于开放接口。** Hermes 原生集成、四个限定作用域的 MCP 工具、JSON CLI 与 Agent
+Skills。不依赖 Mem0 SDK，不引入额外 LLM SDK，也不含遥测。
+
+限制保持明确：
+
+- 提取使用 Hermes 配置的 LLM，向量化使用配置的 embedding 服务，两者都可能为远程服务。
+  见[数据流与隐私](#数据流与隐私)。
 - 不支持向同一目的地使用独立写入者、hybrid 检索或 Web UI。
+- 自动提取与预取需要宿主生命周期支持。四个 MCP 工具不会自动捕获或预取对话内容。
 
 ## MCP、CLI 与其他 Agent
 
@@ -380,6 +398,22 @@ PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate.py
 [最初的 12 条查询记录](docs/retrieval-baseline.json)是历史合成回归基线。当前测量请
 重跑当前 fixture。这些 fixture 不能证明生产召回质量。独立的合成重放与保留存储测量见
 [恢复基准](docs/recovery-benchmark.md)。
+
+多语言 fixture 用同一 runner 按语言切片报告相同指标：
+
+```bash
+PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate.py \
+  --dataset tests/fixtures/retrieval-multilingual.json
+```
+
+准入诊断在带标签数据集上报告提取精确率、召回率与误记率，只对本地模型运行：
+
+```bash
+PYTHONPATH=/path/to/hermes-agent .test-env/bin/python scripts/evaluate_lifecycle.py \
+  --dataset tests/quality/memory-policy-v1.json
+```
+
+两个 runner 都拒绝外部传入的 API 凭据，并使用一次性存储。
 
 CI 运行测试、SonarCloud 质量门禁以及 Snyk 依赖/代码扫描。
 见 [CI 服务配置](docs/ci.md)和[验证证据](docs/validation.md)。
