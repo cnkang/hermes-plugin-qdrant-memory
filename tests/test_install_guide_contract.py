@@ -6,8 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GUIDE_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/main/INSTALL.md"
-RUNTIME_SHA = "0ce83104fefbaecabe6b9e4560d3c83ee4e20438"
-CATALOG_SHA = "b8c1d8babe125470d9278404454728d4426f1dc3"
+RUNTIME_SHA = "62cf418f3de3ab59dd93989eb5f5c40131317605"
+CATALOG_SHA = "62cf418f3de3ab59dd93989eb5f5c40131317605"
 MCP_QUICKSTART = "https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/quickstart.md"
 
 
@@ -31,9 +31,9 @@ def test_hermes_route_uses_catalog_by_default_and_a_verified_optional_sha():
     english = guide.split("## 中文", 1)[0]
     normalized = " ".join(english.split())
     assert "hermes plugins install qdrant-memory" in guide
-    assert "Catalog installs Runtime 0.6.3" in guide
+    assert "Catalog installs Runtime 0.7.3" in guide
     assert CATALOG_SHA in guide
-    assert "latest published Runtime is 0.7.2" in guide
+    assert "latest published Runtime is 0.7.3" in guide
     assert RUNTIME_SHA in guide
 
     commands = [

@@ -18,19 +18,17 @@ For Hermes, check `hermes --version`, `hermes config path`,
 and `ollama list`. Inspect the chosen profile's provider, Qdrant mode,
 collection, embedding model and dimensions before setup.
 
-As checked on 2026-11-17, the official Hermes Catalog installs Runtime 0.6.3
+As checked on 2026-11-26, the official Hermes Catalog installs Runtime 0.7.3
 from immutable commit
-[`b8c1d8babe125470d9278404454728d4426f1dc3`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/b8c1d8babe125470d9278404454728d4426f1dc3).
-The latest published Runtime is 0.7.2 at
-[`0ce83104fefbaecabe6b9e4560d3c83ee4e20438`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/0ce83104fefbaecabe6b9e4560d3c83ee4e20438).
+[`62cf418f3de3ab59dd93989eb5f5c40131317605`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/62cf418f3de3ab59dd93989eb5f5c40131317605).
+The latest published Runtime is 0.7.3 at
+[`62cf418f3de3ab59dd93989eb5f5c40131317605`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/62cf418f3de3ab59dd93989eb5f5c40131317605).
 The Catalog pin can lag PyPI and the latest Runtime source; a PyPI release does
 not update the Catalog automatically.
 
-Runtime 0.7.3 is the coordinated release target. Until its versioned PyPI page
-is available, keep using the published 0.7.2 source pin above. The current
-standalone and integration guides prepare exact 0.7.3 commands and ask you to
-verify PyPI availability before installation. Do not substitute this branch or
-an unreviewed commit for the release tag.
+Runtime 0.7.3 is published on PyPI, and the source pin above is the commit that
+the release tag points at. Do not substitute this branch or an unreviewed commit
+for the release tag.
 
 ## 1. Hermes with a new memory destination
 
@@ -75,7 +73,7 @@ Catalog pin, use Hermes's native plugin installer with its verified immutable
 commit SHA:
 
 ```sh
-hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --ref 0ce83104fefbaecabe6b9e4560d3c83ee4e20438
+hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --ref 62cf418f3de3ab59dd93989eb5f5c40131317605
 ```
 
 Never substitute `main` or a development SHA. Hermes PM manages plugin
@@ -188,15 +186,14 @@ Hermes 检查 `hermes --version`、`hermes config path`、
 `ollama list`。在 setup 前确认选中 profile 的 provider、Qdrant 模式、collection、
 embedding 模型与维度。
 
-截至 2026-11-17，官方 Hermes Catalog 安装 Runtime 0.6.3，固定提交为
-[`b8c1d8babe125470d9278404454728d4426f1dc3`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/b8c1d8babe125470d9278404454728d4426f1dc3)。
-最新已发布 Runtime 是 0.7.2，提交为
-[`0ce83104fefbaecabe6b9e4560d3c83ee4e20438`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/0ce83104fefbaecabe6b9e4560d3c83ee4e20438)。
+截至 2026-11-26，官方 Hermes Catalog 安装 Runtime 0.7.3，固定提交为
+[`62cf418f3de3ab59dd93989eb5f5c40131317605`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/62cf418f3de3ab59dd93989eb5f5c40131317605)。
+最新已发布 Runtime 是 0.7.3，提交为
+[`62cf418f3de3ab59dd93989eb5f5c40131317605`](https://github.com/cnkang/hermes-plugin-qdrant-memory/commit/62cf418f3de3ab59dd93989eb5f5c40131317605)。
 Catalog pin 可能落后于 PyPI 和最新 Runtime 源码；发布 PyPI 不会自动更新 Catalog。
 
-Runtime 0.7.3 是本次协调发行目标。在对应的 PyPI 版本页公开之前，请继续使用上面的已发布
-0.7.2 源码 pin。当前 standalone 和集成指南已准备精确的 0.7.3 命令，并要求安装前核实
-PyPI 状态。不要用本分支或未经审核的 commit 替代发行 tag。
+Runtime 0.7.3 已发布到 PyPI，上面的源码 pin 就是发行 tag 指向的提交。不要用本分支或
+未经审核的 commit 替代发行 tag。
 
 ### 1. Hermes 新建记忆目的地
 
@@ -232,7 +229,7 @@ Qdrant MCP。
 指定已验证的不可变提交 SHA：
 
 ```sh
-hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --ref 0ce83104fefbaecabe6b9e4560d3c83ee4e20438
+hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --ref 62cf418f3de3ab59dd93989eb5f5c40131317605
 ```
 
 不要替换成 `main` 或开发 SHA。插件依赖由 Hermes PM 管理；不要 pip install 到 Hermes
