@@ -6,22 +6,33 @@ boundaries, see [security](security.md) and [standalone setup](standalone.md).
 A passing result for one revision does not certify later changes, every agent
 model, or a production deployment.
 
-## Memory policy evaluation (2026-11-25)
+## Memory policy evaluation (2026-11-26)
 
-Local baseline on a labeled synthetic dataset, with no prompt change:
+Local measurements on labeled synthetic datasets. The harness now reports
+nearest-rank p50/p95 instead of the maximum sample, separates execution health
+from quality, and excludes provider failures from every denominator.
 
-- Admission: 49 cases across eight groups, `qwen3:8b`, admission precision 0.90,
-  admission recall 0.93, false-memory rate 0.15, no provider failures.
-- Retrieval: 14 memories and 34 queries, `qwen3-embedding:4b`. Recall@5 1.00,
-  MRR 0.94, and per-slice Recall@1 of 0.86 for English, 0.86 for Chinese and
-  0.92 for mixed-language queries.
-- Deterministic checks: `tests/test_quality_policy_dataset.py` and
-  `tests/test_retrieval_multilingual_fixture.py`.
+- Admission, v1 historical set and v2 development set, `qwen3:8b`: v1 precision
+  0.90, recall 0.93, false-memory rate 0.15. v2 precision 0.83, recall 0.97,
+  false-memory rate 0.28. A held-out set authored before the candidate prompt
+  gives 0.72 precision and a 0.50 false-memory rate for the shipped instruction.
+- Candidate instruction (isolated, not shipped): held-out precision 0.93 and
+  false-memory rate 0.10, but development precision 0.70. It misses two
+  acceptance targets and stays EXPERIMENTAL.
+- Retrieval: 14-memory fixture Recall@5 1.00, MRR 0.94. A 360-memory hard-negative
+  fixture gives Recall@5 0.97 and MRR 0.92, with per-slice Recall@1 of 0.86
+  English, 0.96 Chinese and 0.86 mixed.
+- Real-Hermes Skill A/B, 28 scenarios per arm, explicit MCP tools only: the
+  rewritten description raised Skill selection from 4 to 9 runs, while passed
+  expectations stayed at 13 per arm. No task-quality improvement was measured.
+- Deterministic checks: `tests/test_quality_policy_dataset.py`,
+  `tests/test_retrieval_multilingual_fixture.py` and
+  `tests/test_retrieval_scale_fixture.py`.
 - Full record, failure examples, limitations and reproduction steps:
   [memory policy evaluation](validation/memory-policy-evaluation-2026-11.md).
-- These numbers describe one local model and synthetic text. They do not
-  establish host behavior, production accuracy or an improvement over another
-  policy.
+- These numbers describe one local extraction model and one free router model on
+  synthetic text. They do not establish production accuracy or a user experience
+  improvement.
 
 ## Runtime 0.7.3 candidate checks (2026-11-23)
 
