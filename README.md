@@ -28,8 +28,8 @@ Keep one writer per destination. See [shared setup](docs/shared-memory/README.md
 > Check its availability on
 > [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/) before installation.
 > If a package mirror has not indexed the release yet, use the
-> [published 0.7.1 guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.7.1/README.md)
-> or install the versioned source tag below.
+> [published 0.7.2 guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.7.2/README.md)
+> or the versioned source pin in the installation guide.
 > The generic MCP distribution and managed launcher select their own exact Runtime
 > dependency and are released independently.
 > The Hermes Plugin Catalog has its own reviewed immutable pin. A PyPI release

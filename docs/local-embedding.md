@@ -35,11 +35,10 @@ python -m pip install '.[mcp,local]'
 
 For a published package, install the same extras with the release version:
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/) for
-Runtime 0.7.3 availability before running this command.
-If unavailable, use the
+Runtime 0.7.3 is published on
+[PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/). The
 [published 0.7.2 guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.7.2/docs/local-embedding.md)
-or a reviewed source preview; the package command below requires publication.
+documents the previous release. A source preview is not a PyPI release.
 
 ```sh
 python -m pip install 'hermes-plugin-qdrant-memory[mcp,local]==0.7.3'

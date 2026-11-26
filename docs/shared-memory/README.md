@@ -23,11 +23,10 @@ Use Python 3.11+ and an isolated environment. Runtime 0.5.0 includes this
 feature. Install the PyPI release, or use a reviewed checkout at an immutable
 commit for development.
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/)
-for Runtime 0.7.3 availability before package installation.
-If unavailable, use the
+Runtime 0.7.3 is published on
+[PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/). The
 [published 0.7.2 guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.7.2/docs/shared-memory/README.md)
-or a reviewed source preview; the package command below requires publication.
+documents the previous release. A source preview is not a PyPI release.
 
 ```sh
 python3 -m venv /absolute/path/shared-runtime-env

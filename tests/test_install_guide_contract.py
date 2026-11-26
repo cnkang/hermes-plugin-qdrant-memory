@@ -77,7 +77,7 @@ def test_non_hermes_route_points_to_fixed_stdio_mcp_and_states_manual_boundary()
     """Route non-Hermes users to the fixed MCP release and state its limits."""
     guide = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
     assert MCP_QUICKSTART in guide
-    assert "qdrant-memory-mcp==0.3.5" in guide
+    assert "qdrant-memory-mcp==0.3.7" in guide
     assert "four `qdrant_memory_*` tools" in guide
     assert "does not automatically\nextract memories" in guide
     assert "does not prove automatic\nextraction or prefetch" in guide

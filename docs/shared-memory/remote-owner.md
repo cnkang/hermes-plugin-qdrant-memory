@@ -2,10 +2,10 @@
 
 Install Runtime 0.7.3 with the `[remote]` extra in a private environment:
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/)
-for Runtime 0.7.3 availability before running the package command.
-If PyPI is unavailable, use the source preview below. It installs the immutable
-release commit that the `v0.7.3` tag points at, so a moved tag cannot change the
+Runtime 0.7.3 is published on
+[PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/). The source
+preview below installs the immutable release commit that the `v0.7.3` tag points
+at. A moved tag cannot change the
 code this command installs.
 
 ```sh
