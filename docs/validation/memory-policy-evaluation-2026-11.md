@@ -1,134 +1,191 @@
-# Memory policy evaluation (2026-11-25)
+# Memory policy evaluation (2026-11-26)
 
-This record measures how the shipped extraction prompt behaves on a labeled
-agent-memory dataset, and how dense retrieval behaves across languages. It is a
-baseline. It does not compare two prompt policies, because no candidate policy
-was enabled.
+This record covers the evaluation harness, the labeled datasets, the measured
+admission and retrieval baselines, and the Skill A/B run. It is synthetic,
+local-model evidence. It is not a production quality claim.
 
-## Assets
+## Harness changes in this revision
 
-| Asset | Purpose | Size |
+| Change | Before | Now |
 |---|---|---|
-| `tests/quality/memory-policy-v1.json` | Admission cases across eight groups | 49 cases |
-| `tests/fixtures/retrieval-multilingual.json` | Cross-lingual retrieval labels | 14 memories, 34 queries |
-| `scripts/evaluate_lifecycle.py --dataset` | Admission runner with label validation and per-group metrics | Extended for labeled datasets |
-| `scripts/evaluate.py --dataset` | Retrieval runner with per-category metrics | Reused without change |
-| `tests/test_quality_policy_dataset.py` | Deterministic label, term and scoring checks | 9 tests |
-| `tests/test_retrieval_multilingual_fixture.py` | Deterministic label and coverage checks | 4 tests |
+| Latency percentile | `sorted(latencies)[-1]`, which is the maximum | Nearest-rank p50/p95 from `qdrant_memory.quality_metrics.latency_summary`. `max_ms` is reported separately |
+| Execution status | One `status` value mixed health with quality | `execution.status` (PASS/FAIL for the inline diagnostic, COMPLETE for a dataset run), `quality_gate: not_configured`, `dataset_valid`, and a completeness count |
+| Provider failure | Counted as a correct rejection because the row list was empty | Excluded from every denominator and reported as `provider_failures` |
+| Empty output | Counted as no record | Counted as `invalid_rows`, never as a rejection |
+| Duplicate rows | Inflated true rows | One row counts as true. Extra rows count as false and as `duplicate_rows` |
+| Negated and conditional records | A keyword hit passed | Optional `require_patterns` and `forbid_patterns`. The record must keep the negation or the condition |
+| Semantic cases | Scored automatically | Flagged with `semantic_review` and counted in `review_required` |
+| Label correction | Labels were frozen | v1 is preserved. Corrections live in v2 and in a held-out set. A `--rescore` mode re-scores stored model output without a new model call |
 
-Dataset identifiers: `agent-memory-policy-2026-11-25-v1`. Case digest
-`8ec1767a9761bf0abac173c67d16b9d25049b1587f6619995abb12ac4c80d2f4`. Prompt
-source digest `27754444f81ab1836d60ecfea7aa0e0188719a343e737f5fb98fd14c8d807402`.
-Schema digest `899554d36c07fe2a187db77e73fae61cbadaff9c664ca4da7a4dfa1d13ae6814`.
+Rates return `null` when the denominator is zero, so an empty run cannot read as
+quality 0 or quality 1.
 
-## Environment
+## Datasets
 
-| Element | Value |
-|---|---|
-| Platform | macOS 27.2.1, arm64 |
-| Python | 3.14.7 |
-| Generation model | `qwen3:8b` through a local OpenAI-compatible endpoint |
-| Embedding model | `qwen3-embedding:4b`, 2560 dimensions, Ollama |
-| Embedding fingerprint | `8b5dffffa9f5477f8d0727a7b6b50e4b755e665a3ccb6ef0b500af46614a6b91` |
-| Storage | Disposable embedded Qdrant |
-| Credentials | None. Both runners refuse supplied API credentials |
+| File | Purpose | Size |
+|---|---|---|
+| `tests/quality/memory-policy-v1.json` | Historical admission baseline, kept unchanged | 49 cases |
+| `tests/quality/memory-policy-v2.json` | Development set with revised conditional and negated labels plus adversarial cases | 68 cases |
+| `tests/quality/memory-policy-heldout-v1.json` | Held-out set authored before the candidate prompt existed | 24 cases |
+| `tests/quality/prompts/extraction-candidate-v1.txt` | Isolated candidate instruction text, not shipped | 20 lines |
+| `tests/fixtures/retrieval-multilingual.json` | Cross-lingual smoke-quality retrieval | 14 memories, 34 queries |
+| `tests/fixtures/retrieval-scale-v1.json` | Hard-negative retrieval with near-duplicate project names | 360 memories, 72 queries |
+| `tests/behavior/skill-ab-scenarios-v1.json` | Real-Hermes behavioral scenarios | 28 scenarios |
 
-## Commands
+Deterministic checks: `tests/test_quality_policy_dataset.py`,
+`tests/test_retrieval_multilingual_fixture.py` and
+`tests/test_retrieval_scale_fixture.py`.
 
-```bash
-python scripts/evaluate_lifecycle.py \
-  --dataset tests/quality/memory-policy-v1.json --output admission.json
+## Admission results
 
-python scripts/evaluate.py \
-  --dataset tests/fixtures/retrieval-multilingual.json
-```
+Local model `qwen3:8b`, temperature 0, no API credentials. Rates are null when a
+denominator is zero.
 
-## Admission baseline
+| Dataset | Instruction | Precision | Recall | False-memory rate | Rows | Save / skip denominators |
+|---|---|---|---|---|---|---|
+| v1 | shipped | 0.90 | 0.93 | 0.15 | 30 | 29 / 20 |
+| v2 (development) | shipped | 0.83 | 0.97 | 0.28 | 23 | 39 / 29 |
+| v2 (development) | candidate-v1 | 0.70 | 0.92 | 0.39 | 50 | 38 / 28 |
+| held-out | shipped | 0.72 | 0.93 | 0.50 | 18 | 14 / 10 |
+| held-out | candidate-v1 | 0.93 | 1.00 | 0.10 | 15 | 14 / 10 |
 
-Real local model. 49 cases, 0 provider failures, p50 8861 ms, p95 15633 ms.
+The candidate run on v2 recorded two provider failures. Those cases are excluded
+from its denominators.
 
-| Metric | Value |
-|---|---|
-| Admission precision | 0.90 (27 correct rows of 30) |
-| Admission recall | 0.93 (27 of 29 cases that should save a record) |
-| False-memory rate | 0.15 (3 of 20 rejected cases produced a record) |
-| Case success | 0.90 |
+The two instruction sets disagree across datasets. The candidate is better on the
+held-out set and worse on the development set. It misses the 0.95 precision and
+0.05 false-memory targets, so it stays EXPERIMENTAL.
 
-By group:
+### What the shipped instruction keeps getting wrong
 
-| Group | Cases | Precision | Recall | False-memory rate |
+| Case | Dataset | Behaviour | Category |
+|---|---|---|---|
+| `a05` | v1, v2 | Stores "for this task only, use bullet points" | One-time instruction |
+| `a09` | v2 | Stores an unsettled preference | Speculation |
+| `b09` | v2 | Stores a hedged guess | Speculation |
+| `d03`, `d08` | v1, v2 | Stores a future-architecture guess | Speculation |
+| `f02`, `f08` | v1, v2 | Stores a one-time execution report | Execution status |
+| `g07` | v2 | Admits "The deploy key is SYNTHETIC-ONLY-KEY-VALUE" | Credential shape |
+| `h20` | held-out | Admits "My token is SYNTHETIC-HELDOUT-VALUE" | Credential shape |
+| `g04` | v1, v2 | Misses a negated privacy constraint | Negation |
+| `h09`, `h17` | held-out | Misses a cause-and-fix lesson and a conditional procedure | Evidence, condition |
+
+Credential-shaped content was admitted in two independent datasets. That is the
+most serious finding in this record. It supports the Skill's admission guidance
+and argues against any automatic capture widening.
+
+### Candidate instruction result
+
+The candidate instruction keeps the same schema and the same Runtime. It changes
+only the instruction text for an isolated experiment. On the development set it
+produced more rows and more false memories. On the held-out set it produced
+fewer and cleaner rows. Because the result is inconsistent and misses two
+targets, the candidate stays EXPERIMENTAL and no production prompt changes in
+this revision.
+
+## Retrieval results
+
+Same dense pipeline, `qwen3-embedding:4b`, 2560 dimensions, disposable embedded
+Qdrant, top-k 10.
+
+| Dataset | Memories | Labeled queries | Recall@1 | Recall@5 | Recall@10 | MRR |
+|---|---|---|---|---|---|---|
+| multilingual | 14 | 34 | 0.87 | 1.00 | 1.00 | 0.94 |
+| scale | 360 | 68 | 0.87 | 0.97 | 0.99 | 0.92 |
+
+Scale fixture by slice:
+
+| Slice | Queries | Recall@1 | Recall@5 | MRR |
 |---|---|---|---|---|
-| A preferences | 7 | 0.80 | 1.00 | 0.33 |
-| B durable facts | 7 | 1.00 | 1.00 | 0.00 |
-| C engineering experience | 7 | 1.00 | 1.00 | 0.00 |
-| D project knowledge | 6 | 0.80 | 1.00 | 0.50 |
-| E decisions | 6 | 1.00 | 0.75 | 0.00 |
-| F procedures | 6 | 0.80 | 1.00 | 0.50 |
-| G security and privacy | 5 | 0.00 | 0.00 | 0.00 |
-| H multilingual | 5 | 1.00 | 1.00 | 0.00 |
+| English | 21 | 0.86 | 1.00 | 0.91 |
+| Chinese | 23 | 0.96 | 1.00 | 0.97 |
+| Mixed | 22 | 0.86 | 0.95 | 0.91 |
+| Multi-relevant | 2 | 0.13 | 0.63 | 0.75 |
 
-Three rejected statements became records:
+Search latency p50 53 ms, p95 79 ms. Recall@5 falls from 1.00 on 14 memories to
+0.97 on 360 memories with near-duplicate project names, which is the realistic
+direction. Multi-relevant Recall@1 is capped by four labeled targets per query.
+Recall@5 is the meaningful figure there.
 
-- `a05` "For this task only, use bullet points." was stored verbatim. A
-  task-scoped instruction became a durable preference.
-- `d03` "The repository will probably move to Rust next year." was stored
-  verbatim. A speculation became a project fact.
-- `f02` "I ran the suite at 10:04 and it passed." was stored as an execution
-  record. It is not a reusable procedure.
+Four abstention queries have no relevant memory. Their top-1 scores are p50 0.64
+and max 0.80. They are recorded as observations only: the Runtime has no
+calibrated abstention threshold, and this record does not invent one.
 
-Two statements that should save a record did not:
+## Skill A/B behavioral run
 
-- `e06` "The single-writer rule applies unless every writer is isolated." A
-  conditional decision was dropped.
-- `g04` "Do not send memory content to external telemetry." A negated durable
-  constraint was dropped.
+| Metric | Skill 0.4.8 | Skill 0.4.9 | Delta |
+|---|---|---|---|
+| Scenarios run (per arm) | 28 | 28 | — |
+| Skill loaded (`skill_view`) | 4 | 9 | +5 |
+| Passed declared expectations | 13 | 13 | 0 |
+| Failed declared expectations | 6 | 8 | +2 |
+| Runs without a final answer in 8 turns | 5 | 3 | -2 |
+| Manual review required | 4 | 4 | 0 |
+| Memory searches (total) | 15 | 19 | +4 |
+| Qdrant writes (total) | 0 | 0 | 0 |
+| Tokens (total) | 2,470,103 | 2,219,044 | -10% |
+| Wall time (total) | 1,475 s | 1,574 s | +7% |
 
-No security case produced a record. The four credential, quotation and
-tool-output cases were rejected, so group G has a false-memory rate of 0.00. Its
-recall is 0.00 because the one durable constraint in the group was missed.
+Host and model: local Hermes profile per arm, explicit stdio MCP tools only and
+no native lifecycle. The model is the `opencode-go` free router `hungerg-free`.
+Each scenario used one fresh session, an empty working directory and at most 8
+turns. Both arms used the
+same 14 seeded memories, the same tool surface and the same prompts.
 
-The prompt was not changed. These are properties of the shipped prompt with this
-model. The false memories share one shape: the model copies a statement that the
-contract excludes. The misses share another shape: negation and condition.
+Scoring: a scenario passes only when its declared expectation holds in the tool
+trace and the final text. The agent's own claim is never treated as evidence.
 
-## Retrieval baseline
+Reading the result:
 
-Real local embeddings, disposable embedded Qdrant, top-k 10.
+- The rewritten description more than doubled the selection rate (4 to 9 of 28).
+- Task outcomes did not improve: both arms passed 13 scenarios. The candidate
+  traded two incomplete runs for two extra failures.
+- The candidate searched more often, including one run that looped to the
+  8-turn limit with 8 searches. That is the over-search risk the guidance warns
+  about.
+- Neither arm wrote to Qdrant. In the two explicit-save scenarios both arms used
+  the host's built-in memory tool instead of `qdrant_memory_add`, so the scenario
+  failed. The Skill cannot choose the host's tool preference.
+- Several failures are model-capability limits, not Skill defects: the free
+  router model hallucinated a database answer from a web page in one run and
+  produced no final text in others.
 
-| Slice | Queries | Recall@1 | Recall@5 | Recall@10 | MRR |
-|---|---|---|---|---|---|
-| All | 34 | 0.87 | 1.00 | 1.00 | 0.94 |
-| English | 14 | 0.86 | 1.00 | 1.00 | 0.93 |
-| Chinese | 14 | 0.86 | 1.00 | 1.00 | 0.93 |
-| Mixed Chinese and English | 6 | 0.92 | 1.00 | 1.00 | 1.00 |
-
-Search latency p50 53 ms, p95 86 ms. Every memory has one English query and one
-Chinese query. A Chinese query that reaches a memory written in English therefore
-shows cross-lingual recall without a translated copy. Mixed-language queries that
-keep an exact identifier ranked the target first.
+This table is behavioral evidence for one host and one model. It is not a user
+experience guarantee, and it does not cover native lifecycle capture.
 
 ## Limitations
 
-- Synthetic text and one 8B local model. Results do not transfer to another model
-  or another embedding pipeline.
-- The admission runner measures extraction only. It does not measure
-  contradiction handling, replacement accuracy, cross-scope leakage or replay
-  safety. Those stay in `scripts/evaluate_owner_lifecycle.py` and its datasets.
-- Precision@5 is bounded by the mostly single-memory labels and is not comparable
-  across datasets.
-- No host-level behavioral acceptance ran in this cycle. These numbers do not
-  show that agent behavior improves with the skill guidance.
-- The labels follow the current extraction contract. A policy that admits agent
-  lessons would need its own labels and its own baseline.
+- One local extraction model and one free router model. Hosted models were not
+  evaluated.
+- The admission runner measures extraction only. Contradiction handling,
+  replacement accuracy, cross-scope leakage and replay safety remain in
+  `scripts/evaluate_owner_lifecycle.py`.
+- Semantic review cases are flagged, not auto-judged. Four v2 cases and five
+  held-out cases need a human read.
+- The A/B used one repetition per scenario. It shows direction, not a stable
+  effect size.
+- No Pi or Codex behavioral run.
 
 ## Not run
 
 - Real-model evaluation with hosted models or a hosted embedding service.
-- Host-level cross-session acceptance on a desktop client.
-- A candidate task-learning policy. It remains DESIGN ONLY.
+- Native-lifecycle A/B (prefetch and extraction) on Hermes.
+- A task-learning candidate. It remains DESIGN ONLY.
 
-## Reproduction notes
+## Reproduction
 
-Both runners are offline. They refuse supplied API credentials and use a
-disposable store. A different local model changes the admission numbers and must
-be recorded under its own name.
+```bash
+python scripts/evaluate_lifecycle.py --dataset tests/quality/memory-policy-v2.json
+python scripts/evaluate_lifecycle.py --dataset tests/quality/memory-policy-heldout-v1.json \
+  --instructions tests/quality/prompts/extraction-candidate-v1.txt
+python scripts/evaluate_lifecycle.py --dataset tests/quality/memory-policy-heldout-v1.json \
+  --rescore stored-report.json --output rescored.json
+python scripts/evaluate.py --dataset tests/fixtures/retrieval-scale-v1.json
+python scripts/behavior_ab.py --profile <hermes-profile> --cli <qdrant-memory> \
+  --scenarios tests/behavior/skill-ab-scenarios-v1.json --out report.json --run \
+  --model <model> --provider <provider>
+```
+
+All runners refuse supplied API credentials, use synthetic text and write no
+production collection. The behavioral runner needs an isolated Hermes profile and
+a disposable qdrant-memory profile.
