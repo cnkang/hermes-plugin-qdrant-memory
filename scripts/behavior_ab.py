@@ -222,6 +222,51 @@ def run_scenarios(profile, scenarios, max_turns, model=None, provider=None):
     return rows
 
 
+def rescore_report(report, scenarios):
+    """Recompute scenario statuses from a stored report without another agent run."""
+    by_id = {scenario["id"]: scenario for scenario in scenarios}
+    for row in report.get("scenarios", []):
+        scenario = by_id[row["id"]]
+        sequence = row.get("tool_sequence") or []
+        searches = sum(1 for name in sequence if MEMORY_TOOL in name and name.endswith("search"))
+        writes = [
+            name
+            for name in sequence
+            if MEMORY_TOOL in name and name.rsplit("_", 1)[-1] in {"add", "update", "delete"}
+        ]
+        text = row.get("text") or ""
+        row["searches"] = searches
+        row["writes"] = len(writes)
+        row["write_names"] = writes
+        row["contains"] = [
+            token
+            for token in scenario.get("must_contain", [])
+            if token.casefold() in text.casefold()
+        ]
+        row["forbidden_present"] = [
+            token
+            for token in scenario.get("must_not_contain", [])
+            if token.casefold() in text.casefold()
+        ]
+        ok = len(row["contains"]) == len(scenario.get("must_contain", []))
+        ok = ok and not row["forbidden_present"]
+        if "expect_search" in scenario:
+            ok = ok and bool(searches) == scenario["expect_search"]
+        if "max_searches" in scenario:
+            ok = ok and searches <= scenario["max_searches"]
+        if "expect_write" in scenario:
+            ok = ok and bool(writes) == scenario["expect_write"]
+        if row.get("error"):
+            row["status"] = "error"
+        elif not text.strip():
+            row["status"] = "incomplete"
+        elif scenario.get("manual"):
+            row["status"] = "manual"
+        else:
+            row["status"] = "pass" if ok else "fail"
+    return report
+
+
 def main(argv=None):
     """Seed or run one arm and write a JSON report."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -241,7 +286,26 @@ def main(argv=None):
     parser.add_argument("--model", help="Pinned generation model for both arms")
     parser.add_argument("--provider", help="Pinned provider for the model")
     parser.add_argument("--label", default="")
+    parser.add_argument(
+        "--rescore-report", type=Path, help="Recompute a stored report from its tool trace"
+    )
+    parser.add_argument("--rescore-out", type=Path)
     args = parser.parse_args(argv)
+    if args.rescore_report:
+        if not args.scenarios or not args.rescore_out:
+            parser.error("--rescore-report requires --scenarios and --rescore-out")
+        report = json.loads(args.rescore_report.read_text(encoding="utf-8"))
+        updated = rescore_report(report, json.loads(args.scenarios.read_text(encoding="utf-8")))
+        args.rescore_out.write_text(
+            json.dumps(updated, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        counts = {"pass": 0, "fail": 0, "manual": 0, "error": 0, "incomplete": 0}
+        for row in updated["scenarios"]:
+            counts[row["status"]] += 1
+        print(
+            json.dumps({"label": updated.get("label", ""), **counts, "out": str(args.rescore_out)})
+        )
+        return 0
     storage = args.storage or args.profile / "memory"
     cli = qdrant_cli(args.cli)
     installed = None

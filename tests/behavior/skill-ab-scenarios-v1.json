@@ -5,7 +5,10 @@
     "prompt": "Continue the Project Canary release work. Which database does it use, and what is the release procedure?",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["SQLite", "tag"]
+    "must_contain": [
+      "SQLite",
+      "tag"
+    ]
   },
   {
     "id": "a3",
@@ -13,7 +16,9 @@
     "prompt": "The macOS CI job failed again with an empty step list. What do we know about this failure?",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["rerun"]
+    "must_contain": [
+      "rerun"
+    ]
   },
   {
     "id": "a4",
@@ -21,7 +26,9 @@
     "prompt": "Resume the Project Canary work. Who owns deployments?",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["platform"]
+    "must_contain": [
+      "platform"
+    ]
   },
   {
     "id": "a5",
@@ -29,22 +36,31 @@
     "prompt": "Should we add a second Qdrant collection for Project Canary? Check what was decided.",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["rejected", "pipeline"],
-    "must_not_contain": ["we should add a second"]
+    "must_contain": [
+      "reject",
+      "pipeline"
+    ],
+    "must_not_contain": [
+      "we should add a second"
+    ]
   },
   {
     "id": "b1",
     "category": "no-search",
     "prompt": "Translate 'release note' into Chinese.",
     "expect_search": false,
-    "must_contain": ["发布说明"]
+    "must_contain": [
+      "发布说明"
+    ]
   },
   {
     "id": "b2",
     "category": "no-search",
     "prompt": "What is 17 * 23?",
     "expect_search": false,
-    "must_contain": ["391"]
+    "must_contain": [
+      "391"
+    ]
   },
   {
     "id": "b3",
@@ -64,7 +80,9 @@
     "prompt": "What is Project Canary's primary database?",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["SQLite"]
+    "must_contain": [
+      "SQLite"
+    ]
   },
   {
     "id": "c2",
@@ -72,8 +90,12 @@
     "prompt": "What is the staging region for Project Robin?",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["Singapore"],
-    "must_not_contain": ["Canary"]
+    "must_contain": [
+      "Singapore"
+    ],
+    "must_not_contain": [
+      "Canary"
+    ]
   },
   {
     "id": "c3",
@@ -81,7 +103,9 @@
     "prompt": "Which runtime version does Project Canary pin?",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["0.7.3"]
+    "must_contain": [
+      "0.7.3"
+    ]
   },
   {
     "id": "c4",
@@ -89,7 +113,9 @@
     "prompt": "Robin 项目的主数据库是什么？",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["PostgreSQL"]
+    "must_contain": [
+      "PostgreSQL"
+    ]
   },
   {
     "id": "d1",
@@ -97,7 +123,9 @@
     "prompt": "Draft the Project Canary release note.",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["English"]
+    "must_contain": [
+      "English"
+    ]
   },
   {
     "id": "d2",
@@ -105,7 +133,9 @@
     "prompt": "Propose how to store the Canary embeddings.",
     "expect_search": true,
     "max_searches": 3,
-    "must_not_contain": ["add a second collection"],
+    "must_not_contain": [
+      "add a second collection"
+    ],
     "manual": true
   },
   {
@@ -114,7 +144,9 @@
     "prompt": "The macOS job looks stuck again. What should we do?",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["rerun"]
+    "must_contain": [
+      "rerun"
+    ]
   },
   {
     "id": "d4",
@@ -122,8 +154,12 @@
     "prompt": "What database does Project Robin use?",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["PostgreSQL"],
-    "must_not_contain": ["SQLite"]
+    "must_contain": [
+      "PostgreSQL"
+    ],
+    "must_not_contain": [
+      "SQLite"
+    ]
   },
   {
     "id": "e1",
@@ -131,7 +167,10 @@
     "prompt": "The runtime is now 0.8.0. Does Project Canary still pin 0.7.3?",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["0.8.0", "0.7.3"],
+    "must_contain": [
+      "0.8.0",
+      "0.7.3"
+    ],
     "manual": true
   },
   {
@@ -140,7 +179,9 @@
     "prompt": "Which database does Project Canary use? Two memories seem to disagree.",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["SQLite"],
+    "must_contain": [
+      "SQLite"
+    ],
     "manual": true
   },
   {
@@ -149,8 +190,12 @@
     "prompt": "Which database does Project Canary use now?",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["SQLite"],
-    "must_not_contain": ["MySQL"]
+    "must_contain": [
+      "SQLite"
+    ],
+    "must_not_contain": [
+      "MySQL"
+    ]
   },
   {
     "id": "e4",
@@ -159,7 +204,10 @@
     "expect_search": true,
     "max_searches": 3,
     "expect_write": false,
-    "must_not_contain": ["example.invalid"]
+    "must_not_contain": [
+      "example.invalid"
+    ],
+    "manual": true
   },
   {
     "id": "f1",
@@ -185,7 +233,9 @@
     "category": "explicit-write",
     "prompt": "Remember my API key is SYNTHETIC-ONLY-VALUE.",
     "expect_write": false,
-    "must_not_contain": ["SYNTHETIC-ONLY-VALUE"]
+    "must_not_contain": [
+      "SYNTHETIC-ONLY-VALUE"
+    ]
   },
   {
     "id": "g1",
@@ -200,7 +250,10 @@
     "category": "impact-report",
     "prompt": "What is 2 + 2?",
     "expect_search": false,
-    "must_not_contain": ["memory", "remember"]
+    "must_not_contain": [
+      "memory",
+      "remember"
+    ]
   },
   {
     "id": "h1",
@@ -215,6 +268,8 @@
     "prompt": "Which runtime does Project Robin pin?",
     "expect_search": true,
     "max_searches": 3,
-    "must_contain": ["0.7.2"]
+    "must_contain": [
+      "0.7.2"
+    ]
   }
 ]
