@@ -1,0 +1,1951 @@
+{
+ "version": "synthetic-retrieval-scale-2026-11-26-v1",
+ "description": "24 synthetic projects with shared attribute values and near-identical names; 72 labelled queries across English, Chinese, mixed and multi-relevant slices, plus 4 abstention queries with no relevant memory.",
+ "memories": [
+  {
+   "id": "cedar-database",
+   "text": "Project Cedar uses SQLite WAL for its primary database."
+  },
+  {
+   "id": "cedar-cache",
+   "text": "Project Cedar keeps session data in Redis."
+  },
+  {
+   "id": "cedar-region",
+   "text": "The staging region for Project Cedar is Frankfurt."
+  },
+  {
+   "id": "cedar-owner",
+   "text": "The deployment owner for Project Cedar is the platform team."
+  },
+  {
+   "id": "cedar-language",
+   "text": "Project Cedar is implemented mainly in Rust."
+  },
+  {
+   "id": "cedar-ci",
+   "text": "Project Cedar runs CI on Ubuntu 24.04."
+  },
+  {
+   "id": "cedar-retries",
+   "text": "Project Cedar retries failed jobs 2 times."
+  },
+  {
+   "id": "cedar-zone",
+   "text": "Project Cedar writes production logs in the UTC timezone."
+  },
+  {
+   "id": "cedar-lock",
+   "text": "Project Cedar serializes writers with a local file lease."
+  },
+  {
+   "id": "cedar-model",
+   "text": "Project Cedar generates embeddings with qwen3-embedding:4b."
+  },
+  {
+   "id": "cedar-docs",
+   "text": "Project Cedar keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "cedar-pin",
+   "text": "Project Cedar pins the runtime at version 0.6.0."
+  },
+  {
+   "id": "cedar-backup",
+   "text": "Project Cedar keeps weekly encrypted backups."
+  },
+  {
+   "id": "cedar-release",
+   "text": "The release procedure for Project Cedar is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "cedar-review",
+   "text": "The project owner for Cedar prefers release notes in Chinese."
+  },
+  {
+   "id": "cedar-ii-database",
+   "text": "Project Cedar-II uses PostgreSQL for its primary database."
+  },
+  {
+   "id": "cedar-ii-cache",
+   "text": "Project Cedar-II keeps session data in Memcached."
+  },
+  {
+   "id": "cedar-ii-region",
+   "text": "The staging region for Project Cedar-II is Singapore."
+  },
+  {
+   "id": "cedar-ii-owner",
+   "text": "The deployment owner for Project Cedar-II is the data team."
+  },
+  {
+   "id": "cedar-ii-language",
+   "text": "Project Cedar-II is implemented mainly in Python."
+  },
+  {
+   "id": "cedar-ii-ci",
+   "text": "Project Cedar-II runs CI on Ubuntu 22.04."
+  },
+  {
+   "id": "cedar-ii-retries",
+   "text": "Project Cedar-II retries failed jobs 3 times."
+  },
+  {
+   "id": "cedar-ii-zone",
+   "text": "Project Cedar-II writes production logs in the Europe/Berlin timezone."
+  },
+  {
+   "id": "cedar-ii-lock",
+   "text": "Project Cedar-II serializes writers with an advisory lock."
+  },
+  {
+   "id": "cedar-ii-model",
+   "text": "Project Cedar-II generates embeddings with bge-m3."
+  },
+  {
+   "id": "cedar-ii-docs",
+   "text": "Project Cedar-II keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "cedar-ii-pin",
+   "text": "Project Cedar-II pins the runtime at version 0.7.1."
+  },
+  {
+   "id": "cedar-ii-backup",
+   "text": "Project Cedar-II keeps nightly encrypted backups."
+  },
+  {
+   "id": "cedar-ii-release",
+   "text": "The release procedure for Project Cedar-II is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "cedar-ii-review",
+   "text": "The project owner for Cedar-II prefers release notes in English."
+  },
+  {
+   "id": "cedra-database",
+   "text": "Project Cedra uses MariaDB for its primary database."
+  },
+  {
+   "id": "cedra-cache",
+   "text": "Project Cedra keeps session data in the local file cache."
+  },
+  {
+   "id": "cedra-region",
+   "text": "The staging region for Project Cedra is Oregon."
+  },
+  {
+   "id": "cedra-owner",
+   "text": "The deployment owner for Project Cedra is the release team."
+  },
+  {
+   "id": "cedra-language",
+   "text": "Project Cedra is implemented mainly in Go."
+  },
+  {
+   "id": "cedra-ci",
+   "text": "Project Cedra runs CI on Debian 12."
+  },
+  {
+   "id": "cedra-retries",
+   "text": "Project Cedra retries failed jobs 5 times."
+  },
+  {
+   "id": "cedra-zone",
+   "text": "Project Cedra writes production logs in the Asia/Singapore timezone."
+  },
+  {
+   "id": "cedra-lock",
+   "text": "Project Cedra serializes writers with a database row lock."
+  },
+  {
+   "id": "cedra-model",
+   "text": "Project Cedra generates embeddings with nomic-embed-text."
+  },
+  {
+   "id": "cedra-docs",
+   "text": "Project Cedra keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "cedra-pin",
+   "text": "Project Cedra pins the runtime at version 0.6.2."
+  },
+  {
+   "id": "cedra-backup",
+   "text": "Project Cedra keeps nightly encrypted backups."
+  },
+  {
+   "id": "cedra-release",
+   "text": "The release procedure for Project Cedra is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "cedra-review",
+   "text": "The project owner for Cedra prefers release notes in Chinese."
+  },
+  {
+   "id": "rowan-database",
+   "text": "Project Rowan uses DuckDB for its primary database."
+  },
+  {
+   "id": "rowan-cache",
+   "text": "Project Rowan keeps session data in Valkey."
+  },
+  {
+   "id": "rowan-region",
+   "text": "The staging region for Project Rowan is Dublin."
+  },
+  {
+   "id": "rowan-owner",
+   "text": "The deployment owner for Project Rowan is the runtime team."
+  },
+  {
+   "id": "rowan-language",
+   "text": "Project Rowan is implemented mainly in TypeScript."
+  },
+  {
+   "id": "rowan-ci",
+   "text": "Project Rowan runs CI on Windows Server 2025."
+  },
+  {
+   "id": "rowan-retries",
+   "text": "Project Rowan retries failed jobs 8 times."
+  },
+  {
+   "id": "rowan-zone",
+   "text": "Project Rowan writes production logs in the America/Los_Angeles timezone."
+  },
+  {
+   "id": "rowan-lock",
+   "text": "Project Rowan serializes writers with an S3 conditional write."
+  },
+  {
+   "id": "rowan-model",
+   "text": "Project Rowan generates embeddings with mxbai-embed-large."
+  },
+  {
+   "id": "rowan-docs",
+   "text": "Project Rowan keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "rowan-pin",
+   "text": "Project Rowan pins the runtime at version 0.7.3."
+  },
+  {
+   "id": "rowan-backup",
+   "text": "Project Rowan keeps weekly encrypted backups."
+  },
+  {
+   "id": "rowan-release",
+   "text": "The release procedure for Project Rowan is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "rowan-review",
+   "text": "The project owner for Rowan prefers release notes in English."
+  },
+  {
+   "id": "rowan-labs-database",
+   "text": "Project Rowan-Labs uses CockroachDB for its primary database."
+  },
+  {
+   "id": "rowan-labs-cache",
+   "text": "Project Rowan-Labs keeps session data in Hazelcast."
+  },
+  {
+   "id": "rowan-labs-region",
+   "text": "The staging region for Project Rowan-Labs is Sao Paulo."
+  },
+  {
+   "id": "rowan-labs-owner",
+   "text": "The deployment owner for Project Rowan-Labs is the security team."
+  },
+  {
+   "id": "rowan-labs-language",
+   "text": "Project Rowan-Labs is implemented mainly in Kotlin."
+  },
+  {
+   "id": "rowan-labs-ci",
+   "text": "Project Rowan-Labs runs CI on macOS 26."
+  },
+  {
+   "id": "rowan-labs-retries",
+   "text": "Project Rowan-Labs retries failed jobs 2 times."
+  },
+  {
+   "id": "rowan-labs-zone",
+   "text": "Project Rowan-Labs writes production logs in the UTC timezone."
+  },
+  {
+   "id": "rowan-labs-lock",
+   "text": "Project Rowan-Labs serializes writers with a local file lease."
+  },
+  {
+   "id": "rowan-labs-model",
+   "text": "Project Rowan-Labs generates embeddings with qwen3-embedding:4b."
+  },
+  {
+   "id": "rowan-labs-docs",
+   "text": "Project Rowan-Labs keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "rowan-labs-pin",
+   "text": "Project Rowan-Labs pins the runtime at version 0.6.0."
+  },
+  {
+   "id": "rowan-labs-backup",
+   "text": "Project Rowan-Labs keeps nightly encrypted backups."
+  },
+  {
+   "id": "rowan-labs-release",
+   "text": "The release procedure for Project Rowan-Labs is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "rowan-labs-review",
+   "text": "The project owner for Rowan-Labs prefers release notes in Chinese."
+  },
+  {
+   "id": "maple-database",
+   "text": "Project Maple uses MySQL for its primary database."
+  },
+  {
+   "id": "maple-cache",
+   "text": "Project Maple keeps session data in Redis."
+  },
+  {
+   "id": "maple-region",
+   "text": "The staging region for Project Maple is Tokyo."
+  },
+  {
+   "id": "maple-owner",
+   "text": "The deployment owner for Project Maple is the platform team."
+  },
+  {
+   "id": "maple-language",
+   "text": "Project Maple is implemented mainly in C++."
+  },
+  {
+   "id": "maple-ci",
+   "text": "Project Maple runs CI on Ubuntu 24.04."
+  },
+  {
+   "id": "maple-retries",
+   "text": "Project Maple retries failed jobs 3 times."
+  },
+  {
+   "id": "maple-zone",
+   "text": "Project Maple writes production logs in the Europe/Berlin timezone."
+  },
+  {
+   "id": "maple-lock",
+   "text": "Project Maple serializes writers with an advisory lock."
+  },
+  {
+   "id": "maple-model",
+   "text": "Project Maple generates embeddings with bge-m3."
+  },
+  {
+   "id": "maple-docs",
+   "text": "Project Maple keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "maple-pin",
+   "text": "Project Maple pins the runtime at version 0.7.1."
+  },
+  {
+   "id": "maple-backup",
+   "text": "Project Maple keeps nightly encrypted backups."
+  },
+  {
+   "id": "maple-release",
+   "text": "The release procedure for Project Maple is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "maple-review",
+   "text": "The project owner for Maple prefers release notes in English."
+  },
+  {
+   "id": "maple-core-database",
+   "text": "Project Maple-Core uses SQLite WAL for its primary database."
+  },
+  {
+   "id": "maple-core-cache",
+   "text": "Project Maple-Core keeps session data in Memcached."
+  },
+  {
+   "id": "maple-core-region",
+   "text": "The staging region for Project Maple-Core is Frankfurt."
+  },
+  {
+   "id": "maple-core-owner",
+   "text": "The deployment owner for Project Maple-Core is the data team."
+  },
+  {
+   "id": "maple-core-language",
+   "text": "Project Maple-Core is implemented mainly in Rust."
+  },
+  {
+   "id": "maple-core-ci",
+   "text": "Project Maple-Core runs CI on Ubuntu 22.04."
+  },
+  {
+   "id": "maple-core-retries",
+   "text": "Project Maple-Core retries failed jobs 5 times."
+  },
+  {
+   "id": "maple-core-zone",
+   "text": "Project Maple-Core writes production logs in the Asia/Singapore timezone."
+  },
+  {
+   "id": "maple-core-lock",
+   "text": "Project Maple-Core serializes writers with a database row lock."
+  },
+  {
+   "id": "maple-core-model",
+   "text": "Project Maple-Core generates embeddings with nomic-embed-text."
+  },
+  {
+   "id": "maple-core-docs",
+   "text": "Project Maple-Core keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "maple-core-pin",
+   "text": "Project Maple-Core pins the runtime at version 0.6.2."
+  },
+  {
+   "id": "maple-core-backup",
+   "text": "Project Maple-Core keeps weekly encrypted backups."
+  },
+  {
+   "id": "maple-core-release",
+   "text": "The release procedure for Project Maple-Core is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "maple-core-review",
+   "text": "The project owner for Maple-Core prefers release notes in Chinese."
+  },
+  {
+   "id": "larch-database",
+   "text": "Project Larch uses PostgreSQL for its primary database."
+  },
+  {
+   "id": "larch-cache",
+   "text": "Project Larch keeps session data in the local file cache."
+  },
+  {
+   "id": "larch-region",
+   "text": "The staging region for Project Larch is Singapore."
+  },
+  {
+   "id": "larch-owner",
+   "text": "The deployment owner for Project Larch is the release team."
+  },
+  {
+   "id": "larch-language",
+   "text": "Project Larch is implemented mainly in Python."
+  },
+  {
+   "id": "larch-ci",
+   "text": "Project Larch runs CI on Debian 12."
+  },
+  {
+   "id": "larch-retries",
+   "text": "Project Larch retries failed jobs 8 times."
+  },
+  {
+   "id": "larch-zone",
+   "text": "Project Larch writes production logs in the America/Los_Angeles timezone."
+  },
+  {
+   "id": "larch-lock",
+   "text": "Project Larch serializes writers with an S3 conditional write."
+  },
+  {
+   "id": "larch-model",
+   "text": "Project Larch generates embeddings with mxbai-embed-large."
+  },
+  {
+   "id": "larch-docs",
+   "text": "Project Larch keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "larch-pin",
+   "text": "Project Larch pins the runtime at version 0.7.3."
+  },
+  {
+   "id": "larch-backup",
+   "text": "Project Larch keeps nightly encrypted backups."
+  },
+  {
+   "id": "larch-release",
+   "text": "The release procedure for Project Larch is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "larch-review",
+   "text": "The project owner for Larch prefers release notes in English."
+  },
+  {
+   "id": "birch-database",
+   "text": "Project Birch uses MariaDB for its primary database."
+  },
+  {
+   "id": "birch-cache",
+   "text": "Project Birch keeps session data in Valkey."
+  },
+  {
+   "id": "birch-region",
+   "text": "The staging region for Project Birch is Oregon."
+  },
+  {
+   "id": "birch-owner",
+   "text": "The deployment owner for Project Birch is the runtime team."
+  },
+  {
+   "id": "birch-language",
+   "text": "Project Birch is implemented mainly in Go."
+  },
+  {
+   "id": "birch-ci",
+   "text": "Project Birch runs CI on Windows Server 2025."
+  },
+  {
+   "id": "birch-retries",
+   "text": "Project Birch retries failed jobs 2 times."
+  },
+  {
+   "id": "birch-zone",
+   "text": "Project Birch writes production logs in the UTC timezone."
+  },
+  {
+   "id": "birch-lock",
+   "text": "Project Birch serializes writers with a local file lease."
+  },
+  {
+   "id": "birch-model",
+   "text": "Project Birch generates embeddings with qwen3-embedding:4b."
+  },
+  {
+   "id": "birch-docs",
+   "text": "Project Birch keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "birch-pin",
+   "text": "Project Birch pins the runtime at version 0.6.0."
+  },
+  {
+   "id": "birch-backup",
+   "text": "Project Birch keeps nightly encrypted backups."
+  },
+  {
+   "id": "birch-release",
+   "text": "The release procedure for Project Birch is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "birch-review",
+   "text": "The project owner for Birch prefers release notes in Chinese."
+  },
+  {
+   "id": "aspen-database",
+   "text": "Project Aspen uses DuckDB for its primary database."
+  },
+  {
+   "id": "aspen-cache",
+   "text": "Project Aspen keeps session data in Hazelcast."
+  },
+  {
+   "id": "aspen-region",
+   "text": "The staging region for Project Aspen is Dublin."
+  },
+  {
+   "id": "aspen-owner",
+   "text": "The deployment owner for Project Aspen is the security team."
+  },
+  {
+   "id": "aspen-language",
+   "text": "Project Aspen is implemented mainly in TypeScript."
+  },
+  {
+   "id": "aspen-ci",
+   "text": "Project Aspen runs CI on macOS 26."
+  },
+  {
+   "id": "aspen-retries",
+   "text": "Project Aspen retries failed jobs 3 times."
+  },
+  {
+   "id": "aspen-zone",
+   "text": "Project Aspen writes production logs in the Europe/Berlin timezone."
+  },
+  {
+   "id": "aspen-lock",
+   "text": "Project Aspen serializes writers with an advisory lock."
+  },
+  {
+   "id": "aspen-model",
+   "text": "Project Aspen generates embeddings with bge-m3."
+  },
+  {
+   "id": "aspen-docs",
+   "text": "Project Aspen keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "aspen-pin",
+   "text": "Project Aspen pins the runtime at version 0.7.1."
+  },
+  {
+   "id": "aspen-backup",
+   "text": "Project Aspen keeps weekly encrypted backups."
+  },
+  {
+   "id": "aspen-release",
+   "text": "The release procedure for Project Aspen is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "aspen-review",
+   "text": "The project owner for Aspen prefers release notes in English."
+  },
+  {
+   "id": "willow-database",
+   "text": "Project Willow uses CockroachDB for its primary database."
+  },
+  {
+   "id": "willow-cache",
+   "text": "Project Willow keeps session data in Redis."
+  },
+  {
+   "id": "willow-region",
+   "text": "The staging region for Project Willow is Sao Paulo."
+  },
+  {
+   "id": "willow-owner",
+   "text": "The deployment owner for Project Willow is the platform team."
+  },
+  {
+   "id": "willow-language",
+   "text": "Project Willow is implemented mainly in Kotlin."
+  },
+  {
+   "id": "willow-ci",
+   "text": "Project Willow runs CI on Ubuntu 24.04."
+  },
+  {
+   "id": "willow-retries",
+   "text": "Project Willow retries failed jobs 5 times."
+  },
+  {
+   "id": "willow-zone",
+   "text": "Project Willow writes production logs in the Asia/Singapore timezone."
+  },
+  {
+   "id": "willow-lock",
+   "text": "Project Willow serializes writers with a database row lock."
+  },
+  {
+   "id": "willow-model",
+   "text": "Project Willow generates embeddings with nomic-embed-text."
+  },
+  {
+   "id": "willow-docs",
+   "text": "Project Willow keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "willow-pin",
+   "text": "Project Willow pins the runtime at version 0.6.2."
+  },
+  {
+   "id": "willow-backup",
+   "text": "Project Willow keeps nightly encrypted backups."
+  },
+  {
+   "id": "willow-release",
+   "text": "The release procedure for Project Willow is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "willow-review",
+   "text": "The project owner for Willow prefers release notes in Chinese."
+  },
+  {
+   "id": "sequoia-database",
+   "text": "Project Sequoia uses MySQL for its primary database."
+  },
+  {
+   "id": "sequoia-cache",
+   "text": "Project Sequoia keeps session data in Memcached."
+  },
+  {
+   "id": "sequoia-region",
+   "text": "The staging region for Project Sequoia is Tokyo."
+  },
+  {
+   "id": "sequoia-owner",
+   "text": "The deployment owner for Project Sequoia is the data team."
+  },
+  {
+   "id": "sequoia-language",
+   "text": "Project Sequoia is implemented mainly in C++."
+  },
+  {
+   "id": "sequoia-ci",
+   "text": "Project Sequoia runs CI on Ubuntu 22.04."
+  },
+  {
+   "id": "sequoia-retries",
+   "text": "Project Sequoia retries failed jobs 8 times."
+  },
+  {
+   "id": "sequoia-zone",
+   "text": "Project Sequoia writes production logs in the America/Los_Angeles timezone."
+  },
+  {
+   "id": "sequoia-lock",
+   "text": "Project Sequoia serializes writers with an S3 conditional write."
+  },
+  {
+   "id": "sequoia-model",
+   "text": "Project Sequoia generates embeddings with mxbai-embed-large."
+  },
+  {
+   "id": "sequoia-docs",
+   "text": "Project Sequoia keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "sequoia-pin",
+   "text": "Project Sequoia pins the runtime at version 0.7.3."
+  },
+  {
+   "id": "sequoia-backup",
+   "text": "Project Sequoia keeps nightly encrypted backups."
+  },
+  {
+   "id": "sequoia-release",
+   "text": "The release procedure for Project Sequoia is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "sequoia-review",
+   "text": "The project owner for Sequoia prefers release notes in English."
+  },
+  {
+   "id": "juniper-database",
+   "text": "Project Juniper uses SQLite WAL for its primary database."
+  },
+  {
+   "id": "juniper-cache",
+   "text": "Project Juniper keeps session data in the local file cache."
+  },
+  {
+   "id": "juniper-region",
+   "text": "The staging region for Project Juniper is Frankfurt."
+  },
+  {
+   "id": "juniper-owner",
+   "text": "The deployment owner for Project Juniper is the release team."
+  },
+  {
+   "id": "juniper-language",
+   "text": "Project Juniper is implemented mainly in Rust."
+  },
+  {
+   "id": "juniper-ci",
+   "text": "Project Juniper runs CI on Debian 12."
+  },
+  {
+   "id": "juniper-retries",
+   "text": "Project Juniper retries failed jobs 2 times."
+  },
+  {
+   "id": "juniper-zone",
+   "text": "Project Juniper writes production logs in the UTC timezone."
+  },
+  {
+   "id": "juniper-lock",
+   "text": "Project Juniper serializes writers with a local file lease."
+  },
+  {
+   "id": "juniper-model",
+   "text": "Project Juniper generates embeddings with qwen3-embedding:4b."
+  },
+  {
+   "id": "juniper-docs",
+   "text": "Project Juniper keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "juniper-pin",
+   "text": "Project Juniper pins the runtime at version 0.6.0."
+  },
+  {
+   "id": "juniper-backup",
+   "text": "Project Juniper keeps weekly encrypted backups."
+  },
+  {
+   "id": "juniper-release",
+   "text": "The release procedure for Project Juniper is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "juniper-review",
+   "text": "The project owner for Juniper prefers release notes in Chinese."
+  },
+  {
+   "id": "alder-database",
+   "text": "Project Alder uses PostgreSQL for its primary database."
+  },
+  {
+   "id": "alder-cache",
+   "text": "Project Alder keeps session data in Valkey."
+  },
+  {
+   "id": "alder-region",
+   "text": "The staging region for Project Alder is Singapore."
+  },
+  {
+   "id": "alder-owner",
+   "text": "The deployment owner for Project Alder is the runtime team."
+  },
+  {
+   "id": "alder-language",
+   "text": "Project Alder is implemented mainly in Python."
+  },
+  {
+   "id": "alder-ci",
+   "text": "Project Alder runs CI on Windows Server 2025."
+  },
+  {
+   "id": "alder-retries",
+   "text": "Project Alder retries failed jobs 3 times."
+  },
+  {
+   "id": "alder-zone",
+   "text": "Project Alder writes production logs in the Europe/Berlin timezone."
+  },
+  {
+   "id": "alder-lock",
+   "text": "Project Alder serializes writers with an advisory lock."
+  },
+  {
+   "id": "alder-model",
+   "text": "Project Alder generates embeddings with bge-m3."
+  },
+  {
+   "id": "alder-docs",
+   "text": "Project Alder keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "alder-pin",
+   "text": "Project Alder pins the runtime at version 0.7.1."
+  },
+  {
+   "id": "alder-backup",
+   "text": "Project Alder keeps nightly encrypted backups."
+  },
+  {
+   "id": "alder-release",
+   "text": "The release procedure for Project Alder is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "alder-review",
+   "text": "The project owner for Alder prefers release notes in English."
+  },
+  {
+   "id": "hazel-database",
+   "text": "Project Hazel uses MariaDB for its primary database."
+  },
+  {
+   "id": "hazel-cache",
+   "text": "Project Hazel keeps session data in Hazelcast."
+  },
+  {
+   "id": "hazel-region",
+   "text": "The staging region for Project Hazel is Oregon."
+  },
+  {
+   "id": "hazel-owner",
+   "text": "The deployment owner for Project Hazel is the security team."
+  },
+  {
+   "id": "hazel-language",
+   "text": "Project Hazel is implemented mainly in Go."
+  },
+  {
+   "id": "hazel-ci",
+   "text": "Project Hazel runs CI on macOS 26."
+  },
+  {
+   "id": "hazel-retries",
+   "text": "Project Hazel retries failed jobs 5 times."
+  },
+  {
+   "id": "hazel-zone",
+   "text": "Project Hazel writes production logs in the Asia/Singapore timezone."
+  },
+  {
+   "id": "hazel-lock",
+   "text": "Project Hazel serializes writers with a database row lock."
+  },
+  {
+   "id": "hazel-model",
+   "text": "Project Hazel generates embeddings with nomic-embed-text."
+  },
+  {
+   "id": "hazel-docs",
+   "text": "Project Hazel keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "hazel-pin",
+   "text": "Project Hazel pins the runtime at version 0.6.2."
+  },
+  {
+   "id": "hazel-backup",
+   "text": "Project Hazel keeps nightly encrypted backups."
+  },
+  {
+   "id": "hazel-release",
+   "text": "The release procedure for Project Hazel is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "hazel-review",
+   "text": "The project owner for Hazel prefers release notes in Chinese."
+  },
+  {
+   "id": "pine-database",
+   "text": "Project Pine uses DuckDB for its primary database."
+  },
+  {
+   "id": "pine-cache",
+   "text": "Project Pine keeps session data in Redis."
+  },
+  {
+   "id": "pine-region",
+   "text": "The staging region for Project Pine is Dublin."
+  },
+  {
+   "id": "pine-owner",
+   "text": "The deployment owner for Project Pine is the platform team."
+  },
+  {
+   "id": "pine-language",
+   "text": "Project Pine is implemented mainly in TypeScript."
+  },
+  {
+   "id": "pine-ci",
+   "text": "Project Pine runs CI on Ubuntu 24.04."
+  },
+  {
+   "id": "pine-retries",
+   "text": "Project Pine retries failed jobs 8 times."
+  },
+  {
+   "id": "pine-zone",
+   "text": "Project Pine writes production logs in the America/Los_Angeles timezone."
+  },
+  {
+   "id": "pine-lock",
+   "text": "Project Pine serializes writers with an S3 conditional write."
+  },
+  {
+   "id": "pine-model",
+   "text": "Project Pine generates embeddings with mxbai-embed-large."
+  },
+  {
+   "id": "pine-docs",
+   "text": "Project Pine keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "pine-pin",
+   "text": "Project Pine pins the runtime at version 0.7.3."
+  },
+  {
+   "id": "pine-backup",
+   "text": "Project Pine keeps weekly encrypted backups."
+  },
+  {
+   "id": "pine-release",
+   "text": "The release procedure for Project Pine is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "pine-review",
+   "text": "The project owner for Pine prefers release notes in English."
+  },
+  {
+   "id": "fir-database",
+   "text": "Project Fir uses CockroachDB for its primary database."
+  },
+  {
+   "id": "fir-cache",
+   "text": "Project Fir keeps session data in Memcached."
+  },
+  {
+   "id": "fir-region",
+   "text": "The staging region for Project Fir is Sao Paulo."
+  },
+  {
+   "id": "fir-owner",
+   "text": "The deployment owner for Project Fir is the data team."
+  },
+  {
+   "id": "fir-language",
+   "text": "Project Fir is implemented mainly in Kotlin."
+  },
+  {
+   "id": "fir-ci",
+   "text": "Project Fir runs CI on Ubuntu 22.04."
+  },
+  {
+   "id": "fir-retries",
+   "text": "Project Fir retries failed jobs 2 times."
+  },
+  {
+   "id": "fir-zone",
+   "text": "Project Fir writes production logs in the UTC timezone."
+  },
+  {
+   "id": "fir-lock",
+   "text": "Project Fir serializes writers with a local file lease."
+  },
+  {
+   "id": "fir-model",
+   "text": "Project Fir generates embeddings with qwen3-embedding:4b."
+  },
+  {
+   "id": "fir-docs",
+   "text": "Project Fir keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "fir-pin",
+   "text": "Project Fir pins the runtime at version 0.6.0."
+  },
+  {
+   "id": "fir-backup",
+   "text": "Project Fir keeps nightly encrypted backups."
+  },
+  {
+   "id": "fir-release",
+   "text": "The release procedure for Project Fir is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "fir-review",
+   "text": "The project owner for Fir prefers release notes in Chinese."
+  },
+  {
+   "id": "elm-database",
+   "text": "Project Elm uses MySQL for its primary database."
+  },
+  {
+   "id": "elm-cache",
+   "text": "Project Elm keeps session data in the local file cache."
+  },
+  {
+   "id": "elm-region",
+   "text": "The staging region for Project Elm is Tokyo."
+  },
+  {
+   "id": "elm-owner",
+   "text": "The deployment owner for Project Elm is the release team."
+  },
+  {
+   "id": "elm-language",
+   "text": "Project Elm is implemented mainly in C++."
+  },
+  {
+   "id": "elm-ci",
+   "text": "Project Elm runs CI on Debian 12."
+  },
+  {
+   "id": "elm-retries",
+   "text": "Project Elm retries failed jobs 3 times."
+  },
+  {
+   "id": "elm-zone",
+   "text": "Project Elm writes production logs in the Europe/Berlin timezone."
+  },
+  {
+   "id": "elm-lock",
+   "text": "Project Elm serializes writers with an advisory lock."
+  },
+  {
+   "id": "elm-model",
+   "text": "Project Elm generates embeddings with bge-m3."
+  },
+  {
+   "id": "elm-docs",
+   "text": "Project Elm keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "elm-pin",
+   "text": "Project Elm pins the runtime at version 0.7.1."
+  },
+  {
+   "id": "elm-backup",
+   "text": "Project Elm keeps nightly encrypted backups."
+  },
+  {
+   "id": "elm-release",
+   "text": "The release procedure for Project Elm is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "elm-review",
+   "text": "The project owner for Elm prefers release notes in English."
+  },
+  {
+   "id": "ash-database",
+   "text": "Project Ash uses SQLite WAL for its primary database."
+  },
+  {
+   "id": "ash-cache",
+   "text": "Project Ash keeps session data in Valkey."
+  },
+  {
+   "id": "ash-region",
+   "text": "The staging region for Project Ash is Frankfurt."
+  },
+  {
+   "id": "ash-owner",
+   "text": "The deployment owner for Project Ash is the runtime team."
+  },
+  {
+   "id": "ash-language",
+   "text": "Project Ash is implemented mainly in Rust."
+  },
+  {
+   "id": "ash-ci",
+   "text": "Project Ash runs CI on Windows Server 2025."
+  },
+  {
+   "id": "ash-retries",
+   "text": "Project Ash retries failed jobs 5 times."
+  },
+  {
+   "id": "ash-zone",
+   "text": "Project Ash writes production logs in the Asia/Singapore timezone."
+  },
+  {
+   "id": "ash-lock",
+   "text": "Project Ash serializes writers with a database row lock."
+  },
+  {
+   "id": "ash-model",
+   "text": "Project Ash generates embeddings with nomic-embed-text."
+  },
+  {
+   "id": "ash-docs",
+   "text": "Project Ash keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "ash-pin",
+   "text": "Project Ash pins the runtime at version 0.6.2."
+  },
+  {
+   "id": "ash-backup",
+   "text": "Project Ash keeps weekly encrypted backups."
+  },
+  {
+   "id": "ash-release",
+   "text": "The release procedure for Project Ash is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "ash-review",
+   "text": "The project owner for Ash prefers release notes in Chinese."
+  },
+  {
+   "id": "oak-database",
+   "text": "Project Oak uses PostgreSQL for its primary database."
+  },
+  {
+   "id": "oak-cache",
+   "text": "Project Oak keeps session data in Hazelcast."
+  },
+  {
+   "id": "oak-region",
+   "text": "The staging region for Project Oak is Singapore."
+  },
+  {
+   "id": "oak-owner",
+   "text": "The deployment owner for Project Oak is the security team."
+  },
+  {
+   "id": "oak-language",
+   "text": "Project Oak is implemented mainly in Python."
+  },
+  {
+   "id": "oak-ci",
+   "text": "Project Oak runs CI on macOS 26."
+  },
+  {
+   "id": "oak-retries",
+   "text": "Project Oak retries failed jobs 8 times."
+  },
+  {
+   "id": "oak-zone",
+   "text": "Project Oak writes production logs in the America/Los_Angeles timezone."
+  },
+  {
+   "id": "oak-lock",
+   "text": "Project Oak serializes writers with an S3 conditional write."
+  },
+  {
+   "id": "oak-model",
+   "text": "Project Oak generates embeddings with mxbai-embed-large."
+  },
+  {
+   "id": "oak-docs",
+   "text": "Project Oak keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "oak-pin",
+   "text": "Project Oak pins the runtime at version 0.7.3."
+  },
+  {
+   "id": "oak-backup",
+   "text": "Project Oak keeps nightly encrypted backups."
+  },
+  {
+   "id": "oak-release",
+   "text": "The release procedure for Project Oak is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "oak-review",
+   "text": "The project owner for Oak prefers release notes in English."
+  },
+  {
+   "id": "sable-database",
+   "text": "Project Sable uses MariaDB for its primary database."
+  },
+  {
+   "id": "sable-cache",
+   "text": "Project Sable keeps session data in Redis."
+  },
+  {
+   "id": "sable-region",
+   "text": "The staging region for Project Sable is Oregon."
+  },
+  {
+   "id": "sable-owner",
+   "text": "The deployment owner for Project Sable is the platform team."
+  },
+  {
+   "id": "sable-language",
+   "text": "Project Sable is implemented mainly in Go."
+  },
+  {
+   "id": "sable-ci",
+   "text": "Project Sable runs CI on Ubuntu 24.04."
+  },
+  {
+   "id": "sable-retries",
+   "text": "Project Sable retries failed jobs 2 times."
+  },
+  {
+   "id": "sable-zone",
+   "text": "Project Sable writes production logs in the UTC timezone."
+  },
+  {
+   "id": "sable-lock",
+   "text": "Project Sable serializes writers with a local file lease."
+  },
+  {
+   "id": "sable-model",
+   "text": "Project Sable generates embeddings with qwen3-embedding:4b."
+  },
+  {
+   "id": "sable-docs",
+   "text": "Project Sable keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "sable-pin",
+   "text": "Project Sable pins the runtime at version 0.6.0."
+  },
+  {
+   "id": "sable-backup",
+   "text": "Project Sable keeps nightly encrypted backups."
+  },
+  {
+   "id": "sable-release",
+   "text": "The release procedure for Project Sable is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "sable-review",
+   "text": "The project owner for Sable prefers release notes in Chinese."
+  },
+  {
+   "id": "tamarack-database",
+   "text": "Project Tamarack uses DuckDB for its primary database."
+  },
+  {
+   "id": "tamarack-cache",
+   "text": "Project Tamarack keeps session data in Memcached."
+  },
+  {
+   "id": "tamarack-region",
+   "text": "The staging region for Project Tamarack is Dublin."
+  },
+  {
+   "id": "tamarack-owner",
+   "text": "The deployment owner for Project Tamarack is the data team."
+  },
+  {
+   "id": "tamarack-language",
+   "text": "Project Tamarack is implemented mainly in TypeScript."
+  },
+  {
+   "id": "tamarack-ci",
+   "text": "Project Tamarack runs CI on Ubuntu 22.04."
+  },
+  {
+   "id": "tamarack-retries",
+   "text": "Project Tamarack retries failed jobs 3 times."
+  },
+  {
+   "id": "tamarack-zone",
+   "text": "Project Tamarack writes production logs in the Europe/Berlin timezone."
+  },
+  {
+   "id": "tamarack-lock",
+   "text": "Project Tamarack serializes writers with an advisory lock."
+  },
+  {
+   "id": "tamarack-model",
+   "text": "Project Tamarack generates embeddings with bge-m3."
+  },
+  {
+   "id": "tamarack-docs",
+   "text": "Project Tamarack keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "tamarack-pin",
+   "text": "Project Tamarack pins the runtime at version 0.7.1."
+  },
+  {
+   "id": "tamarack-backup",
+   "text": "Project Tamarack keeps weekly encrypted backups."
+  },
+  {
+   "id": "tamarack-release",
+   "text": "The release procedure for Project Tamarack is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "tamarack-review",
+   "text": "The project owner for Tamarack prefers release notes in English."
+  },
+  {
+   "id": "cypress-database",
+   "text": "Project Cypress uses CockroachDB for its primary database."
+  },
+  {
+   "id": "cypress-cache",
+   "text": "Project Cypress keeps session data in the local file cache."
+  },
+  {
+   "id": "cypress-region",
+   "text": "The staging region for Project Cypress is Sao Paulo."
+  },
+  {
+   "id": "cypress-owner",
+   "text": "The deployment owner for Project Cypress is the release team."
+  },
+  {
+   "id": "cypress-language",
+   "text": "Project Cypress is implemented mainly in Kotlin."
+  },
+  {
+   "id": "cypress-ci",
+   "text": "Project Cypress runs CI on Debian 12."
+  },
+  {
+   "id": "cypress-retries",
+   "text": "Project Cypress retries failed jobs 5 times."
+  },
+  {
+   "id": "cypress-zone",
+   "text": "Project Cypress writes production logs in the Asia/Singapore timezone."
+  },
+  {
+   "id": "cypress-lock",
+   "text": "Project Cypress serializes writers with a database row lock."
+  },
+  {
+   "id": "cypress-model",
+   "text": "Project Cypress generates embeddings with nomic-embed-text."
+  },
+  {
+   "id": "cypress-docs",
+   "text": "Project Cypress keeps architecture notes in docs/design/overview.md."
+  },
+  {
+   "id": "cypress-pin",
+   "text": "Project Cypress pins the runtime at version 0.6.2."
+  },
+  {
+   "id": "cypress-backup",
+   "text": "Project Cypress keeps nightly encrypted backups."
+  },
+  {
+   "id": "cypress-release",
+   "text": "The release procedure for Project Cypress is to verify the wheel hash, then tag."
+  },
+  {
+   "id": "cypress-review",
+   "text": "The project owner for Cypress prefers release notes in Chinese."
+  },
+  {
+   "id": "magnolia-database",
+   "text": "Project Magnolia uses MySQL for its primary database."
+  },
+  {
+   "id": "magnolia-cache",
+   "text": "Project Magnolia keeps session data in Valkey."
+  },
+  {
+   "id": "magnolia-region",
+   "text": "The staging region for Project Magnolia is Tokyo."
+  },
+  {
+   "id": "magnolia-owner",
+   "text": "The deployment owner for Project Magnolia is the runtime team."
+  },
+  {
+   "id": "magnolia-language",
+   "text": "Project Magnolia is implemented mainly in C++."
+  },
+  {
+   "id": "magnolia-ci",
+   "text": "Project Magnolia runs CI on Windows Server 2025."
+  },
+  {
+   "id": "magnolia-retries",
+   "text": "Project Magnolia retries failed jobs 8 times."
+  },
+  {
+   "id": "magnolia-zone",
+   "text": "Project Magnolia writes production logs in the America/Los_Angeles timezone."
+  },
+  {
+   "id": "magnolia-lock",
+   "text": "Project Magnolia serializes writers with an S3 conditional write."
+  },
+  {
+   "id": "magnolia-model",
+   "text": "Project Magnolia generates embeddings with mxbai-embed-large."
+  },
+  {
+   "id": "magnolia-docs",
+   "text": "Project Magnolia keeps architecture notes in docs/architecture.md."
+  },
+  {
+   "id": "magnolia-pin",
+   "text": "Project Magnolia pins the runtime at version 0.7.3."
+  },
+  {
+   "id": "magnolia-backup",
+   "text": "Project Magnolia keeps nightly encrypted backups."
+  },
+  {
+   "id": "magnolia-release",
+   "text": "The release procedure for Project Magnolia is to run the suite, verify packaging, then tag."
+  },
+  {
+   "id": "magnolia-review",
+   "text": "The project owner for Magnolia prefers release notes in English."
+  }
+ ],
+ "queries": [
+  {
+   "query": "Which database does Project Cedar use for its primary store?",
+   "relevant_ids": [
+    "cedar-database"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Rowan 的主数据库是什么？",
+   "relevant_ids": [
+    "rowan-database"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Maple-Core primary database 用的是哪个？",
+   "relevant_ids": [
+    "maple-core-database"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Where does Project Cedar-II keep session data?",
+   "relevant_ids": [
+    "cedar-ii-cache"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Maple 把会话数据放在哪里？",
+   "relevant_ids": [
+    "maple-cache"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Aspen 的 session data 存在哪个 cache？",
+   "relevant_ids": [
+    "aspen-cache"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which region hosts Project Cedra staging?",
+   "relevant_ids": [
+    "cedra-region"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Larch 的 staging 在哪个区域？",
+   "relevant_ids": [
+    "larch-region"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Sequoia staging region 是哪里？",
+   "relevant_ids": [
+    "sequoia-region"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which team owns Project Rowan-Labs deployments?",
+   "relevant_ids": [
+    "rowan-labs-owner"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Birch 的部署由哪个团队负责？",
+   "relevant_ids": [
+    "birch-owner"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Alder 的 deployment owner 是哪个 team？",
+   "relevant_ids": [
+    "alder-owner"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which language is Project Willow written in?",
+   "relevant_ids": [
+    "willow-language"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Hazel 主要用什么语言实现？",
+   "relevant_ids": [
+    "hazel-language"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Elm 主要语言是哪个 language？",
+   "relevant_ids": [
+    "elm-language"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which operating system runs Project Juniper CI?",
+   "relevant_ids": [
+    "juniper-ci"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Fir 的 CI 跑在哪个系统上？",
+   "relevant_ids": [
+    "fir-ci"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Oak CI 跑在哪个 OS？",
+   "relevant_ids": [
+    "oak-ci"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "How many retries does Project Pine allow for failed jobs?",
+   "relevant_ids": [
+    "pine-retries"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Ash 的失败任务重试几次？",
+   "relevant_ids": [
+    "ash-retries"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Sable 的 retry 次数是多少？",
+   "relevant_ids": [
+    "sable-retries"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which timezone does Project Tamarack use for production logs?",
+   "relevant_ids": [
+    "tamarack-zone"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Cypress 的生产日志用哪个时区？",
+   "relevant_ids": [
+    "cypress-zone"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Magnolia 的 production logs 用哪个 timezone？",
+   "relevant_ids": [
+    "magnolia-zone"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "How does Project Cedar serialize writers?",
+   "relevant_ids": [
+    "cedar-lock"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Rowan-Labs 用什么机制串行化写入者？",
+   "relevant_ids": [
+    "rowan-labs-lock"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Birch 的 writer 串行化用什么 lock？",
+   "relevant_ids": [
+    "birch-lock"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which embedding model does Project Cedra use?",
+   "relevant_ids": [
+    "cedra-model"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Maple-Core 用哪个 embedding 模型？",
+   "relevant_ids": [
+    "maple-core-model"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Willow 用哪个 embedding model？",
+   "relevant_ids": [
+    "willow-model"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Where does Project Cedar-II keep architecture notes?",
+   "relevant_ids": [
+    "cedar-ii-docs"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Maple 的架构文档放在哪里？",
+   "relevant_ids": [
+    "maple-docs"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Aspen architecture notes 的路径是什么？",
+   "relevant_ids": [
+    "aspen-docs"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which runtime version does Project Rowan pin?",
+   "relevant_ids": [
+    "rowan-pin"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Larch 固定使用哪个 runtime 版本？",
+   "relevant_ids": [
+    "larch-pin"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Sequoia 的 runtime pin 是哪个版本？",
+   "relevant_ids": [
+    "sequoia-pin"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which release-note language does the owner of Juniper prefer?",
+   "relevant_ids": [
+    "juniper-review"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Pine 的项目负责人偏好哪种发布说明语言？",
+   "relevant_ids": [
+    "pine-review"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Ash 的 owner 偏好哪个 release-note language？",
+   "relevant_ids": [
+    "ash-review"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which release-note language does the owner of Tamarack prefer?",
+   "relevant_ids": [
+    "tamarack-review"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Cypress 的项目负责人偏好哪种发布说明语言？",
+   "relevant_ids": [
+    "cypress-review"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Magnolia 的 owner 偏好哪个 release-note language？",
+   "relevant_ids": [
+    "magnolia-review"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Project Alder 的主数据库是什么？",
+   "relevant_ids": [
+    "alder-database"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Ash primary database 用的是哪个？",
+   "relevant_ids": [
+    "ash-database"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Project Hazel 的 session data 存在哪个 cache？",
+   "relevant_ids": [
+    "hazel-cache"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Where does Project Tamarack keep session data?",
+   "relevant_ids": [
+    "tamarack-cache"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Which region hosts Project Fir staging?",
+   "relevant_ids": [
+    "fir-region"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Sable 的 staging 在哪个区域？",
+   "relevant_ids": [
+    "sable-region"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Elm 的部署由哪个团队负责？",
+   "relevant_ids": [
+    "elm-owner"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Cypress 的 deployment owner 是哪个 team？",
+   "relevant_ids": [
+    "cypress-owner"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which language is Project Oak written in?",
+   "relevant_ids": [
+    "oak-language"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Magnolia 主要用什么语言实现？",
+   "relevant_ids": [
+    "magnolia-language"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Alder 的 CI 跑在哪个系统上？",
+   "relevant_ids": [
+    "alder-ci"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Cypress CI 跑在哪个 OS？",
+   "relevant_ids": [
+    "cypress-ci"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "How many retries does Project Hazel allow for failed jobs?",
+   "relevant_ids": [
+    "hazel-retries"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Magnolia 的失败任务重试几次？",
+   "relevant_ids": [
+    "magnolia-retries"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Pine 的 production logs 用哪个 timezone？",
+   "relevant_ids": [
+    "pine-zone"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which timezone does Project Oak use for production logs?",
+   "relevant_ids": [
+    "oak-zone"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Fir 用什么机制串行化写入者？",
+   "relevant_ids": [
+    "fir-lock"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Sable 的 writer 串行化用什么 lock？",
+   "relevant_ids": [
+    "sable-lock"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which embedding model does Project Elm use?",
+   "relevant_ids": [
+    "elm-model"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Tamarack 用哪个 embedding 模型？",
+   "relevant_ids": [
+    "tamarack-model"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Ash architecture notes 的路径是什么？",
+   "relevant_ids": [
+    "ash-docs"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Where does Project Cypress keep architecture notes?",
+   "relevant_ids": [
+    "cypress-docs"
+   ],
+   "category": "en"
+  },
+  {
+   "query": "Project Oak 固定使用哪个 runtime 版本？",
+   "relevant_ids": [
+    "oak-pin"
+   ],
+   "category": "zh"
+  },
+  {
+   "query": "Project Magnolia 的 runtime pin 是哪个版本？",
+   "relevant_ids": [
+    "magnolia-pin"
+   ],
+   "category": "mixed"
+  },
+  {
+   "query": "Which projects use a local file lease to serialize writers?",
+   "relevant_ids": [
+    "cedar-lock",
+    "rowan-labs-lock",
+    "sequoia-lock",
+    "sable-lock"
+   ],
+   "category": "multi-relevant"
+  },
+  {
+   "query": "哪些项目使用 SQLite WAL 作为主数据库？",
+   "relevant_ids": [
+    "cedar-database",
+    "maple-core-database",
+    "elm-database",
+    "magnolia-database"
+   ],
+   "category": "multi-relevant"
+  },
+  {
+   "query": "Which database does Project Larch use for its billing service?",
+   "relevant_ids": [],
+   "category": "abstention"
+  },
+  {
+   "query": "Project Tamarack 的创始人是谁？",
+   "relevant_ids": [],
+   "category": "abstention"
+  },
+  {
+   "query": "What is the holiday schedule for the platform team?",
+   "relevant_ids": [],
+   "category": "abstention"
+  },
+  {
+   "query": "Project Magnolia 的 marketing budget 是多少？",
+   "relevant_ids": [],
+   "category": "abstention"
+  }
+ ],
+ "allow_abstention": true
+}
