@@ -270,11 +270,64 @@ def execution_status(mode, failures, case_success):
     return "COMPLETE"
 
 
+def rescore(dataset_path, report_path, out_path):
+    """Re-score stored model output against corrected labels without another model call."""
+    data = load_policy_dataset(dataset_path)
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    stored = report.get("case_results") or []
+    rows = {case["id"]: case.get("rows", []) for case in stored}
+    failed = {case["id"] for case in stored if case.get("outcome") == "provider_failed"}
+    total, by_group = score_cases(data["cases"], rows, failed)
+    case_success = (
+        (total["save_ok"] + total["skip_clean"]) / total["cases_scored"]
+        if total["cases_scored"]
+        else None
+    )
+    updated = {
+        **report,
+        "dataset": data["version"],
+        "dataset_cases": len(data["cases"]),
+        "execution": {
+            **report.get("execution", {}),
+            "provider_failures": total["failed_cases"],
+            "cases_with_result": total["cases_scored"],
+            "complete": total["cases_scored"] == total["cases"],
+        },
+        **rates(total),
+        "case_success": case_success,
+        "review_required": total["review_required"],
+        "by_group": {
+            group: {"cases": counters["cases"], **rates(counters)}
+            for group, counters in sorted(by_group.items())
+        },
+        "case_results": [
+            case_verdict(case, rows.get(case["id"], []), case["id"] in failed)
+            for case in data["cases"]
+        ],
+        "dataset_sha256": hashlib.sha256(
+            json.dumps(data["cases"], ensure_ascii=False, sort_keys=True).encode()
+        ).hexdigest(),
+        "rescored_from": str(report_path),
+        "rescored_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    updated["precision"] = updated["admission_precision"]
+    updated["positive_case_recall"] = updated["admission_recall"]
+    out_path.write_text(
+        json.dumps(updated, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8"
+    )
+    return 0
+
+
 def main(argv=None):
     """Evaluate only an already-installed local model; no downloads or external keys."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--dataset", type=Path, help="Labeled admission dataset; defaults to the inline diagnostic"
+    )
+    parser.add_argument(
+        "--rescore",
+        type=Path,
+        help="Re-score a stored report against --dataset without calling the model",
     )
     parser.add_argument("--model", default="qwen3:8b", help="Installed local model name")
     parser.add_argument(
@@ -289,6 +342,10 @@ def main(argv=None):
         help="Experimental instruction text; the shipped prompt stays unchanged",
     )
     args = parser.parse_args(argv)
+    if args.rescore:
+        if not args.dataset or not args.output:
+            parser.error("--rescore requires --dataset and --output")
+        return rescore(args.dataset, args.rescore, args.output)
     if args.dataset:
         data = load_policy_dataset(args.dataset)
         cases, version, mode = data["cases"], data["version"], "policy-admission"
