@@ -164,6 +164,10 @@ Reading the result:
 - Several failures are model-capability limits, not Skill defects: the free
   router model hallucinated a database answer from a web page in one run and
   produced no final text in others.
+- In this harness the host deferred the MCP tools behind its tool search, and the
+  Skill body reached the model only when `skill_view` ran (4 of 28 baseline runs
+  and 9 of 28 candidate runs). The comparison therefore measures
+  description-driven selection more than the body guidance.
 
 This table is behavioral evidence for one host and one model. It is not a user
 experience guarantee, and it does not cover native lifecycle capture.
