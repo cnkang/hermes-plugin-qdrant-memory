@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from qdrant_memory.quality_metrics import latency_summary
+
 ROOT = Path(__file__).resolve().parents[1]
 DATASET = ROOT / "tests" / "quality" / "memory-policy-v1.json"
 GROUPS = ("A", "B", "C", "D", "E", "F", "G", "H")
@@ -26,6 +28,18 @@ def runner():
 def dataset():
     """Return the validated dataset produced by the runner's own loader, not a copy."""
     return runner()["load_policy_dataset"](DATASET)
+
+
+def save_case(**overrides):
+    """Build one minimal labeled save case."""
+    case = {"id": "s", "group": "A", "expect": "save", "user": "", "terms": [["Cedar"]], "note": ""}
+    return {**case, **overrides}
+
+
+def skip_case(**overrides):
+    """Build one minimal labeled skip case."""
+    case = {"id": "n", "group": "A", "expect": "skip", "user": "", "terms": [], "note": ""}
+    return {**case, **overrides}
 
 
 def test_dataset_covers_every_required_group(dataset):
@@ -76,7 +90,7 @@ def test_dataset_holds_no_real_credentials_or_local_paths():
     assert "/Users/" not in text and "/Volumes/" not in text
 
 
-def test_rejected_malformed_labels_never_reach_a_model(tmp_path):
+def test_rejected_malformed_labels_never_reach_a_model():
     """A wrong or missing label must fail closed instead of scoring itself."""
     validate = runner()["validate_policy_dataset"]
     data = json.loads(DATASET.read_text(encoding="utf-8"))
@@ -89,36 +103,114 @@ def test_rejected_malformed_labels_never_reach_a_model(tmp_path):
     broken = dict(data["cases"][0], expect="skip", terms=[["Cedar"]])
     with pytest.raises(ValueError):
         validate({**data, "cases": [broken]})
+    with pytest.raises(ValueError):
+        validate({**data, "cases": [{**save_case(), "require_patterns": ["("]}]})
 
 
-def test_scoring_counts_false_memories_and_empty_runs():
-    """Rates must come from labeled rows, and an empty run must not divide by zero."""
-    score = runner()["score_cases"]
-    rates = runner()["rates"]
-    cases = [
-        {"id": "s", "group": "A", "expect": "save", "user": "", "terms": [["Cedar"]], "note": ""},
-        {"id": "n", "group": "A", "expect": "skip", "user": "", "terms": [], "note": ""},
-    ]
+def test_scoring_rejects_duplicates_and_blank_output():
+    """A duplicate record is redundant, and a blank string is not a saved memory."""
+    score, verdict, rates = runner()["score_cases"], runner()["case_verdict"], runner()["rates"]
+    duplicate = verdict(save_case(), ["Cedar uses SQLite.", "Cedar uses SQLite."])
+    assert duplicate["outcome"] == "duplicate"
+    assert duplicate["true_rows"] == 1 and duplicate["false_rows"] == 1
+
+    blank = verdict(save_case(), ["   "])
+    assert blank["outcome"] == "missed" and blank["invalid_rows"] == 1 and blank["true_rows"] == 0
+
+    total, _ = score([save_case()], {"s": ["Cedar uses SQLite."]})
+    cleaned = rates(total)
+    assert cleaned["admission_precision"] == 1.0 and cleaned["duplicate_rows"] == 0
+
+
+def test_scoring_requires_negation_and_condition_wording():
+    """A keyword hit alone must not pass a negated or conditional record."""
+    verdict = runner()["case_verdict"]
+    negated = save_case(terms=[["telemetry"]], require_patterns=[r"\b(do not|must not|never)\b"])
+    missed = verdict(negated, ["Telemetry is enabled for this project."])
+    assert missed["outcome"] == "missed" and missed["true_rows"] == 0
+    passed = verdict(negated, ["Do not send memory content to external telemetry."])
+    assert passed["outcome"] == "correct" and passed["true_rows"] == 1
+
+    conditional = save_case(
+        terms=[["writer"], ["isolated"]], require_patterns=[r"\b(unless|only if|when)\b"]
+    )
+    assert verdict(conditional, ["The writer rule and isolated mode."])["outcome"] == "missed"
+    assert (
+        verdict(conditional, ["The single-writer rule applies only if every writer is isolated."])[
+            "outcome"
+        ]
+        == "correct"
+    )
+
+
+def test_forbidden_wording_is_never_scored_as_correct():
+    """A record with the wrong entity or an inverted rule must fail even with the right keywords."""
+    verdict = runner()["case_verdict"]
+    case = save_case(terms=[["Cedar"]], forbid_patterns=[r"\bRowan\b"])
+    result = verdict(case, ["Rowan uses SQLite."])
+    assert result["outcome"] == "false_memory" or result["outcome"] == "forbidden_wording"
+    assert result["true_rows"] == 0
+
+
+def test_provider_failure_is_not_a_correct_rejection():
+    """A failed model call must leave the denominator, not count as a clean skip."""
+    score, rates = runner()["score_cases"], runner()["rates"]
+    total, _ = score([save_case(), skip_case()], {}, failures={"s", "n"})
+    assert total["failed_cases"] == 2 and total["cases_scored"] == 0
+    empty = rates(total)
+    assert empty["admission_precision"] is None
+    assert empty["admission_recall"] is None
+    assert empty["false_memory_rate"] is None
+    assert total["skip_clean"] == 0
+
+
+def test_rates_report_denominators_and_clean_scoring():
+    """Rates come from labeled rows and disclose their denominators."""
+    score, rates = runner()["score_cases"], runner()["rates"]
+    cases = [save_case(), skip_case()]
     clean, _ = score(cases, {"s": ["Project Cedar uses SQLite."], "n": []})
-    assert rates(clean)["admission_precision"] == 1.0
-    assert rates(clean)["admission_recall"] == 1.0
-    assert rates(clean)["false_memory_rate"] == 0.0
+    summary = rates(clean)
+    assert summary["admission_precision"] == 1.0
+    assert summary["admission_recall"] == 1.0
+    assert summary["false_memory_rate"] == 0.0
+    assert summary["rows_denominator"] == 1 and summary["save_denominator"] == 1
+    assert summary["skip_denominator"] == 1
 
     noisy, _ = score(cases, {"s": ["unrelated text"], "n": ["temporary status"]})
     assert rates(noisy)["admission_precision"] == 0.0
     assert rates(noisy)["admission_recall"] == 0.0
     assert rates(noisy)["false_memory_rate"] == 1.0
-    assert rates(score(cases, {})[0])["admission_precision"] == 0.0
 
 
-def test_inline_mode_keeps_its_strict_gate():
-    """The legacy inline diagnostic must still fail a single missed case."""
-    status = runner()["report_status"]
+def test_execution_status_separates_health_from_quality():
+    """Dataset runs report completion, while the inline diagnostic keeps its strict gate."""
+    status = runner()["execution_status"]
     assert status("inline-diagnostic", 0, 1.0) == "PASS"
     assert status("inline-diagnostic", 0, 0.9) == "FAIL"
-    assert status("policy-admission", 0, 0.9) == "PASS"
-    assert status("policy-admission", 1, 1.0) == "FAIL"
     assert status("inline-diagnostic", 1, 1.0) == "FAIL"
+    assert status("policy-admission", 0, 0.5) == "COMPLETE"
+    assert status("policy-admission", 1, 1.0) == "FAIL"
+
+
+def test_percentiles_use_the_shared_nearest_rank_helper():
+    """p95 must be the nearest-rank percentile, not the maximum sample."""
+    assert runner()["latency_summary"] is latency_summary
+    samples = [float(value) for value in range(1, 101)]
+    assert latency_summary(samples) == {"samples": 100, "p50_ms": 50.0, "p95_ms": 95.0}
+    assert max(samples) == 100.0
+    assert latency_summary([]) == {"samples": 0, "p50_ms": None, "p95_ms": None}
+
+
+def test_shared_benchmark_timings_use_the_same_percentiles():
+    """The shared benchmark must not report the maximum sample as p95 either."""
+    timings = runpy.run_path(str(ROOT / "scripts" / "evaluate_shared.py"))["timings"]
+    assert timings([float(value) for value in range(1, 21)]) == {
+        "samples": 20,
+        "p50_ms": 10.0,
+        "p95_ms": 19.0,
+        "max_ms": 20.0,
+    }
+    assert timings([]) == {"samples": 0, "p50_ms": None, "p95_ms": None, "max_ms": None}
 
 
 def test_runner_exposes_the_dataset_option():

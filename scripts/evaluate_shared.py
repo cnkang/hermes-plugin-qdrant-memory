@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from qdrant_memory.quality_metrics import latency_summary
 from qdrant_memory.shared_client import call
 from qdrant_memory.shared_service import SharedOwner, load_policy
 from qdrant_memory.standalone import call_tool, open_runtime
@@ -42,11 +43,8 @@ def quality(rows, relevant, k=5):
 def timings(samples):
     """Report reproducible sample counts and milliseconds without hiding overhead."""
     values = sorted(samples)
-    return {
-        "samples": len(values),
-        "p50_ms": statistics.median(values),
-        "p95_ms": values[min(len(values) - 1, int(len(values) * 0.95))],
-    }
+    summary = latency_summary(values)
+    return {**summary, "max_ms": values[-1] if values else None}
 
 
 def checked(result):
