@@ -26,8 +26,8 @@
 > 安装前请在[PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/)
 > 核实该版本是否已公开。
 > 若包镜像尚未同步此版本，请使用
-> [已发布的 0.7.1 指南](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.7.1/README.zh-CN.md)
-> 或使用下方固定版本 tag 的源码。
+> [已发布的 0.7.2 指南](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.7.2/README.zh-CN.md)
+> 或安装指南中的固定版本源码 pin。
 > 通用 MCP 发行包和托管启动器各自选择精确的 Runtime 依赖，分别发布。
 > Hermes Plugin Catalog 使用独立审核的固定版本（不可变），PyPI 发布不会自动升级目录中的版本。
 > 每个目的地仍只允许一个写入者。

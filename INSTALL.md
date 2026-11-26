@@ -147,7 +147,7 @@ place and report what additional authorization is needed.
 
 Use the public, version-pinned stdio MCP route in the
 [MCP Quickstart](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/quickstart.md)
-(`qdrant-memory-mcp==0.3.5` as checked on 2026-11-17). Give it a dedicated
+(`qdrant-memory-mcp==0.3.7` as checked on 2026-11-26). Give it a dedicated
 profile. Run its `init` and `doctor` steps before registering the stdio server,
 then have the client discover the four `qdrant_memory_*` tools. Follow the
 Quickstart's host configuration and verification steps; it records tool results
@@ -288,7 +288,7 @@ collection、清空或重建、改变 embedding 模型或维度、迁移数据�
 ### 3. Codex 与其他非 Hermes Agent
 
 优先使用公开固定版本的 stdio MCP 路径：[MCP Quickstart](https://github.com/cnkang/qdrant-memory-mcp/blob/main/docs/quickstart.zh-CN.md)。
-截至 2026-11-17，版本为 `qdrant-memory-mcp==0.3.5`。使用独立 profile，按 Quickstart
+截至 2026-11-26，版本为 `qdrant-memory-mcp==0.3.7`。使用独立 profile，按 Quickstart
 先运行 `init` 和 `doctor`，再注册 stdio 服务，让客户端发现四个 `qdrant_memory_*` 工具。
 按照 Quickstart 的宿主配置和验收步骤记录工具返回结果，并在断开重连后再次检查召回。
 

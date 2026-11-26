@@ -9,11 +9,10 @@ installation uses 0.7.3.
 The distribution name remains `hermes-plugin-qdrant-memory`. Existing Hermes
 plugin discovery and `hermes qdrant-memory` grammar are compatible.
 
-Check [PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/)
-for Runtime 0.7.3 availability before package installation.
-If unavailable, these package commands cannot run yet. Use the
+Runtime 0.7.3 is published on
+[PyPI](https://pypi.org/project/hermes-plugin-qdrant-memory/0.7.3/). The
 [published 0.7.2 guide](https://github.com/cnkang/hermes-plugin-qdrant-memory/blob/v0.7.2/docs/standalone.md)
-or a reviewed source preview; do not treat a source checkout as a PyPI release.
+documents the previous release. A source checkout is not a PyPI release.
 
 ```bash
 python3 -m venv .venv
