@@ -107,6 +107,21 @@ Search latency p50 53 ms, p95 79 ms. Recall@5 falls from 1.00 on 14 memories to
 direction. Multi-relevant Recall@1 is capped by four labeled targets per query.
 Recall@5 is the meaningful figure there.
 
+### Query construction
+
+Ten information needs, each written twice over the same 360-memory corpus.
+Neither variant contains the gold record text, and the broad variant never names
+the project.
+
+| Variant | Queries | Recall@1 | Recall@5 | MRR |
+|---|---|---|---|---|
+| Broad ("What did we decide about the database?") | 10 | 0.00 | 0.10 | 0.06 |
+| Focused ("Project Cedar primary database choice") | 10 | 0.80 | 1.00 | 0.90 |
+
+Search latency stayed the same (p50 53 ms for both). The result supports the
+first query rule in the Skill: name the subject and keep the identifier. It does
+not test decomposition or multilingual rewriting.
+
 Four abstention queries have no relevant memory. Their top-1 scores are p50 0.64
 and max 0.80. They are recorded as observations only: the Runtime has no
 calibrated abstention threshold, and this record does not invent one.
@@ -164,6 +179,8 @@ experience guarantee, and it does not cover native lifecycle capture.
   held-out cases need a human read.
 - The A/B used one repetition per scenario. It shows direction, not a stable
   effect size.
+- The query-construction comparison covers a named subject against a broad
+  question. It does not cover decomposition or multilingual rewriting.
 - No Pi or Codex behavioral run.
 
 ## Not run
