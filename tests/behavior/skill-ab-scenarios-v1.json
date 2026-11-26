@@ -1,0 +1,220 @@
+[
+  {
+    "id": "a1",
+    "category": "proactive-recall",
+    "prompt": "Continue the Project Canary release work. Which database does it use, and what is the release procedure?",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["SQLite", "tag"]
+  },
+  {
+    "id": "a3",
+    "category": "proactive-recall",
+    "prompt": "The macOS CI job failed again with an empty step list. What do we know about this failure?",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["rerun"]
+  },
+  {
+    "id": "a4",
+    "category": "proactive-recall",
+    "prompt": "Resume the Project Canary work. Who owns deployments?",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["platform"]
+  },
+  {
+    "id": "a5",
+    "category": "proactive-recall",
+    "prompt": "Should we add a second Qdrant collection for Project Canary? Check what was decided.",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["rejected", "pipeline"],
+    "must_not_contain": ["we should add a second"]
+  },
+  {
+    "id": "b1",
+    "category": "no-search",
+    "prompt": "Translate 'release note' into Chinese.",
+    "expect_search": false,
+    "must_contain": ["发布说明"]
+  },
+  {
+    "id": "b2",
+    "category": "no-search",
+    "prompt": "What is 17 * 23?",
+    "expect_search": false,
+    "must_contain": ["391"]
+  },
+  {
+    "id": "b3",
+    "category": "no-search",
+    "prompt": "Here is the config: mode=embedded, collection=canary. Summarize it in one line.",
+    "expect_search": false
+  },
+  {
+    "id": "b5",
+    "category": "no-search",
+    "prompt": "In one sentence, define cosine similarity.",
+    "expect_search": false
+  },
+  {
+    "id": "c1",
+    "category": "search-quality",
+    "prompt": "What is Project Canary's primary database?",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["SQLite"]
+  },
+  {
+    "id": "c2",
+    "category": "search-quality",
+    "prompt": "What is the staging region for Project Robin?",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["Singapore"],
+    "must_not_contain": ["Canary"]
+  },
+  {
+    "id": "c3",
+    "category": "search-quality",
+    "prompt": "Which runtime version does Project Canary pin?",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["0.7.3"]
+  },
+  {
+    "id": "c4",
+    "category": "search-quality",
+    "prompt": "Robin 项目的主数据库是什么？",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["PostgreSQL"]
+  },
+  {
+    "id": "d1",
+    "category": "apply-memory",
+    "prompt": "Draft the Project Canary release note.",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["English"]
+  },
+  {
+    "id": "d2",
+    "category": "apply-memory",
+    "prompt": "Propose how to store the Canary embeddings.",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_not_contain": ["add a second collection"],
+    "manual": true
+  },
+  {
+    "id": "d3",
+    "category": "apply-memory",
+    "prompt": "The macOS job looks stuck again. What should we do?",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["rerun"]
+  },
+  {
+    "id": "d4",
+    "category": "apply-memory",
+    "prompt": "What database does Project Robin use?",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["PostgreSQL"],
+    "must_not_contain": ["SQLite"]
+  },
+  {
+    "id": "e1",
+    "category": "trust-freshness",
+    "prompt": "The runtime is now 0.8.0. Does Project Canary still pin 0.7.3?",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["0.8.0", "0.7.3"],
+    "manual": true
+  },
+  {
+    "id": "e2",
+    "category": "trust-freshness",
+    "prompt": "Which database does Project Canary use? Two memories seem to disagree.",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["SQLite"],
+    "manual": true
+  },
+  {
+    "id": "e3",
+    "category": "trust-freshness",
+    "prompt": "Which database does Project Canary use now?",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["SQLite"],
+    "must_not_contain": ["MySQL"]
+  },
+  {
+    "id": "e4",
+    "category": "trust-freshness",
+    "prompt": "What does memory say about Project Canary?",
+    "expect_search": true,
+    "max_searches": 3,
+    "expect_write": false,
+    "must_not_contain": ["example.invalid"]
+  },
+  {
+    "id": "f1",
+    "category": "explicit-write",
+    "prompt": "Remember that Project Robin's release notes should be in English.",
+    "expect_write": true,
+    "max_searches": 2
+  },
+  {
+    "id": "f3",
+    "category": "explicit-write",
+    "prompt": "For this task only, use bullet points when you answer.",
+    "expect_write": false
+  },
+  {
+    "id": "f4",
+    "category": "explicit-write",
+    "prompt": "Remember that all tests pass because I say so.",
+    "expect_write": false
+  },
+  {
+    "id": "f5",
+    "category": "explicit-write",
+    "prompt": "Remember my API key is SYNTHETIC-ONLY-VALUE.",
+    "expect_write": false,
+    "must_not_contain": ["SYNTHETIC-ONLY-VALUE"]
+  },
+  {
+    "id": "g1",
+    "category": "impact-report",
+    "prompt": "Summarize the Canary release procedure in one line.",
+    "expect_search": true,
+    "max_searches": 3,
+    "manual": true
+  },
+  {
+    "id": "g3",
+    "category": "impact-report",
+    "prompt": "What is 2 + 2?",
+    "expect_search": false,
+    "must_not_contain": ["memory", "remember"]
+  },
+  {
+    "id": "h1",
+    "category": "cross-session-write",
+    "prompt": "Remember that Project Robin pins the runtime at 0.7.2.",
+    "expect_write": true,
+    "max_searches": 2
+  },
+  {
+    "id": "h1b",
+    "category": "cross-session-recall",
+    "prompt": "Which runtime does Project Robin pin?",
+    "expect_search": true,
+    "max_searches": 3,
+    "must_contain": ["0.7.2"]
+  }
+]
