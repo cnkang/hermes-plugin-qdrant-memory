@@ -1,0 +1,66 @@
+{
+  "version": "query-construction-2026-11-26-v1",
+  "description": "Ten information needs with a broad query and a focused query over the same 360-memory corpus; synthetic, no answer terms in either variant.",
+  "queries": [
+    {
+      "id": "q-db",
+      "relevant_ids": ["cedar-database"],
+      "broad": "What did we decide about the database?",
+      "focused": "Project Cedar primary database choice"
+    },
+    {
+      "id": "q-region",
+      "relevant_ids": ["rowan-region"],
+      "broad": "Where is staging hosted?",
+      "focused": "Project Rowan staging region"
+    },
+    {
+      "id": "q-owner",
+      "relevant_ids": ["maple-owner"],
+      "broad": "Who is responsible for this?",
+      "focused": "Project Maple deployment owner team"
+    },
+    {
+      "id": "q-language",
+      "relevant_ids": ["larch-language"],
+      "broad": "What language is it written in?",
+      "focused": "Project Larch implementation language"
+    },
+    {
+      "id": "q-retries",
+      "relevant_ids": ["birch-retries"],
+      "broad": "How many attempts are allowed?",
+      "focused": "Project Birch failed job retry count"
+    },
+    {
+      "id": "q-lock",
+      "relevant_ids": ["aspen-lock"],
+      "broad": "How are writes serialized?",
+      "focused": "Project Aspen writer serialization lock"
+    },
+    {
+      "id": "q-model",
+      "relevant_ids": ["willow-model"],
+      "broad": "Which model is used for vectors?",
+      "focused": "Project Willow embedding model"
+    },
+    {
+      "id": "q-pin",
+      "relevant_ids": ["sequoia-pin"],
+      "broad": "Which version is fixed?",
+      "focused": "Project Sequoia runtime version pin"
+    },
+    {
+      "id": "q-zone",
+      "relevant_ids": ["juniper-zone"],
+      "broad": "What timezone applies?",
+      "focused": "Project Juniper production log timezone"
+    },
+    {
+      "id": "q-ci",
+      "relevant_ids": ["alder-ci"],
+      "broad": "Which system runs the pipeline?",
+      "focused": "Project Alder CI operating system"
+    }
+  ]
+}
