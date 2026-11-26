@@ -77,3 +77,22 @@ def test_abstention_is_rejected_without_the_opt_in():
     without_opt_in = {key: value for key, value in data.items() if key != "allow_abstention"}
     with pytest.raises(ValueError):
         validate(without_opt_in)
+
+
+def test_query_variants_name_the_subject_without_leaking_answers():
+    """A focused query must name the project, and neither variant may quote the gold record."""
+    variants_path = ROOT / "tests/fixtures" / "query-construction-v1.json"
+    corpus = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    variants = json.loads(variants_path.read_text(encoding="utf-8"))
+    runner = runpy.run_path(str(ROOT / "scripts" / "evaluate_query_variants.py"))
+    runner["validate"](corpus, variants)
+    by_id = {memory["id"]: memory["text"] for memory in corpus["memories"]}
+    assert len(variants["queries"]) >= 10
+    for query in variants["queries"]:
+        gold = by_id[query["relevant_ids"][0]]
+        project = re.search(r"Project ([A-Za-z0-9-]+)", gold).group(1)
+        assert query["broad"] != query["focused"]
+        assert project not in query["broad"], query["id"]
+        assert project in query["focused"], query["id"]
+        for variant in ("broad", "focused"):
+            assert gold.casefold() not in query[variant].casefold(), query["id"]
