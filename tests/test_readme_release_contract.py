@@ -9,10 +9,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_VERSION = "0.7.3"
 RUNTIME_RELEASE_REF = f"v{RUNTIME_VERSION}"
-LATEST_PUBLISHED_RUNTIME_REF = "v0.7.2"
+LATEST_PUBLISHED_RUNTIME_REF = "v0.7.3"
 # Reviewed commit that the release tag dereferences to. Closeout updates it with
 # the tag target, which the release workflow also verifies for the build.
-RELEASE_COMMIT = "0ce83104fefbaecabe6b9e4560d3c83ee4e20438"
+RELEASE_COMMIT = "62cf418f3de3ab59dd93989eb5f5c40131317605"
 REPOSITORY_URL = "https://github.com/cnkang/hermes-plugin-qdrant-memory"
 READMES = ("README.md", "README.zh-CN.md")
 ACTIVE_INSTALL_DOCS = {
@@ -88,10 +88,10 @@ def test_install_guide_defaults_to_catalog_and_pins_verified_runtime():
     """Catalog is the fresh Hermes route; an optional Runtime pin is immutable."""
     guide = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
     assert "hermes plugins install qdrant-memory" in guide
-    assert "Catalog installs Runtime 0.6.3" in guide
-    assert "b8c1d8babe125470d9278404454728d4426f1dc3" in guide
-    assert "latest published Runtime is 0.7.2" in guide
-    assert "0ce83104fefbaecabe6b9e4560d3c83ee4e20438" in guide
+    assert "Catalog installs Runtime 0.7.3" in guide
+    assert "62cf418f3de3ab59dd93989eb5f5c40131317605" in guide
+    assert "latest published Runtime is 0.7.3" in guide
+    assert "62cf418f3de3ab59dd93989eb5f5c40131317605" in guide
     assert (
         "hermes plugins install https://github.com/cnkang/hermes-plugin-qdrant-memory --ref"
         in guide
