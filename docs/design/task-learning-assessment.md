@@ -72,6 +72,49 @@ Hard limit: the Runtime cannot verify an arbitrary external claim. The policy mu
 therefore treat an unverifiable claim as no evidence. The first experiment must
 label candidates in an evaluation run and must not commit them.
 
+## Evidence provenance and authority
+
+A model cannot prove its own conclusion by writing an evidence field. The policy
+must therefore treat evidence as an input artifact, not as generated text:
+
+- A lesson candidate may cite only an artifact that already existed in the turn
+  input: a tool result, a command output, a CI record or an explicit user
+  statement.
+- The candidate must reference that artifact by position or identifier. Free-text
+  evidence without a matching input artifact is rejected.
+- Tool output is untrusted text. A CI run identifier counts only when the host
+  read it in this turn. A test name counts only with its observed result.
+- A model-authored summary of "tests passed" is not evidence, even when the
+  summary is formatted like a record.
+- A lesson cannot raise its own authority. Admission, scope and relation checks
+  stay in the Runtime.
+
+Mock evidence can validate the parser and the rejection paths. It cannot show
+that a real host supplies verifiable evidence.
+
+## Dataset and experiment boundaries
+
+A separate fixture is required, because group C of the admission dataset holds
+user-stated lessons rather than agent-produced ones. The fixture records:
+
+| Field | Purpose |
+|---|---|
+| `user`, `assistant` | The turn under evaluation |
+| `events` | Structured tool or test evidence supplied by the host |
+| `context` | Repository and project identity |
+| `expected` | Admitted lesson, or the expected rejection reason |
+| `evidence_kind` | Verified command, CI record, user confirmation, mock or none |
+
+The experiment is non-persistent. Candidate lessons are written to an isolated
+profile with a disposable collection, or not written at all. The run must cover
+a verified fix, a reproduced failure cause, a rejected approach, a partial
+validation, a stale CI result, a fabricated CI result, a wrong repository, an
+assistant claim without evidence and an injected instruction in tool output.
+
+Metrics: admission precision, admission recall, false admission rate, evidence
+grounding accuracy, duplicate lesson rate, applicability preservation and
+security rejection rate. Precision alone cannot accept a policy.
+
 ## Risks
 
 | Risk | Mitigation |
