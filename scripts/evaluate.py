@@ -14,6 +14,7 @@ from qdrant_memory.config import embedding_config, load_config
 from qdrant_memory.embedding import build_embedder
 from qdrant_memory.models import Scope, normalize, payload, point_id
 from qdrant_memory.qdrant_store import QdrantStore, build_client
+from qdrant_memory.quality_metrics import latency_summary
 
 
 def validate_dataset(dataset):
@@ -22,6 +23,7 @@ def validate_dataset(dataset):
         raise ValueError("Dataset queries must be nonempty")
     if not isinstance(dataset.get("memories"), list) or not dataset["memories"]:
         raise ValueError("Dataset memories must be nonempty")
+    allow_abstention = dataset.get("allow_abstention") is True
     identifiers = []
     for memory in dataset["memories"]:
         if not isinstance(memory.get("id"), str) or not memory["id"]:
@@ -37,7 +39,7 @@ def validate_dataset(dataset):
         if category is not None and (not isinstance(category, str) or not category.strip()):
             raise ValueError("Dataset query category must be a nonempty string")
         relevant = query.get("relevant_ids")
-        if not isinstance(relevant, list) or not relevant:
+        if not isinstance(relevant, list) or (not relevant and not allow_abstention):
             raise ValueError("Dataset relevant_ids must be nonempty")
         if not all(isinstance(identifier, str) and identifier in known for identifier in relevant):
             raise ValueError("Dataset relevant_ids contains an unknown memory ID")
@@ -52,13 +54,23 @@ def evaluate(dataset, store, scope):
     ]
     names = {point_id(scope, "manual_tool", m["id"]): m["id"] for m in dataset["memories"]}
     store.upsert(rows)
-    samples, latencies = [], []
+    samples, abstentions, latencies = [], [], []
     for query in dataset["queries"]:
         started = time.monotonic()
         hits = store.search(query["query"], scope, top_k=10)
         latencies.append((time.monotonic() - started) * 1000)
         retrieved = [names[str(h.id)] for h in hits]
         relevant = set(query["relevant_ids"])
+        if not relevant:
+            # No memory answers this query. Record the top score so separability can be
+            # studied, but never score it as a recall miss. No abstention threshold exists.
+            abstentions.append(
+                {
+                    "category": query.get("category") or "abstention",
+                    "top1_score": hits[0].score if hits else None,
+                }
+            )
+            continue
         sample = {"category": query.get("category") or "uncategorized"}
         for k in (1, 5, 10):
             sample[f"recall_at_{k}"] = len(relevant & set(retrieved[:k])) / len(relevant)
@@ -88,16 +100,31 @@ def evaluate(dataset, store, scope):
         }
 
     categories = sorted({sample["category"] for sample in samples})
+    timing = latency_summary(latencies)
+    scores = sorted(item["top1_score"] for item in abstentions if item["top1_score"] is not None)
+    score_summary = latency_summary(scores)
 
     return {
         "memories": len(rows),
         **summarize(samples),
+        "labeled_queries": len(samples),
+        "abstention_queries": len(abstentions),
+        "abstention_top1_score": {
+            "samples": score_summary["samples"],
+            "p50": score_summary["p50_ms"],
+            "p95": score_summary["p95_ms"],
+            "max": scores[-1] if scores else None,
+            "note": "No calibrated abstention threshold exists; these scores are observational.",
+        },
         "by_category": {
             category: summarize([sample for sample in samples if sample["category"] == category])
             for category in categories
         },
-        "search_latency_ms_p50": latencies[(len(latencies) - 1) // 2],
-        "search_latency_ms_p95": latencies[min(len(latencies) - 1, int(len(latencies) * 0.95))],
+        **timing,
+        "search_latency_ms_p50": timing["p50_ms"],
+        "search_latency_ms_p95": timing["p95_ms"],
+        "search_latency_ms_max": latencies[-1] if latencies else None,
+        "latency_method": "nearest-rank p50/p95 over per-query search wall time",
     }
 
 

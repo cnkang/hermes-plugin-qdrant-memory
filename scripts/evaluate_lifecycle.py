@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import inspect
 import json
-import statistics
+import re
 import sys
 import time
 from collections import Counter
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from qdrant_memory.extraction import MEMORY_SCHEMA, Extractor
 from qdrant_memory.owner_llm import OwnerLLM
-from qdrant_memory.quality_metrics import matches
+from qdrant_memory.quality_metrics import latency_summary, matches
 
 ROOT = Path(__file__).resolve().parents[1]
 DATASET_VERSION = "anonymous-lifecycle-2026-10-20-v1"
@@ -45,6 +45,29 @@ def inline_cases():
         }
         for index, (user, expected) in enumerate(CASES)
     ]
+
+
+def _validate_patterns(case, identifier):
+    """Compile optional semantic patterns so a malformed label fails before a model call."""
+    for field in ("require_patterns", "forbid_patterns"):
+        patterns = case.get(field, [])
+        if not isinstance(patterns, list) or any(
+            not isinstance(pattern, str) or not pattern.strip() for pattern in patterns
+        ):
+            raise ValueError(f"{identifier}: {field} must be a list of nonempty strings")
+        for pattern in patterns:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(
+                    f"{identifier}: invalid {field} pattern {pattern!r} ({exc})"
+                ) from exc
+    if not isinstance(case.get("semantic_review", False), bool):
+        raise ValueError(f"{identifier}: semantic_review must be a boolean")
+    if "review_note" in case and not isinstance(case["review_note"], str):
+        raise ValueError(f"{identifier}: review_note must be a string")
+    if "assistant" in case and not isinstance(case["assistant"], str):
+        raise ValueError(f"{identifier}: assistant must be a string")
 
 
 def validate_policy_dataset(data):
@@ -89,6 +112,7 @@ def validate_policy_dataset(data):
             raise ValueError(f"{identifier}: skip cases must not carry expected terms")
         if not isinstance(case.get("note"), str):
             raise ValueError(f"{identifier}: note must explain the label")
+        _validate_patterns(case, identifier)
     return data
 
 
@@ -97,58 +121,153 @@ def load_policy_dataset(path):
     return validate_policy_dataset(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
-def score_cases(cases, extractions):
-    """Count true/false rows and negative rejections using the shared matcher."""
-    total = {"rows": 0, "true": 0, "save": 0, "save_ok": 0, "skip": 0, "skip_clean": 0}
+def case_verdict(case, rows, failed=False):
+    """Judge one case from its emitted rows, never from provider health alone.
+
+    A provider failure and an empty string are not evidence of a correct rejection.
+    Semantic cases may carry required or forbidden patterns so that a keyword hit
+    alone cannot pass a negation or a condition.
+    """
+    valid = [row for row in rows if isinstance(row, str) and row.strip()]
+    invalid = len(rows) - len(valid)
+    require = [re.compile(pattern, re.IGNORECASE) for pattern in case.get("require_patterns", [])]
+    forbid = [re.compile(pattern, re.IGNORECASE) for pattern in case.get("forbid_patterns", [])]
+    matching = [
+        row
+        for row in valid
+        if matches(row, {"terms": case["terms"]}) and all(p.search(row) for p in require)
+    ]
+    forbidden = [row for row in valid if any(p.search(row) for p in forbid)]
+    verdict = {
+        "id": case["id"],
+        "group": case["group"],
+        "expect": case["expect"],
+        "rows": valid,
+        "invalid_rows": invalid,
+        "semantic_review": bool(case.get("semantic_review", False)),
+        "outcome": "correct",
+        "true_rows": 0,
+        "false_rows": 0,
+        "duplicate_rows": max(0, len(matching) - 1),
+        "forbidden_hits": len(forbidden),
+    }
+    if failed:
+        verdict["outcome"] = "provider_failed"
+        return verdict
+    if case["expect"] == "save":
+        if forbidden:
+            verdict["outcome"] = "forbidden_wording"
+            verdict["false_rows"] = len(valid)
+        elif not matching:
+            verdict["outcome"] = "missed"
+            verdict["false_rows"] = len(valid)
+        else:
+            verdict["true_rows"] = 1
+            verdict["false_rows"] = len(valid) - 1
+            if len(matching) > 1:
+                verdict["outcome"] = "duplicate"
+    else:
+        verdict["false_rows"] = len(valid)
+        if valid:
+            verdict["outcome"] = "false_memory"
+    return verdict
+
+
+def score_cases(cases, extractions, failures=()):
+    """Count rows with explicit denominators; never treat a failure as a rejection."""
+    total = {
+        "cases": 0,
+        "cases_scored": 0,
+        "failed_cases": 0,
+        "rows": 0,
+        "true": 0,
+        "false": 0,
+        "duplicates": 0,
+        "invalid_rows": 0,
+        "forbidden_hits": 0,
+        "save": 0,
+        "save_ok": 0,
+        "skip": 0,
+        "skip_clean": 0,
+        "review_required": 0,
+    }
     by_group = {}
+    failures = set(failures)
     for case in cases:
         rows = extractions.get(case["id"], [])
-        group = by_group.setdefault(
-            case["group"],
-            {"cases": 0, "rows": 0, "true": 0, "save": 0, "save_ok": 0, "skip": 0, "skip_clean": 0},
-        )
-        matching = (
-            [row for row in rows if matches(row, {"terms": case["terms"]})]
-            if case["expect"] == "save"
-            else []
-        )
-        counters = (total, group)
-        for counter in counters:
-            counter["cases"] = counter.get("cases", 0) + 1
-            counter["rows"] += len(rows)
-            counter["true"] += len(matching)
+        verdict = case_verdict(case, rows, failed=case["id"] in failures)
+        group = by_group.setdefault(case["group"], {key: 0 for key in total})
+        for counter in (total, group):
+            counter["cases"] += 1
+            counter["review_required"] += verdict["semantic_review"]
+            counter["rows"] += verdict["true_rows"] + verdict["false_rows"]
+            counter["true"] += verdict["true_rows"]
+            counter["false"] += verdict["false_rows"]
+            counter["duplicates"] += verdict["duplicate_rows"]
+            counter["invalid_rows"] += verdict["invalid_rows"]
+            counter["forbidden_hits"] += verdict["forbidden_hits"]
+        if verdict["outcome"] == "provider_failed":
+            for counter in (total, group):
+                counter["failed_cases"] += 1
+            continue
+        for counter in (total, group):
+            counter["cases_scored"] += 1
         if case["expect"] == "save":
-            ok = bool(matching)
-            for counter in counters:
+            for counter in (total, group):
                 counter["save"] += 1
-                counter["save_ok"] += ok
+                counter["save_ok"] += verdict["outcome"] in {"correct", "duplicate"}
         else:
-            clean = not rows
-            for counter in counters:
+            for counter in (total, group):
                 counter["skip"] += 1
-                counter["skip_clean"] += clean
+                counter["skip_clean"] += verdict["outcome"] == "correct"
     return total, by_group
 
 
 def rates(counters):
-    """Report admission rates without inventing a pass threshold."""
-    rejected = counters["skip"] - counters["skip_clean"]
+    """Report rates with explicit denominators; an empty denominator is null, not zero."""
     return {
-        "admission_precision": counters["true"] / counters["rows"] if counters["rows"] else 0.0,
-        "admission_recall": counters["save_ok"] / counters["save"] if counters["save"] else 0.0,
-        "false_memory_rate": rejected / counters["skip"] if counters["skip"] else 0.0,
+        "admission_precision": (counters["true"] / counters["rows"] if counters["rows"] else None),
+        "admission_recall": counters["save_ok"] / counters["save"] if counters["save"] else None,
+        "false_memory_rate": (
+            (counters["skip"] - counters["skip_clean"]) / counters["skip"]
+            if counters["skip"]
+            else None
+        ),
         "true_rows": counters["true"],
-        "false_rows": counters["rows"] - counters["true"],
+        "false_rows": counters["false"],
+        "rows": counters["rows"],
+        "rows_denominator": counters["rows"],
+        "save_denominator": counters["save"],
+        "skip_denominator": counters["skip"],
+        "duplicate_rows": counters["duplicates"],
+        "invalid_rows": counters["invalid_rows"],
+        "forbidden_hits": counters["forbidden_hits"],
     }
 
 
-def report_status(mode, failures, case_success):
-    """Keep the legacy inline gate strict while dataset runs report execution health."""
+def extract_with(extractor, instructions, event):
+    """Run the same structured call with an optional experimental instruction text."""
+    if instructions is None:
+        return extractor.extract(event)
+    data = extractor.call(
+        instructions,
+        {key: event[key] for key in ("user", "assistant")},
+        MEMORY_SCHEMA,
+        "qdrant-memory.extract",
+    )
+    memories = data.get("memories")
+    if not isinstance(memories, list):
+        raise ValueError("Invalid memory extraction result")
+    return memories
+
+
+def execution_status(mode, failures, case_success):
+    """Separate execution health from quality; inline mode keeps its legacy gate."""
     if failures:
         return "FAIL"
-    if mode == "inline-diagnostic" and case_success < 1.0:
-        return "FAIL"
-    return "PASS"
+    if mode == "inline-diagnostic":
+        return "PASS" if case_success == 1.0 else "FAIL"
+    return "COMPLETE"
 
 
 def main(argv=None):
@@ -164,11 +283,15 @@ def main(argv=None):
         help="OpenAI-compatible local endpoint; never a credential-bearing service",
     )
     parser.add_argument("--output", type=Path, help="Optional JSON report path")
+    parser.add_argument(
+        "--instructions",
+        type=Path,
+        help="Experimental instruction text; the shipped prompt stays unchanged",
+    )
     args = parser.parse_args(argv)
     if args.dataset:
         data = load_policy_dataset(args.dataset)
-        cases, version = data["cases"], data["version"]
-        mode = "policy-admission"
+        cases, version, mode = data["cases"], data["version"], "policy-admission"
     else:
         cases, version, mode = inline_cases(), DATASET_VERSION, "inline-diagnostic"
     llm = OwnerLLM(
@@ -181,24 +304,42 @@ def main(argv=None):
             "max_output_tokens": 2048,
         }
     )
+    instructions = args.instructions.read_text(encoding="utf-8") if args.instructions else None
     extractor = Extractor(llm, {"mode": "inherit"})
-    extractions, latencies, error_types, failures = {}, [], Counter(), 0
+    extractions, latencies, error_types, failed_ids = {}, [], Counter(), set()
     try:
         for case in cases:
             started = time.monotonic()
             try:
-                rows = extractor.extract({"user": case["user"], "assistant": "ack"})
+                rows = extract_with(
+                    extractor,
+                    instructions,
+                    {"user": case["user"], "assistant": case.get("assistant", "ack")},
+                )
                 extractions[case["id"]] = [row.get("text", "") for row in rows]
             except Exception as exc:  # report provider health, never abort a run
-                failures += 1
                 error_types[type(exc).__name__] += 1
+                failed_ids.add(case["id"])
                 extractions[case["id"]] = []
             latencies.append((time.monotonic() - started) * 1000)
-        total, by_group = score_cases(cases, extractions)
-        case_success = (total["save_ok"] + total["skip_clean"]) / len(cases) if cases else 0.0
+        total, by_group = score_cases(cases, extractions, failed_ids)
+        case_success = (
+            (total["save_ok"] + total["skip_clean"]) / total["cases_scored"]
+            if total["cases_scored"]
+            else None
+        )
+        timing = latency_summary(latencies)
         report = {
-            "status": report_status(mode, failures, case_success),
+            "status": execution_status(mode, total["failed_cases"], case_success),
             "mode": mode,
+            "execution": {
+                "status": execution_status(mode, total["failed_cases"], case_success),
+                "provider_failures": total["failed_cases"],
+                "cases_with_result": total["cases_scored"],
+                "complete": total["cases_scored"] == total["cases"],
+            },
+            "dataset_valid": True,
+            "quality_gate": "not_configured",
             "dataset": version,
             "dataset_cases": len(cases),
             "model": args.model,
@@ -206,17 +347,13 @@ def main(argv=None):
             "generation": {"temperature": 0, "max_output_tokens": 2048},
             **rates(total),
             "case_success": case_success,
+            "review_required": total["review_required"],
             "by_group": {
                 group: {"cases": counters["cases"], **rates(counters)}
                 for group, counters in sorted(by_group.items())
             },
             "case_results": [
-                {
-                    "id": case["id"],
-                    "group": case["group"],
-                    "expect": case["expect"],
-                    "rows": extractions.get(case["id"], []),
-                }
+                case_verdict(case, extractions.get(case["id"], []), case["id"] in failed_ids)
                 for case in cases
             ],
             "dataset_sha256": hashlib.sha256(
@@ -225,34 +362,44 @@ def main(argv=None):
             "prompt_code_sha256": hashlib.sha256(
                 inspect.getsource(Extractor.extract).encode()
             ).hexdigest(),
+            "instructions_sha256": hashlib.sha256(
+                (instructions or inspect.getsource(Extractor.extract)).encode()
+            ).hexdigest(),
             "schema_sha256": hashlib.sha256(
                 json.dumps(MEMORY_SCHEMA, sort_keys=True).encode()
             ).hexdigest(),
             "error_types": dict(error_types),
-            "provider_failures": failures,
-            "p50_ms": statistics.median(latencies),
-            "p95_ms": sorted(latencies)[-1],
+            "provider_failures": total["failed_cases"],
+            **timing,
+            "max_ms": max(latencies) if latencies else None,
+            "latency_method": "nearest-rank p50/p95 over per-case extraction wall time",
+            "metric_definitions": {
+                "admission_precision": "correct rows / emitted rows; duplicates and forbidden wording count as false",
+                "admission_recall": "save cases with exactly one correct row / scored save cases",
+                "false_memory_rate": "scored skip cases that emitted any row / scored skip cases",
+                "denominator": "provider failures and invalid (blank) rows are excluded and reported separately",
+            },
             "limitations": (
                 "Admission-only diagnostic on synthetic text; it does not measure retrieval, "
                 "contradiction handling or production accuracy. "
                 + (
                     "The inline diagnostic still requires every case to pass."
                     if mode == "inline-diagnostic"
-                    else "No quality threshold is applied."
+                    else "No quality threshold is applied and no quality gate is claimed."
                 )
             ),
         }
         # Compatibility with the earlier three-key diagnostic envelope.
         report["precision"] = report["admission_precision"]
         report["positive_case_recall"] = report["admission_recall"]
-        text = json.dumps(report, indent=2, ensure_ascii=False)
+        text = json.dumps(report, indent=2, ensure_ascii=False, default=str)
         if args.output:
             args.output.write_text(text + "\n", encoding="utf-8")
         else:
             print(text)
     finally:
         llm.close()
-    return 0 if report["status"] == "PASS" else 1
+    return 0 if report["status"] in {"PASS", "COMPLETE"} else 1
 
 
 if __name__ == "__main__":
