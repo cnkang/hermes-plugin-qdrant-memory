@@ -174,8 +174,8 @@ experience guarantee, and it does not cover native lifecycle capture.
 
 ## Limitations
 
-- One local extraction model and one free router model. Hosted models were not
-  evaluated.
+- Admission used one local extraction model. The Hermes A/B used one hosted
+  free router model.
 - The admission runner measures extraction only. Contradiction handling,
   replacement accuracy, cross-scope leakage and replay safety remain in
   `scripts/evaluate_owner_lifecycle.py`.
@@ -189,7 +189,8 @@ experience guarantee, and it does not cover native lifecycle capture.
 
 ## Not run
 
-- Real-model evaluation with hosted models or a hosted embedding service.
+- Admission with a hosted extraction model or retrieval with a hosted embedding
+  service.
 - Native-lifecycle A/B (prefetch and extraction) on Hermes.
 - A task-learning candidate. It remains DESIGN ONLY.
 
@@ -207,6 +208,14 @@ python scripts/behavior_ab.py --profile <hermes-profile> --cli <qdrant-memory> \
   --model <model> --provider <provider>
 ```
 
-All runners refuse supplied API credentials, use synthetic text and write no
-production collection. The behavioral runner needs an isolated Hermes profile and
-a disposable qdrant-memory profile.
+These runs use synthetic text. The admission commands use the default local
+endpoint. The behavioral runner uses the model provider configured in its Hermes
+profile. Use an isolated Hermes profile and a disposable qdrant-memory profile
+for that run.
+
+Admission re-scoring requires one stored result per dataset case ID. A recorded
+provider failure stays in the report and outside the quality denominators.
+Re-run a legacy report if it counted invalid rows without storing them.
+Behavior re-scoring requires the same scenario IDs. It marks a scenario
+incomplete when its saved trace lacks exit codes or the evidence needed for an
+exact-ID check. The historical A/B counts above predate those trace fields.
