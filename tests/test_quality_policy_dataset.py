@@ -116,6 +116,10 @@ def test_scoring_rejects_duplicates_and_blank_output():
 
     blank = verdict(save_case(), ["   "])
     assert blank["outcome"] == "missed" and blank["invalid_rows"] == 1 and blank["true_rows"] == 0
+    assert verdict(skip_case(), ["   "])["outcome"] == "invalid_output"
+    skipped, _ = score([skip_case()], {"n": ["   "]})
+    assert skipped["skip_clean"] == 0
+    assert rates(skipped)["false_memory_rate"] is None
 
     total, _ = score([save_case()], {"s": ["Cedar uses SQLite."]})
     cleaned = rates(total)
@@ -162,6 +166,54 @@ def test_provider_failure_is_not_a_correct_rejection():
     assert empty["admission_recall"] is None
     assert empty["false_memory_rate"] is None
     assert total["skip_clean"] == 0
+
+
+@pytest.mark.parametrize(
+    "problem", ["empty", "missing", "extra", "duplicate", "missing_rows", "lost_invalid_rows"]
+)
+def test_rescore_rejects_incomplete_or_ambiguous_reports(tmp_path, dataset, problem):
+    """A missing case result cannot supply an empty extraction or a clean rejection."""
+    stored = [{"id": case["id"], "rows": []} for case in dataset["cases"]]
+    if problem == "empty":
+        stored.clear()
+    elif problem == "missing":
+        stored.pop()
+    elif problem == "extra":
+        stored.append({"id": "unexpected", "rows": []})
+    elif problem == "duplicate":
+        stored.append(stored[0])
+    elif problem == "missing_rows":
+        del stored[0]["rows"]
+    else:
+        stored[0]["invalid_rows"] = 1
+    source, output = tmp_path / "source.json", tmp_path / "output.json"
+    source.write_text(json.dumps({"case_results": stored}), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"(?i)stored (result|case IDs)"):
+        runner()["rescore"](DATASET, source, output)
+    assert not output.exists()
+
+
+def test_rescore_keeps_explicit_empty_results_and_provider_failures(tmp_path, dataset):
+    """Only recorded results contribute to coverage, and failed calls stay unscored."""
+    failed, invalid, skipped = [case for case in dataset["cases"] if case["expect"] == "skip"][:3]
+    stored = [
+        {"id": case["id"], "rows": [" "] if case == invalid else []} for case in dataset["cases"]
+    ]
+    next(row for row in stored if row["id"] == failed["id"])["outcome"] = "provider_failed"
+    source, output = tmp_path / "source.json", tmp_path / "output.json"
+    source.write_text(json.dumps({"case_results": stored}), encoding="utf-8")
+    assert runner()["rescore"](DATASET, source, output) == 1
+    result = json.loads(output.read_text(encoding="utf-8"))
+    assert result["execution"] == {
+        "status": "FAIL",
+        "provider_failures": 1,
+        "cases_with_result": len(stored) - 1,
+        "complete": False,
+    }
+    by_id = {row["id"]: row for row in result["case_results"]}
+    assert by_id[skipped["id"]]["outcome"] == "correct"
+    assert by_id[invalid["id"]]["invalid_rows"] == 1
+    assert by_id[failed["id"]]["outcome"] == "provider_failed"
 
 
 def test_rates_report_denominators_and_clean_scoring():
