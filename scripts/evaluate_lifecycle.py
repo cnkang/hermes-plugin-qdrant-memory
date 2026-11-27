@@ -142,7 +142,7 @@ def case_verdict(case, rows, failed=False):
         "id": case["id"],
         "group": case["group"],
         "expect": case["expect"],
-        "rows": valid,
+        "rows": rows,
         "invalid_rows": invalid,
         "semantic_review": bool(case.get("semantic_review", False)),
         "outcome": "correct",
@@ -170,6 +170,8 @@ def case_verdict(case, rows, failed=False):
         verdict["false_rows"] = len(valid)
         if valid:
             verdict["outcome"] = "false_memory"
+        elif invalid:
+            verdict["outcome"] = "invalid_output"
     return verdict
 
 
@@ -189,6 +191,7 @@ def score_cases(cases, extractions, failures=()):
         "save_ok": 0,
         "skip": 0,
         "skip_clean": 0,
+        "skip_with_memory": 0,
         "review_required": 0,
     }
     by_group = {}
@@ -218,8 +221,9 @@ def score_cases(cases, extractions, failures=()):
                 counter["save_ok"] += verdict["outcome"] in {"correct", "duplicate"}
         else:
             for counter in (total, group):
-                counter["skip"] += 1
+                counter["skip"] += verdict["outcome"] in {"correct", "false_memory"}
                 counter["skip_clean"] += verdict["outcome"] == "correct"
+                counter["skip_with_memory"] += verdict["outcome"] == "false_memory"
     return total, by_group
 
 
@@ -229,9 +233,7 @@ def rates(counters):
         "admission_precision": (counters["true"] / counters["rows"] if counters["rows"] else None),
         "admission_recall": counters["save_ok"] / counters["save"] if counters["save"] else None,
         "false_memory_rate": (
-            (counters["skip"] - counters["skip_clean"]) / counters["skip"]
-            if counters["skip"]
-            else None
+            counters["skip_with_memory"] / counters["skip"] if counters["skip"] else None
         ),
         "true_rows": counters["true"],
         "false_rows": counters["false"],
@@ -274,26 +276,52 @@ def rescore(dataset_path, report_path, out_path):
     """Re-score stored model output against corrected labels without another model call."""
     data = load_policy_dataset(dataset_path)
     report = json.loads(Path(report_path).read_text(encoding="utf-8"))
-    stored = report.get("case_results") or []
-    rows = {case["id"]: case.get("rows", []) for case in stored}
-    failed = {case["id"] for case in stored if case.get("outcome") == "provider_failed"}
+    stored = report.get("case_results") if isinstance(report, dict) else None
+    if not isinstance(stored, list):
+        raise ValueError("Stored report must contain a case_results list")
+    rows, failed = {}, set()
+    for result in stored:
+        if (
+            not isinstance(result, dict)
+            or not isinstance(result.get("id"), str)
+            or not isinstance(result.get("rows"), list)
+        ):
+            raise ValueError("Each stored result must contain a case ID and a rows list")
+        identifier = result["id"]
+        if identifier in rows:
+            raise ValueError(f"Duplicate stored result for case {identifier}")
+        invalid = sum(not isinstance(row, str) or not row.strip() for row in result["rows"])
+        if result.get("invalid_rows", invalid) != invalid:
+            raise ValueError(f"Stored result for case {identifier} is missing its invalid rows")
+        rows[identifier] = result["rows"]
+        if result.get("outcome") == "provider_failed":
+            failed.add(identifier)
+    expected = {case["id"] for case in data["cases"]}
+    if rows.keys() != expected:
+        missing = sorted(expected - rows.keys())
+        unexpected = sorted(rows.keys() - expected)
+        raise ValueError(f"Stored case IDs do not match the dataset: {missing=}, {unexpected=}")
     total, by_group = score_cases(data["cases"], rows, failed)
     case_success = (
         (total["save_ok"] + total["skip_clean"]) / total["cases_scored"]
         if total["cases_scored"]
         else None
     )
+    status = execution_status("policy-admission", total["failed_cases"], case_success)
     updated = {
         **report,
+        "status": status,
         "dataset": data["version"],
         "dataset_cases": len(data["cases"]),
         "execution": {
             **report.get("execution", {}),
+            "status": status,
             "provider_failures": total["failed_cases"],
             "cases_with_result": total["cases_scored"],
             "complete": total["cases_scored"] == total["cases"],
         },
         **rates(total),
+        "provider_failures": total["failed_cases"],
         "case_success": case_success,
         "review_required": total["review_required"],
         "by_group": {
@@ -301,8 +329,7 @@ def rescore(dataset_path, report_path, out_path):
             for group, counters in sorted(by_group.items())
         },
         "case_results": [
-            case_verdict(case, rows.get(case["id"], []), case["id"] in failed)
-            for case in data["cases"]
+            case_verdict(case, rows[case["id"]], case["id"] in failed) for case in data["cases"]
         ],
         "dataset_sha256": hashlib.sha256(
             json.dumps(data["cases"], ensure_ascii=False, sort_keys=True).encode()
@@ -315,7 +342,7 @@ def rescore(dataset_path, report_path, out_path):
     out_path.write_text(
         json.dumps(updated, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8"
     )
-    return 0
+    return 0 if status == "COMPLETE" else 1
 
 
 def main(argv=None):
@@ -345,7 +372,10 @@ def main(argv=None):
     if args.rescore:
         if not args.dataset or not args.output:
             parser.error("--rescore requires --dataset and --output")
-        return rescore(args.dataset, args.rescore, args.output)
+        try:
+            return rescore(args.dataset, args.rescore, args.output)
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.dataset:
         data = load_policy_dataset(args.dataset)
         cases, version, mode = data["cases"], data["version"], "policy-admission"
@@ -433,7 +463,7 @@ def main(argv=None):
             "metric_definitions": {
                 "admission_precision": "correct rows / emitted rows; duplicates and forbidden wording count as false",
                 "admission_recall": "save cases with exactly one correct row / scored save cases",
-                "false_memory_rate": "scored skip cases that emitted any row / scored skip cases",
+                "false_memory_rate": "scored skip cases that emitted a nonempty row / scored skip cases",
                 "denominator": "provider failures and invalid (blank) rows are excluded and reported separately",
             },
             "limitations": (
