@@ -7,7 +7,7 @@ Two modes:
   --seed     create the synthetic memories in the arm profile (idempotent)
   --run      execute the scenario file through `hermes chat --format stream-json`
 
-Every run writes one JSON report; compare two arm reports with --compare.
+Every run writes one JSON report for comparison between arms.
 """
 
 import argparse
@@ -22,6 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MEMORY_TOOL = "qdrant_memory_"
+WRITE_TOOLS = ("qdrant_memory_add", "qdrant_memory_update", "qdrant_memory_delete")
 MEMORIES = [
     "Project Canary prefers release notes in English.",
     "Project Canary uses SQLite WAL for its primary database.",
@@ -109,68 +110,87 @@ def parse_stream(stdout):
             texts.append(event.get("text", ""))
         elif kind == "result":
             result = {
-                key: event.get(key) for key in ("tokens", "duration_ms", "exit_code", "error")
+                key: event.get(key)
+                for key in ("tokens", "duration_ms", "exit_code", "error", "text")
             }
-    return {"tools": tools, "text": "".join(texts).strip(), "result": result}
+    return {
+        "tools": tools,
+        "text": (result.get("text") or "".join(texts)).strip(),
+        "result": result,
+    }
 
 
-def summarize_run(parsed, scenario, memory_ids):
-    """Score one run against its declared expectations; never infer from the agent's self-report."""
-    names = [tool["name"] or "" for tool in parsed["tools"]]
-    searches = [
-        t for t, n in zip(parsed["tools"], names) if MEMORY_TOOL in n and n.endswith("search")
-    ]
-    writes = [
-        t
-        for t, n in zip(parsed["tools"], names)
-        if MEMORY_TOOL in n and n.rsplit("_", 1)[-1] in {"add", "update", "delete"}
-    ]
-    skill_views = [t for t, n in zip(parsed["tools"], names) if n == "skill_view"]
-    loaded = any((tool.get("input") or {}).get("name") == "qdrant-memory" for tool in skill_views)
-    text = parsed["text"]
-    contains = [
-        token for token in scenario.get("must_contain", []) if token.casefold() in text.casefold()
-    ]
+def score_scenario(row, scenario):
+    """Apply the same expectations to a live run and to its saved evidence."""
+    sequence = row.get("tool_sequence") or []
+    searches = sum(name.endswith(MEMORY_TOOL + "search") for name in sequence)
+    writes = [name for name in sequence if name.endswith(WRITE_TOOLS)]
+    text = (row.get("text") or "").casefold()
+    required = scenario.get("must_contain", [])
+    contains = [token for token in required if token.casefold() in text]
     forbidden = [
-        token
-        for token in scenario.get("must_not_contain", [])
-        if token.casefold() in text.casefold()
+        token for token in scenario.get("must_not_contain", []) if token.casefold() in text
     ]
     ok = True
     if "expect_search" in scenario:
-        ok &= bool(searches) == scenario["expect_search"]
+        ok = bool(searches) == scenario["expect_search"]
     if "max_searches" in scenario:
-        ok &= len(searches) <= scenario["max_searches"]
+        ok = ok and searches <= scenario["max_searches"]
     if "expect_write" in scenario:
-        ok &= bool(writes) == scenario["expect_write"]
-    ok &= len(contains) == len(scenario.get("must_contain", []))
-    ok &= not forbidden
-    if scenario.get("expect_update_id"):
-        ok &= any(
-            MEMORY_TOOL in (tool["name"] or "")
-            and (tool.get("input") or {}).get("id") == scenario["expect_update_id"]
-            for tool in writes
-        )
-    failed = bool(parsed["result"].get("error"))
+        ok = ok and bool(writes) == scenario["expect_write"]
+    expected_id = scenario.get("expect_update_id")
+    if expected_id:
+        ok = ok and expected_id in (row.get("update_ids") or [])
+    ok = ok and len(contains) == len(required) and not forbidden
+
+    exit_codes = (row.get("process_exit_code"), row.get("stream_exit_code"))
+    if row.get("error") or any(code not in (None, 0) for code in exit_codes):
+        status = "error"
+    elif (
+        exit_codes != (0, 0) or not text.strip() or (expected_id and row.get("update_ids") is None)
+    ):
+        status = "incomplete"
+    elif scenario.get("manual"):
+        status = "manual"
+    else:
+        status = "pass" if ok else "fail"
     return {
-        "id": scenario["id"],
-        "category": scenario.get("category", ""),
-        "status": "error"
-        if failed
-        else ("manual" if scenario.get("manual") else ("pass" if ok else "fail")),
-        "skill_loaded": loaded,
-        "searches": len(searches),
+        **row,
+        "status": status,
+        "searches": searches,
         "writes": len(writes),
-        "write_names": [tool["name"] for tool in writes],
-        "tool_sequence": names,
+        "write_names": writes,
         "contains": contains,
         "forbidden_present": forbidden,
-        "text": text[:1200],
-        "tokens": parsed["result"].get("tokens"),
-        "duration_ms": parsed["result"].get("duration_ms"),
-        "error": parsed["result"].get("error"),
+    }
+
+
+def summarize_run(parsed, scenario, memory_ids, *, process_exit_code):
+    """Save the evidence required to reproduce a scenario score."""
+    names = [tool["name"] or "" for tool in parsed["tools"]]
+    result = parsed["result"]
+    row = {
+        "id": scenario["id"],
+        "category": scenario.get("category", ""),
+        "skill_loaded": any(
+            name == "skill_view" and (tool.get("input") or {}).get("name") == "qdrant-memory"
+            for tool, name in zip(parsed["tools"], names, strict=True)
+        ),
+        "tool_sequence": names,
+        "update_ids": [
+            (tool.get("input") or {}).get("id")
+            for tool, name in zip(parsed["tools"], names, strict=True)
+            if name.endswith(MEMORY_TOOL + "update")
+        ],
+        "text": parsed["text"],
+        "tokens": result.get("tokens"),
+        "duration_ms": result.get("duration_ms"),
+        "error": result.get("error"),
+        "process_exit_code": process_exit_code,
+        "stream_exit_code": result.get("exit_code"),
         "memory_ids": memory_ids,
     }
+    return score_scenario(row, scenario)
 
 
 def run_scenarios(profile, scenarios, max_turns, model=None, provider=None):
@@ -207,6 +227,7 @@ def run_scenarios(profile, scenarios, max_turns, model=None, provider=None):
                     command, capture_output=True, text=True, env=env, cwd=workdir, timeout=420
                 )
                 parsed = parse_stream(completed.stdout)
+                process_exit_code = completed.returncode
             except subprocess.TimeoutExpired as exc:
                 parsed = parse_stream(
                     (exc.stdout or b"").decode("utf-8", "replace")
@@ -214,9 +235,17 @@ def run_scenarios(profile, scenarios, max_turns, model=None, provider=None):
                     else (exc.stdout or "")
                 )
                 parsed["result"]["error"] = "timeout"
+                process_exit_code = None
             # A stdio server can outlive its session and hold the profile writer lease.
             subprocess.run(["pkill", "-f", f"{profile}/memory"], check=False, capture_output=True)
-            rows.append(summarize_run(parsed, scenario, scenario.get("memory_ids", {})))
+            rows.append(
+                summarize_run(
+                    parsed,
+                    scenario,
+                    scenario.get("memory_ids", {}),
+                    process_exit_code=process_exit_code,
+                )
+            )
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
     return rows
@@ -225,52 +254,23 @@ def run_scenarios(profile, scenarios, max_turns, model=None, provider=None):
 def rescore_report(report, scenarios):
     """Recompute scenario statuses from a stored report without another agent run."""
     by_id = {scenario["id"]: scenario for scenario in scenarios}
-    for row in report.get("scenarios", []):
-        scenario = by_id[row["id"]]
-        sequence = row.get("tool_sequence") or []
-        searches = sum(1 for name in sequence if MEMORY_TOOL in name and name.endswith("search"))
-        writes = [
-            name
-            for name in sequence
-            if MEMORY_TOOL in name and name.rsplit("_", 1)[-1] in {"add", "update", "delete"}
-        ]
-        text = row.get("text") or ""
-        row["searches"] = searches
-        row["writes"] = len(writes)
-        row["write_names"] = writes
-        row["contains"] = [
-            token
-            for token in scenario.get("must_contain", [])
-            if token.casefold() in text.casefold()
-        ]
-        row["forbidden_present"] = [
-            token
-            for token in scenario.get("must_not_contain", [])
-            if token.casefold() in text.casefold()
-        ]
-        ok = len(row["contains"]) == len(scenario.get("must_contain", []))
-        ok = ok and not row["forbidden_present"]
-        if "expect_search" in scenario:
-            ok = ok and bool(searches) == scenario["expect_search"]
-        if "max_searches" in scenario:
-            ok = ok and searches <= scenario["max_searches"]
-        if "expect_write" in scenario:
-            ok = ok and bool(writes) == scenario["expect_write"]
-        if row.get("error"):
-            row["status"] = "error"
-        elif not text.strip():
-            row["status"] = "incomplete"
-        elif scenario.get("manual"):
-            row["status"] = "manual"
-        else:
-            row["status"] = "pass" if ok else "fail"
-    return report
+    rows = report["scenarios"]
+    if (
+        len(by_id) != len(scenarios)
+        or len(rows) != len(by_id)
+        or {row["id"] for row in rows} != by_id.keys()
+    ):
+        raise ValueError("Stored scenario IDs must match the labels exactly once each")
+    return {
+        **report,
+        "scenarios": [score_scenario(row, by_id[row["id"]]) for row in rows],
+    }
 
 
 def main(argv=None):
     """Seed or run one arm and write a JSON report."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", type=Path, required=True, help="Hermes profile directory")
+    parser.add_argument("--profile", type=Path, help="Hermes profile directory for live runs")
     parser.add_argument(
         "--storage", type=Path, help="qdrant-memory profile (default: <profile>/memory)"
     )
@@ -295,7 +295,10 @@ def main(argv=None):
         if not args.scenarios or not args.rescore_out:
             parser.error("--rescore-report requires --scenarios and --rescore-out")
         report = json.loads(args.rescore_report.read_text(encoding="utf-8"))
-        updated = rescore_report(report, json.loads(args.scenarios.read_text(encoding="utf-8")))
+        try:
+            updated = rescore_report(report, json.loads(args.scenarios.read_text(encoding="utf-8")))
+        except ValueError as exc:
+            parser.error(str(exc))
         args.rescore_out.write_text(
             json.dumps(updated, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
@@ -306,6 +309,10 @@ def main(argv=None):
             json.dumps({"label": updated.get("label", ""), **counts, "out": str(args.rescore_out)})
         )
         return 0
+    if not args.profile:
+        parser.error("--profile is required for live operation")
+    if args.run and (not args.scenarios or not args.out):
+        parser.error("--run requires --scenarios and --out")
     storage = args.storage or args.profile / "memory"
     cli = qdrant_cli(args.cli)
     installed = None
@@ -323,8 +330,6 @@ def main(argv=None):
         "seed": actions,
     }
     if args.run:
-        if not args.scenarios or not args.out:
-            parser.error("--run requires --scenarios and --out")
         scenarios = json.loads(args.scenarios.read_text(encoding="utf-8"))
         report["scenarios"] = run_scenarios(
             args.profile, scenarios, args.max_turns, args.model, args.provider
@@ -332,7 +337,7 @@ def main(argv=None):
         args.out.write_text(
             json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
-        counts = {"pass": 0, "fail": 0, "manual": 0, "error": 0}
+        counts = {"pass": 0, "fail": 0, "manual": 0, "error": 0, "incomplete": 0}
         for row in report["scenarios"]:
             counts[row["status"]] += 1
         print(json.dumps({"label": report["label"], **counts, "out": str(args.out)}))
