@@ -241,9 +241,9 @@ def score_cases(cases, extractions, failures=()):
     return total, by_group
 
 
-def rates(counters):
+def rates(counters, *, run_complete=True):
     """Suppress point estimates when incomplete output can bias the result."""
-    complete = not (counters["failed_cases"] or counters["invalid_cases"])
+    complete = run_complete and not (counters["failed_cases"] or counters["invalid_cases"])
     return {
         "admission_precision": (
             counters["true"] / counters["rows"] if complete and counters["rows"] else None
@@ -362,14 +362,13 @@ def rescore(dataset_path, report_path, out_path):
         report.get("input_verified") is not False and report.get("dataset_sha256") == dataset_hash
     )
     total, by_group = score_cases(data["cases"], rows, failed)
+    incomplete_cases = total["failed_cases"] + total["invalid_cases"]
     case_success = (
         (total["save_ok"] + total["skip_clean"]) / total["cases_scored"]
         if total["cases_scored"] == total["cases"]
         else None
     )
-    status = execution_status(
-        "policy-admission", total["failed_cases"] + total["invalid_cases"], case_success
-    )
+    status = execution_status("policy-admission", incomplete_cases, case_success)
     updated = {
         **report,
         "status": status,
@@ -391,7 +390,10 @@ def rescore(dataset_path, report_path, out_path):
         "case_success": case_success,
         "review_required": total["review_required"],
         "by_group": {
-            group: {"cases": counters["cases"], **rates(counters)}
+            group: {
+                "cases": counters["cases"],
+                **rates(counters, run_complete=not incomplete_cases),
+            }
             for group, counters in sorted(by_group.items())
         },
         "case_results": [
@@ -488,15 +490,14 @@ def main(argv=None):
                 extractions[case["id"]] = []
             latencies.append((time.monotonic() - started) * 1000)
         total, by_group = score_cases(cases, extractions, failed_ids)
+        incomplete_cases = total["failed_cases"] + total["invalid_cases"]
         case_success = (
             (total["save_ok"] + total["skip_clean"]) / total["cases_scored"]
             if total["cases_scored"] == total["cases"]
             else None
         )
         timing = latency_summary(latencies)
-        status = execution_status(
-            mode, total["failed_cases"] + total["invalid_cases"], case_success
-        )
+        status = execution_status(mode, incomplete_cases, case_success)
         report = {
             "status": status,
             "mode": mode,
@@ -522,7 +523,10 @@ def main(argv=None):
             "case_success": case_success,
             "review_required": total["review_required"],
             "by_group": {
-                group: {"cases": counters["cases"], **rates(counters)}
+                group: {
+                    "cases": counters["cases"],
+                    **rates(counters, run_complete=not incomplete_cases),
+                }
                 for group, counters in sorted(by_group.items())
             },
             "case_results": [
