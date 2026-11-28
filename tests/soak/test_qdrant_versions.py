@@ -1,4 +1,4 @@
-"""Keep the Docker test server and installed client on the reviewed release pair."""
+"""Keep Docker test servers and the installed client on reviewed combinations."""
 
 import shlex
 import sys
@@ -15,6 +15,10 @@ ROOT = Path(__file__).resolve().parents[2]
 CLIENT_PIN = "qdrant-client==1.20.0"
 CONTROLLED_CLIENT = "1.20.0"
 SERVER_VERSION = "1.20.1"
+DEVICE_COMPAT_SERVER = {
+    "version": "1.20.2",
+    "image": "qdrant/qdrant@sha256:d277592721d2e3b73f9b797b53cf05e6a5bb2134f6d13fdbda4ca51782afbcac",
+}
 PREVIOUS_SERVER_IMAGE = (
     "qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2"
 )
@@ -69,14 +73,29 @@ def assert_lane_versions(documents):
             image = job
             for key in image_path:
                 image = image[key]
-            assert image == QDRANT_IMAGE, (workflow, lane, "server")
+            if lane == "device-server":
+                assert image == "${{ matrix.server.image }}", (workflow, lane, "server")
+                assert job["strategy"]["matrix"]["server"] == [
+                    {"version": SERVER_VERSION, "image": QDRANT_IMAGE},
+                    DEVICE_COMPAT_SERVER,
+                ], (workflow, lane, "matrix")
+                version_step = next(
+                    step
+                    for step in job["steps"]
+                    if step.get("name") == "Assert the running Qdrant Server version"
+                )
+                assert version_step["env"]["EXPECTED_QDRANT_VERSION"] == (
+                    "${{ matrix.server.version }}"
+                )
+            else:
+                assert image == QDRANT_IMAGE, (workflow, lane, "server")
         arguments = shlex.split(install_step(job, step_name)["run"], comments=True)
         assert [argument for argument in arguments if argument.startswith("qdrant-client")] == [
             CLIENT_PIN
         ], (workflow, lane, "client")
 
 
-def test_server_lanes_use_one_reviewed_qdrant_pair():
+def test_server_lanes_use_reviewed_qdrant_pairs():
     """Version drift must fail CI instead of producing an ignored warning."""
     assert (
         QDRANT_IMAGE
@@ -143,5 +162,15 @@ def test_single_lane_drift_is_rejected(index, component):
         for key in image_path[:-1]:
             target = target[key]
         target[image_path[-1]] = "qdrant/qdrant@sha256:" + "0" * 64
+    with pytest.raises(AssertionError):
+        assert_lane_versions(documents)
+
+
+@pytest.mark.parametrize("index,field", [(i, f) for i in (0, 1) for f in ("image", "version")])
+def test_device_server_matrix_drift_is_rejected(index, field):
+    """Refuse either an unexpected digest or an unexpected version in the device matrix."""
+    documents = workflows()
+    devices = documents["shared-security"]["jobs"]["device-server"]
+    devices["strategy"]["matrix"]["server"][index][field] = "unexpected-value"
     with pytest.raises(AssertionError):
         assert_lane_versions(documents)
