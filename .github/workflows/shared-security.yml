@@ -45,10 +45,21 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import time
+          from urllib.error import URLError
           from urllib.request import urlopen
 
-          with urlopen("http://127.0.0.1:6333/", timeout=10) as response:
-              version = json.load(response)["version"]
+          deadline = time.monotonic() + 60
+          while True:
+              remaining = deadline - time.monotonic()
+              if remaining <= 0:
+                  raise SystemExit("Qdrant Server did not respond within 60 seconds")
+              try:
+                  with urlopen("http://127.0.0.1:6333/", timeout=min(2, remaining)) as response:
+                      version = json.load(response)["version"]
+                  break
+              except (URLError, TimeoutError):
+                  time.sleep(min(1, max(0, deadline - time.monotonic())))
           expected = os.environ["EXPECTED_QDRANT_VERSION"]
           if version != expected:
               raise SystemExit(f"Expected Qdrant Server {expected}, got {version}")

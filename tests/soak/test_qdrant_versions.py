@@ -1,10 +1,13 @@
 """Keep Docker test servers and the installed client on reviewed combinations."""
 
+import io
+import runpy
 import shlex
 import sys
 import tomllib
 from importlib.metadata import version as installed_version
 from pathlib import Path
+from urllib.error import URLError
 
 import pytest
 from ruamel.yaml import YAML
@@ -174,3 +177,52 @@ def test_device_server_matrix_drift_is_rejected(index, field):
     devices["strategy"]["matrix"]["server"][index][field] = "unexpected-value"
     with pytest.raises(AssertionError):
         assert_lane_versions(documents)
+
+
+@pytest.mark.parametrize("reported", ["1.20.2", "1.20.1", None])
+def test_device_server_version_probe_retries_startup(monkeypatch, capsys, tmp_path, reported):
+    """Run the workflow probe through delayed startup, a version mismatch or timeout."""
+    import time
+    import urllib.request
+
+    steps = workflows()["shared-security"]["jobs"]["device-server"]["steps"]
+    _, _, probe = next(
+        step["run"]
+        for step in steps
+        if step.get("name") == "Assert the running Qdrant Server version"
+    ).partition("\n")
+    probe = probe.rsplit("\nPY", 1)[0]
+    probe_path = tmp_path / "probe.py"
+    probe_path.write_text(probe, encoding="utf-8")
+    elapsed = 0
+    attempts = 0
+
+    def sleep(seconds):
+        nonlocal elapsed
+        elapsed += seconds
+
+    def open_probe(url, *, timeout):
+        nonlocal attempts
+        attempts += 1
+        assert url == "http://127.0.0.1:6333/"
+        assert 0 < timeout <= 2
+        if attempts == 1 or reported is None:
+            raise URLError("not listening yet")
+        return io.StringIO(f'{{"version": "{reported}"}}')
+
+    monkeypatch.setenv("EXPECTED_QDRANT_VERSION", "1.20.2")
+    monkeypatch.setattr(time, "monotonic", lambda: elapsed)
+    monkeypatch.setattr(time, "sleep", sleep)
+    monkeypatch.setattr(urllib.request, "urlopen", open_probe)
+    if reported is None:
+        with pytest.raises(SystemExit, match="within 60 seconds"):
+            runpy.run_path(str(probe_path))
+        assert elapsed == 60
+    elif reported != "1.20.2":
+        with pytest.raises(SystemExit, match="Expected Qdrant Server 1.20.2, got 1.20.1"):
+            runpy.run_path(str(probe_path))
+        assert attempts == 2
+    else:
+        runpy.run_path(str(probe_path))
+        assert attempts == 2
+        assert "Confirmed Qdrant Server 1.20.2" in capsys.readouterr().out
