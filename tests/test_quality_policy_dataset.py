@@ -118,6 +118,8 @@ def test_scoring_rejects_duplicates_and_blank_output():
     assert blank["outcome"] == "invalid_output"
     assert blank["invalid_rows"] == 1 and blank["true_rows"] == 0
     assert verdict(skip_case(), ["   "])["outcome"] == "invalid_output"
+    unrelated = verdict(skip_case(), ["Temporary status", "One-time preference"])
+    assert unrelated["false_rows"] == 2 and unrelated["duplicate_rows"] == 0
     skipped, _ = score([skip_case()], {"n": ["   "]})
     assert skipped["skip_clean"] == 0
     assert rates(skipped)["false_memory_rate"] is None
@@ -217,6 +219,36 @@ def test_rescore_keeps_explicit_empty_results_and_provider_failures(tmp_path, da
     assert by_id[invalid["id"]]["invalid_rows"] == 1
     assert by_id[failed["id"]]["outcome"] == "provider_failed"
     assert result["false_memory_rate"] is None
+    assert result["input_verified"] is False
+    assert result["input_sha256"] is None
+
+
+def test_rescore_binds_saved_results_to_inputs_and_refreshes_metric_definitions(tmp_path, dataset):
+    """Accept label edits and reject changed model inputs under the same case IDs."""
+    evaluator = runner()
+    source, dataset_path, output = (tmp_path / name for name in ("source", "dataset", "output"))
+    source.write_text(
+        json.dumps(
+            {
+                "case_results": [{"id": case["id"], "rows": []} for case in dataset["cases"]],
+                "input_sha256": evaluator["input_digest"](dataset["cases"]),
+                "metric_definitions": {"denominator": "legacy"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    first, *other_cases = dataset["cases"]
+    corrected = {**first, "note": first["note"] + " Corrected annotation."}
+    amended = {**dataset, "cases": [corrected, *other_cases]}
+    dataset_path.write_text(json.dumps(amended), encoding="utf-8")
+    assert evaluator["rescore"](dataset_path, source, output) == 0
+    result = json.loads(output.read_text(encoding="utf-8"))
+    assert result["input_verified"] is True
+    assert result["metric_definitions"] == evaluator["METRIC_DEFINITIONS"]
+    corrected["user"] += " Changed input."
+    dataset_path.write_text(json.dumps(amended), encoding="utf-8")
+    with pytest.raises(ValueError, match="inputs do not match"):
+        evaluator["rescore"](dataset_path, source, output)
 
 
 def test_mixed_invalid_or_failed_output_suppresses_otherwise_perfect_rates():

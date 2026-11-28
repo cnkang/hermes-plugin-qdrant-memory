@@ -86,8 +86,8 @@ def submit(rt, scope, project, phase, offset, text):
             "source": "conversation",
             "scope": scope.as_dict(),
             "session_id": f"{scope.user_id}-phase-{phase}",
-            "turn_number": PROJECTS.index(project) * 4 + offset,
-            "created_at": f"2026-11-{phase + 1:02}T00:00:00Z",
+            "turn_number": PROJECTS.index(project) * 5 + offset,
+            "created_at": f"2000-01-{phase + 1:02}T00:00:00Z",
             "user": text,
             "assistant": "ack",
         }
@@ -143,7 +143,10 @@ def test_longitudinal_state_with_restarts_corrections_and_delete_fences(tmp_path
                 if phase == 2:
                     historical_id = next(key for key, row in rows.items() if row["text"] == history)
                     dispatch(rt, "qdrant_memory_delete", {"id": historical_id}, scope, "phase-2")
-                    submit(rt, scope, project, 0, 1, f"Confirmed: {history}")
+                    replay = submit(rt, scope, project, 0, 1, f"Confirmed: {history}")
+                    late = submit(rt, scope, project, 0, 4, f"Confirmed: {history}")
+                    assert late != replay
+                    assert rt.ledger.row("events", late)["status"] == "COMMITTED"
 
             for scope in SCOPES:
                 rows = snapshot(rt, scope)
@@ -165,6 +168,6 @@ def test_longitudinal_state_with_restarts_corrections_and_delete_fences(tmp_path
             assert rt.recover() == 0
             assert {scope: snapshot(rt, scope) for scope in SCOPES} == before
         assert rt.store.count() == 20
-        assert len(rt.ledger.rows("events", "COMMITTED")) == 120
+        assert len(rt.ledger.rows("events", "COMMITTED")) == 130
     finally:
         close_timeline(rt)

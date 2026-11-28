@@ -137,7 +137,9 @@ def case_verdict(case, rows, failed=False):
     matching = [
         row
         for row in valid
-        if matches(row, {"terms": case["terms"]}) and all(p.search(row) for p in require)
+        if case["expect"] == "save"
+        and matches(row, {"terms": case["terms"]})
+        and all(p.search(row) for p in require)
     ]
     forbidden = [row for row in valid if any(p.search(row) for p in forbid)]
     verdict = {
@@ -295,6 +297,31 @@ def execution_status(mode, failures, case_success):
     return "COMPLETE"
 
 
+METRIC_DEFINITIONS = {
+    "admission_precision": "correct rows / emitted rows; duplicates and forbidden wording count as false",
+    "admission_recall": "save cases judged correct without duplicate matching rows / scored save cases",
+    "false_memory_rate": "scored skip cases that emitted a nonempty row / scored skip cases",
+    "denominator": "incomplete runs retain observed counts and suppress quality rates",
+}
+
+
+def evaluation_input(case):
+    """Return the exact input passed to the extractor, without evaluation labels."""
+    return {"user": case["user"], "assistant": case.get("assistant", "ack")}
+
+
+def digest_json(value):
+    """Hash the evaluator's stable JSON representation."""
+    return hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()
+
+
+def input_digest(cases):
+    """Bind saved output to the prompts by case ID while allowing label corrections."""
+    return digest_json({case["id"]: evaluation_input(case) for case in cases})
+
+
 def rescore(dataset_path, report_path, out_path):
     """Re-score stored model output against corrected labels without another model call."""
     data = load_policy_dataset(dataset_path)
@@ -326,6 +353,14 @@ def rescore(dataset_path, report_path, out_path):
         missing = sorted(expected - rows.keys())
         unexpected = sorted(rows.keys() - expected)
         raise ValueError(f"Stored case IDs do not match the dataset: {missing=}, {unexpected=}")
+    dataset_hash = digest_json(data["cases"])
+    input_hash = input_digest(data["cases"])
+    recorded_hash = report.get("input_sha256")
+    if recorded_hash is not None and recorded_hash != input_hash:
+        raise ValueError("Stored report inputs do not match the dataset")
+    input_verified = recorded_hash is not None or (
+        report.get("input_verified") is not False and report.get("dataset_sha256") == dataset_hash
+    )
     total, by_group = score_cases(data["cases"], rows, failed)
     case_success = (
         (total["save_ok"] + total["skip_clean"]) / total["cases_scored"]
@@ -340,6 +375,9 @@ def rescore(dataset_path, report_path, out_path):
         "status": status,
         "dataset": data["version"],
         "dataset_cases": len(data["cases"]),
+        "mode": "policy-admission",
+        "quality_gate": "not_configured",
+        "metric_definitions": METRIC_DEFINITIONS,
         "execution": {
             **report.get("execution", {}),
             "status": status,
@@ -359,9 +397,9 @@ def rescore(dataset_path, report_path, out_path):
         "case_results": [
             case_verdict(case, rows[case["id"]], case["id"] in failed) for case in data["cases"]
         ],
-        "dataset_sha256": hashlib.sha256(
-            json.dumps(data["cases"], ensure_ascii=False, sort_keys=True).encode()
-        ).hexdigest(),
+        "dataset_sha256": dataset_hash,
+        "input_sha256": input_hash if input_verified else None,
+        "input_verified": input_verified,
         "rescored_from": str(report_path),
         "rescored_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
@@ -439,7 +477,7 @@ def main(argv=None):
                 rows = extract_with(
                     extractor,
                     instructions,
-                    {"user": case["user"], "assistant": case.get("assistant", "ack")},
+                    evaluation_input(case),
                 )
                 extractions[case["id"]] = [
                     row.get("text") if isinstance(row, dict) else None for row in rows
@@ -491,9 +529,9 @@ def main(argv=None):
                 case_verdict(case, extractions.get(case["id"], []), case["id"] in failed_ids)
                 for case in cases
             ],
-            "dataset_sha256": hashlib.sha256(
-                json.dumps(cases, ensure_ascii=False, sort_keys=True).encode()
-            ).hexdigest(),
+            "dataset_sha256": digest_json(cases),
+            "input_sha256": input_digest(cases),
+            "input_verified": True,
             "prompt_code_sha256": hashlib.sha256(
                 inspect.getsource(Extractor.extract).encode()
             ).hexdigest(),
@@ -508,12 +546,7 @@ def main(argv=None):
             **timing,
             "max_ms": max(latencies) if latencies else None,
             "latency_method": "nearest-rank p50/p95 over per-case extraction wall time",
-            "metric_definitions": {
-                "admission_precision": "correct rows / emitted rows; duplicates and forbidden wording count as false",
-                "admission_recall": "save cases with exactly one correct row / scored save cases",
-                "false_memory_rate": "scored skip cases that emitted a nonempty row / scored skip cases",
-                "denominator": "incomplete runs retain observed counts and suppress quality rates",
-            },
+            "metric_definitions": METRIC_DEFINITIONS,
             "limitations": (
                 "Admission-only diagnostic on synthetic text; it does not measure retrieval, "
                 "contradiction handling or production accuracy. "
