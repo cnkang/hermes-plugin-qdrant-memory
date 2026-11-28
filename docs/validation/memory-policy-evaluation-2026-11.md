@@ -9,10 +9,10 @@ local-model evidence. It is not a production quality claim.
 | Change | Before | Now |
 |---|---|---|
 | Latency percentile | `sorted(latencies)[-1]`, which is the maximum | Nearest-rank p50/p95 from `qdrant_memory.quality_metrics.latency_summary`. `max_ms` is reported separately |
-| Execution status | One `status` value mixed health with quality | `execution.status` (PASS/FAIL for the inline diagnostic, COMPLETE for a dataset run), `quality_gate: not_configured`, `dataset_valid`, and a completeness count |
-| Provider failure | Counted as a correct rejection because the row list was empty | Excluded from every denominator and reported as `provider_failures` |
-| Empty output | Counted as no record | Counted as `invalid_rows`, never as a rejection |
-| Duplicate rows | Inflated true rows | One row counts as true. Extra rows count as false and as `duplicate_rows` |
+| Execution status | One `status` value mixed health with quality | `execution.status` reports COMPLETE for a complete dataset run and FAIL for an incomplete run. The report includes `quality_gate: not_configured`, `dataset_valid`, and a completeness count |
+| Provider failure | Counted as a correct rejection because the row list was empty | Reported as `provider_failures`. Quality rates are null for an incomplete run |
+| Malformed rows | Counted as no record | Counted as `invalid_rows` and make the case incomplete. A valid empty memory array remains a clean rejection for a skip case |
+| Duplicate matching rows | Inflated true rows | One matching row counts as true and the extra matching rows count as false. A duplicate result does not count as a successful save case |
 | Negated and conditional records | A keyword hit passed | Optional `require_patterns` and `forbid_patterns`. The record must keep the negation or the condition |
 | Semantic cases | Scored automatically | Flagged with `semantic_review` and counted in `review_required` |
 | Label correction | Labels were frozen | v1 is preserved. Corrections live in v2 and in a held-out set. A `--rescore` mode re-scores stored model output without a new model call |
@@ -44,13 +44,24 @@ denominator is zero.
 | Dataset | Instruction | Precision | Recall | False-memory rate | Rows | Save / skip denominators |
 |---|---|---|---|---|---|---|
 | v1 | shipped | 0.90 | 0.93 | 0.15 | 30 | 29 / 20 |
-| v2 (development) | shipped | 0.83 | 0.97 | 0.28 | 23 | 39 / 29 |
+| v2 (development, 0.7.3 reproduction) | shipped | 0.83 | 0.97 | 0.28 | 46 | 39 / 29 |
 | v2 (development) | candidate-v1 | 0.70 | 0.92 | 0.39 | 50 | 38 / 28 |
 | held-out | shipped | 0.72 | 0.93 | 0.50 | 18 | 14 / 10 |
 | held-out | candidate-v1 | 0.93 | 1.00 | 0.10 | 15 | 14 / 10 |
 
-The candidate run on v2 recorded two provider failures. Those cases are excluded
-from its denominators.
+The original shipped v2 table gave 23 rows, which cannot account for 38
+successful save cases. The original per-case output was unavailable for this
+audit. A fresh run against the released 0.7.3 source completed all 68 cases and
+produced 38 true rows and 8 false rows. It recorded 38 of 39 successful saves
+and 8 of 29 skips with a memory. The results above use the reproduction. Manual
+review covered all four flagged cases. It confirmed the conditions in
+`e06` and `e07`, the missing negated constraint in `g04`, and the preserved
+negation in `g08`.
+
+The historical candidate-v1 row comes from an incomplete run with two provider
+failures. The old runner excluded those cases. The current evaluator retains
+observed counts and reports null quality rates for runs with failed or invalid
+outputs. The historical candidate metrics are descriptive only.
 
 The two instruction sets disagree across datasets. The candidate is better on the
 held-out set and worse on the development set. It misses the 0.95 precision and
@@ -213,9 +224,12 @@ endpoint. The behavioral runner uses the model provider configured in its Hermes
 profile. Use an isolated Hermes profile and a disposable qdrant-memory profile
 for that run.
 
-Admission re-scoring requires one stored result per dataset case ID. A recorded
-provider failure stays in the report and outside the quality denominators.
-Re-run a legacy report if it counted invalid rows without storing them.
+Admission re-scoring requires one stored result per dataset case ID. The
+input digest binds each ID to the user and assistant text. Label edits can
+reuse saved model output. Legacy reports without a verifiable digest are
+marked `input_verified: false`. A failed or invalid case leaves the quality
+rates null. Re-run a legacy report if it counted invalid rows without storing
+them.
 Behavior re-scoring requires the same scenario IDs. It marks a scenario
 incomplete when its saved trace lacks exit codes or the evidence needed for an
 exact-ID check. The historical A/B counts above predate those trace fields.

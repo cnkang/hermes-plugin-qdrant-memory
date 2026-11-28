@@ -6,6 +6,7 @@ import runpy
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -115,8 +116,11 @@ def test_scoring_rejects_duplicates_and_blank_output():
     assert duplicate["true_rows"] == 1 and duplicate["false_rows"] == 1
 
     blank = verdict(save_case(), ["   "])
-    assert blank["outcome"] == "missed" and blank["invalid_rows"] == 1 and blank["true_rows"] == 0
+    assert blank["outcome"] == "invalid_output"
+    assert blank["invalid_rows"] == 1 and blank["true_rows"] == 0
     assert verdict(skip_case(), ["   "])["outcome"] == "invalid_output"
+    unrelated = verdict(skip_case(), ["Temporary status", "One-time preference"])
+    assert unrelated["false_rows"] == 2 and unrelated["duplicate_rows"] == 0
     skipped, _ = score([skip_case()], {"n": ["   "]})
     assert skipped["skip_clean"] == 0
     assert rates(skipped)["false_memory_rate"] is None
@@ -207,13 +211,105 @@ def test_rescore_keeps_explicit_empty_results_and_provider_failures(tmp_path, da
     assert result["execution"] == {
         "status": "FAIL",
         "provider_failures": 1,
-        "cases_with_result": len(stored) - 1,
+        "invalid_cases": 1,
+        "cases_with_result": len(stored) - 2,
         "complete": False,
     }
     by_id = {row["id"]: row for row in result["case_results"]}
     assert by_id[skipped["id"]]["outcome"] == "correct"
     assert by_id[invalid["id"]]["invalid_rows"] == 1
     assert by_id[failed["id"]]["outcome"] == "provider_failed"
+    assert result["false_memory_rate"] is None
+    assert result["input_verified"] is False
+    assert result["input_sha256"] is None
+
+
+def test_rescore_binds_saved_results_to_inputs_and_refreshes_metric_definitions(tmp_path, dataset):
+    """Accept label edits and reject changed model inputs under the same case IDs."""
+    evaluator = runner()
+    source, dataset_path, output = (tmp_path / name for name in ("source", "dataset", "output"))
+    source.write_text(
+        json.dumps(
+            {
+                "case_results": [{"id": case["id"], "rows": []} for case in dataset["cases"]],
+                "input_sha256": evaluator["input_digest"](dataset["cases"]),
+                "metric_definitions": {"denominator": "legacy"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    first, *other_cases = dataset["cases"]
+    corrected = {**first, "note": first["note"] + " Corrected annotation."}
+    amended = {**dataset, "cases": [corrected, *other_cases]}
+    dataset_path.write_text(json.dumps(amended), encoding="utf-8")
+    assert evaluator["rescore"](dataset_path, source, output) == 0
+    result = json.loads(output.read_text(encoding="utf-8"))
+    assert result["input_verified"] is True
+    assert result["metric_definitions"] == evaluator["METRIC_DEFINITIONS"]
+    corrected["user"] += " Changed input."
+    dataset_path.write_text(json.dumps(amended), encoding="utf-8")
+    with pytest.raises(ValueError, match="inputs do not match"):
+        evaluator["rescore"](dataset_path, source, output)
+
+
+def test_mixed_invalid_or_failed_output_suppresses_otherwise_perfect_rates():
+    """A missing or invalid response cannot improve the reported run quality."""
+    score, rates = runner()["score_cases"], runner()["rates"]
+    cases = [save_case(), skip_case()]
+    for rows, failures in [
+        ({"s": ["Cedar uses SQLite."]}, {"n"}),
+        ({"s": ["Cedar uses SQLite.", None], "n": []}, ()),
+    ]:
+        total, _ = score(cases, rows, failures)
+        assert rates(total)["admission_precision"] is None
+        assert rates(total)["admission_recall"] is None
+        assert rates(total)["false_memory_rate"] is None
+    with pytest.raises(ValueError, match="one result"):
+        score(cases, {"s": ["Cedar uses SQLite."]})
+
+
+@pytest.mark.parametrize("problem", ["provider_failed", "invalid_output", None])
+def test_live_and_rescored_group_rates_require_a_complete_run(
+    tmp_path, monkeypatch, dataset, problem
+):
+    """A failure in one group suppresses quality rates while preserving healthy group counts."""
+    cases = [
+        save_case(user="save"),
+        skip_case(user="skip"),
+        skip_case(id="b", group="B", user="other group"),
+    ]
+    dataset_path, live, rescored = (tmp_path / name for name in ("dataset", "live", "rescored"))
+    dataset_path.write_text(json.dumps({**dataset, "cases": cases}), encoding="utf-8")
+    evaluator = runner()
+
+    def extract(_extractor, _instructions, event):
+        if event["user"] == "save":
+            return [{"text": "Cedar uses SQLite."}]
+        if event["user"] == "other group":
+            if problem == "provider_failed":
+                raise RuntimeError("provider unavailable")
+            if problem == "invalid_output":
+                return [{"text": " "}]
+        return []
+
+    main = evaluator["main"]
+    llm = SimpleNamespace(close=lambda: None)
+    monkeypatch.setitem(main.__globals__, "OwnerLLM", lambda _config: llm)
+    monkeypatch.setitem(main.__globals__, "extract_with", extract)
+    monkeypatch.delenv("QM_SYNTHETIC_EVALUATION_UNUSED_KEY", raising=False)
+    assert main(["--dataset", str(dataset_path), "--output", str(live)]) == int(problem is not None)
+    assert evaluator["rescore"](dataset_path, live, rescored) == int(problem is not None)
+
+    expected = (None, None, None) if problem else (1.0, 1.0, 0.0)
+    for path in (live, rescored):
+        group = json.loads(path.read_text(encoding="utf-8"))["by_group"]["A"]
+        assert (
+            group["admission_precision"],
+            group["admission_recall"],
+            group["false_memory_rate"],
+        ) == expected
+        assert group["cases"] == 2
+        assert group["true_rows"] == group["save_correct_cases"] == group["skip_clean_cases"] == 1
 
 
 def test_rates_report_denominators_and_clean_scoring():
