@@ -44,13 +44,24 @@ denominator is zero.
 | Dataset | Instruction | Precision | Recall | False-memory rate | Rows | Save / skip denominators |
 |---|---|---|---|---|---|---|
 | v1 | shipped | 0.90 | 0.93 | 0.15 | 30 | 29 / 20 |
-| v2 (development) | shipped | 0.83 | 0.97 | 0.28 | 23 | 39 / 29 |
+| v2 (development, 0.7.3 reproduction) | shipped | 0.83 | 0.97 | 0.28 | 46 | 39 / 29 |
 | v2 (development) | candidate-v1 | 0.70 | 0.92 | 0.39 | 50 | 38 / 28 |
 | held-out | shipped | 0.72 | 0.93 | 0.50 | 18 | 14 / 10 |
 | held-out | candidate-v1 | 0.93 | 1.00 | 0.10 | 15 | 14 / 10 |
 
-The candidate run on v2 recorded two provider failures. Those cases are excluded
-from its denominators.
+The original shipped v2 table gave 23 rows, which cannot account for 38
+successful save cases. The original per-case output was unavailable for this
+audit. A fresh run against the released 0.7.3 source completed all 68 cases and
+produced 38 true rows and 8 false rows. It recorded 38 of 39 successful saves
+and 8 of 29 skips with a memory. The results above use the reproduction. Manual
+review covered all four flagged cases. It confirmed the conditions in
+`e06` and `e07`, the missing negated constraint in `g04`, and the preserved
+negation in `g08`.
+
+The historical candidate-v1 row comes from an incomplete run with two provider
+failures. The old runner excluded those cases. The current evaluator retains
+observed counts and reports null quality rates for runs with failed or invalid
+outputs. The historical candidate metrics are descriptive only.
 
 The two instruction sets disagree across datasets. The candidate is better on the
 held-out set and worse on the development set. It misses the 0.95 precision and

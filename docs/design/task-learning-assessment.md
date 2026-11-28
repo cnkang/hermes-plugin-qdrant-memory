@@ -136,12 +136,12 @@ security rejection rate. Precision alone cannot accept a policy.
 
 ## Evaluation plan
 
-1. Labeled dataset: group C of `tests/quality/memory-policy-v1.json` covers
-   verified fixes, unverified guesses, rejected approaches and evidence-free
-   claims.
+1. Create a separate labeled dataset that covers verified fixes, unverified
+   guesses, rejected approaches and evidence-free claims. Attach synthetic
+   host evidence and its provenance where the expected result requires it.
 2. Baseline: run the shipped extractor on that dataset and record the admission
    rates. A verified agent lesson is out of scope for the current prompt, so the
-   baseline should admit few group C cases.
+   baseline should admit few host-observed lesson cases.
 3. Candidate: run the opt-in lesson extractor on the same cases in an isolated
    profile with a disposable collection.
 4. Metrics: admission precision, admission recall, false-memory rate, secret

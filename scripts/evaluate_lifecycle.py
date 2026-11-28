@@ -4,11 +4,13 @@ import argparse
 import hashlib
 import inspect
 import json
+import os
 import re
 import sys
 import time
 from collections import Counter
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from qdrant_memory.extraction import MEMORY_SCHEMA, Extractor
 from qdrant_memory.owner_llm import OwnerLLM
@@ -154,6 +156,10 @@ def case_verdict(case, rows, failed=False):
     if failed:
         verdict["outcome"] = "provider_failed"
         return verdict
+    if invalid:
+        verdict["outcome"] = "invalid_output"
+        verdict["false_rows"] = len(rows)
+        return verdict
     if case["expect"] == "save":
         if forbidden:
             verdict["outcome"] = "forbidden_wording"
@@ -170,13 +176,11 @@ def case_verdict(case, rows, failed=False):
         verdict["false_rows"] = len(valid)
         if valid:
             verdict["outcome"] = "false_memory"
-        elif invalid:
-            verdict["outcome"] = "invalid_output"
     return verdict
 
 
 def score_cases(cases, extractions, failures=()):
-    """Count rows with explicit denominators; never treat a failure as a rejection."""
+    """Count observed rows and distinguish incomplete execution from poor quality."""
     total = {
         "cases": 0,
         "cases_scored": 0,
@@ -186,6 +190,7 @@ def score_cases(cases, extractions, failures=()):
         "false": 0,
         "duplicates": 0,
         "invalid_rows": 0,
+        "invalid_cases": 0,
         "forbidden_hits": 0,
         "save": 0,
         "save_ok": 0,
@@ -196,6 +201,9 @@ def score_cases(cases, extractions, failures=()):
     }
     by_group = {}
     failures = set(failures)
+    identifiers = {case["id"] for case in cases}
+    if len(identifiers) != len(cases) or extractions.keys() | failures != identifiers:
+        raise ValueError("Expected exactly one result per dataset case")
     for case in cases:
         rows = extractions.get(case["id"], [])
         verdict = case_verdict(case, rows, failed=case["id"] in failures)
@@ -213,12 +221,16 @@ def score_cases(cases, extractions, failures=()):
             for counter in (total, group):
                 counter["failed_cases"] += 1
             continue
+        if verdict["outcome"] == "invalid_output":
+            for counter in (total, group):
+                counter["invalid_cases"] += 1
+            continue
         for counter in (total, group):
             counter["cases_scored"] += 1
         if case["expect"] == "save":
             for counter in (total, group):
                 counter["save"] += 1
-                counter["save_ok"] += verdict["outcome"] in {"correct", "duplicate"}
+                counter["save_ok"] += verdict["outcome"] == "correct"
         else:
             for counter in (total, group):
                 counter["skip"] += verdict["outcome"] in {"correct", "false_memory"}
@@ -228,21 +240,32 @@ def score_cases(cases, extractions, failures=()):
 
 
 def rates(counters):
-    """Report rates with explicit denominators; an empty denominator is null, not zero."""
+    """Suppress point estimates when incomplete output can bias the result."""
+    complete = not (counters["failed_cases"] or counters["invalid_cases"])
     return {
-        "admission_precision": (counters["true"] / counters["rows"] if counters["rows"] else None),
-        "admission_recall": counters["save_ok"] / counters["save"] if counters["save"] else None,
+        "admission_precision": (
+            counters["true"] / counters["rows"] if complete and counters["rows"] else None
+        ),
+        "admission_recall": (
+            counters["save_ok"] / counters["save"] if complete and counters["save"] else None
+        ),
         "false_memory_rate": (
-            counters["skip_with_memory"] / counters["skip"] if counters["skip"] else None
+            counters["skip_with_memory"] / counters["skip"]
+            if complete and counters["skip"]
+            else None
         ),
         "true_rows": counters["true"],
         "false_rows": counters["false"],
+        "save_correct_cases": counters["save_ok"],
+        "skip_clean_cases": counters["skip_clean"],
+        "skip_with_memory_cases": counters["skip_with_memory"],
         "rows": counters["rows"],
         "rows_denominator": counters["rows"],
         "save_denominator": counters["save"],
         "skip_denominator": counters["skip"],
         "duplicate_rows": counters["duplicates"],
         "invalid_rows": counters["invalid_rows"],
+        "invalid_cases": counters["invalid_cases"],
         "forbidden_hits": counters["forbidden_hits"],
     }
 
@@ -295,6 +318,8 @@ def rescore(dataset_path, report_path, out_path):
             raise ValueError(f"Stored result for case {identifier} is missing its invalid rows")
         rows[identifier] = result["rows"]
         if result.get("outcome") == "provider_failed":
+            if rows[identifier]:
+                raise ValueError(f"Stored result for failed case {identifier} contains rows")
             failed.add(identifier)
     expected = {case["id"] for case in data["cases"]}
     if rows.keys() != expected:
@@ -304,10 +329,12 @@ def rescore(dataset_path, report_path, out_path):
     total, by_group = score_cases(data["cases"], rows, failed)
     case_success = (
         (total["save_ok"] + total["skip_clean"]) / total["cases_scored"]
-        if total["cases_scored"]
+        if total["cases_scored"] == total["cases"]
         else None
     )
-    status = execution_status("policy-admission", total["failed_cases"], case_success)
+    status = execution_status(
+        "policy-admission", total["failed_cases"] + total["invalid_cases"], case_success
+    )
     updated = {
         **report,
         "status": status,
@@ -317,6 +344,7 @@ def rescore(dataset_path, report_path, out_path):
             **report.get("execution", {}),
             "status": status,
             "provider_failures": total["failed_cases"],
+            "invalid_cases": total["invalid_cases"],
             "cases_with_result": total["cases_scored"],
             "complete": total["cases_scored"] == total["cases"],
         },
@@ -357,6 +385,7 @@ def main(argv=None):
         help="Re-score a stored report against --dataset without calling the model",
     )
     parser.add_argument("--model", default="qwen3:8b", help="Installed local model name")
+    parser.add_argument("--max-output-tokens", type=int, default=2048)
     parser.add_argument(
         "--base-url",
         default="http://127.0.0.1:11434/v1",
@@ -381,6 +410,15 @@ def main(argv=None):
         cases, version, mode = data["cases"], data["version"], "policy-admission"
     else:
         cases, version, mode = inline_cases(), DATASET_VERSION, "inline-diagnostic"
+    endpoint = urlsplit(args.base_url)
+    if (
+        endpoint.scheme not in {"http", "https"}
+        or endpoint.hostname not in {"127.0.0.1", "::1", "localhost"}
+        or endpoint.username is not None
+    ):
+        parser.error("--base-url must be an anonymous loopback endpoint")
+    if os.environ.get("QM_SYNTHETIC_EVALUATION_UNUSED_KEY"):
+        parser.error("Unset QM_SYNTHETIC_EVALUATION_UNUSED_KEY for an anonymous evaluation")
     llm = OwnerLLM(
         {
             "mode": "override",
@@ -388,11 +426,11 @@ def main(argv=None):
             "model": args.model,
             "base_url": args.base_url,
             "api_key_env": "QM_SYNTHETIC_EVALUATION_UNUSED_KEY",
-            "max_output_tokens": 2048,
+            "max_output_tokens": args.max_output_tokens,
         }
     )
     instructions = args.instructions.read_text(encoding="utf-8") if args.instructions else None
-    extractor = Extractor(llm, {"mode": "inherit"})
+    extractor = Extractor(llm, {"mode": "inherit", "max_output_tokens": args.max_output_tokens})
     extractions, latencies, error_types, failed_ids = {}, [], Counter(), set()
     try:
         for case in cases:
@@ -403,7 +441,9 @@ def main(argv=None):
                     instructions,
                     {"user": case["user"], "assistant": case.get("assistant", "ack")},
                 )
-                extractions[case["id"]] = [row.get("text", "") for row in rows]
+                extractions[case["id"]] = [
+                    row.get("text") if isinstance(row, dict) else None for row in rows
+                ]
             except Exception as exc:  # report provider health, never abort a run
                 error_types[type(exc).__name__] += 1
                 failed_ids.add(case["id"])
@@ -412,16 +452,20 @@ def main(argv=None):
         total, by_group = score_cases(cases, extractions, failed_ids)
         case_success = (
             (total["save_ok"] + total["skip_clean"]) / total["cases_scored"]
-            if total["cases_scored"]
+            if total["cases_scored"] == total["cases"]
             else None
         )
         timing = latency_summary(latencies)
+        status = execution_status(
+            mode, total["failed_cases"] + total["invalid_cases"], case_success
+        )
         report = {
-            "status": execution_status(mode, total["failed_cases"], case_success),
+            "status": status,
             "mode": mode,
             "execution": {
-                "status": execution_status(mode, total["failed_cases"], case_success),
+                "status": status,
                 "provider_failures": total["failed_cases"],
+                "invalid_cases": total["invalid_cases"],
                 "cases_with_result": total["cases_scored"],
                 "complete": total["cases_scored"] == total["cases"],
             },
@@ -431,7 +475,11 @@ def main(argv=None):
             "dataset_cases": len(cases),
             "model": args.model,
             "type": "real local LLM extraction",
-            "generation": {"temperature": 0, "max_output_tokens": 2048},
+            "generation": {
+                "temperature": 0,
+                "max_output_tokens": args.max_output_tokens,
+                "seed": None,
+            },
             **rates(total),
             "case_success": case_success,
             "review_required": total["review_required"],
@@ -464,7 +512,7 @@ def main(argv=None):
                 "admission_precision": "correct rows / emitted rows; duplicates and forbidden wording count as false",
                 "admission_recall": "save cases with exactly one correct row / scored save cases",
                 "false_memory_rate": "scored skip cases that emitted a nonempty row / scored skip cases",
-                "denominator": "provider failures and invalid (blank) rows are excluded and reported separately",
+                "denominator": "incomplete runs retain observed counts and suppress quality rates",
             },
             "limitations": (
                 "Admission-only diagnostic on synthetic text; it does not measure retrieval, "

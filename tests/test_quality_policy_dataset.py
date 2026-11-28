@@ -115,7 +115,8 @@ def test_scoring_rejects_duplicates_and_blank_output():
     assert duplicate["true_rows"] == 1 and duplicate["false_rows"] == 1
 
     blank = verdict(save_case(), ["   "])
-    assert blank["outcome"] == "missed" and blank["invalid_rows"] == 1 and blank["true_rows"] == 0
+    assert blank["outcome"] == "invalid_output"
+    assert blank["invalid_rows"] == 1 and blank["true_rows"] == 0
     assert verdict(skip_case(), ["   "])["outcome"] == "invalid_output"
     skipped, _ = score([skip_case()], {"n": ["   "]})
     assert skipped["skip_clean"] == 0
@@ -207,13 +208,31 @@ def test_rescore_keeps_explicit_empty_results_and_provider_failures(tmp_path, da
     assert result["execution"] == {
         "status": "FAIL",
         "provider_failures": 1,
-        "cases_with_result": len(stored) - 1,
+        "invalid_cases": 1,
+        "cases_with_result": len(stored) - 2,
         "complete": False,
     }
     by_id = {row["id"]: row for row in result["case_results"]}
     assert by_id[skipped["id"]]["outcome"] == "correct"
     assert by_id[invalid["id"]]["invalid_rows"] == 1
     assert by_id[failed["id"]]["outcome"] == "provider_failed"
+    assert result["false_memory_rate"] is None
+
+
+def test_mixed_invalid_or_failed_output_suppresses_otherwise_perfect_rates():
+    """A missing or invalid response cannot improve the reported run quality."""
+    score, rates = runner()["score_cases"], runner()["rates"]
+    cases = [save_case(), skip_case()]
+    for rows, failures in [
+        ({"s": ["Cedar uses SQLite."]}, {"n"}),
+        ({"s": ["Cedar uses SQLite.", None], "n": []}, ()),
+    ]:
+        total, _ = score(cases, rows, failures)
+        assert rates(total)["admission_precision"] is None
+        assert rates(total)["admission_recall"] is None
+        assert rates(total)["false_memory_rate"] is None
+    with pytest.raises(ValueError, match="one result"):
+        score(cases, {"s": ["Cedar uses SQLite."]})
 
 
 def test_rates_report_denominators_and_clean_scoring():
